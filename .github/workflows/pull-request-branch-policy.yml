@@ -1,0 +1,27 @@
+name: Pull request branch policy
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  close-invalid-main-pull-request:
+    name: Only dev may target main
+    if: >-
+      github.event.pull_request.base.ref == 'main' &&
+      (github.event.pull_request.head.ref != 'dev' ||
+      github.event.pull_request.head.repo.full_name != github.repository)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain and close the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PULL_REQUEST_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr comment "$PULL_REQUEST_URL" --body \
+            "PRs into \`main\` are accepted only from this repository's \`dev\` branch. Please retarget this PR to \`dev\`."
+          gh pr close "$PULL_REQUEST_URL"

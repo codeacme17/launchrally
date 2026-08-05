@@ -41,6 +41,14 @@ test/
 - `init`, `plan`, and `verify` return an explicit `not_implemented` state.
 - No Check can be marked `Passed` by this scaffold.
 
+## Contribution flow
+
+- Open feature and fix pull requests against `dev`.
+- Promote releases with a pull request from `dev` to `main`.
+- Pull requests into `main` from any other branch are closed automatically.
+
+`dev` is the repository's default branch so new pull requests target it by default.
+
 ## Licence
 
 The Phase 0 open-source licence must be selected before Repository Publication. No licence is asserted by this initial scaffold.
