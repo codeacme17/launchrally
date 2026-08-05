@@ -59,23 +59,38 @@ async function exists(filePath) {
   }
 }
 
-async function readPackageJson(cwd) {
+async function readPackageManifest(cwd) {
   const packagePath = path.join(cwd, "package.json");
-  if (!(await exists(packagePath))) return null;
+  if (!(await exists(packagePath))) return { status: "missing", value: null };
 
   try {
-    return JSON.parse(await readFile(packagePath, "utf8"));
+    const value = JSON.parse(await readFile(packagePath, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { status: "invalid", value: null };
+    }
+    return { status: "valid", value };
   } catch {
-    return null;
+    return { status: "invalid", value: null };
   }
 }
 
+function normalizeScripts(scripts) {
+  if (!scripts || typeof scripts !== "object" || Array.isArray(scripts)) return {};
+
+  return Object.fromEntries(
+    Object.entries(scripts)
+      .filter(([, command]) => typeof command === "string")
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+}
+
 export async function discoverProject(cwd) {
-  const packageJson = await readPackageJson(cwd);
+  const packageManifest = await readPackageManifest(cwd);
+  const packageJson = packageManifest.value;
   let packageManager = "unknown";
   const detectedFiles = [];
 
-  if (packageJson) detectedFiles.push("package.json");
+  if (packageManifest.status !== "missing") detectedFiles.push("package.json");
 
   for (const [lockfile, manager] of LOCKFILES) {
     if (await exists(path.join(cwd, lockfile))) {
@@ -86,10 +101,13 @@ export async function discoverProject(cwd) {
 
   return {
     root: path.resolve(cwd),
-    name: packageJson?.name ?? path.basename(path.resolve(cwd)),
-    type: packageJson ? "web" : "unknown",
+    name: typeof packageJson?.name === "string" && packageJson.name.length > 0
+      ? packageJson.name
+      : path.basename(path.resolve(cwd)),
+    type: packageManifest.status === "valid" ? "web" : "unknown",
+    package_manifest: { path: "package.json", status: packageManifest.status },
     package_manager: packageManager,
-    scripts: packageJson?.scripts ?? {},
+    scripts: normalizeScripts(packageJson?.scripts),
     detected_files: detectedFiles,
   };
 }
@@ -102,9 +120,11 @@ export async function createInitialSnapshot(cwd) {
     status: "completed",
     kind: "initial_readiness_snapshot",
     project,
-    obvious_blockers: project.type === "web"
-      ? []
-      : ["No package.json was found, so a conventional Web repository could not be identified."],
+    obvious_blockers: {
+      valid: [],
+      invalid: ["package.json exists but could not be read as a valid package manifest."],
+      missing: ["No package.json was found, so a conventional Web repository could not be identified."],
+    }[project.package_manifest.status],
     limitations: [...LOCAL_AUDIT_LIMITATIONS],
     next: {
       type: "none",

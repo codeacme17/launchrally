@@ -77,6 +77,7 @@ test("audit returns a local Initial Readiness Snapshot and Web baseline result",
     root: fixture,
     name: "fixture-web",
     type: "web",
+    package_manifest: { path: "package.json", status: "valid" },
     package_manager: "npm",
     scripts: { build: "vite build" },
     detected_files: ["package.json", "package-lock.json"],
@@ -155,6 +156,53 @@ test("audit reports a failed Web baseline Check when the lockfile is missing", a
     },
   ]);
   assert.equal(result.report.assessment, "no_go");
+});
+
+test("audit renders obvious blockers and remediation actions for a person", async () => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-readable-failure-"));
+  await writeFile(
+    path.join(fixture, "package.json"),
+    JSON.stringify({ name: "actionable-web", scripts: { build: "vite build" } }),
+  );
+
+  const { stdout } = await execFileAsync(process.execPath, [cli, "audit", "--cwd", fixture], {
+    cwd: root,
+  });
+
+  assert.match(
+    stdout,
+    /Obvious Blockers:\n  None[\s\S]*Action Queue:\n  \[P0\] web\.baseline\.lockfile — Commit the package manager lockfile/,
+  );
+});
+
+test("audit distinguishes an invalid package manifest from a missing one", async () => {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-invalid-manifest-"));
+  await writeFile(path.join(fixture, "package.json"), "{ invalid json");
+
+  const { stdout } = await execFileAsync(process.execPath, [cli, "audit", "--json", "--cwd", fixture], {
+    cwd: root,
+  });
+  const result = JSON.parse(stdout);
+
+  assert.equal(result.snapshot.project.type, "unknown");
+  assert.deepEqual(result.snapshot.project.package_manifest, {
+    path: "package.json",
+    status: "invalid",
+  });
+  assert.ok(result.snapshot.project.detected_files.includes("package.json"));
+  assert.deepEqual(result.snapshot.obvious_blockers, [
+    "package.json exists but could not be read as a valid package manifest.",
+  ]);
+
+  const { stdout: terminalOutput } = await execFileAsync(
+    process.execPath,
+    [cli, "audit", "--cwd", fixture],
+    { cwd: root },
+  );
+  assert.match(
+    terminalOutput,
+    /Obvious Blockers:\n  - package\.json exists but could not be read as a valid package manifest\./,
+  );
 });
 
 test("reserved workflows return not_implemented", async () => {

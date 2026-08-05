@@ -49,12 +49,22 @@ function print(value) {
       `Project: ${value.snapshot.project.name} (${value.snapshot.project.type})`,
       `Package manager: ${value.snapshot.project.package_manager}`,
       "Scope: local repository, read-only",
+      "Obvious Blockers:",
+      ...(value.snapshot.obvious_blockers.length > 0
+        ? value.snapshot.obvious_blockers.map((blocker) => `  - ${blocker}`)
+        : ["  None"]),
       "Checks:",
       ...value.report.results.checks.map(
         (check) =>
           `  ${{ passed: "PASS", failed: "FAIL" }[check.status] ?? check.status.toUpperCase()} [${check.priority.toUpperCase()}] ${check.check_id} — ${check.summary}`,
       ),
       `Assessment: ${assessment}`,
+      "Action Queue:",
+      ...(value.report.results.action_queue.length > 0
+        ? value.report.results.action_queue.map(
+          (item) => `  [${item.priority.toUpperCase()}] ${item.check_id} — ${item.action}`,
+        )
+        : ["  None"]),
       "Verification Gaps:",
       ...value.report.results.verification_gaps.map(
         (gap) =>
@@ -62,7 +72,7 @@ function print(value) {
       ),
       "Limitations:",
       ...value.report.limitations.map((limitation) => `  - ${limitation}`),
-      `Next: ${value.snapshot.next.message}`,
+      `Next input/approval: ${value.snapshot.next.message}`,
     ];
     process.stdout.write(`${lines.join("\n")}\n`);
     return;
