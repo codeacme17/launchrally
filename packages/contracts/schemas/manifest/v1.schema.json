@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/manifest/v1",
+  "title": "LaunchRally Manifest v1 scaffold",
+  "type": "object",
+  "required": ["schema_version", "project", "release", "execution", "support", "providers"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/manifest/v1" },
+    "project": { "type": "object" },
+    "release": { "type": "object" },
+    "execution": { "type": "object" },
+    "support": { "type": "object" },
+    "providers": { "type": "object" }
+  },
+  "additionalProperties": false,
+  "x-launchrally-status": "template"
+}

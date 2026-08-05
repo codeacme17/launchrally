@@ -1,0 +1,15 @@
+{
+  "name": "@launchrally/claude-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LaunchRally Plugin adapter for Claude Code",
+  "files": [
+    ".claude-plugin/",
+    "skills/"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codeacme17/launchrally.git",
+    "directory": "adapters/claude/launchrally"
+  }
+}

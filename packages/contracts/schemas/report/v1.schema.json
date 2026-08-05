@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/report/v1",
+  "title": "LaunchRally Report Record v1 scaffold",
+  "type": "object",
+  "required": ["schema_version", "report_id", "assessment", "provenance", "scope", "results", "limitations"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/report/v1" },
+    "report_id": { "type": "string", "minLength": 1 },
+    "assessment": {
+      "enum": ["launch_ready", "ready_with_warnings", "no_go", "inconclusive"]
+    },
+    "provenance": { "type": "object" },
+    "scope": { "type": "object" },
+    "results": { "type": "object" },
+    "limitations": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true,
+  "x-launchrally-status": "template"
+}

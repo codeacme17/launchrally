@@ -1,0 +1,25 @@
+{
+  "name": "@launchrally/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LaunchRally local CLI scaffold",
+  "type": "module",
+  "bin": {
+    "rally": "./bin/rally.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@launchrally/contracts": "0.1.0",
+    "@launchrally/core": "0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codeacme17/launchrally.git",
+    "directory": "packages/cli"
+  }
+}

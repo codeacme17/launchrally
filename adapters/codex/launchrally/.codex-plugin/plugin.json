@@ -1,0 +1,27 @@
+{
+  "name": "launchrally",
+  "version": "0.1.0",
+  "description": "Audit and verify production launch readiness from an existing repository.",
+  "author": {
+    "name": "codeacme17",
+    "url": "https://github.com/codeacme17"
+  },
+  "homepage": "https://github.com/codeacme17/launchrally",
+  "repository": "https://github.com/codeacme17/launchrally",
+  "keywords": ["launch", "audit", "deployment", "devops", "agent-skill"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "LaunchRally",
+    "shortDescription": "Audit and verify launch readiness locally.",
+    "longDescription": "LaunchRally works with Codex and a local deterministic CLI to audit, plan, and verify production launch readiness without autonomous production writes.",
+    "developerName": "codeacme17",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read"],
+    "websiteURL": "https://github.com/codeacme17/launchrally",
+    "defaultPrompt": [
+      "Audit this repository for production launch readiness.",
+      "Explain the launch blockers in this project.",
+      "Verify this repository after my remediation changes."
+    ]
+  }
+}

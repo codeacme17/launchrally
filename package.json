@@ -1,0 +1,30 @@
+{
+  "name": "launchrally",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first launch readiness audit and verification",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*",
+    "adapters/*/launchrally"
+  ],
+  "scripts": {
+    "build": "npm run sync:skills",
+    "sync:skills": "node scripts/sync-skills.mjs",
+    "check:skills": "node scripts/sync-skills.mjs --check",
+    "rally": "node packages/cli/bin/rally.js",
+    "test": "npm run check:skills && node --test",
+    "validate": "npm test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codeacme17/launchrally.git"
+  },
+  "bugs": {
+    "url": "https://github.com/codeacme17/launchrally/issues"
+  },
+  "homepage": "https://github.com/codeacme17/launchrally#readme"
+}

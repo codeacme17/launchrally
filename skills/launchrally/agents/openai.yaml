@@ -1,0 +1,6 @@
+interface:
+  display_name: "LaunchRally"
+  short_description: "Audit and verify production launch readiness"
+  default_prompt: "Use $launchrally to audit this repository for production launch readiness."
+policy:
+  allow_implicit_invocation: false
