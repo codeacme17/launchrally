@@ -6,4 +6,4 @@
 4. If the CLI requests input, confirmation, or permission, present that request without adding inferred approval.
 5. Never describe `Inconclusive` as ready to launch.
 
-The initial scaffold performs local project discovery only. It has no implemented Check Catalog and must return `Inconclusive`.
+The initial local tracer discovers normalized Web project facts and runs the deterministic lockfile baseline through the Check Catalog path. A passing baseline remains `Inconclusive` while the Report contains a P0 Verification Gap. A failed P0 baseline returns `No Go`.

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchrally.dev/report/v1",
-  "title": "LaunchRally Report Record v1 scaffold",
+  "title": "LaunchRally Report Record v1",
   "type": "object",
   "required": ["schema_version", "report_id", "assessment", "provenance", "scope", "results", "limitations"],
   "properties": {
@@ -10,11 +10,113 @@
     "assessment": {
       "enum": ["launch_ready", "ready_with_warnings", "no_go", "inconclusive"]
     },
-    "provenance": { "type": "object" },
-    "scope": { "type": "object" },
-    "results": { "type": "object" },
-    "limitations": { "type": "array", "items": { "type": "string" } }
+    "provenance": {
+      "type": "object",
+      "required": ["cli_version", "check_catalog_version"],
+      "properties": {
+        "cli_version": { "type": "string", "minLength": 1 },
+        "check_catalog_version": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": "object",
+      "required": ["project_root", "project_type", "access", "excluded"],
+      "properties": {
+        "project_root": { "type": "string", "minLength": 1 },
+        "project_type": { "type": "string", "minLength": 1 },
+        "access": { "const": "local_read_only" },
+        "excluded": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "results": {
+      "type": "object",
+      "required": ["checks", "action_queue", "verification_gaps", "coverage_summary"],
+      "properties": {
+        "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } },
+        "action_queue": { "type": "array", "items": { "$ref": "#/$defs/action" } },
+        "verification_gaps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/verificationGap" }
+        },
+        "coverage_summary": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/coverageSummary" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    }
   },
   "additionalProperties": true,
-  "x-launchrally-status": "template"
+  "$defs": {
+    "priority": { "enum": ["p0", "p1", "p2"] },
+    "evidence": {
+      "type": "object",
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": { "const": "file" },
+        "path": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "check": {
+      "type": "object",
+      "required": ["check_id", "check_version", "priority", "status", "summary", "evidence"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "check_version": { "type": "integer", "minimum": 1 },
+        "priority": { "$ref": "#/$defs/priority" },
+        "status": { "enum": ["passed", "failed", "unverified", "not_applicable"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } }
+      },
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "required": ["check_id", "priority", "action"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "priority": { "$ref": "#/$defs/priority" },
+        "action": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "verificationGap": {
+      "type": "object",
+      "required": ["check_id", "priority", "status", "reason"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "priority": { "$ref": "#/$defs/priority" },
+        "status": { "const": "unverified" },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "coverageSummary": {
+      "type": "object",
+      "required": ["priority", "applicable_checks", "executed_checks", "passed_checks", "failed_checks", "verification_gaps", "coverage"],
+      "properties": {
+        "priority": { "$ref": "#/$defs/priority" },
+        "applicable_checks": { "type": "integer", "minimum": 0 },
+        "executed_checks": { "type": "integer", "minimum": 0 },
+        "passed_checks": { "type": "integer", "minimum": 0 },
+        "failed_checks": { "type": "integer", "minimum": 0 },
+        "verification_gaps": { "type": "integer", "minimum": 0 },
+        "coverage": { "enum": ["complete", "partial", "none"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "x-launchrally-status": "initial-audit"
 }
