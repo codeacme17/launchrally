@@ -5,7 +5,7 @@ import process from "node:process";
 import { CLI_INTERACTION_CONTRACT } from "@launchrally/contracts";
 import {
   createNotImplementedResult,
-  runTemplateAudit,
+  runAudit,
 } from "@launchrally/core";
 
 const VERSION = "0.1.0";
@@ -39,10 +39,32 @@ function print(value) {
   }
 
   if (value.operation === "audit" && value.report) {
-    process.stdout.write("LaunchRally template audit\n");
-    process.stdout.write(`Project: ${value.snapshot.project.name}\n`);
-    process.stdout.write(`Assessment: ${value.report.assessment}\n`);
-    process.stdout.write(`${value.report.limitations[0]}\n`);
+    const assessment = value.report.assessment
+      .split("_")
+      .map((word) => `${word[0].toUpperCase()}${word.slice(1)}`)
+      .join(" ");
+    const lines = [
+      "LaunchRally Audit",
+      "Initial Readiness Snapshot",
+      `Project: ${value.snapshot.project.name} (${value.snapshot.project.type})`,
+      `Package manager: ${value.snapshot.project.package_manager}`,
+      "Scope: local repository, read-only",
+      "Checks:",
+      ...value.report.results.checks.map(
+        (check) =>
+          `  ${{ passed: "PASS", failed: "FAIL" }[check.status] ?? check.status.toUpperCase()} [${check.priority.toUpperCase()}] ${check.check_id} — ${check.summary}`,
+      ),
+      `Assessment: ${assessment}`,
+      "Verification Gaps:",
+      ...value.report.results.verification_gaps.map(
+        (gap) =>
+          `  ${gap.status.toUpperCase()} [${gap.priority.toUpperCase()}] ${gap.check_id} — ${gap.reason}`,
+      ),
+      "Limitations:",
+      ...value.report.limitations.map((limitation) => `  - ${limitation}`),
+      `Next: ${value.snapshot.next.message}`,
+    ];
+    process.stdout.write(`${lines.join("\n")}\n`);
     return;
   }
 
@@ -58,7 +80,7 @@ function help() {
       "Usage: rally <command> [--json] [--cwd <path>]",
       "",
       "Commands:",
-      "  audit    Run the safe scaffold discovery audit",
+      "  audit    Run the local Web baseline Audit",
       "  init     Reserved Phase 0 initialization workflow",
       "  plan     Reserved Phase 0 read-only planning workflow",
       "  verify   Reserved Phase 0 verification workflow",
@@ -85,7 +107,7 @@ async function main() {
 
   if (command === "audit") {
     const cwd = optionValue("--cwd") ?? process.cwd();
-    print(await runTemplateAudit(cwd, VERSION));
+    print(await runAudit(cwd, VERSION));
     return 0;
   }
 

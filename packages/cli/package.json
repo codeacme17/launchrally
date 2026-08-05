@@ -2,7 +2,7 @@
   "name": "@launchrally/cli",
   "version": "0.1.0",
   "private": true,
-  "description": "LaunchRally local CLI scaffold",
+  "description": "LaunchRally local-first audit CLI",
   "type": "module",
   "bin": {
     "rally": "./bin/rally.js"

@@ -2,7 +2,7 @@
 
 LaunchRally is a local-first, open-source launch readiness audit and verification tool for repository-owning AI builders.
 
-This repository is the initial Phase 0 scaffold. It establishes package boundaries, the CLI interaction contract, and shared Agent Skill packaging. The Check Catalog, production evidence collectors, initialization writes, plans, and verification engine are intentionally not implemented yet.
+This repository contains the first Phase 0 local Audit tracer. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, and one deterministic Web baseline Check. Production evidence collectors, initialization writes, plans, and the verification engine are intentionally not implemented yet.
 
 ## Quick start
 
@@ -13,14 +13,14 @@ npm test
 npm run rally -- audit --json
 ```
 
-The scaffold audit only performs safe local project discovery. It returns `Inconclusive` because no production Checks have been implemented, and it does not create `.launchrally/` or contact external services.
+The Audit performs safe local project discovery and checks for a dependency lockfile through the Web Check Catalog path. A passing baseline remains `Inconclusive` because P0 coverage is incomplete; a failed baseline is `No Go`. The command does not create `.launchrally/` or contact external services.
 
 ## Repository layout
 
 ```text
 packages/
   contracts/       Public protocol and schema constants
-  core/            Framework-neutral discovery and audit orchestration
+  core/            Framework-neutral discovery, Check Catalog, and audit orchestration
   cli/             The `rally` executable
 skills/
   launchrally/     Canonical Agent Skill source
@@ -36,10 +36,10 @@ test/
 ## Current safety boundary
 
 - No LaunchRally account or server is used.
-- `audit` performs local discovery only and makes no repository writes.
+- `audit` performs local discovery and a deterministic lockfile Check without repository writes.
 - Provider access and network checks are not implemented.
 - `init`, `plan`, and `verify` return an explicit `not_implemented` state.
-- No Check can be marked `Passed` by this scaffold.
+- Missing P0 coverage is always reported as a Verification Gap, so the local tracer cannot return `Launch Ready`.
 
 ## Contribution flow
 
