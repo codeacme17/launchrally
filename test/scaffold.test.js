@@ -49,18 +49,37 @@ async function createNetworkGuard() {
   return guard;
 }
 
-test("audit returns a local Initial Readiness Snapshot and Web baseline result", async () => {
-  const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-web-fixture-"));
+async function createWebFixture(name, { withLockfile = false } = {}) {
+  const fixture = await mkdtemp(path.join(os.tmpdir(), `launchrally-${name}-`));
   await writeFile(
     path.join(fixture, "package.json"),
-    JSON.stringify({ name: "fixture-web", scripts: { build: "vite build" } }),
+    JSON.stringify({ name, scripts: { build: "vite build" } }),
   );
-  await writeFile(path.join(fixture, "package-lock.json"), '{"lockfileVersion":3}');
+  if (withLockfile) {
+    await writeFile(path.join(fixture, "package-lock.json"), '{"lockfileVersion":3}');
+  }
+  return fixture;
+}
+
+async function runCliAudit(fixture, { json = false, env } = {}) {
+  const args = [cli, "audit"];
+  if (json) args.push("--json");
+  args.push("--cwd", fixture);
+
+  const { stdout } = await execFileAsync(process.execPath, args, {
+    cwd: root,
+    ...(env ? { env } : {}),
+  });
+  return stdout;
+}
+
+test("audit returns a local Initial Readiness Snapshot and Web baseline result", async () => {
+  const fixture = await createWebFixture("fixture-web", { withLockfile: true });
   const before = await snapshotFiles(fixture);
   const networkGuard = await createNetworkGuard();
 
-  const { stdout } = await execFileAsync(process.execPath, [cli, "audit", "--json", "--cwd", fixture], {
-    cwd: root,
+  const stdout = await runCliAudit(fixture, {
+    json: true,
     env: {
       ...process.env,
       NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require=${networkGuard}`.trim(),
@@ -109,16 +128,8 @@ test("audit returns a local Initial Readiness Snapshot and Web baseline result",
 });
 
 test("audit renders the Snapshot, Check, gap, and limitation for a person", async () => {
-  const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-terminal-fixture-"));
-  await writeFile(
-    path.join(fixture, "package.json"),
-    JSON.stringify({ name: "terminal-web", scripts: { build: "vite build" } }),
-  );
-  await writeFile(path.join(fixture, "package-lock.json"), '{"lockfileVersion":3}');
-
-  const { stdout } = await execFileAsync(process.execPath, [cli, "audit", "--cwd", fixture], {
-    cwd: root,
-  });
+  const fixture = await createWebFixture("terminal-web", { withLockfile: true });
+  const stdout = await runCliAudit(fixture);
 
   assert.match(
     stdout,
@@ -127,15 +138,8 @@ test("audit renders the Snapshot, Check, gap, and limitation for a person", asyn
 });
 
 test("audit reports a failed Web baseline Check when the lockfile is missing", async () => {
-  const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-unlocked-fixture-"));
-  await writeFile(
-    path.join(fixture, "package.json"),
-    JSON.stringify({ name: "unlocked-web", scripts: { build: "vite build" } }),
-  );
-
-  const { stdout } = await execFileAsync(process.execPath, [cli, "audit", "--json", "--cwd", fixture], {
-    cwd: root,
-  });
+  const fixture = await createWebFixture("unlocked-web");
+  const stdout = await runCliAudit(fixture, { json: true });
   const result = JSON.parse(stdout);
 
   assert.deepEqual(result.report.results.checks, [
@@ -159,15 +163,8 @@ test("audit reports a failed Web baseline Check when the lockfile is missing", a
 });
 
 test("audit renders obvious blockers and remediation actions for a person", async () => {
-  const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-readable-failure-"));
-  await writeFile(
-    path.join(fixture, "package.json"),
-    JSON.stringify({ name: "actionable-web", scripts: { build: "vite build" } }),
-  );
-
-  const { stdout } = await execFileAsync(process.execPath, [cli, "audit", "--cwd", fixture], {
-    cwd: root,
-  });
+  const fixture = await createWebFixture("actionable-web");
+  const stdout = await runCliAudit(fixture);
 
   assert.match(
     stdout,
@@ -179,9 +176,7 @@ test("audit distinguishes an invalid package manifest from a missing one", async
   const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-invalid-manifest-"));
   await writeFile(path.join(fixture, "package.json"), "{ invalid json");
 
-  const { stdout } = await execFileAsync(process.execPath, [cli, "audit", "--json", "--cwd", fixture], {
-    cwd: root,
-  });
+  const stdout = await runCliAudit(fixture, { json: true });
   const result = JSON.parse(stdout);
 
   assert.equal(result.snapshot.project.type, "unknown");
@@ -194,11 +189,7 @@ test("audit distinguishes an invalid package manifest from a missing one", async
     "package.json exists but could not be read as a valid package manifest.",
   ]);
 
-  const { stdout: terminalOutput } = await execFileAsync(
-    process.execPath,
-    [cli, "audit", "--cwd", fixture],
-    { cwd: root },
-  );
+  const terminalOutput = await runCliAudit(fixture);
   assert.match(
     terminalOutput,
     /Obvious Blockers:\n  - package\.json exists but could not be read as a valid package manifest\./,

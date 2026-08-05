@@ -61,16 +61,16 @@ async function exists(filePath) {
 
 async function readPackageManifest(cwd) {
   const packagePath = path.join(cwd, "package.json");
-  if (!(await exists(packagePath))) return { status: "missing", value: null };
+  if (!(await exists(packagePath))) return { status: "missing", manifest: null };
 
   try {
-    const value = JSON.parse(await readFile(packagePath, "utf8"));
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return { status: "invalid", value: null };
+    const manifest = JSON.parse(await readFile(packagePath, "utf8"));
+    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+      return { status: "invalid", manifest: null };
     }
-    return { status: "valid", value };
+    return { status: "valid", manifest };
   } catch {
-    return { status: "invalid", value: null };
+    return { status: "invalid", manifest: null };
   }
 }
 
@@ -86,7 +86,7 @@ function normalizeScripts(scripts) {
 
 export async function discoverProject(cwd) {
   const packageManifest = await readPackageManifest(cwd);
-  const packageJson = packageManifest.value;
+  const packageJson = packageManifest.manifest;
   let packageManager = "unknown";
   const detectedFiles = [];
 
