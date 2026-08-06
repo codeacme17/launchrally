@@ -12,10 +12,11 @@
     },
     "provenance": {
       "type": "object",
-      "required": ["cli_version", "check_catalog_version"],
+      "required": ["cli_version", "check_catalog_version", "scan_policy_version"],
       "properties": {
         "cli_version": { "type": "string", "minLength": 1 },
-        "check_catalog_version": { "type": "string", "minLength": 1 }
+        "check_catalog_version": { "type": "string", "minLength": 1 },
+        "scan_policy_version": { "const": "local_safe_scan/v1" }
       },
       "additionalProperties": false
     },

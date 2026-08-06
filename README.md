@@ -13,7 +13,9 @@ npm test
 npm run rally -- audit --json
 ```
 
-The Audit performs safe local project discovery and checks for a dependency lockfile through the Web Check Catalog path. A passing baseline remains `Inconclusive` because P0 coverage is incomplete; a failed baseline is `No Go`. The command does not create `.launchrally/` or contact external services.
+The Audit performs a Local Safe Scan and checks for a dependency lockfile through the Web Check Catalog path. A passing baseline remains `Inconclusive` because P0 coverage is incomplete; a failed baseline is `No Go`. The command does not create `.launchrally/` or contact external services.
+
+The Local Safe Scan collects provenance-backed facts from supported source and configuration files without retaining their contents in facts or outputs. It respects repository ignore rules and built-in exclusions for dependencies and build outputs, rejects binary and oversized artifacts, never follows symlinks, and stops at nested repository boundaries. Environment files are the deliberate ignore-rule exception: even a gitignored `.env*` file contributes variable names only. Package scripts likewise contribute script names rather than commands, so secret values cannot flow into snapshots, evidence, reports, terminal output, or errors.
 
 ## Repository layout
 
@@ -36,7 +38,9 @@ test/
 ## Current safety boundary
 
 - No LaunchRally account or server is used.
-- `audit` performs local discovery and a deterministic lockfile Check without repository writes.
+- `audit` performs a boundary-checked Local Safe Scan and deterministic lockfile Check without repository writes.
+- Local facts include their repository-relative source path and scanner policy version.
+- Environment values and raw package script commands are never included in Audit output.
 - Provider access and network checks are not implemented.
 - `init`, `plan`, and `verify` return an explicit `not_implemented` state.
 - Missing P0 coverage is always reported as a Verification Gap, so the local tracer cannot return `Launch Ready`.
