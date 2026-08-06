@@ -8,7 +8,7 @@ const COLLECTOR_VERSION = "public-verification/v1";
 const PROBE_TIMEOUT_MS = 5000;
 const MAX_CONCURRENT_PROBES = 4;
 
-function probe({ id, kind, target, method, purpose }) {
+function probe({ id, kind, target, method, purpose, verificationMode }) {
   const url = new URL(target);
   return {
     probe_id: id,
@@ -20,6 +20,7 @@ function probe({ id, kind, target, method, purpose }) {
     method,
     purpose,
     timeout_ms: PROBE_TIMEOUT_MS,
+    ...(verificationMode ? { verification_mode: verificationMode } : {}),
   };
 }
 
@@ -62,12 +63,24 @@ export function createPublicVerificationPlan(answers) {
       purpose: "Verify the conventional public health endpoint.",
     }));
     journeys.forEach((journey, journeyIndex) => {
+      const declaredJourney = typeof journey === "string"
+        ? {
+            purpose: journey,
+            target,
+            verificationMode: "description_only",
+          }
+        : {
+            purpose: journey.purpose,
+            target: new URL(journey.path, url.origin).toString(),
+            verificationMode: "executable_path",
+          };
       probes.push(probe({
         id: `${prefix}:journey-${journeyIndex + 1}`,
         kind: "journey",
-        target,
+        target: declaredJourney.target,
         method: "GET",
-        purpose: `Verify declared core journey: ${journey}`,
+        purpose: `Verify declared core journey: ${declaredJourney.purpose}`,
+        verificationMode: declaredJourney.verificationMode,
       }));
     });
   });
@@ -99,6 +112,11 @@ function request(probe) {
   return new Promise((resolve, reject) => {
     const client = new URL(probe.target).protocol === "https:" ? https : http;
     let outgoing;
+    let timeout;
+    const fail = (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    };
     try {
       outgoing = client.request(probe.target, {
         method: "GET",
@@ -107,15 +125,20 @@ function request(probe) {
           "user-agent": `LaunchRally/${COLLECTOR_VERSION}`,
         },
       }, (response) => {
-        response.resume();
-        response.once("end", () => resolve(response));
+        clearTimeout(timeout);
+        const result = {
+          statusCode: response.statusCode,
+          headers: response.headers,
+        };
+        response.destroy();
+        resolve(result);
       });
     } catch (error) {
-      reject(error);
+      fail(error);
       return;
     }
-    outgoing.setTimeout(probe.timeout_ms, () => outgoing.destroy(timeoutError()));
-    outgoing.once("error", reject);
+    timeout = setTimeout(() => outgoing.destroy(timeoutError()), probe.timeout_ms);
+    outgoing.once("error", fail);
     outgoing.end();
   });
 }
@@ -123,6 +146,11 @@ function request(probe) {
 function tlsHandshake(probe) {
   return new Promise((resolve, reject) => {
     let socket;
+    let timeout;
+    const fail = (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    };
     try {
       socket = tls.connect({
         host: probe.host,
@@ -131,11 +159,12 @@ function tlsHandshake(probe) {
         rejectUnauthorized: true,
       });
     } catch (error) {
-      reject(error);
+      fail(error);
       return;
     }
-    socket.setTimeout(probe.timeout_ms, () => socket.destroy(timeoutError()));
+    timeout = setTimeout(() => socket.destroy(timeoutError()), probe.timeout_ms);
     socket.once("secureConnect", () => {
+      clearTimeout(timeout);
       const details = {
         protocol: socket.getProtocol() ?? "unknown",
         authorized: socket.authorized,
@@ -143,7 +172,7 @@ function tlsHandshake(probe) {
       socket.end();
       resolve(details);
     });
-    socket.once("error", reject);
+    socket.once("error", fail);
   });
 }
 
@@ -202,11 +231,11 @@ async function runProbe(probe) {
     return {
       status: "passed",
       outcome: "secure",
-      details: await withTimeout(tlsHandshake(probe), probe.timeout_ms),
+      details: await tlsHandshake(probe),
     };
   }
 
-  const response = await withTimeout(request(probe), probe.timeout_ms);
+  const response = await request(probe);
   const statusCode = response.statusCode ?? 0;
   const location = redirectTarget(response.headers.location, probe.target);
   if (statusCode >= 300 && statusCode < 400) {
@@ -220,6 +249,13 @@ async function runProbe(probe) {
     };
   }
   const passed = statusCode >= 200 && statusCode < 300;
+  if (passed && probe.kind === "journey" && probe.verification_mode === "description_only") {
+    return {
+      status: "unverified",
+      outcome: "journey_definition_incomplete",
+      details: { status_code: statusCode },
+    };
+  }
   return {
     status: passed ? "passed" : "failed",
     outcome: passed
@@ -248,6 +284,7 @@ async function collectProbe(probe) {
     path: probe.path,
     method: probe.method,
     purpose: probe.purpose,
+    ...(probe.verification_mode ? { verification_mode: probe.verification_mode } : {}),
     status: result.status,
     outcome: result.outcome,
     collected_at: collectedAt,

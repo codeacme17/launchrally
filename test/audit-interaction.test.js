@@ -227,6 +227,7 @@ test("Agent Mode discloses every read-only public probe before approval", async 
         method: "GET",
         purpose: "Verify declared core journey: customer can check out",
         timeout_ms: 5000,
+        verification_mode: "description_only",
       },
       {
         probe_id: "target-1:journey-2",
@@ -238,6 +239,7 @@ test("Agent Mode discloses every read-only public probe before approval", async 
         method: "GET",
         purpose: "Verify declared core journey: visitor can sign up",
         timeout_ms: 5000,
+        verification_mode: "description_only",
       },
     ],
   });
@@ -298,10 +300,11 @@ test("approved public probes collect fresh read-only evidence through the CLI co
   try {
     const { port } = server.address();
     const target = `http://127.0.0.1:${port}/`;
+    const journey = { purpose: "homepage loads", path: "/", method: "GET" };
     const result = await completeAudit(fixture, {
       intended_environment: "production",
       production_targets: [target],
-      core_journeys: ["homepage loads"],
+      core_journeys: [journey],
       provider_roles: [],
       support_layers: [],
     });
@@ -349,7 +352,7 @@ test("approved public probes collect fresh read-only evidence through the CLI co
     const secondResult = await completeAudit(fixture, {
       intended_environment: "production",
       production_targets: [target],
-      core_journeys: ["homepage loads"],
+      core_journeys: [journey],
       provider_roles: [],
       support_layers: [],
     });
@@ -553,6 +556,50 @@ test("public probe concurrency is bounded per Audit", async () => {
 
     assert.equal(result.status, "completed");
     assert.ok(maxActiveRequests <= 4, `Observed ${maxActiveRequests} concurrent requests`);
+    assert.ok(result.report.results.public_evidence
+      .filter((item) => item.probe_kind === "journey")
+      .every((item) =>
+        item.status === "unverified"
+        && item.outcome === "journey_definition_incomplete",
+      ));
+    assert.equal(
+      result.report.results.checks.find(
+        (check) => check.check_id === "web.public.core-journeys",
+      ).status,
+      "unverified",
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("public probes stop after response headers and never consume streaming bodies", async () => {
+  const fixture = await createInteractionFixture();
+  const server = createServer((_request, response) => {
+    response.writeHead(200);
+    const stream = setInterval(() => response.write("ignored-public-body"), 20);
+    const finish = setTimeout(() => response.end(), 1500);
+    response.once("close", () => {
+      clearInterval(stream);
+      clearTimeout(finish);
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const { port } = server.address();
+    const startedAt = Date.now();
+    const result = await completeAudit(fixture, {
+      intended_environment: "production",
+      production_targets: [`http://127.0.0.1:${port}/`],
+      core_journeys: [{ purpose: "homepage loads", path: "/", method: "GET" }],
+      provider_roles: [],
+      support_layers: [],
+    });
+    const elapsed = Date.now() - startedAt;
+
+    assert.equal(result.status, "completed");
+    assert.ok(elapsed < 1000, `Audit consumed response bodies for ${elapsed}ms`);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -764,4 +811,26 @@ test("public targets reject credentials and query data before they enter Audit s
     { field_id: "production_targets", code: "unsafe_public_target" },
   ]);
   assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
+});
+
+test("public journeys reject mutating methods and sensitive paths", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      core_journeys: [
+        { purpose: "submit checkout", path: "/checkout?token=secret", method: "POST" },
+      ],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_input");
+  assert.deepEqual(result.request.validation_errors, [
+    { field_id: "core_journeys", code: "invalid_public_journey" },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result), /token=secret/u);
 });

@@ -29,7 +29,7 @@
       "additionalProperties": false
     },
     "production_targets": { "$ref": "#/$defs/stringSelection" },
-    "core_journeys": { "$ref": "#/$defs/stringSelection" },
+    "core_journeys": { "$ref": "#/$defs/journeySelection" },
     "provider_roles": {
       "type": "object",
       "required": ["values", "candidates", "confirmed"],
@@ -83,6 +83,34 @@
       },
       "additionalProperties": false
     },
+    "journeySelection": {
+      "type": "object",
+      "required": ["values", "candidates", "confirmed"],
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "string", "minLength": 1 },
+              { "$ref": "#/$defs/publicJourney" }
+            ]
+          }
+        },
+        "candidates": { "type": "array", "items": { "type": "string" } },
+        "confirmed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "publicJourney": {
+      "type": "object",
+      "required": ["purpose", "path", "method"],
+      "properties": {
+        "purpose": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "pattern": "^/(?!/)" },
+        "method": { "const": "GET" }
+      },
+      "additionalProperties": false
+    },
     "providerRole": {
       "type": "object",
       "required": ["provider", "role"],
@@ -104,7 +132,8 @@
         "path": { "type": "string", "pattern": "^/" },
         "method": { "enum": ["DNS_LOOKUP", "TLS_HANDSHAKE", "GET"] },
         "purpose": { "type": "string", "minLength": 1 },
-        "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 }
+        "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 },
+        "verification_mode": { "enum": ["description_only", "executable_path"] }
       },
       "additionalProperties": false
     }
