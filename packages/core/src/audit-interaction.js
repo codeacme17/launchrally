@@ -119,13 +119,24 @@ function normalizeAnswers(answers) {
       const purpose = typeof journey?.purpose === "string" ? journey.purpose.trim() : "";
       const journeyPath = typeof journey?.path === "string" ? journey.path.trim() : "";
       const method = typeof journey?.method === "string" ? journey.method.toUpperCase() : "";
+      let staysOnConfirmedOrigins = true;
+      try {
+        staysOnConfirmedOrigins = productionTargets.every((target) => {
+          const origin = new URL(target).origin;
+          return new URL(journeyPath, origin).origin === origin;
+        });
+      } catch {
+        staysOnConfirmedOrigins = false;
+      }
       if (
         !purpose
         || !journeyPath.startsWith("/")
         || journeyPath.startsWith("//")
+        || journeyPath.includes("\\")
         || journeyPath.includes("?")
         || journeyPath.includes("#")
         || method !== "GET"
+        || !staysOnConfirmedOrigins
       ) {
         errors.push({ field_id: "core_journeys", code: "invalid_public_journey" });
         break;

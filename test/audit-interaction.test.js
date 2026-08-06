@@ -834,3 +834,25 @@ test("public journeys reject mutating methods and sensitive paths", async () => 
   ]);
   assert.doesNotMatch(JSON.stringify(result), /token=secret/u);
 });
+
+test("public journey paths cannot resolve outside confirmed target origins", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      core_journeys: [
+        { purpose: "off-target path", path: "/\\example.invalid/x", method: "GET" },
+      ],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_input");
+  assert.deepEqual(result.request.validation_errors, [
+    { field_id: "core_journeys", code: "invalid_public_journey" },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result), /example\.invalid/u);
+});
