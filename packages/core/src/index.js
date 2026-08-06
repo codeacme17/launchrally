@@ -108,6 +108,7 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
     public_evidence: publicEvidence,
     provider_result: providerResult,
     limitations: LOCAL_AUDIT_LIMITATIONS,
+    content_changes: interactionOptions.content_changes ?? [],
   });
 
   return {
@@ -133,6 +134,10 @@ export {
   renderReportMarkdown,
   REPORT_GENERATOR_VERSION,
 } from "./reporting.js";
+export {
+  evaluateLaunchPolicy,
+  POLICY_ENGINE_VERSION,
+} from "./policy-engine.js";
 
 export function createNotImplementedResult(operation) {
   return {

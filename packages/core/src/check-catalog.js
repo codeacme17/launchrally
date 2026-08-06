@@ -40,6 +40,8 @@ function declaration({
   severity,
   gate,
   freshness,
+  dependency_unblocking,
+  core_journey_impact,
 }) {
   return Object.freeze({
     check_id,
@@ -61,6 +63,10 @@ function declaration({
       gate,
       unverified_blocks_launch_ready: true,
     },
+    remediation_order_policy: {
+      dependency_unblocking,
+      core_journey_impact,
+    },
     freshness_behavior: freshness,
   });
 }
@@ -79,6 +85,8 @@ const CHECKS = Object.freeze([
       ],
       severity: "critical",
       gate: "always",
+      dependency_unblocking: true,
+      core_journey_impact: "indirect",
       freshness: {
         mode: "content_bound",
         invalidated_by: ["package.json content change", "Local Safe Scan policy change"],
@@ -115,6 +123,8 @@ const CHECKS = Object.freeze([
       ],
       severity: "critical",
       gate: "always",
+      dependency_unblocking: true,
+      core_journey_impact: "indirect",
       freshness: {
         mode: "content_bound",
         invalidated_by: ["root lockfile set change", "Local Safe Scan policy change"],
@@ -163,6 +173,8 @@ const CHECKS = Object.freeze([
       ],
       severity: "major",
       gate: "policy",
+      dependency_unblocking: true,
+      core_journey_impact: "indirect",
       freshness: {
         mode: "content_bound",
         invalidated_by: ["environment declaration file change", "Local Safe Scan policy change"],
@@ -200,6 +212,8 @@ const CHECKS = Object.freeze([
       ],
       severity: "critical",
       gate: "always",
+      dependency_unblocking: true,
+      core_journey_impact: "direct",
       freshness: {
         mode: "content_bound",
         invalidated_by: ["package.json script-name change", "Local Safe Scan policy change"],
@@ -240,6 +254,8 @@ const CHECKS = Object.freeze([
       ],
       severity: "critical",
       gate: "always",
+      dependency_unblocking: false,
+      core_journey_impact: "direct",
       freshness: {
         mode: "live_state",
         max_age_seconds: 900,
@@ -273,6 +289,8 @@ const CHECKS = Object.freeze([
       ],
       severity: "critical",
       gate: "always",
+      dependency_unblocking: false,
+      core_journey_impact: "direct",
       freshness: {
         mode: "live_state",
         max_age_seconds: 3600,
@@ -317,6 +335,8 @@ const CHECKS = Object.freeze([
       ],
       severity: "critical",
       gate: "always",
+      dependency_unblocking: true,
+      core_journey_impact: "indirect",
       freshness: {
         mode: "release_intent_bound",
         invalidated_by: ["provider-role change", "runtime-input declaration change"],
@@ -373,6 +393,8 @@ const CHECKS = Object.freeze([
       ],
       severity: "major",
       gate: "policy",
+      dependency_unblocking: false,
+      core_journey_impact: "none",
       freshness: {
         mode: "release_intent_bound",
         invalidated_by: ["support-layer change", "provider-role change", "monitoring configuration change"],
@@ -414,6 +436,8 @@ const CHECKS = Object.freeze([
       ],
       severity: "critical",
       gate: "always",
+      dependency_unblocking: false,
+      core_journey_impact: "direct",
       freshness: {
         mode: "live_state",
         max_age_seconds: 900,

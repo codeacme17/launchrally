@@ -84,6 +84,13 @@ test("the versioned Web Baseline catalog declares every required policy", () => 
     assert.ok(check.severity_policy.severity);
     assert.ok(check.release_gate_policy.gate);
     assert.ok(check.freshness_behavior.mode);
+    assert.equal(
+      typeof check.remediation_order_policy.dependency_unblocking,
+      "boolean",
+    );
+    assert.ok(["direct", "indirect", "none"].includes(
+      check.remediation_order_policy.core_journey_impact,
+    ));
   }
   assert.deepEqual(
     [...new Set(catalog.checks.map((check) => check.risk_domain))].sort(),
