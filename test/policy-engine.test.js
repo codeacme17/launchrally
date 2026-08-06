@@ -34,7 +34,6 @@ function evaluate({
   evidence_entries = [],
   evaluated_at = "2026-08-06T12:00:00.000Z",
   content_changes = [],
-  additional_gaps = [],
 }) {
   return evaluateLaunchPolicy({
     catalog: { checks: declarations },
@@ -43,7 +42,6 @@ function evaluate({
     evidence_index: { entries: evidence_entries },
     evaluated_at,
     content_changes,
-    additional_verification_gaps: additional_gaps,
   });
 }
 
@@ -179,6 +177,14 @@ test("Major policy gates require confirmed scope", () => {
   assert.equal(confirmed.assessment, "no_go");
   assert.equal(unconfirmed.findings[0].gating, false);
   assert.equal(unconfirmed.assessment, "ready_with_warnings");
+
+  const alwaysUnconfirmed = evaluate({
+    declarations: [declaration("major-provider", "major", "always")],
+    checks: [finding("major-provider", "failed", "Fix provider metadata.")],
+    scope_confirmed: false,
+  });
+  assert.equal(alwaysUnconfirmed.findings[0].gating, false);
+  assert.equal(alwaysUnconfirmed.assessment, "ready_with_warnings");
 });
 
 test("Action Queue ordering uses severity, dependency unblocking, then journey impact", () => {
@@ -245,6 +251,15 @@ test("stale live-state Evidence makes the Report non-current with no assessment"
       max_age_seconds: 900,
     }],
   });
+  assert.deepEqual(result.evidence_currentness, [{
+    digest: evidenceReference.digest,
+    current: false,
+    currentness: {
+      status: "non_current",
+      evaluated_at: "2026-08-06T12:00:00.000Z",
+      reasons: result.currentness.reasons,
+    },
+  }]);
 });
 
 test("a declared content change makes prior Evidence and the Report non-current", () => {
@@ -282,25 +297,40 @@ test("a Passed claim without required Evidence is downgraded and can never be La
   assert.equal(result.verification_gaps[0].reason_code, "insufficient_evidence");
 });
 
-test("Provider Verification Gaps use the same engine and prevent Launch Ready", () => {
-  const providerGap = {
-    check_id: "provider.vercel.metadata",
-    status: "unverified",
-    reason_code: "missing_provider_tool",
-    reason: "The approved Provider tool is missing.",
+test("a declared Provider Check uses Machine Evidence and prevents unsupported Passed claims", () => {
+  const providerDeclaration = declaration("provider.vercel.metadata", "major", "policy");
+  providerDeclaration.evidence_requirement = {
+    accepted_kinds: ["machine_evidence"],
+    minimum_items: 1,
+    provenance_required: true,
+  };
+  const machineEvidence = {
+    digest: "sha256:provider-observation",
+    source: "provider-adapter-contract/v1",
+    evidence_kind: "machine_evidence",
+    collected_at: "2026-08-06T12:00:00.000Z",
   };
   const result = evaluate({
-    declarations: [declaration("critical-build", "critical", "always")],
-    checks: [finding("critical-build", "passed")],
-    additional_gaps: [providerGap],
+    declarations: [providerDeclaration],
+    checks: [{
+      ...finding("provider.vercel.metadata", "passed"),
+      evidence: [{
+        digest: machineEvidence.digest,
+        collected_at: machineEvidence.collected_at,
+      }],
+    }],
+    evidence_entries: [machineEvidence],
   });
 
-  assert.equal(result.assessment, "inconclusive");
-  assert.deepEqual(result.verification_gaps, [{
-    ...providerGap,
-    severity: "major",
-    gating: false,
-  }]);
-  assert.equal(result.coverage_summary.unverified_checks, 1);
-  assert.equal(result.coverage_summary.coverage, "partial");
+  assert.equal(result.assessment, "launch_ready");
+  assert.equal(result.findings[0].status, "passed");
+  assert.equal(result.findings[0].severity, "major");
+  assert.equal(result.findings[0].gating, true);
+
+  const unsupportedClaim = evaluate({
+    declarations: [providerDeclaration],
+    checks: [finding("provider.vercel.metadata", "passed")],
+  });
+  assert.equal(unsupportedClaim.findings[0].status, "unverified");
+  assert.equal(unsupportedClaim.assessment, "inconclusive");
 });

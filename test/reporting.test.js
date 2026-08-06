@@ -114,6 +114,11 @@ test("every completed Audit returns one frozen Record, derived Markdown View, an
   assert.ok(index.entries.every((entry) => entry.source && entry.target));
   assert.ok(index.entries.every((entry) => !Number.isNaN(Date.parse(entry.collected_at))));
   assert.ok(index.entries.every((entry) => entry.freshness_class && entry.redaction_state));
+  assert.ok(index.entries.every((entry) => entry.current === true));
+  assert.ok(index.entries.every(
+    (entry) => entry.currentness.status === "current"
+      && entry.currentness.evaluated_at === report.created_at,
+  ));
   assert.doesNotMatch(JSON.stringify(report), /normalized_artifact/u);
 
   assert.ok(Object.isFrozen(report));
@@ -166,7 +171,7 @@ test("an unconfirmed scope still produces a useful local Record with execution g
 test("declared content changes make the Record and derived View non-current", async () => {
   const directory = await fixture();
   const result = await complete(directory, {
-    content_changes: ["package.json content change"],
+    content_changes: ["package_manifest_changed"],
   });
 
   assert.equal(result.report.policy.current, false);
@@ -178,6 +183,13 @@ test("declared content changes make the Record and derived View non-current", as
   assert.equal(result.report_view.content, renderReportMarkdown(result.report));
   assert.match(result.report_view.content, /Assessment: Not Current/u);
   assert.match(result.report_view.content, /Report Current: No/u);
+  const packageEvidence = result.evidence_index.entries.find(
+    (entry) => entry.target === "repository:package.json",
+  );
+  assert.equal(packageEvidence.current, false);
+  assert.ok(packageEvidence.currentness.reasons.some((reason) =>
+    reason.reason_code === "content_changed",
+  ));
 });
 
 test("Manifest and Report major versions are independent and future majors fail closed", () => {

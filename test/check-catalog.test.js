@@ -51,7 +51,12 @@ function auditBrief(overrides = {}) {
   };
 }
 
-function execute(projectValue = project(), brief = auditBrief(), publicDecision = "approved") {
+function execute(
+  projectValue = project(),
+  brief = auditBrief(),
+  publicDecision = "approved",
+  providerResult = { evidence: [], verification_gaps: [] },
+) {
   return executeWebBaseline({
     project: projectValue,
     audit_brief: brief,
@@ -62,6 +67,7 @@ function execute(projectValue = project(), brief = auditBrief(), publicDecision 
         decision: publicDecision,
       },
     ],
+    provider_result: providerResult,
   });
 }
 
@@ -154,6 +160,66 @@ test("Not Applicable requires a reason and applicability evidence", () => {
     assert.ok(check.applicability.reason.length > 0);
     assert.ok(check.applicability.evidence.length > 0);
   }
+});
+
+test("current Provider Machine Evidence resolves the catalog-declared Provider Check", () => {
+  const brief = auditBrief({
+    provider_roles: {
+      values: [{ provider: "vercel", role: "deployment" }],
+      confirmed: true,
+    },
+  });
+  const machineEvidence = {
+    kind: "machine_evidence",
+    provider: "vercel",
+    adapter_version: "vercel-read/v1",
+    target: "authenticated_scope_projects",
+    requested_fields: ["projects.id"],
+    facts: { projects: [{ id: "project-id" }] },
+    collected_at: "2026-08-06T12:00:00.000Z",
+    provenance: {
+      collector: "provider-adapter-contract/v1",
+      provider: "vercel",
+      adapter_version: "vercel-read/v1",
+      exact_target: "authenticated_scope_projects",
+      executable: "vercel",
+      arguments: ["project", "ls", "--json"],
+      collected_at: "2026-08-06T12:00:00.000Z",
+    },
+  };
+  const passedResult = execute(project(), brief, "denied", {
+    evidence: [machineEvidence],
+    verification_gaps: [],
+  });
+  const passed = passedResult.checks.find(
+    (check) => check.check_id === "provider.vercel.metadata",
+  );
+  const declared = passedResult.catalog.checks.find(
+    (check) => check.check_id === "provider.vercel.metadata",
+  );
+
+  assert.equal(passed.status, "passed");
+  assert.deepEqual(passed.evidence, [machineEvidence]);
+  assert.equal(declared.severity_policy.severity, "major");
+  assert.equal(declared.release_gate_policy.gate, "policy");
+  assert.deepEqual(declared.evidence_requirement.accepted_kinds, ["machine_evidence"]);
+
+  const gapResult = execute(project(), brief, "denied", {
+    evidence: [],
+    verification_gaps: [{
+      check_id: "provider.vercel.metadata",
+      risk_domain: "deployment",
+      priority: "p0",
+      status: "unverified",
+      reason_code: "missing_provider_tool",
+      reason: "The approved Provider tool is missing.",
+    }],
+  });
+  const unverified = gapResult.checks.find(
+    (check) => check.check_id === "provider.vercel.metadata",
+  );
+  assert.equal(unverified.status, "unverified");
+  assert.equal(unverified.reason_code, "missing_provider_tool");
 });
 
 test("conflicts, permission denials, and execution failures never become Passed", () => {

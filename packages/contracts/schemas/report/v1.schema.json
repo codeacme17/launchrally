@@ -293,7 +293,7 @@
         "check_version": { "type": "integer", "minimum": 1 },
         "risk_domain": { "$ref": "#/$defs/riskDomain" },
         "priority": { "$ref": "#/$defs/priority" },
-        "severity": { "enum": ["critical", "major", "moderate"] },
+        "severity": { "$ref": "#/$defs/severity" },
         "release_gate": { "enum": ["always", "policy", "never"] },
         "gating": { "type": "boolean" },
         "applicability": { "$ref": "#/$defs/applicabilityResult" },
@@ -327,7 +327,7 @@
         "severity": { "$ref": "#/$defs/severity" },
         "gating": { "type": "boolean" },
         "status": { "const": "unverified" },
-        "reason_code": { "enum": ["permission_denied", "missing_required_input", "insufficient_evidence", "conflicting_evidence", "applicability_unresolved", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence", "missing_provider_tool", "missing_provider_login", "unsupported_provider", "adapter_error"] },
+        "reason_code": { "enum": ["permission_denied", "missing_required_input", "insufficient_evidence", "conflicting_evidence", "applicability_unresolved", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence", "partial_provider_evidence", "missing_provider_tool", "missing_provider_login", "unsupported_provider", "adapter_error"] },
         "reason": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
@@ -420,7 +420,7 @@
       "type": "object",
       "required": ["accepted_kinds", "minimum_items", "provenance_required"],
       "properties": {
-        "accepted_kinds": { "type": "array", "items": { "enum": ["file", "project_fact", "release_intent", "public_observation"] }, "minItems": 1, "uniqueItems": true },
+        "accepted_kinds": { "type": "array", "items": { "enum": ["file", "project_fact", "release_intent", "public_observation", "machine_evidence"] }, "minItems": 1, "uniqueItems": true },
         "minimum_items": { "type": "integer", "minimum": 1 },
         "provenance_required": { "const": true }
       },
@@ -430,7 +430,7 @@
       "type": "object",
       "required": ["severity", "rationale"],
       "properties": {
-        "severity": { "enum": ["critical", "major", "moderate"] },
+        "severity": { "$ref": "#/$defs/severity" },
         "rationale": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
@@ -450,7 +450,7 @@
       "properties": {
         "mode": { "enum": ["content_bound", "release_intent_bound", "live_state"] },
         "max_age_seconds": { "type": "integer", "minimum": 1 },
-        "invalidated_by": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+        "invalidated_by": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "minItems": 1 }
       },
       "additionalProperties": false
     },

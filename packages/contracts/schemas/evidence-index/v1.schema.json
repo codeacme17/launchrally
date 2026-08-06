@@ -13,7 +13,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["digest", "evidence_kind", "source", "target", "collected_at", "freshness_class", "redaction_state", "normalized_artifact"],
+        "required": ["digest", "evidence_kind", "source", "target", "collected_at", "freshness_class", "redaction_state", "current", "currentness", "normalized_artifact"],
         "properties": {
           "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
           "evidence_kind": { "enum": ["file", "release_intent", "project_fact", "public_observation", "machine_evidence"] },
@@ -22,6 +22,32 @@
           "collected_at": { "type": "string", "format": "date-time" },
           "freshness_class": { "enum": ["audit_time", "repository_snapshot", "confirmed_scope"] },
           "redaction_state": { "enum": ["normalized", "allowlisted", "metadata_only"] },
+          "current": { "type": "boolean" },
+          "currentness": {
+            "type": "object",
+            "required": ["status", "evaluated_at", "reasons"],
+            "properties": {
+              "status": { "enum": ["current", "non_current"] },
+              "evaluated_at": { "type": "string", "format": "date-time" },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["check_id", "reason_code"],
+                  "properties": {
+                    "check_id": { "type": "string", "minLength": 1 },
+                    "reason_code": { "enum": ["content_changed", "live_evidence_stale"] },
+                    "change": { "type": "string", "minLength": 1 },
+                    "evidence_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+                    "collected_at": { "type": "string", "format": "date-time" },
+                    "max_age_seconds": { "type": "integer", "minimum": 1 }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          },
           "normalized_artifact": { "type": "object" }
         },
         "additionalProperties": false

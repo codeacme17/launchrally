@@ -321,13 +321,19 @@ export function createReportPackage({
     checks,
     scope: {
       confirmed: scopeConfirmed,
-      core_journeys: structuredClone(audit_brief.core_journeys.values),
     },
     evidence_index: evidenceIndex,
     evaluated_at: createdAt,
     content_changes,
-    additional_verification_gaps: provider_result.verification_gaps,
   });
+  const evidenceCurrentness = new Map(
+    policyResult.evidence_currentness.map((state) => [state.digest, state]),
+  );
+  for (const entry of evidenceIndex.entries) {
+    const state = evidenceCurrentness.get(entry.digest);
+    entry.current = state.current;
+    entry.currentness = structuredClone(state.currentness);
+  }
   const domainCoverage = baseline.catalog.risk_domains.map((risk_domain) => {
     const domainChecks = policyResult.findings.filter(
       (check) => check.risk_domain === risk_domain,

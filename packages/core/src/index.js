@@ -96,6 +96,7 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
     audit_brief: interactionResult.audit_brief,
     authorization_plan: interactionResult.authorization_plan,
     public_evidence: publicEvidence,
+    provider_result: providerResult,
   });
   baseline.catalog.versions.active_adapters = providerResult.active_adapter_versions;
   const reportPackage = createReportPackage({

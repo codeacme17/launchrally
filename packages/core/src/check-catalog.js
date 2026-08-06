@@ -1,3 +1,8 @@
+import {
+  createProviderAdapterPlan,
+  providerRiskDomain,
+} from "./provider-adapters.js";
+
 const CHECK_CATALOG_VERSION = "web-baseline-check-catalog/v1";
 const BASELINE_VERSION = "web-application-baseline/v1";
 
@@ -26,6 +31,12 @@ const RELEASE_INTENT_EVIDENCE = Object.freeze({
 
 const PUBLIC_EVIDENCE = Object.freeze({
   accepted_kinds: ["public_observation"],
+  minimum_items: 1,
+  provenance_required: true,
+});
+
+const MACHINE_EVIDENCE = Object.freeze({
+  accepted_kinds: ["machine_evidence"],
   minimum_items: 1,
   provenance_required: true,
 });
@@ -89,7 +100,7 @@ const CHECKS = Object.freeze([
       core_journey_impact: "indirect",
       freshness: {
         mode: "content_bound",
-        invalidated_by: ["package.json content change", "Local Safe Scan policy change"],
+        invalidated_by: ["package_manifest_changed", "scan_policy_changed"],
       },
     }),
     applicability(project) {
@@ -127,7 +138,7 @@ const CHECKS = Object.freeze([
       core_journey_impact: "indirect",
       freshness: {
         mode: "content_bound",
-        invalidated_by: ["root lockfile set change", "Local Safe Scan policy change"],
+        invalidated_by: ["root_lockfiles_changed", "scan_policy_changed"],
       },
     }),
     applicability(project) {
@@ -177,7 +188,7 @@ const CHECKS = Object.freeze([
       core_journey_impact: "indirect",
       freshness: {
         mode: "content_bound",
-        invalidated_by: ["environment declaration file change", "Local Safe Scan policy change"],
+        invalidated_by: ["runtime_inputs_changed", "scan_policy_changed"],
       },
     }),
     applicability() {
@@ -216,7 +227,7 @@ const CHECKS = Object.freeze([
       core_journey_impact: "direct",
       freshness: {
         mode: "content_bound",
-        invalidated_by: ["package.json script-name change", "Local Safe Scan policy change"],
+        invalidated_by: ["build_command_changed", "scan_policy_changed"],
       },
     }),
     applicability(project) {
@@ -259,7 +270,7 @@ const CHECKS = Object.freeze([
       freshness: {
         mode: "live_state",
         max_age_seconds: 900,
-        invalidated_by: ["deployment", "DNS change", "health-route change"],
+        invalidated_by: ["deployment_changed", "dns_changed", "health_route_changed"],
       },
     }),
     applicability(_project, brief) {
@@ -294,7 +305,7 @@ const CHECKS = Object.freeze([
       freshness: {
         mode: "live_state",
         max_age_seconds: 3600,
-        invalidated_by: ["certificate change", "DNS change", "edge configuration change"],
+        invalidated_by: ["certificate_changed", "dns_changed", "edge_configuration_changed"],
       },
     }),
     applicability(_project, brief) {
@@ -339,7 +350,7 @@ const CHECKS = Object.freeze([
       core_journey_impact: "indirect",
       freshness: {
         mode: "release_intent_bound",
-        invalidated_by: ["provider-role change", "runtime-input declaration change"],
+        invalidated_by: ["provider_roles_changed", "runtime_inputs_changed"],
       },
     }),
     applicability(project, brief) {
@@ -397,7 +408,11 @@ const CHECKS = Object.freeze([
       core_journey_impact: "none",
       freshness: {
         mode: "release_intent_bound",
-        invalidated_by: ["support-layer change", "provider-role change", "monitoring configuration change"],
+        invalidated_by: [
+          "support_layers_changed",
+          "provider_roles_changed",
+          "monitoring_configuration_changed",
+        ],
       },
     }),
     applicability(project, brief) {
@@ -441,7 +456,11 @@ const CHECKS = Object.freeze([
       freshness: {
         mode: "live_state",
         max_age_seconds: 900,
-        invalidated_by: ["deployment", "journey definition change", "production target change"],
+        invalidated_by: [
+          "deployment_changed",
+          "journey_definition_changed",
+          "production_targets_changed",
+        ],
       },
     }),
     applicability(_project, brief) {
@@ -500,6 +519,70 @@ function failed(summary, evidence, action) {
 
 function unverified(reason_code, summary, evidence = []) {
   return { status: "unverified", reason_code, summary, evidence };
+}
+
+function providerCheckDeclaration(request) {
+  const riskDomain = providerRiskDomain(request.roles);
+  const critical = riskDomain === "data_and_integrations";
+  return declaration({
+    check_id: `provider.${request.provider}.metadata`,
+    risk_domain: riskDomain,
+    permission_id: request.permission_id,
+    required_inputs: [
+      "audit_brief.provider_roles.values",
+      `provider_result.evidence[provider=${request.provider}]`,
+    ],
+    evidence_requirement: MACHINE_EVIDENCE,
+    verification_rules: [
+      `Pass only when ${request.provider} returns current, provenance-backed Machine Evidence for its selected roles.`,
+      "Missing, denied, unsupported, or failed Provider reads remain Unverified.",
+    ],
+    severity: critical ? "critical" : "major",
+    gate: critical ? "always" : "policy",
+    dependency_unblocking: critical,
+    core_journey_impact: riskDomain === "observability_and_operations" ? "none" : "indirect",
+    freshness: {
+      mode: "live_state",
+      max_age_seconds: 900,
+      invalidated_by: [
+        "provider_roles_changed",
+        "provider_configuration_changed",
+        "deployment_changed",
+      ],
+    },
+  });
+}
+
+function executeProviderCheck(request, providerResult) {
+  const declared = providerCheckDeclaration(request);
+  const applicability = applicable(
+    `Confirmed release intent selects ${request.provider} Provider metadata verification.`,
+    [intentEvidence("provider_roles", `confirmed:${request.provider}`)],
+  );
+  const providerEvidence = providerResult.evidence.filter(
+    (evidence) => evidence.provider === request.provider,
+  );
+  const gap = providerResult.verification_gaps.find(
+    (candidate) => candidate.check_id === declared.check_id,
+  );
+  const result = gap
+    ? unverified(gap.reason_code, gap.reason, providerEvidence)
+    : providerEvidence.length === 0
+      ? unverified(
+        "partial_provider_evidence",
+        `${request.provider} verification returned no Machine Evidence.`,
+      )
+      : passed(
+        `${request.provider} returned current, provenance-backed Machine Evidence.`,
+        providerEvidence,
+      );
+  return {
+    declaration: declared,
+    result: {
+      ...resultBase(declared, applicability),
+      ...result,
+    },
+  };
 }
 
 function environmentNames(project) {
@@ -589,7 +672,13 @@ function resultBase(declared, applicability) {
   };
 }
 
-function executeCheck(check, project, auditBrief, authorizationPlan, publicEvidence) {
+function executeCheck(
+  check,
+  project,
+  auditBrief,
+  authorizationPlan,
+  publicEvidence,
+) {
   let applicability;
   try {
     applicability = check.applicability(project, auditBrief);
@@ -664,11 +753,27 @@ export function executeWebBaseline({
   audit_brief,
   authorization_plan = [],
   public_evidence = [],
+  provider_result = { evidence: [], verification_gaps: [] },
 }) {
   const catalog = describeWebBaselineCatalog();
   const checks = CHECKS.map((check) =>
-    executeCheck(check, project, audit_brief, authorization_plan, public_evidence),
+    executeCheck(
+      check,
+      project,
+      audit_brief,
+      authorization_plan,
+      public_evidence,
+    ),
   );
+  const providerRequests = audit_brief.provider_adapters?.requests
+    ?? createProviderAdapterPlan(audit_brief.provider_roles.values).requests;
+  const providerChecks = providerRequests.map((request) =>
+    executeProviderCheck(request, provider_result),
+  );
+  catalog.checks.push(...providerChecks.map(({ declaration: declared }) =>
+    structuredClone(declared),
+  ));
+  checks.push(...providerChecks.map(({ result }) => result));
   const verification_gaps = checks
     .filter((check) => check.status === "unverified")
     .map((check) => ({

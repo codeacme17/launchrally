@@ -5,7 +5,7 @@ function releaseGate(declaration, scopeConfirmed) {
   if (severity === "critical") return true;
   if (severity === "moderate") return false;
   const gate = declaration.release_gate_policy.gate;
-  return gate === "always" || (gate === "policy" && scopeConfirmed);
+  return scopeConfirmed && (gate === "always" || gate === "policy");
 }
 
 function coverage(findings) {
@@ -21,14 +21,14 @@ function coverage(findings) {
   };
 }
 
-function orderedBefore(left, right, values, select) {
+function compareByRank(left, right, values, select) {
   return values.indexOf(select(left)) - values.indexOf(select(right));
 }
 
 function remediationOrder(left, right) {
-  return orderedBefore(left, right, ["critical", "major", "moderate"], (item) => item.severity)
-    || orderedBefore(left, right, [true, false], (item) => item.dependency_unblocking)
-    || orderedBefore(left, right, ["direct", "indirect", "none"], (item) =>
+  return compareByRank(left, right, ["critical", "major", "moderate"], (item) => item.severity)
+    || compareByRank(left, right, [true, false], (item) => item.dependency_unblocking)
+    || compareByRank(left, right, ["direct", "indirect", "none"], (item) =>
       item.core_journey_impact,
     )
     || left.check_id.localeCompare(right.check_id);
@@ -65,16 +65,41 @@ function currentness({
   );
   const evaluatedTime = Date.parse(evaluatedAt);
   const reasons = [];
+  const evidenceCurrentness = new Map(evidenceIndex.entries.map((entry) => [
+    entry.digest,
+    {
+      digest: entry.digest,
+      current: true,
+      currentness: {
+        status: "current",
+        evaluated_at: evaluatedAt,
+        reasons: [],
+      },
+    },
+  ]));
+  function markEvidenceNonCurrent(reference, reason) {
+    const state = evidenceCurrentness.get(reference.digest);
+    if (!state) return;
+    state.current = false;
+    state.currentness.status = "non_current";
+    state.currentness.reasons.push(structuredClone(reason));
+  }
   for (const finding of findings) {
     const freshness = declarations.get(finding.check_id).freshness_behavior;
     for (const change of contentChanges.filter((candidate) =>
       freshness.invalidated_by.includes(candidate),
     )) {
-      reasons.push({
+      const reason = {
         check_id: finding.check_id,
         reason_code: "content_changed",
         change,
-      });
+      };
+      reasons.push(reason);
+      const references = [
+        ...(finding.applicability?.evidence ?? []),
+        ...finding.evidence,
+      ];
+      for (const reference of references) markEvidenceNonCurrent(reference, reason);
     }
     if (freshness.mode !== "live_state" || finding.status === "not_applicable") continue;
     for (const reference of finding.evidence) {
@@ -83,20 +108,25 @@ function currentness({
         evidence
         && evaluatedTime - Date.parse(evidence.collected_at) > freshness.max_age_seconds * 1000
       ) {
-        reasons.push({
+        const reason = {
           check_id: finding.check_id,
           reason_code: "live_evidence_stale",
           evidence_digest: reference.digest,
           collected_at: evidence.collected_at,
           max_age_seconds: freshness.max_age_seconds,
-        });
+        };
+        reasons.push(reason);
+        markEvidenceNonCurrent(reference, reason);
       }
     }
   }
   return {
-    status: reasons.length > 0 ? "non_current" : "current",
-    evaluated_at: evaluatedAt,
-    reasons,
+    report: {
+      status: reasons.length > 0 ? "non_current" : "current",
+      evaluated_at: evaluatedAt,
+      reasons,
+    },
+    evidence: [...evidenceCurrentness.values()],
   };
 }
 
@@ -107,7 +137,6 @@ export function evaluateLaunchPolicy({
   evidence_index = { entries: [] },
   evaluated_at,
   content_changes = [],
-  additional_verification_gaps = [],
 }) {
   const declarations = new Map(catalog.checks.map((check) => [check.check_id, check]));
   const evidenceByDigest = new Map(
@@ -149,31 +178,25 @@ export function evaluateLaunchPolicy({
       reason_code: finding.reason_code ?? "missing_required_input",
       reason: finding.summary,
     }));
-  const externalGaps = additional_verification_gaps.map((gap) => ({
-    ...structuredClone(gap),
-    severity: gap.severity ?? "major",
-    gating: gap.gating ?? false,
-  }));
-  const verificationGaps = [...findingGaps, ...externalGaps];
+  const verificationGaps = findingGaps;
   const gatingFailure = findings.some(
     (finding) => finding.status === "failed" && finding.gating,
   );
-  const reportCurrentness = currentness({
+  const derivedCurrentness = currentness({
     findings,
     declarations,
     evidenceIndex: evidence_index,
     evaluatedAt: evaluated_at,
     contentChanges: content_changes,
   });
+  const reportCurrentness = derivedCurrentness.report;
   const current = reportCurrentness.status === "current";
   const coverageSummary = coverage(findings);
-  coverageSummary.applicable_checks += additional_verification_gaps.length;
-  coverageSummary.unverified_checks += additional_verification_gaps.length;
-  if (coverageSummary.unverified_checks > 0) coverageSummary.coverage = "partial";
   return {
     policy_version: POLICY_ENGINE_VERSION,
     current,
     currentness: reportCurrentness,
+    evidence_currentness: derivedCurrentness.evidence,
     assessment: !current
       ? null
       : gatingFailure
