@@ -7,6 +7,7 @@ export const REPORT_VIEW_SCHEMA = "launchrally.dev/report-view/v1";
 export const EVIDENCE_INDEX_SCHEMA = "launchrally.dev/evidence-index/v1";
 export const AUDIT_BRIEF_SCHEMA = "launchrally.dev/audit-brief/v1";
 export const AUDIT_INTERACTION_SCHEMA = "launchrally.dev/audit-interaction/v1";
+export const INIT_INTERACTION_SCHEMA = "launchrally.dev/init-interaction/v1";
 
 function assertSupportedMajor(value, contract, supported, errorCode) {
   const schemaVersion = typeof value === "string" ? value : value?.schema_version;

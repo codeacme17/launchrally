@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/init-interaction/v1",
+  "title": "LaunchRally Initialization Interaction v1",
+  "type": "object",
+  "required": ["schema_version", "resume_token"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/init-interaction/v1" },
+    "resume_token": { "type": "string", "minLength": 20 }
+  },
+  "additionalProperties": false
+}

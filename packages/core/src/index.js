@@ -122,6 +122,12 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
     authorization_plan: interactionResult.authorization_plan,
     interaction: interactionResult.interaction,
     ...reportPackage,
+    next: {
+      type: "init",
+      required: false,
+      report_id: reportPackage.report.report_id,
+      message: "Save this complete Audit JSON, then run rally init --report <path> to preview adoption.",
+    },
   };
 }
 
@@ -139,6 +145,7 @@ export {
   evaluateLaunchPolicy,
   POLICY_ENGINE_VERSION,
 } from "./policy-engine.js";
+export { runInit } from "./initialization.js";
 
 export function createNotImplementedResult(operation) {
   return {
