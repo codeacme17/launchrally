@@ -4,6 +4,7 @@ const require = createRequire(import.meta.url);
 const reportSchema = require("../schemas/report/v1.schema.json");
 const reportViewSchema = require("../schemas/report-view/v1.schema.json");
 const evidenceIndexSchema = require("../schemas/evidence-index/v1.schema.json");
+const launchPlanSchema = require("../schemas/launch-plan/v1.schema.json");
 
 export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v0";
 export const MANIFEST_SCHEMA = "launchrally.dev/manifest/v1";
@@ -15,6 +16,7 @@ export const EVIDENCE_INDEX_SCHEMA = "launchrally.dev/evidence-index/v1";
 export const AUDIT_BRIEF_SCHEMA = "launchrally.dev/audit-brief/v1";
 export const AUDIT_INTERACTION_SCHEMA = "launchrally.dev/audit-interaction/v1";
 export const INIT_INTERACTION_SCHEMA = "launchrally.dev/init-interaction/v1";
+export const LAUNCH_PLAN_SCHEMA = "launchrally.dev/launch-plan/v1";
 
 function jsonType(value) {
   if (value === null) return "null";
@@ -94,6 +96,15 @@ export function assertValidReportPackage(source) {
   if (!valid) {
     const error = new Error("The saved Audit JSON is incomplete or invalid.");
     error.code = "invalid_report_package";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidLaunchPlan(plan) {
+  if (!validatesSchema(plan, launchPlanSchema)) {
+    const error = new Error("The Launch Plan is incomplete or invalid.");
+    error.code = "invalid_launch_plan";
     throw error;
   }
   return true;

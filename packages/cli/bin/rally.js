@@ -8,6 +8,7 @@ import {
   createNotImplementedResult,
   runAudit,
   runInit,
+  runPlan,
 } from "@launchrally/core";
 
 const VERSION = "0.1.0";
@@ -180,6 +181,53 @@ function renderHumanInit(value) {
   return lines.join("\n");
 }
 
+function renderHumanPlan(value) {
+  const lines = [
+    "LaunchRally Read-only Launch Plan",
+    `Source Report: ${value.source_report_id}`,
+    `Assessment: ${value.assessment}`,
+    "Read-only: no source, deployment, production, or Provider mutation is authorized.",
+    "",
+    "Confirmed Finding work",
+  ];
+  if (value.items.length === 0) lines.push("- None.");
+  for (const item of value.items) {
+    lines.push(
+      `${item.rank}. [${item.priority.toUpperCase()} ${item.severity.toUpperCase()}] ${item.check_id} — ${item.gating ? "RELEASE GATE" : "NON-GATING"}`,
+      `   What is wrong: ${item.problem}`,
+      `   Why it affects release: ${item.release_impact}`,
+      `   Remediation: ${item.remediation}`,
+      `   Investigate: ${item.investigation.risk_domain}`,
+      `   Required inputs: ${item.investigation.required_inputs.join(", ")}`,
+      `   Evidence targets: ${item.investigation.evidence_targets.join(", ") || "none recorded"}`,
+      `   Verification rules: ${item.investigation.verification_rules.join(" | ")}`,
+      `   Recollect: ${item.evidence_to_recollect.accepted_kinds.join(", ")} Evidence; minimum ${item.evidence_to_recollect.minimum_items}; ${item.evidence_to_recollect.instruction}`,
+    );
+  }
+  lines.push("", "Verification Gaps (not confirmed fixes)");
+  if (value.verification_gaps.length === 0) lines.push("- None.");
+  for (const gap of value.verification_gaps) {
+    lines.push(
+      `- [${gap.priority.toUpperCase()} ${gap.severity.toUpperCase()}] ${gap.check_id} — ${gap.work_type.toUpperCase()}`,
+      `  Reason: ${gap.reason}`,
+      `  Next: ${gap.next_action}`,
+    );
+  }
+  if (value.handoff) {
+    lines.push(
+      "",
+      "Remediation Handoff (explicitly requested)",
+      "Owner: host Agent",
+      ...value.handoff.instructions.map((instruction) => `- ${instruction}`),
+      `Provider write permission: ${value.handoff.authority.provider_write_permission.toUpperCase().replaceAll("_", " ")}`,
+      `Deployment write permission: ${value.handoff.authority.deployment_write_permission.toUpperCase().replaceAll("_", " ")}`,
+      `Production write permission: ${value.handoff.authority.production_write_permission.toUpperCase().replaceAll("_", " ")}`,
+    );
+  }
+  lines.push("", value.next.message);
+  return lines.join("\n");
+}
+
 function print(value) {
   if (json) {
     process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -196,6 +244,11 @@ function print(value) {
 
   if (value.operation === "init" && value.status === "needs_confirmation") {
     process.stdout.write(`${renderHumanInit(value)}\n`);
+    return;
+  }
+
+  if (value.operation === "plan" && value.status === "completed") {
+    process.stdout.write(`${renderHumanPlan(value)}\n`);
     return;
   }
 
@@ -229,7 +282,7 @@ function help() {
       "Commands:",
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
       "  init     Preview and confirm local adoption after a complete Audit Report",
-      "  plan     Reserved Phase 0 read-only planning workflow",
+      "  plan     Build a deterministic read-only Launch Plan from a current Report",
       "  verify   Reserved Phase 0 verification workflow",
       "  version  Print CLI and interaction contract versions",
     ].join("\n"),
@@ -304,7 +357,32 @@ async function main() {
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
   }
 
-  if (["plan", "verify"].includes(command)) {
+  if (command === "plan") {
+    let reportPackage;
+    const reportPath = optionValue("--report");
+    if (reportPath) {
+      try {
+        reportPackage = JSON.parse(await readFile(reportPath, "utf8"));
+      } catch {
+        const result = {
+          contract: CLI_INTERACTION_CONTRACT,
+          status: "execution_error",
+          operation: "plan",
+          error: "invalid_report_file",
+          message: "The saved Audit JSON could not be read and parsed.",
+        };
+        print(result);
+        return 2;
+      }
+    }
+    const result = runPlan(reportPackage, {
+      handoff_requested: args.includes("--handoff"),
+    });
+    print(result);
+    return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+  }
+
+  if (command === "verify") {
     print(createNotImplementedResult(command));
     return 2;
   }

@@ -146,6 +146,7 @@ export {
   POLICY_ENGINE_VERSION,
 } from "./policy-engine.js";
 export { runInit } from "./initialization.js";
+export { runPlan } from "./planning.js";
 
 export function createNotImplementedResult(operation) {
   return {
