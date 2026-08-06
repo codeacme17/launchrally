@@ -2,7 +2,7 @@
 
 LaunchRally is a local-first, open-source launch readiness audit and verification tool for repository-owning AI builders.
 
-This repository contains the first Phase 0 Audit and post-Report initialization paths. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, a policy-driven launch assessment, read-only public verification, approved Provider metadata reads, and preview-first local adoption. Plans and post-initialization verification are intentionally not implemented yet.
+This repository contains the first Phase 0 Audit, post-Report initialization, and read-only Launch Plan paths. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, a policy-driven launch assessment, read-only public verification, approved Provider metadata reads, preview-first local adoption, and deterministic remediation guidance. Post-remediation verification is intentionally not implemented yet.
 
 ## Quick start
 
@@ -22,6 +22,8 @@ The same deterministic policy result drives both the JSON Record and Markdown Vi
 Each completed Audit returns an immutable, time-stamped JSON Report Record, a Markdown Report View generated only from that Record, and a separately versioned Evidence Index. The Record captures its exact scope, permissions, execution disclosure, results, provenance, and limitations. Evidence is content-addressed and referenced by digest and collection metadata; normalized artifacts live in the Index rather than becoming uncontrolled Report content. The complete Audit remains in CLI output and no LaunchRally project file is written until the builder separately previews and confirms `init`.
 
 Save a completed Agent Mode Audit and pass it to `rally init --report <path>`. Initialization displays exact before/after contents, digests, and diffs for every proposed change. Only `--confirm confirm` applies the previewed `.launchrally` Manifest and ignore rules, exact CLI devDependency, and lockfile update. Declining, stale previews, and dependency-planning failures write nothing; interrupted partial writes are rolled back or recovered from the ignored transaction journal on the next `init`. LaunchRally never stages or commits these project-owned files.
+
+Pass the same saved current Audit to `rally plan --report <path>`. The versioned Launch Plan preserves the Report Action Queue order and explains each confirmed Finding, its declared-release impact, investigation locations, remediation guidance, and required Evidence recollection. Verification Gaps remain separate investigation or permission work. Planning performs no source, deployment, Provider, or production mutation. Only an explicit `--handoff` assigns local remediation to the host Agent; it grants no external write authority and directs the builder back to Verify.
 
 Cloudflare and Vercel have versioned, read-only Provider Adapters. Before approval, the Audit discloses the existing CLI executable, exact arguments, target, and allowlisted fields for each Provider. Successful reads become provenance-backed Machine Evidence for the catalog-declared Provider Check; missing tools or authentication and Adapter failures leave that Check Unverified. LaunchRally never installs a Provider tool, initiates login, supplies or retains credentials, or performs Provider writes.
 
@@ -55,7 +57,7 @@ test/
 - Environment values and raw package script commands are never included in Audit output.
 - Approved public probes and Cloudflare/Vercel Adapter reads are bounded, read-only, and retain only normalized evidence.
 - Report Records and Evidence Indexes are unique, frozen in-process, and never overwrite repository files.
-- `init` is available only from a saved completed Audit and always requires preview confirmation; `plan` and `verify` return an explicit `not_implemented` state.
+- `init` is available only from a saved completed Audit and always requires preview confirmation; `plan` is deterministic and read-only from a saved current Audit; `verify` returns an explicit `not_implemented` state.
 - Missing P0 coverage is always reported as a Verification Gap and cannot be treated as Passed or `Launch Ready`.
 
 ## Contribution flow

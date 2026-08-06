@@ -17,3 +17,5 @@ Read `contract`, `status`, `operation`, and `interaction.schema_version` before 
 Do not collapse a Check failure, denied permission, missing Evidence, and execution error into one result. A denied permission completes as an explicit Verification Gap. A passing implemented Check does not override incomplete P0 coverage.
 
 Initialization interaction uses `launchrally.dev/init-interaction/v1`. Read the exact `preview.changes`, preserve `interaction.resume_token`, and return only `confirm` or `decline`. Never infer approval from a completed Audit.
+
+Planning uses `launchrally.dev/launch-plan/v1`. Supply a saved complete current Audit with `--report`. Read `items` in rank order and keep `verification_gaps` separate. Confirm `read_only` and every `effects` value before presenting the Plan. Pass `--handoff` only after an explicit user request for host-Agent local remediation; the handoff grants no Provider, deployment, or production write permission and always returns to Verify.

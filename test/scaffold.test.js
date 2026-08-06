@@ -507,13 +507,13 @@ test("audit errors never expose filesystem details or secret-like values", async
   );
 });
 
-test("reserved workflows return not_implemented", async () => {
+test("the remaining reserved Verify workflow returns not_implemented", async () => {
   await assert.rejects(
-    execFileAsync(process.execPath, [cli, "plan", "--json"], { cwd: root }),
+    execFileAsync(process.execPath, [cli, "verify", "--json"], { cwd: root }),
     (error) => {
       const result = JSON.parse(error.stdout);
       assert.equal(result.status, "not_implemented");
-      assert.equal(result.operation, "plan");
+      assert.equal(result.operation, "verify");
       return true;
     },
   );
@@ -530,6 +530,7 @@ test("plugin manifests and public schemas are valid JSON", async () => {
     "packages/contracts/schemas/audit-brief/v1.schema.json",
     "packages/contracts/schemas/audit-interaction/v1.schema.json",
     "packages/contracts/schemas/init-interaction/v1.schema.json",
+    "packages/contracts/schemas/launch-plan/v1.schema.json",
   ];
 
   for (const relative of files) {
