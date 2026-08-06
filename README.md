@@ -2,7 +2,7 @@
 
 LaunchRally is a local-first, open-source launch readiness audit and verification tool for repository-owning AI builders.
 
-This repository contains the first Phase 0 local Audit tracer. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, and one deterministic Web baseline Check. Production evidence collectors, initialization writes, plans, and the verification engine are intentionally not implemented yet.
+This repository contains the first Phase 0 Audit path. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, read-only public verification, and approved Provider metadata reads. Initialization writes, plans, and the full verification engine are intentionally not implemented yet.
 
 ## Quick start
 
@@ -16,6 +16,8 @@ npm run rally -- audit --json
 The first Audit invocation performs a Local Safe Scan and returns a versioned Audit Brief interaction. Unknown release intent becomes typed input, inferred values remain candidates until the builder confirms the complete Check plan, and public or Provider permissions are requested as separate boundaries. Resume tokens preserve repository scope and earlier decisions without repository writes.
 
 After explicit confirmation and permission decisions, the Audit checks for a dependency lockfile through the Web Check Catalog path. A passing baseline remains `Inconclusive` because P0 coverage is incomplete; a failed baseline is `No Go`. Denied permissions become explicit Verification Gaps rather than aborting the Audit.
+
+Cloudflare and Vercel have versioned, read-only Provider Adapters. Before approval, the Audit discloses the existing CLI executable, exact arguments, target, and allowlisted fields for each Provider. LaunchRally never installs a Provider tool, initiates login, supplies or retains credentials, or performs Provider writes; missing tools or authentication and Adapter failures become Verification Gaps.
 
 The Local Safe Scan collects provenance-backed facts from supported source and configuration files without retaining their contents in facts or outputs. It respects repository ignore rules and built-in exclusions for dependencies and build outputs, rejects binary and oversized artifacts, never follows symlinks, and stops at nested repository boundaries. Environment files are the deliberate ignore-rule exception: even a gitignored `.env*` file contributes variable names only. Package scripts likewise contribute script names rather than commands, so secret values cannot flow into snapshots, evidence, reports, terminal output, or errors.
 
@@ -45,7 +47,7 @@ test/
 - Local scan, public verification, and each Provider read are distinct authorization boundaries.
 - Local facts include their repository-relative source path and scanner policy version.
 - Environment values and raw package script commands are never included in Audit output.
-- Provider access and network checks are not implemented.
+- Approved public probes and Cloudflare/Vercel Adapter reads are bounded, read-only, and retain only normalized evidence.
 - `init`, `plan`, and `verify` return an explicit `not_implemented` state.
 - Missing P0 coverage is always reported as a Verification Gap, so the local tracer cannot return `Launch Ready`.
 

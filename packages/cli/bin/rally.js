@@ -106,6 +106,17 @@ function renderHumanInteraction(value) {
       ...brief.public_verification.probes.map(
         (probe) => `  - ${probe.method} ${probe.host}:${probe.port}${probe.path} — ${probe.purpose}`,
       ),
+      "Provider Adapter plan:",
+      ...(brief.provider_adapters.requests.length > 0
+        ? brief.provider_adapters.requests.flatMap((request) => [
+          `  - ${request.provider}: ${request.adapter_version ?? "no adapter"}`,
+          `    Target: ${request.target}`,
+          `    Fields: ${request.requested_fields.join(", ")}`,
+          `    Command: ${request.command
+            ? [request.command.executable, ...request.command.arguments].join(" ")
+            : "none"}`,
+        ])
+        : ["  - None requested"]),
       "Planned Checks:",
       ...brief.planned_checks.map(
         (check) => `  - ${check.check_id} [${check.permission_id}]`,
@@ -129,7 +140,9 @@ function renderHumanInteraction(value) {
       ...value.request.permissions.map((permission) =>
         permission.boundary === "public_network"
           ? `  - Public verification: ${permission.scope.targets.join(", ")}`
-          : `  - ${permission.scope.provider}: ${permission.scope.metadata.join(", ")}`,
+          : `  - ${permission.scope.provider}: target ${permission.scope.target}; fields ${permission.scope.requested_fields.join(", ")}; command ${permission.scope.command
+            ? [permission.scope.command.executable, ...permission.scope.command.arguments].join(" ")
+            : "none"}`,
       ),
       "Choose approved or denied independently for each permission ID.",
     );

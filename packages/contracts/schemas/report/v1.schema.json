@@ -34,11 +34,11 @@
     "catalog": { "$ref": "#/$defs/catalog" },
     "scope": {
       "type": "object",
-      "required": ["project_root", "project_type", "access", "public_verification", "excluded"],
+      "required": ["project_root", "project_type", "access", "public_verification", "provider_verification", "excluded"],
       "properties": {
         "project_root": { "type": "string", "minLength": 1 },
         "project_type": { "type": "string", "minLength": 1 },
-        "access": { "enum": ["local_read_only", "local_and_public_read_only"] },
+        "access": { "enum": ["local_read_only", "local_and_public_read_only", "local_and_provider_read_only", "local_public_and_provider_read_only"] },
         "public_verification": {
           "type": "object",
           "required": ["decision", "targets", "probe_ids"],
@@ -46,6 +46,29 @@
             "decision": { "enum": ["approved", "denied"] },
             "targets": { "type": "array", "items": { "type": "string", "format": "uri" }, "uniqueItems": true },
             "probe_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+          },
+          "additionalProperties": false
+        },
+        "provider_verification": {
+          "type": "object",
+          "required": ["contract_version", "requests"],
+          "properties": {
+            "contract_version": { "const": "provider-adapter-contract/v1" },
+            "requests": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["provider", "adapter_version", "target", "requested_fields", "decision"],
+                "properties": {
+                  "provider": { "type": "string", "minLength": 1 },
+                  "adapter_version": { "type": ["string", "null"] },
+                  "target": { "type": "string", "minLength": 1 },
+                  "requested_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+                  "decision": { "enum": ["approved", "denied"] }
+                },
+                "additionalProperties": false
+              }
+            }
           },
           "additionalProperties": false
         },
@@ -59,12 +82,16 @@
     },
     "results": {
       "type": "object",
-      "required": ["checks", "public_evidence", "action_queue", "verification_gaps", "domain_coverage", "coverage_summary"],
+      "required": ["checks", "public_evidence", "provider_evidence", "action_queue", "verification_gaps", "domain_coverage", "coverage_summary"],
       "properties": {
         "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } },
         "public_evidence": {
           "type": "array",
           "items": { "$ref": "#/$defs/publicObservation" }
+        },
+        "provider_evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/providerMachineEvidence" }
         },
         "action_queue": { "type": "array", "items": { "$ref": "#/$defs/action" } },
         "verification_gaps": {
@@ -127,7 +154,8 @@
           },
           "additionalProperties": false
         },
-        { "$ref": "#/$defs/publicObservation" }
+        { "$ref": "#/$defs/publicObservation" },
+        { "$ref": "#/$defs/providerMachineEvidence" }
       ]
     },
     "publicObservation": {
@@ -155,6 +183,34 @@
           "properties": {
             "collector": { "const": "public-verification/v1" },
             "exact_target": { "type": "string", "format": "uri" },
+            "collected_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "providerMachineEvidence": {
+      "type": "object",
+      "required": ["kind", "provider", "adapter_version", "target", "requested_fields", "facts", "collected_at", "provenance"],
+      "properties": {
+        "kind": { "const": "machine_evidence" },
+        "provider": { "enum": ["cloudflare", "vercel"] },
+        "adapter_version": { "enum": ["cloudflare-read/v1", "vercel-read/v1"] },
+        "target": { "type": "string", "minLength": 1 },
+        "requested_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "facts": { "type": "object" },
+        "collected_at": { "type": "string", "format": "date-time" },
+        "provenance": {
+          "type": "object",
+          "required": ["collector", "provider", "adapter_version", "exact_target", "executable", "arguments", "collected_at"],
+          "properties": {
+            "collector": { "const": "provider-adapter-contract/v1" },
+            "provider": { "enum": ["cloudflare", "vercel"] },
+            "adapter_version": { "enum": ["cloudflare-read/v1", "vercel-read/v1"] },
+            "exact_target": { "type": "string", "minLength": 1 },
+            "executable": { "enum": ["wrangler", "vercel"] },
+            "arguments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
             "collected_at": { "type": "string", "format": "date-time" }
           },
           "additionalProperties": false
@@ -197,7 +253,7 @@
         "risk_domain": { "$ref": "#/$defs/riskDomain" },
         "priority": { "$ref": "#/$defs/priority" },
         "status": { "const": "unverified" },
-        "reason_code": { "enum": ["permission_denied", "missing_required_input", "conflicting_evidence", "applicability_unresolved", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence"] },
+        "reason_code": { "enum": ["permission_denied", "missing_required_input", "conflicting_evidence", "applicability_unresolved", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence", "missing_provider_tool", "missing_provider_login", "unsupported_provider", "adapter_error"] },
         "reason": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
