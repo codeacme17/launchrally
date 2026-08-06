@@ -505,10 +505,12 @@ function publicPermission(authorizationPlan) {
 
 function unavailablePublicVerification(brief, authorizationPlan, subject) {
   const permission = publicPermission(authorizationPlan);
-  if (!permission || permission.decision === "denied") {
+  if (!permission || permission.decision !== "approved") {
     return unverified(
-      "permission_denied",
-      `Public ${subject} verification was not authorized for: ${brief.production_targets.values.join(", ")}.`,
+      permission?.decision === "denied" ? "permission_denied" : "execution_skipped",
+      permission?.decision === "denied"
+        ? `Public ${subject} verification was not authorized for: ${brief.production_targets.values.join(", ")}.`
+        : `Public ${subject} verification remains undecided and was not run for: ${brief.production_targets.values.join(", ")}.`,
     );
   }
   return unverified(
@@ -527,7 +529,7 @@ function publicVerificationResult({
   passedSummary,
 }) {
   const permission = publicPermission(authorizationPlan);
-  if (!permission || permission.decision === "denied") {
+  if (!permission || permission.decision !== "approved") {
     return unavailablePublicVerification(brief, authorizationPlan, subject);
   }
   const evidence = publicEvidence.filter((item) => kinds.includes(item.probe_kind));

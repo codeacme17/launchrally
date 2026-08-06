@@ -36,6 +36,12 @@ async function runAudit(fixture, options = []) {
   return JSON.parse(stdout);
 }
 
+function publicEvidence(result) {
+  return result.evidence_index.entries
+    .filter((entry) => entry.evidence_kind === "public_observation")
+    .map((entry) => entry.normalized_artifact);
+}
+
 const CONFIRMED_ANSWERS = Object.freeze({
   intended_environment: "production",
   production_targets: ["https://example.com"],
@@ -332,7 +338,10 @@ test("approved public probes collect fresh read-only evidence through the CLI co
       provider_roles: [],
       support_layers: [],
     });
-    const evidence = result.report.results.public_evidence;
+    const evidence = publicEvidence(result);
+    const publicEntries = result.evidence_index.entries.filter(
+      (entry) => entry.evidence_kind === "public_observation",
+    );
 
     assert.deepEqual(evidence.map(({ probe_kind, status, outcome }) => ({
       probe_kind,
@@ -348,6 +357,14 @@ test("approved public probes collect fresh read-only evidence through the CLI co
     assert.ok(evidence.every((item) => item.target.startsWith(target.slice(0, -1))));
     assert.ok(evidence.every((item) => !Number.isNaN(Date.parse(item.collected_at))));
     assert.ok(evidence.every((item) => item.provenance.collector === "public-verification/v1"));
+    assert.equal(result.report.results.public_evidence_refs.length, evidence.length);
+    assert.deepEqual(
+      result.report.results.public_evidence_refs.map((reference) => reference.digest),
+      publicEntries.map((entry) => entry.digest),
+    );
+    assert.ok(publicEntries.every((entry) => entry.freshness_class === "audit_time"));
+    assert.ok(publicEntries.every((entry) => entry.redaction_state === "normalized"));
+    assert.doesNotMatch(JSON.stringify(result.report.results), /public_observation/u);
     assert.equal(
       result.report.results.checks.find(
         (check) => check.check_id === "web.public.availability",
@@ -369,7 +386,6 @@ test("approved public probes collect fresh read-only evidence through the CLI co
     assert.deepEqual(result.report.scope.public_verification, {
       decision: "approved",
       targets: [target],
-      probe_ids: evidence.map((item) => item.probe_id),
     });
     assert.equal(result.report.scope.access, "local_and_public_read_only");
     assert.ok(!result.report.scope.excluded.includes("public_network"));
@@ -381,7 +397,7 @@ test("approved public probes collect fresh read-only evidence through the CLI co
       support_layers: [],
     });
     assert.notDeepEqual(
-      secondResult.report.results.public_evidence.map((item) => item.collected_at),
+      publicEvidence(secondResult).map((item) => item.collected_at),
       evidence.map((item) => item.collected_at),
     );
     assert.deepEqual(requests, [
@@ -422,7 +438,7 @@ test("public verification records redirects without following undisclosed paths"
       provider_roles: [],
       support_layers: [],
     });
-    const redirects = result.report.results.public_evidence.filter(
+    const redirects = publicEvidence(result).filter(
       (item) => item.outcome === "target_mismatch",
     );
 
@@ -463,7 +479,7 @@ test("timeouts are bounded and partial reachability becomes reasoned gaps", asyn
       support_layers: [],
     });
     const elapsed = Date.now() - startedAt;
-    const timeouts = result.report.results.public_evidence.filter(
+    const timeouts = publicEvidence(result).filter(
       (item) => item.outcome === "timeout",
     );
 
@@ -505,7 +521,7 @@ test("certificate failures are deterministic and never become Passed", async () 
       provider_roles: [],
       support_layers: [],
     });
-    const tlsEvidence = result.report.results.public_evidence.find(
+    const tlsEvidence = publicEvidence(result).find(
       (item) => item.probe_kind === "tls",
     );
 
@@ -537,12 +553,12 @@ test("unreachable targets return complete deterministic evidence", async () => {
     provider_roles: [],
     support_layers: [],
   });
-  const unreachable = result.report.results.public_evidence.filter(
+  const unreachable = publicEvidence(result).filter(
     (item) => item.outcome === "unreachable",
   );
 
   assert.equal(result.status, "completed");
-  assert.equal(result.report.results.public_evidence.length, 4);
+  assert.equal(publicEvidence(result).length, 4);
   assert.equal(unreachable.length, 3);
   assert.ok(unreachable.every((item) => item.status === "failed"));
   assert.equal(
@@ -580,7 +596,7 @@ test("public probe concurrency is bounded per Audit", async () => {
 
     assert.equal(result.status, "completed");
     assert.ok(maxActiveRequests <= 4, `Observed ${maxActiveRequests} concurrent requests`);
-    assert.ok(result.report.results.public_evidence
+    assert.ok(publicEvidence(result)
       .filter((item) => item.probe_kind === "journey")
       .every((item) =>
         item.status === "unverified"
@@ -707,7 +723,7 @@ test("permission decisions resume independently and denials become Unverified ga
     ).reason_code,
     "missing_provider_tool",
   );
-  assert.deepEqual(completed.report.results.provider_evidence, []);
+  assert.deepEqual(completed.report.results.provider_evidence_refs, []);
   assert.deepEqual(completed.report.provenance.active_adapter_versions, ["vercel-read/v1"]);
   assert.deepEqual(completed.report.catalog.versions.active_adapters, ["vercel-read/v1"]);
 });

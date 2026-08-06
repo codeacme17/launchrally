@@ -17,6 +17,8 @@ The first Audit invocation performs a Local Safe Scan and returns a versioned Au
 
 After explicit confirmation and permission decisions, the Audit checks for a dependency lockfile through the Web Check Catalog path. A passing baseline remains `Inconclusive` because P0 coverage is incomplete; a failed baseline is `No Go`. Denied permissions become explicit Verification Gaps rather than aborting the Audit.
 
+Each completed Audit returns an immutable, time-stamped JSON Report Record, a Markdown Report View generated only from that Record, and a separately versioned Evidence Index. The Record captures its exact scope, permissions, execution disclosure, results, provenance, and limitations. Evidence is content-addressed and referenced by digest and collection metadata; normalized artifacts live in the Index rather than becoming uncontrolled Report content. Before `init` exists, the complete package remains in CLI output and no LaunchRally files are written into the repository.
+
 Cloudflare and Vercel have versioned, read-only Provider Adapters. Before approval, the Audit discloses the existing CLI executable, exact arguments, target, and allowlisted fields for each Provider. LaunchRally never installs a Provider tool, initiates login, supplies or retains credentials, or performs Provider writes; missing tools or authentication and Adapter failures become Verification Gaps.
 
 The Local Safe Scan collects provenance-backed facts from supported source and configuration files without retaining their contents in facts or outputs. It respects repository ignore rules and built-in exclusions for dependencies and build outputs, rejects binary and oversized artifacts, never follows symlinks, and stops at nested repository boundaries. Environment files are the deliberate ignore-rule exception: even a gitignored `.env*` file contributes variable names only. Package scripts likewise contribute script names rather than commands, so secret values cannot flow into snapshots, evidence, reports, terminal output, or errors.
@@ -48,6 +50,7 @@ test/
 - Local facts include their repository-relative source path and scanner policy version.
 - Environment values and raw package script commands are never included in Audit output.
 - Approved public probes and Cloudflare/Vercel Adapter reads are bounded, read-only, and retain only normalized evidence.
+- Report Records and Evidence Indexes are unique, frozen in-process, and never overwrite repository files.
 - `init`, `plan`, and `verify` return an explicit `not_implemented` state.
 - Missing P0 coverage is always reported as a Verification Gap, so the local tracer cannot return `Launch Ready`.
 

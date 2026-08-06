@@ -148,6 +148,22 @@ test("denied, unsupported, missing-tool, missing-login, and malformed responses 
   assert.equal(calls, 0);
   assert.equal(denied.verification_gaps[0].reason_code, "permission_denied");
 
+  const pending = await executeProviderAdapters({
+    cwd: "/tmp/example",
+    plan: deniedPlan,
+    authorization_plan: [{
+      permission_id: "provider_read:cloudflare",
+      boundary: "provider_read",
+      decision: "pending",
+    }],
+    runner: async () => {
+      calls += 1;
+      return { stdout: "[]" };
+    },
+  });
+  assert.equal(calls, 0);
+  assert.equal(pending.verification_gaps[0].reason_code, "execution_skipped");
+
   const unsupportedPlan = createProviderAdapterPlan([{ provider: "netlify", role: "deployment" }]);
   const unsupported = await executeProviderAdapters({
     cwd: "/tmp/example",

@@ -190,11 +190,19 @@ export async function executeProviderAdapters({
 
   for (const request of plan.requests) {
     const decision = decisions.get(request.permission_id);
-    if (decision !== "approved") {
+    if (decision === "denied") {
       verification_gaps.push(gap(
         request,
         "permission_denied",
         `Provider read permission was denied for ${request.provider} target ${request.target}.`,
+      ));
+      continue;
+    }
+    if (decision !== "approved") {
+      verification_gaps.push(gap(
+        request,
+        "execution_skipped",
+        `Provider read permission remains undecided for ${request.provider} target ${request.target}; no Provider command was run.`,
       ));
       continue;
     }

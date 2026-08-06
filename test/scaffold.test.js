@@ -197,7 +197,7 @@ test("audit renders the Snapshot, Check, gap, and limitation for a person", asyn
 
   assert.match(
     stdout,
-    /Initial Readiness Snapshot[\s\S]*Project: terminal-web \(web\)[\s\S]*PASS \[P0\] web\.baseline\.lockfile[\s\S]*Assessment: Inconclusive[\s\S]*UNVERIFIED \[P0\] web\.public\.availability[\s\S]*Limitations:/,
+    /LaunchRally Audit Report[\s\S]*Assessment: Inconclusive[\s\S]*Initial Readiness Snapshot[\s\S]*Project: terminal-web \(web\)[\s\S]*PASS \[P0\] web\.baseline\.lockfile[\s\S]*UNVERIFIED \[P0\] web\.public\.availability[\s\S]*Limitations/,
   );
 });
 
@@ -251,7 +251,7 @@ test("audit renders obvious blockers and remediation actions for a person", asyn
 
   assert.match(
     stdout,
-    /Obvious Blockers:\n  None[\s\S]*Action Queue:\n  \[P0\] web\.baseline\.lockfile — Commit the package manager lockfile/,
+    /Obvious Blockers\n\n- None[\s\S]*Action Queue\n\n- \[P0\] web\.baseline\.lockfile — Commit the package manager lockfile/,
   );
 });
 
@@ -280,7 +280,7 @@ test("audit distinguishes an invalid package manifest from a missing one", async
   assert.doesNotMatch(terminalOutput, new RegExp(SECRET_SENTINEL));
   assert.match(
     terminalOutput,
-    /Obvious Blockers:\n  - package\.json exists but could not be read as a valid package manifest\./,
+    /Obvious Blockers\n\n- package\.json exists but could not be read as a valid package manifest\./,
   );
 });
 
@@ -520,6 +520,8 @@ test("plugin manifests and public schemas are valid JSON", async () => {
     "adapters/claude/launchrally/.claude-plugin/plugin.json",
     "packages/contracts/schemas/manifest/v1.schema.json",
     "packages/contracts/schemas/report/v1.schema.json",
+    "packages/contracts/schemas/report-view/v1.schema.json",
+    "packages/contracts/schemas/evidence-index/v1.schema.json",
     "packages/contracts/schemas/audit-brief/v1.schema.json",
     "packages/contracts/schemas/audit-interaction/v1.schema.json",
   ];
