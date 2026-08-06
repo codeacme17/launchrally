@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { access, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import test from "node:test";
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(root, "packages", "cli", "bin", "rally.js");
+const SECRET_SENTINEL = "lr_secret_DO_NOT_EXPOSE_7f3d9a";
 
 async function snapshotFiles(directory, relative = "") {
   const entries = await readdir(path.join(directory, relative), { withFileTypes: true });
@@ -98,8 +99,38 @@ test("audit returns a local Initial Readiness Snapshot and Web baseline result",
     type: "web",
     package_manifest: { path: "package.json", status: "valid" },
     package_manager: "npm",
-    scripts: { build: "vite build" },
+    script_names: ["build"],
     detected_files: ["package.json", "package-lock.json"],
+    facts: [
+      {
+        kind: "lockfile",
+        package_manager: "npm",
+        provenance: { path: "package-lock.json", collector: "local_safe_scan/v1" },
+      },
+      {
+        kind: "package_manifest",
+        status: "valid",
+        name: "fixture-web",
+        script_names: ["build"],
+        provenance: { path: "package.json", collector: "local_safe_scan/v1" },
+      },
+    ],
+    safe_scan: {
+      policy_version: "local_safe_scan/v1",
+      exclusions: {
+        ignored: 0,
+        dependencies: 0,
+        build_outputs: 0,
+        binary: 0,
+        large: 0,
+        unsupported: 0,
+        symlinks: 0,
+        nested_repositories: 0,
+        outside_root: 0,
+        unreadable: 0,
+      },
+      errors: [],
+    },
   });
   assert.deepEqual(result.snapshot.obvious_blockers, []);
   assert.deepEqual(result.snapshot.next, {
@@ -162,6 +193,22 @@ test("audit reports a failed Web baseline Check when the lockfile is missing", a
   assert.equal(result.report.assessment, "no_go");
 });
 
+test("audit recognizes the binary Bun lockfile without reading its contents", async () => {
+  const fixture = await createWebFixture("bun-web");
+  await writeFile(
+    path.join(fixture, "bun.lockb"),
+    Buffer.concat([Buffer.from([0]), Buffer.from(SECRET_SENTINEL)]),
+  );
+
+  const stdout = await runCliAudit(fixture, { json: true });
+  const result = JSON.parse(stdout);
+
+  assert.equal(result.snapshot.project.package_manager, "bun");
+  assert.ok(result.snapshot.project.detected_files.includes("bun.lockb"));
+  assert.equal(result.report.results.checks[0].status, "passed");
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(SECRET_SENTINEL));
+});
+
 test("audit renders obvious blockers and remediation actions for a person", async () => {
   const fixture = await createWebFixture("actionable-web");
   const stdout = await runCliAudit(fixture);
@@ -174,7 +221,10 @@ test("audit renders obvious blockers and remediation actions for a person", asyn
 
 test("audit distinguishes an invalid package manifest from a missing one", async () => {
   const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-invalid-manifest-"));
-  await writeFile(path.join(fixture, "package.json"), "{ invalid json");
+  await writeFile(
+    path.join(fixture, "package.json"),
+    `{ "token": "${SECRET_SENTINEL}", invalid json`,
+  );
 
   const stdout = await runCliAudit(fixture, { json: true });
   const result = JSON.parse(stdout);
@@ -188,11 +238,231 @@ test("audit distinguishes an invalid package manifest from a missing one", async
   assert.deepEqual(result.snapshot.obvious_blockers, [
     "package.json exists but could not be read as a valid package manifest.",
   ]);
+  assert.doesNotMatch(stdout, new RegExp(SECRET_SENTINEL));
 
   const terminalOutput = await runCliAudit(fixture);
+  assert.doesNotMatch(terminalOutput, new RegExp(SECRET_SENTINEL));
   assert.match(
     terminalOutput,
     /Obvious Blockers:\n  - package\.json exists but could not be read as a valid package manifest\./,
+  );
+});
+
+test("audit retains only safe local facts with provenance", async () => {
+  const fixture = await createWebFixture("safe-facts", { withLockfile: true });
+  await writeFile(
+    path.join(fixture, "package.json"),
+    JSON.stringify({
+      name: "safe-facts",
+      scripts: {
+        build: "vite build",
+        deploy: `deploy --token=${SECRET_SENTINEL}`,
+      },
+    }),
+  );
+  await writeFile(
+    path.join(fixture, ".env"),
+    [
+      `API_TOKEN=${SECRET_SENTINEL}`,
+      `export DATABASE_URL="postgres://${SECRET_SENTINEL}@localhost/db"`,
+      "EMPTY=",
+      "# COMMENTED_SECRET=must-not-be-a-fact",
+    ].join("\n"),
+  );
+  await writeFile(path.join(fixture, ".gitignore"), ".env\n");
+  await mkdir(path.join(fixture, "src"));
+  await writeFile(path.join(fixture, "src", "main.js"), "export const ready = true;\n");
+  await writeFile(path.join(fixture, "vite.config.js"), "export default {};\n");
+
+  const before = await snapshotFiles(fixture);
+  const networkGuard = await createNetworkGuard();
+  const stdout = await runCliAudit(fixture, {
+    json: true,
+    env: {
+      ...process.env,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require=${networkGuard}`.trim(),
+    },
+  });
+  const result = JSON.parse(stdout);
+  const serialized = JSON.stringify(result);
+
+  assert.doesNotMatch(serialized, new RegExp(SECRET_SENTINEL));
+  assert.deepEqual(result.snapshot.project.script_names, ["build", "deploy"]);
+  assert.equal("scripts" in result.snapshot.project, false);
+
+  const environmentFact = result.snapshot.project.facts.find(
+    (fact) => fact.kind === "environment_variables",
+  );
+  assert.deepEqual(environmentFact, {
+    kind: "environment_variables",
+    names: ["API_TOKEN", "DATABASE_URL", "EMPTY"],
+    provenance: {
+      path: ".env",
+      collector: "local_safe_scan/v1",
+    },
+  });
+
+  const factPaths = result.snapshot.project.facts.map((fact) => fact.provenance.path);
+  assert.ok(factPaths.includes("src/main.js"));
+  assert.ok(factPaths.includes("vite.config.js"));
+  assert.ok(
+    result.snapshot.project.facts.every(
+      (fact) => fact.provenance.collector === "local_safe_scan/v1" && fact.provenance.path,
+    ),
+  );
+  assert.equal(result.report.provenance.scan_policy_version, "local_safe_scan/v1");
+
+  const terminalOutput = await runCliAudit(fixture);
+  assert.doesNotMatch(terminalOutput, new RegExp(SECRET_SENTINEL));
+  assert.deepEqual(await snapshotFiles(fixture), before);
+});
+
+test("audit excludes ignored, generated, binary, large, and unsupported content", async () => {
+  const fixture = await createWebFixture("safe-exclusions", { withLockfile: true });
+  await writeFile(
+    path.join(fixture, ".gitignore"),
+    ["ignored/", "secrets-[0-9].js", "\\#literal.js", "\\!literal.js"].join("\n"),
+  );
+
+  await mkdir(path.join(fixture, "ignored"));
+  await writeFile(path.join(fixture, "ignored", "ignored.js"), SECRET_SENTINEL);
+  await writeFile(path.join(fixture, "secrets-7.js"), SECRET_SENTINEL);
+  await writeFile(path.join(fixture, "#literal.js"), SECRET_SENTINEL);
+  await writeFile(path.join(fixture, "!literal.js"), SECRET_SENTINEL);
+  await mkdir(path.join(fixture, "node_modules", "fixture-package"), { recursive: true });
+  await writeFile(
+    path.join(fixture, "node_modules", "fixture-package", "index.js"),
+    SECRET_SENTINEL,
+  );
+  await mkdir(path.join(fixture, "dist"));
+  await writeFile(path.join(fixture, "dist", "bundle.js"), SECRET_SENTINEL);
+  await writeFile(
+    path.join(fixture, "binary.js"),
+    Buffer.concat([Buffer.from([0xff, 0xfe, 0xfd]), Buffer.from(SECRET_SENTINEL)]),
+  );
+  await writeFile(
+    path.join(fixture, "large.js"),
+    `${SECRET_SENTINEL}${"x".repeat(256 * 1024)}`,
+  );
+  await writeFile(path.join(fixture, "notes.txt"), SECRET_SENTINEL);
+
+  const stdout = await runCliAudit(fixture, { json: true });
+  const result = JSON.parse(stdout);
+  const serialized = JSON.stringify(result);
+  const factPaths = result.snapshot.project.facts.map((fact) => fact.provenance.path);
+
+  assert.doesNotMatch(serialized, new RegExp(SECRET_SENTINEL));
+  assert.ok(!factPaths.includes("ignored/ignored.js"));
+  assert.ok(!factPaths.includes("node_modules/fixture-package/index.js"));
+  assert.ok(!factPaths.includes("dist/bundle.js"));
+  assert.ok(!factPaths.includes("binary.js"));
+  assert.ok(!factPaths.includes("large.js"));
+  assert.ok(!factPaths.includes("notes.txt"));
+  assert.deepEqual(result.snapshot.project.safe_scan.exclusions, {
+    ignored: 4,
+    dependencies: 1,
+    build_outputs: 1,
+    binary: 1,
+    large: 1,
+    unsupported: 1,
+    symlinks: 0,
+    nested_repositories: 0,
+    outside_root: 0,
+    unreadable: 0,
+  });
+});
+
+test("audit fails closed when repository ignore rules cannot be read safely", async () => {
+  const fixture = await createWebFixture("unsafe-ignore", { withLockfile: true });
+  await writeFile(
+    path.join(fixture, ".gitignore"),
+    `${SECRET_SENTINEL}${"x".repeat(256 * 1024)}`,
+  );
+  await writeFile(path.join(fixture, "source.js"), SECRET_SENTINEL);
+
+  const stdout = await runCliAudit(fixture, { json: true });
+  const result = JSON.parse(stdout);
+
+  assert.doesNotMatch(stdout, new RegExp(SECRET_SENTINEL));
+  assert.deepEqual(result.snapshot.project.facts, []);
+  assert.equal(result.snapshot.project.safe_scan.exclusions.large, 1);
+});
+
+test("audit never follows symlinks or enters nested repositories", async () => {
+  const fixture = await createWebFixture("safe-boundaries", { withLockfile: true });
+  const outside = await mkdtemp(path.join(os.tmpdir(), "launchrally-outside-"));
+  await writeFile(path.join(outside, "outside.js"), SECRET_SENTINEL);
+  await writeFile(path.join(outside, ".env"), `ESCAPED_TOKEN=${SECRET_SENTINEL}\n`);
+
+  await symlink(outside, path.join(fixture, "linked-directory"));
+  await symlink(path.join(outside, "outside.js"), path.join(fixture, "linked.js"));
+
+  const nested = path.join(fixture, "nested-project");
+  await mkdir(path.join(nested, ".git"), { recursive: true });
+  await writeFile(path.join(nested, "index.js"), SECRET_SENTINEL);
+  await writeFile(path.join(nested, ".env"), `NESTED_TOKEN=${SECRET_SENTINEL}\n`);
+
+  const stdout = await runCliAudit(fixture, { json: true });
+  const result = JSON.parse(stdout);
+  const serialized = JSON.stringify(result);
+  const factPaths = result.snapshot.project.facts.map((fact) => fact.provenance.path);
+
+  assert.doesNotMatch(serialized, new RegExp(SECRET_SENTINEL));
+  assert.ok(!factPaths.some((factPath) => factPath.startsWith("linked")));
+  assert.ok(!factPaths.some((factPath) => factPath.startsWith("nested-project/")));
+  assert.equal(result.snapshot.project.safe_scan.exclusions.symlinks, 2);
+  assert.equal(result.snapshot.project.safe_scan.exclusions.nested_repositories, 1);
+  assert.equal(result.snapshot.project.safe_scan.exclusions.outside_root, 0);
+});
+
+test("audit rejects a symlink selected as its root", async () => {
+  const outside = await mkdtemp(path.join(os.tmpdir(), "launchrally-root-target-"));
+  await writeFile(path.join(outside, ".env"), `ROOT_TOKEN=${SECRET_SENTINEL}\n`);
+  const linkDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-root-link-"));
+  const linkedRoot = path.join(linkDirectory, "audit-root");
+  await symlink(outside, linkedRoot);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [cli, "audit", "--json", "--cwd", linkedRoot],
+      { cwd: root },
+    ),
+    (error) => {
+      const output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+      assert.doesNotMatch(output, new RegExp(SECRET_SENTINEL));
+      const result = JSON.parse(error.stdout);
+      assert.equal(result.error, "local_safe_scan_failed");
+      return true;
+    },
+  );
+});
+
+test("audit errors never expose filesystem details or secret-like values", async () => {
+  const missingRoot = path.join(
+    os.tmpdir(),
+    `launchrally-missing-${SECRET_SENTINEL}`,
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [cli, "audit", "--json", "--cwd", missingRoot],
+      { cwd: root },
+    ),
+    (error) => {
+      const output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+      assert.doesNotMatch(output, new RegExp(SECRET_SENTINEL));
+      const result = JSON.parse(error.stdout);
+      assert.deepEqual(result, {
+        contract: "launchrally.dev/cli/v0",
+        status: "execution_error",
+        operation: "audit",
+        error: "local_safe_scan_failed",
+        message: "Local Safe Scan could not complete safely.",
+      });
+      return true;
+    },
   );
 });
 

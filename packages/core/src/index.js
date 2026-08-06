@@ -1,4 +1,3 @@
-import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
@@ -7,13 +6,11 @@ import {
   REPORT_SCHEMA,
 } from "@launchrally/contracts";
 
-const LOCKFILES = [
-  ["pnpm-lock.yaml", "pnpm"],
-  ["package-lock.json", "npm"],
-  ["yarn.lock", "yarn"],
-  ["bun.lock", "bun"],
-  ["bun.lockb", "bun"],
-];
+import {
+  LOCAL_SAFE_SCAN_POLICY,
+  scanRepository,
+  SUPPORTED_LOCKFILES,
+} from "./local-safe-scan.js";
 
 const WEB_CHECK_CATALOG = Object.freeze([
   {
@@ -25,7 +22,7 @@ const WEB_CHECK_CATALOG = Object.freeze([
     },
     run(project) {
       const lockfile = project.detected_files.find((file) =>
-        LOCKFILES.some(([candidate]) => candidate === file),
+        SUPPORTED_LOCKFILES.some(([candidate]) => candidate === file),
       );
 
       if (lockfile) {
@@ -50,65 +47,33 @@ const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
   "The P0 Web Check Catalog is incomplete, so this Audit cannot establish Launch Ready status.",
 ]);
 
-async function exists(filePath) {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readPackageManifest(cwd) {
-  const packagePath = path.join(cwd, "package.json");
-  if (!(await exists(packagePath))) return { status: "missing", manifest: null };
-
-  try {
-    const manifest = JSON.parse(await readFile(packagePath, "utf8"));
-    if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
-      return { status: "invalid", manifest: null };
-    }
-    return { status: "valid", manifest };
-  } catch {
-    return { status: "invalid", manifest: null };
-  }
-}
-
-function normalizeScripts(scripts) {
-  if (!scripts || typeof scripts !== "object" || Array.isArray(scripts)) return {};
-
-  return Object.fromEntries(
-    Object.entries(scripts)
-      .filter(([, command]) => typeof command === "string")
-      .sort(([left], [right]) => left.localeCompare(right)),
-  );
-}
-
 export async function discoverProject(cwd) {
-  const packageManifest = await readPackageManifest(cwd);
-  const packageJson = packageManifest.manifest;
-  let packageManager = "unknown";
-  const detectedFiles = [];
-
-  if (packageManifest.status !== "missing") detectedFiles.push("package.json");
-
-  for (const [lockfile, manager] of LOCKFILES) {
-    if (await exists(path.join(cwd, lockfile))) {
-      detectedFiles.push(lockfile);
-      if (packageManager === "unknown") packageManager = manager;
-    }
-  }
+  const scan = await scanRepository(cwd);
+  const packageFact = scan.facts.find(
+    (fact) => fact.kind === "package_manifest" && fact.provenance.path === "package.json",
+  );
+  const lockfileFacts = scan.facts.filter(
+    (fact) => fact.kind === "lockfile" && !fact.provenance.path.includes("/"),
+  );
+  const packageManifestStatus = packageFact?.status ?? "missing";
 
   return {
-    root: path.resolve(cwd),
-    name: typeof packageJson?.name === "string" && packageJson.name.length > 0
-      ? packageJson.name
-      : path.basename(path.resolve(cwd)),
-    type: packageManifest.status === "valid" ? "web" : "unknown",
-    package_manifest: { path: "package.json", status: packageManifest.status },
-    package_manager: packageManager,
-    scripts: normalizeScripts(packageJson?.scripts),
-    detected_files: detectedFiles,
+    root: scan.root,
+    name: packageFact?.name ?? path.basename(scan.root),
+    type: packageManifestStatus === "valid" ? "web" : "unknown",
+    package_manifest: { path: "package.json", status: packageManifestStatus },
+    package_manager: lockfileFacts[0]?.package_manager ?? "unknown",
+    script_names: packageFact?.script_names ?? [],
+    detected_files: [
+      ...(packageFact ? ["package.json"] : []),
+      ...lockfileFacts.map((fact) => fact.provenance.path),
+    ],
+    facts: scan.facts,
+    safe_scan: {
+      policy_version: scan.policy_version,
+      exclusions: scan.exclusions,
+      errors: scan.errors,
+    },
   };
 }
 
@@ -163,6 +128,7 @@ export async function runAudit(cwd, version) {
       provenance: {
         cli_version: version,
         check_catalog_version: "web-baseline/v1",
+        scan_policy_version: LOCAL_SAFE_SCAN_POLICY,
       },
       scope: {
         project_root: snapshot.project.root,

@@ -140,13 +140,16 @@ main()
   .then((exitCode) => {
     process.exitCode = exitCode;
   })
-  .catch((error) => {
+  .catch(() => {
+    const auditFailure = command === "audit";
     print({
       contract: CLI_INTERACTION_CONTRACT,
       status: "execution_error",
       operation: command,
-      error: "unexpected_error",
-      message: error instanceof Error ? error.message : String(error),
+      error: auditFailure ? "local_safe_scan_failed" : "unexpected_error",
+      message: auditFailure
+        ? "Local Safe Scan could not complete safely."
+        : "The operation could not complete.",
     });
     process.exitCode = 1;
   });
