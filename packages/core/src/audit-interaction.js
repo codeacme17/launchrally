@@ -7,6 +7,7 @@ import {
 } from "@launchrally/contracts";
 
 import { describeWebBaselineCatalog } from "./check-catalog.js";
+import { createPublicVerificationPlan } from "./public-verification.js";
 
 const PROVIDER_SIGNALS = Object.freeze([
   { prefix: "CLOUDFLARE_", provider: "cloudflare", role: "deployment" },
@@ -96,6 +97,10 @@ function normalizeAnswers(answers) {
       try {
         const url = new URL(target);
         if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+        if (url.username || url.password || url.search || url.hash) {
+          errors.push({ field_id: "production_targets", code: "unsafe_public_target" });
+          break;
+        }
         productionTargets.push(url.toString());
       } catch {
         errors.push({ field_id: "production_targets", code: "invalid_url" });
@@ -220,6 +225,7 @@ function createAuditBrief(snapshot, answers = null, confirmed = false) {
       candidates: supportCandidates(snapshot.project),
       confirmed,
     },
+    public_verification: createPublicVerificationPlan(answers),
     planned_checks: plannedChecks(answers),
   };
 }
@@ -292,6 +298,7 @@ function createNeedsInput(snapshot, state, validationErrors = []) {
 }
 
 function authorizationPlan(answers) {
+  const publicPlan = createPublicVerificationPlan(answers);
   const providers = new Map();
   for (const { provider, role } of answers.provider_roles) {
     const current = providers.get(provider) ?? new Set();
@@ -310,7 +317,7 @@ function authorizationPlan(answers) {
       permission_id: "public_verification",
       boundary: "public_network",
       decision: "pending",
-      scope: { targets: answers.production_targets },
+      scope: { targets: publicPlan.targets, probes: publicPlan.probes },
     },
     ...[...providers.entries()].sort(([left], [right]) => left.localeCompare(right)).map(
       ([provider, metadata]) => ({

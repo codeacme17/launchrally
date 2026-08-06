@@ -98,6 +98,10 @@ function renderHumanInteraction(value) {
       ...(brief.support_layers.values.length > 0
         ? brief.support_layers.values.map((layer) => `Support layer: ${layer}`)
         : ["Support layers: none"]),
+      "Public probe plan:",
+      ...brief.public_verification.probes.map(
+        (probe) => `  - ${probe.method} ${probe.host}:${probe.port}${probe.path} — ${probe.purpose}`,
+      ),
       "Planned Checks:",
       ...brief.planned_checks.map(
         (check) => `  - ${check.check_id} [${check.permission_id}]`,

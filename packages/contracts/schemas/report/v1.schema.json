@@ -34,11 +34,21 @@
     "catalog": { "$ref": "#/$defs/catalog" },
     "scope": {
       "type": "object",
-      "required": ["project_root", "project_type", "access", "excluded"],
+      "required": ["project_root", "project_type", "access", "public_verification", "excluded"],
       "properties": {
         "project_root": { "type": "string", "minLength": 1 },
         "project_type": { "type": "string", "minLength": 1 },
-        "access": { "const": "local_read_only" },
+        "access": { "enum": ["local_read_only", "local_and_public_read_only"] },
+        "public_verification": {
+          "type": "object",
+          "required": ["decision", "targets", "probe_ids"],
+          "properties": {
+            "decision": { "enum": ["approved", "denied"] },
+            "targets": { "type": "array", "items": { "type": "string", "format": "uri" }, "uniqueItems": true },
+            "probe_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+          },
+          "additionalProperties": false
+        },
         "excluded": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
@@ -49,9 +59,13 @@
     },
     "results": {
       "type": "object",
-      "required": ["checks", "action_queue", "verification_gaps", "domain_coverage", "coverage_summary"],
+      "required": ["checks", "public_evidence", "action_queue", "verification_gaps", "domain_coverage", "coverage_summary"],
       "properties": {
         "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } },
+        "public_evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/publicObservation" }
+        },
         "action_queue": { "type": "array", "items": { "$ref": "#/$defs/action" } },
         "verification_gaps": {
           "type": "array",
@@ -112,8 +126,40 @@
             "value": { "type": "string", "minLength": 1 }
           },
           "additionalProperties": false
-        }
+        },
+        { "$ref": "#/$defs/publicObservation" }
       ]
+    },
+    "publicObservation": {
+      "type": "object",
+      "required": ["kind", "probe_id", "probe_kind", "target", "host", "port", "path", "method", "purpose", "status", "outcome", "collected_at", "duration_ms", "details", "provenance"],
+      "properties": {
+        "kind": { "const": "public_observation" },
+        "probe_id": { "type": "string", "minLength": 1 },
+        "probe_kind": { "enum": ["dns", "tls", "http", "health", "journey"] },
+        "target": { "type": "string", "format": "uri" },
+        "host": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "path": { "type": "string", "pattern": "^/" },
+        "method": { "enum": ["DNS_LOOKUP", "TLS_HANDSHAKE", "GET"] },
+        "purpose": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["passed", "failed", "unverified"] },
+        "outcome": { "enum": ["resolved", "secure", "reachable", "healthy", "completed", "redirect_not_followed", "target_mismatch", "http_status_failure", "dns_failure", "certificate_failure", "unreachable", "timeout", "execution_failure"] },
+        "collected_at": { "type": "string", "format": "date-time" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "details": { "type": "object" },
+        "provenance": {
+          "type": "object",
+          "required": ["collector", "exact_target", "collected_at"],
+          "properties": {
+            "collector": { "const": "public-verification/v1" },
+            "exact_target": { "type": "string", "format": "uri" },
+            "collected_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "check": {
       "type": "object",
@@ -150,7 +196,7 @@
         "risk_domain": { "$ref": "#/$defs/riskDomain" },
         "priority": { "$ref": "#/$defs/priority" },
         "status": { "const": "unverified" },
-        "reason_code": { "enum": ["permission_denied", "missing_required_input", "conflicting_evidence", "applicability_unresolved", "execution_failure", "execution_skipped", "specialist_support_unavailable"] },
+        "reason_code": { "enum": ["permission_denied", "missing_required_input", "conflicting_evidence", "applicability_unresolved", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence"] },
         "reason": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false

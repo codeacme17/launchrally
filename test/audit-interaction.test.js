@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,6 +64,28 @@ async function reachPermission(fixture) {
     confirmation.interaction.resume_token,
     "--confirm",
     "confirm",
+  ]);
+}
+
+async function completeAudit(fixture, answers, publicDecision = "approved") {
+  const initial = await runAudit(fixture);
+  const confirmation = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify(answers),
+  ]);
+  const permission = await runAudit(fixture, [
+    "--resume",
+    confirmation.interaction.resume_token,
+    "--confirm",
+    "confirm",
+  ]);
+  return runAudit(fixture, [
+    "--resume",
+    permission.interaction.resume_token,
+    "--permissions",
+    JSON.stringify({ public_verification: publicDecision }),
   ]);
 }
 
@@ -141,6 +165,92 @@ test("Agent Mode previews the complete unconfirmed plan before permission", asyn
   });
 });
 
+test("Agent Mode discloses every read-only public probe before approval", async () => {
+  const fixture = await createInteractionFixture();
+  const result = await reachConfirmation(fixture);
+
+  assert.deepEqual(result.audit_brief.public_verification, {
+    collector_version: "public-verification/v1",
+    targets: ["https://example.com/"],
+    probes: [
+      {
+        probe_id: "target-1:dns",
+        kind: "dns",
+        target: "https://example.com/",
+        host: "example.com",
+        port: 443,
+        path: "/",
+        method: "DNS_LOOKUP",
+        purpose: "Resolve the confirmed production host.",
+        timeout_ms: 5000,
+      },
+      {
+        probe_id: "target-1:tls",
+        kind: "tls",
+        target: "https://example.com/",
+        host: "example.com",
+        port: 443,
+        path: "/",
+        method: "TLS_HANDSHAKE",
+        purpose: "Verify the confirmed production target certificate and TLS handshake.",
+        timeout_ms: 5000,
+      },
+      {
+        probe_id: "target-1:http",
+        kind: "http",
+        target: "https://example.com/",
+        host: "example.com",
+        port: 443,
+        path: "/",
+        method: "GET",
+        purpose: "Verify HTTP reachability without following redirects.",
+        timeout_ms: 5000,
+      },
+      {
+        probe_id: "target-1:health",
+        kind: "health",
+        target: "https://example.com/health",
+        host: "example.com",
+        port: 443,
+        path: "/health",
+        method: "GET",
+        purpose: "Verify the conventional public health endpoint.",
+        timeout_ms: 5000,
+      },
+      {
+        probe_id: "target-1:journey-1",
+        kind: "journey",
+        target: "https://example.com/",
+        host: "example.com",
+        port: 443,
+        path: "/",
+        method: "GET",
+        purpose: "Verify declared core journey: customer can check out",
+        timeout_ms: 5000,
+      },
+      {
+        probe_id: "target-1:journey-2",
+        kind: "journey",
+        target: "https://example.com/",
+        host: "example.com",
+        port: 443,
+        path: "/",
+        method: "GET",
+        purpose: "Verify declared core journey: visitor can sign up",
+        timeout_ms: 5000,
+      },
+    ],
+  });
+  const publicPermissions = result.authorization_plan.filter(
+    (permission) => permission.permission_id === "public_verification",
+  );
+  assert.equal(publicPermissions.length, 1);
+  assert.deepEqual(publicPermissions[0].scope, {
+    targets: result.audit_brief.public_verification.targets,
+    probes: result.audit_brief.public_verification.probes,
+  });
+});
+
 test("confirmation requests public and Provider permissions as distinct boundaries", async () => {
   const fixture = await createInteractionFixture();
   const result = await reachPermission(fixture);
@@ -151,7 +261,7 @@ test("confirmation requests public and Provider permissions as distinct boundari
     result.request.permissions.map(({ permission_id, boundary, scope }) => ({
       permission_id,
       boundary,
-      scope,
+      scope: boundary === "public_network" ? { targets: scope.targets } : scope,
     })),
     [
       {
@@ -173,6 +283,279 @@ test("confirmation requests public and Provider permissions as distinct boundari
   );
   assert.equal(result.authorization_plan[0].permission_id, "local_safe_scan");
   assert.equal(result.authorization_plan[0].decision, "granted");
+});
+
+test("approved public probes collect fresh read-only evidence through the CLI contract", async () => {
+  const fixture = await createInteractionFixture();
+  const requests = [];
+  const server = createServer((request, response) => {
+    requests.push({ method: request.method, url: request.url });
+    response.writeHead(request.url === "/health" ? 204 : 200);
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const { port } = server.address();
+    const target = `http://127.0.0.1:${port}/`;
+    const result = await completeAudit(fixture, {
+      intended_environment: "production",
+      production_targets: [target],
+      core_journeys: ["homepage loads"],
+      provider_roles: [],
+      support_layers: [],
+    });
+    const evidence = result.report.results.public_evidence;
+
+    assert.deepEqual(evidence.map(({ probe_kind, status, outcome }) => ({
+      probe_kind,
+      status,
+      outcome,
+    })), [
+      { probe_kind: "dns", status: "passed", outcome: "resolved" },
+      { probe_kind: "http", status: "passed", outcome: "reachable" },
+      { probe_kind: "health", status: "passed", outcome: "healthy" },
+      { probe_kind: "journey", status: "passed", outcome: "completed" },
+    ]);
+    assert.ok(evidence.every((item) => item.kind === "public_observation"));
+    assert.ok(evidence.every((item) => item.target.startsWith(target.slice(0, -1))));
+    assert.ok(evidence.every((item) => !Number.isNaN(Date.parse(item.collected_at))));
+    assert.ok(evidence.every((item) => item.provenance.collector === "public-verification/v1"));
+    assert.equal(
+      result.report.results.checks.find(
+        (check) => check.check_id === "web.public.availability",
+      ).status,
+      "passed",
+    );
+    assert.equal(
+      result.report.results.checks.find(
+        (check) => check.check_id === "web.public.transport-security",
+      ).status,
+      "failed",
+    );
+    assert.equal(
+      result.report.results.checks.find(
+        (check) => check.check_id === "web.public.core-journeys",
+      ).status,
+      "passed",
+    );
+    assert.deepEqual(result.report.scope.public_verification, {
+      decision: "approved",
+      targets: [target],
+      probe_ids: evidence.map((item) => item.probe_id),
+    });
+    assert.equal(result.report.scope.access, "local_and_public_read_only");
+    assert.ok(!result.report.scope.excluded.includes("public_network"));
+    const secondResult = await completeAudit(fixture, {
+      intended_environment: "production",
+      production_targets: [target],
+      core_journeys: ["homepage loads"],
+      provider_roles: [],
+      support_layers: [],
+    });
+    assert.notDeepEqual(
+      secondResult.report.results.public_evidence.map((item) => item.collected_at),
+      evidence.map((item) => item.collected_at),
+    );
+    assert.deepEqual(requests, [
+      { method: "GET", url: "/" },
+      { method: "GET", url: "/health" },
+      { method: "GET", url: "/" },
+      { method: "GET", url: "/" },
+      { method: "GET", url: "/health" },
+      { method: "GET", url: "/" },
+    ]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("public verification records redirects without following undisclosed paths", async () => {
+  const fixture = await createInteractionFixture();
+  const requests = [];
+  const server = createServer((request, response) => {
+    requests.push({ method: request.method, url: request.url });
+    if (request.url === "/health") {
+      response.writeHead(204);
+    } else {
+      response.writeHead(302, {
+        location: "http://example.invalid/mutating?token=must-not-be-retained",
+      });
+    }
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const { port } = server.address();
+    const result = await completeAudit(fixture, {
+      intended_environment: "production",
+      production_targets: [`http://127.0.0.1:${port}/start`],
+      core_journeys: ["start page loads"],
+      provider_roles: [],
+      support_layers: [],
+    });
+    const redirects = result.report.results.public_evidence.filter(
+      (item) => item.outcome === "target_mismatch",
+    );
+
+    assert.equal(redirects.length, 2);
+    assert.ok(redirects.every((item) => item.status === "failed"));
+    assert.ok(redirects.every(
+      (item) => item.details.redirect_target === "http://example.invalid/mutating",
+    ));
+    assert.deepEqual(requests, [
+      { method: "GET", url: "/start" },
+      { method: "GET", url: "/health" },
+      { method: "GET", url: "/start" },
+    ]);
+    assert.doesNotMatch(JSON.stringify(result), /must-not-be-retained/u);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("timeouts are bounded and partial reachability becomes reasoned gaps", async () => {
+  const fixture = await createInteractionFixture();
+  const server = createServer((request, response) => {
+    if (request.url === "/health") {
+      response.writeHead(204);
+      response.end();
+    }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const { port } = server.address();
+    const startedAt = Date.now();
+    const result = await completeAudit(fixture, {
+      intended_environment: "production",
+      production_targets: [`http://127.0.0.1:${port}/`],
+      core_journeys: ["homepage loads"],
+      provider_roles: [],
+      support_layers: [],
+    });
+    const elapsed = Date.now() - startedAt;
+    const timeouts = result.report.results.public_evidence.filter(
+      (item) => item.outcome === "timeout",
+    );
+
+    assert.equal(result.status, "completed");
+    assert.ok(elapsed >= 5000 && elapsed < 7000, `Audit took ${elapsed}ms`);
+    assert.equal(timeouts.length, 2);
+    assert.ok(timeouts.every((item) => item.status === "unverified"));
+    assert.deepEqual(
+      result.report.results.verification_gaps
+        .filter((gap) => gap.reason_code === "partial_public_evidence")
+        .map((gap) => gap.check_id),
+      ["web.public.availability", "web.public.core-journeys"],
+    );
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("certificate failures are deterministic and never become Passed", async () => {
+  const fixture = await createInteractionFixture();
+  const [key, cert] = await Promise.all([
+    readFile(path.join(root, "test", "fixtures", "self-signed-key.pem")),
+    readFile(path.join(root, "test", "fixtures", "self-signed-cert.pem")),
+  ]);
+  const requests = [];
+  const server = createHttpsServer({ key, cert }, (request, response) => {
+    requests.push(request.url);
+    response.writeHead(200);
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const { port } = server.address();
+    const result = await completeAudit(fixture, {
+      intended_environment: "production",
+      production_targets: [`https://127.0.0.1:${port}/`],
+      core_journeys: ["homepage loads"],
+      provider_roles: [],
+      support_layers: [],
+    });
+    const tlsEvidence = result.report.results.public_evidence.find(
+      (item) => item.probe_kind === "tls",
+    );
+
+    assert.equal(tlsEvidence.status, "failed");
+    assert.equal(tlsEvidence.outcome, "certificate_failure");
+    assert.equal(
+      result.report.results.checks.find(
+        (check) => check.check_id === "web.public.transport-security",
+      ).status,
+      "failed",
+    );
+    assert.deepEqual(requests, []);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("unreachable targets return complete deterministic evidence", async () => {
+  const fixture = await createInteractionFixture();
+  const reservation = createServer();
+  await new Promise((resolve) => reservation.listen(0, "127.0.0.1", resolve));
+  const { port } = reservation.address();
+  await new Promise((resolve) => reservation.close(resolve));
+
+  const result = await completeAudit(fixture, {
+    intended_environment: "production",
+    production_targets: [`http://127.0.0.1:${port}/`],
+    core_journeys: ["homepage loads"],
+    provider_roles: [],
+    support_layers: [],
+  });
+  const unreachable = result.report.results.public_evidence.filter(
+    (item) => item.outcome === "unreachable",
+  );
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.report.results.public_evidence.length, 4);
+  assert.equal(unreachable.length, 3);
+  assert.ok(unreachable.every((item) => item.status === "failed"));
+  assert.equal(
+    result.report.results.checks.find(
+      (check) => check.check_id === "web.public.availability",
+    ).status,
+    "failed",
+  );
+});
+
+test("public probe concurrency is bounded per Audit", async () => {
+  const fixture = await createInteractionFixture();
+  let activeRequests = 0;
+  let maxActiveRequests = 0;
+  const server = createServer((_request, response) => {
+    activeRequests += 1;
+    maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+    setTimeout(() => {
+      response.writeHead(200);
+      response.end();
+      activeRequests -= 1;
+    }, 50);
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const { port } = server.address();
+    const result = await completeAudit(fixture, {
+      intended_environment: "production",
+      production_targets: [`http://127.0.0.1:${port}/`],
+      core_journeys: Array.from({ length: 8 }, (_, index) => `journey ${index + 1}`),
+      provider_roles: [],
+      support_layers: [],
+    });
+
+    assert.equal(result.status, "completed");
+    assert.ok(maxActiveRequests <= 4, `Observed ${maxActiveRequests} concurrent requests`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("revising preserves the unconfirmed scope and grants no permission", async () => {
@@ -337,7 +720,7 @@ test("Human Mode explains unknowns and previews the full plan before permission"
   );
   assert.match(
     confirmationOutput,
-    /Complete plan preview[\s\S]*Environment: production[\s\S]*Target: https:\/\/example\.com\/[\s\S]*web\.public\.availability[\s\S]*provider\.sentry\.metadata[\s\S]*Permission preview[\s\S]*public_verification: PENDING[\s\S]*No public or Provider permission has been granted[\s\S]*Confirm this Audit Brief/,
+    /Complete plan preview[\s\S]*Environment: production[\s\S]*Target: https:\/\/example\.com\/[\s\S]*Public probe plan:[\s\S]*DNS_LOOKUP example\.com:443\/[\s\S]*TLS_HANDSHAKE example\.com:443\/[\s\S]*GET example\.com:443\/health — Verify the conventional public health endpoint\.[\s\S]*web\.public\.availability[\s\S]*provider\.sentry\.metadata[\s\S]*Permission preview[\s\S]*public_verification: PENDING[\s\S]*No public or Provider permission has been granted[\s\S]*Confirm this Audit Brief/,
   );
 });
 
@@ -360,4 +743,25 @@ test("Agent Mode reports malformed interaction input as a structured execution e
       return true;
     },
   );
+});
+
+test("public targets reject credentials and query data before they enter Audit state", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const secret = "do-not-retain-this-value";
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      production_targets: [`https://user:${secret}@example.com/?token=${secret}`],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_input");
+  assert.deepEqual(result.request.validation_errors, [
+    { field_id: "production_targets", code: "unsafe_public_target" },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
 });

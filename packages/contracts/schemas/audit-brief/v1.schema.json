@@ -3,7 +3,7 @@
   "$id": "https://launchrally.dev/audit-brief/v1",
   "title": "LaunchRally Audit Brief v1",
   "type": "object",
-  "required": ["schema_version", "project", "intended_environment", "production_targets", "core_journeys", "provider_roles", "support_layers", "planned_checks"],
+  "required": ["schema_version", "project", "intended_environment", "production_targets", "core_journeys", "provider_roles", "support_layers", "public_verification", "planned_checks"],
   "properties": {
     "schema_version": { "const": "launchrally.dev/audit-brief/v1" },
     "project": {
@@ -41,6 +41,23 @@
       "additionalProperties": false
     },
     "support_layers": { "$ref": "#/$defs/stringSelection" },
+    "public_verification": {
+      "type": "object",
+      "required": ["collector_version", "targets", "probes"],
+      "properties": {
+        "collector_version": { "const": "public-verification/v1" },
+        "targets": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" },
+          "uniqueItems": true
+        },
+        "probes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/publicProbe" }
+        }
+      },
+      "additionalProperties": false
+    },
     "planned_checks": {
       "type": "array",
       "items": {
@@ -72,6 +89,22 @@
       "properties": {
         "provider": { "type": "string", "minLength": 1 },
         "role": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "publicProbe": {
+      "type": "object",
+      "required": ["probe_id", "kind", "target", "host", "port", "path", "method", "purpose", "timeout_ms"],
+      "properties": {
+        "probe_id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["dns", "tls", "http", "health", "journey"] },
+        "target": { "type": "string", "format": "uri" },
+        "host": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "path": { "type": "string", "pattern": "^/" },
+        "method": { "enum": ["DNS_LOOKUP", "TLS_HANDSHAKE", "GET"] },
+        "purpose": { "type": "string", "minLength": 1 },
+        "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 }
       },
       "additionalProperties": false
     }

@@ -249,8 +249,16 @@ const CHECKS = Object.freeze([
     applicability(_project, brief) {
       return productionApplicability(brief, "Public availability applies to confirmed production targets.");
     },
-    verify(_project, brief, authorizationPlan) {
-      return unavailablePublicVerification(brief, authorizationPlan, "availability");
+    verify(_project, brief, authorizationPlan, publicEvidence) {
+      return publicVerificationResult({
+        brief,
+        authorizationPlan,
+        publicEvidence,
+        subject: "availability",
+        kinds: ["dns", "http", "health"],
+        expectedCount: brief.production_targets.values.length * 3,
+        passedSummary: "Every confirmed production target resolved and returned successful reachability and health observations.",
+      });
     },
   },
   {
@@ -274,8 +282,26 @@ const CHECKS = Object.freeze([
     applicability(_project, brief) {
       return productionApplicability(brief, "Transport security applies to confirmed production targets.");
     },
-    verify(_project, brief, authorizationPlan) {
-      return unavailablePublicVerification(brief, authorizationPlan, "transport security");
+    verify(_project, brief, authorizationPlan, publicEvidence) {
+      const insecureTargets = brief.production_targets.values.filter(
+        (target) => new URL(target).protocol !== "https:",
+      );
+      if (insecureTargets.length > 0) {
+        return failed(
+          `Confirmed production targets must use HTTPS: ${insecureTargets.join(", ")}.`,
+          insecureTargets.map((target) => intentEvidence("production_target", target)),
+          "Use HTTPS for every confirmed production target.",
+        );
+      }
+      return publicVerificationResult({
+        brief,
+        authorizationPlan,
+        publicEvidence,
+        subject: "transport security",
+        kinds: ["tls"],
+        expectedCount: brief.production_targets.values.length,
+        passedSummary: "Every confirmed production target completed an authorized TLS handshake.",
+      });
     },
   },
   {
@@ -402,8 +428,16 @@ const CHECKS = Object.freeze([
         intentEvidence("core_journeys", "confirmed"),
       ]);
     },
-    verify(_project, brief, authorizationPlan) {
-      return unavailablePublicVerification(brief, authorizationPlan, "core journeys");
+    verify(_project, brief, authorizationPlan, publicEvidence) {
+      return publicVerificationResult({
+        brief,
+        authorizationPlan,
+        publicEvidence,
+        subject: "core journeys",
+        kinds: ["journey"],
+        expectedCount: brief.production_targets.values.length * brief.core_journeys.values.length,
+        passedSummary: "Every declared core journey returned a successful public observation.",
+      });
     },
   },
 ]);
@@ -483,6 +517,40 @@ function unavailablePublicVerification(brief, authorizationPlan, subject) {
   );
 }
 
+function publicVerificationResult({
+  brief,
+  authorizationPlan,
+  publicEvidence,
+  subject,
+  kinds,
+  expectedCount,
+  passedSummary,
+}) {
+  const permission = publicPermission(authorizationPlan);
+  if (!permission || permission.decision === "denied") {
+    return unavailablePublicVerification(brief, authorizationPlan, subject);
+  }
+  const evidence = publicEvidence.filter((item) => kinds.includes(item.probe_kind));
+  if (evidence.length < expectedCount) {
+    return unverified(
+      "partial_public_evidence",
+      `Public ${subject} verification did not return all disclosed observations.`,
+      evidence,
+    );
+  }
+  if (evidence.some((item) => item.status === "unverified")) {
+    return unverified(
+      "partial_public_evidence",
+      `Public ${subject} verification was only partially reachable.`,
+      evidence,
+    );
+  }
+  if (evidence.some((item) => item.status === "failed")) {
+    return failed(`Public ${subject} verification failed.`, evidence);
+  }
+  return passed(passedSummary, evidence);
+}
+
 function resultBase(declared, applicability) {
   return {
     check_id: declared.check_id,
@@ -495,7 +563,7 @@ function resultBase(declared, applicability) {
   };
 }
 
-function executeCheck(check, project, auditBrief, authorizationPlan) {
+function executeCheck(check, project, auditBrief, authorizationPlan, publicEvidence) {
   let applicability;
   try {
     applicability = check.applicability(project, auditBrief);
@@ -539,7 +607,7 @@ function executeCheck(check, project, auditBrief, authorizationPlan) {
   try {
     return {
       ...base,
-      ...check.verify(project, auditBrief, authorizationPlan),
+      ...check.verify(project, auditBrief, authorizationPlan, publicEvidence),
     };
   } catch {
     return {
@@ -565,10 +633,15 @@ export function describeWebBaselineCatalog() {
   };
 }
 
-export function executeWebBaseline({ project, audit_brief, authorization_plan = [] }) {
+export function executeWebBaseline({
+  project,
+  audit_brief,
+  authorization_plan = [],
+  public_evidence = [],
+}) {
   const catalog = describeWebBaselineCatalog();
   const checks = CHECKS.map((check) =>
-    executeCheck(check, project, audit_brief, authorization_plan),
+    executeCheck(check, project, audit_brief, authorization_plan, public_evidence),
   );
   const verification_gaps = checks
     .filter((check) => check.status === "unverified")
