@@ -6,6 +6,8 @@ import {
   CLI_INTERACTION_CONTRACT,
 } from "@launchrally/contracts";
 
+import { describeWebBaselineCatalog } from "./check-catalog.js";
+
 const PROVIDER_SIGNALS = Object.freeze([
   { prefix: "CLOUDFLARE_", provider: "cloudflare", role: "deployment" },
   { prefix: "NETLIFY_", provider: "netlify", role: "deployment" },
@@ -151,19 +153,19 @@ function normalizeAnswers(answers) {
 }
 
 function plannedChecks(answers) {
-  const checks = [
-    {
-      check_id: "web.baseline.lockfile",
-      permission_id: "local_safe_scan",
-      scope: "repository",
-    },
-  ];
+  const checks = describeWebBaselineCatalog().checks.map((check) => ({
+    check_id: check.check_id,
+    check_version: check.check_version,
+    risk_domain: check.risk_domain,
+    permission_id: check.permission_id,
+    scope: check.permission_id === "public_verification" ? "confirmed_targets" : "repository",
+  }));
   if (answers) {
-    checks.push({
-      check_id: "web.public.endpoint",
-      permission_id: "public_verification",
-      targets: answers.production_targets,
-    });
+    for (const check of checks.filter(
+      (candidate) => candidate.permission_id === "public_verification",
+    )) {
+      check.targets = answers.production_targets;
+    }
     const providers = new Map();
     for (const { provider, role } of answers.provider_roles) {
       const roles = providers.get(provider) ?? new Set();
@@ -178,11 +180,6 @@ function plannedChecks(answers) {
       provider,
       roles: [...roles].sort(),
       metadata_scope: [...roles].sort().map((role) => `${role}.configuration`),
-    })));
-    checks.push(...answers.support_layers.map((layer) => ({
-      check_id: `web.support.${layer}.baseline`,
-      permission_id: "local_safe_scan",
-      scope: "repository",
     })));
   }
   return checks;
