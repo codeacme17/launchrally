@@ -11,6 +11,10 @@ import {
   scanRepository,
   SUPPORTED_LOCKFILES,
 } from "./local-safe-scan.js";
+import {
+  advanceAuditInteraction,
+  createInitialAuditInteraction,
+} from "./audit-interaction.js";
 
 const WEB_CHECK_CATALOG = Object.freeze([
   {
@@ -110,17 +114,50 @@ function runApplicableChecks(project) {
     }));
 }
 
-export async function runAudit(cwd, version) {
+function permissionVerificationGaps(authorizationPlan = []) {
+  return authorizationPlan
+    .filter((permission) => permission.decision === "denied")
+    .map((permission) => {
+      if (permission.boundary === "public_network") {
+        return {
+          check_id: "web.public.endpoint",
+          priority: "p0",
+          status: "unverified",
+          reason_code: "permission_denied",
+          reason: `Public verification permission was denied for: ${permission.scope.targets.join(", ")}.`,
+        };
+      }
+      return {
+        check_id: `provider.${permission.scope.provider}.metadata`,
+        priority: "p0",
+        status: "unverified",
+        reason_code: "permission_denied",
+        reason: `Provider read permission was denied for ${permission.scope.provider} metadata: ${permission.scope.metadata.join(", ")}.`,
+      };
+    });
+}
+
+export async function runAudit(cwd, version, interactionOptions = {}) {
   const snapshot = await createInitialSnapshot(cwd);
+  if (!interactionOptions.resume_token) {
+    return createInitialAuditInteraction(snapshot);
+  }
+  const interactionResult = advanceAuditInteraction(snapshot, interactionOptions);
+  if (interactionResult.status !== "completed") return interactionResult;
+  if (interactionResult.outcome === "scope_not_confirmed") return interactionResult;
   const checks = runApplicableChecks(snapshot.project);
   const passedChecks = checks.filter((check) => check.status === "passed").length;
   const failedChecks = checks.filter((check) => check.status === "failed").length;
+  const permissionGaps = permissionVerificationGaps(interactionResult.authorization_plan);
 
   return {
     contract: CLI_INTERACTION_CONTRACT,
     status: "completed",
     operation: "audit",
     snapshot,
+    audit_brief: interactionResult.audit_brief,
+    authorization_plan: interactionResult.authorization_plan,
+    interaction: interactionResult.interaction,
     report: {
       schema_version: REPORT_SCHEMA,
       report_id: randomUUID(),
@@ -152,6 +189,7 @@ export async function runAudit(cwd, version) {
             status: "unverified",
             reason: "The P0 Web Check Catalog is incomplete; only the lockfile baseline is implemented.",
           },
+          ...permissionGaps,
         ],
         coverage_summary: [
           {
@@ -160,7 +198,7 @@ export async function runAudit(cwd, version) {
             executed_checks: checks.length,
             passed_checks: passedChecks,
             failed_checks: failedChecks,
-            verification_gaps: 1,
+            verification_gaps: 1 + permissionGaps.length,
             coverage: "partial",
           },
         ],
