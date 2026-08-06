@@ -7,6 +7,7 @@ import {
 } from "@launchrally/contracts";
 
 import { describeWebBaselineCatalog } from "./check-catalog.js";
+import { createProviderAdapterPlan } from "./provider-adapters.js";
 import { createPublicVerificationPlan } from "./public-verification.js";
 
 const PROVIDER_SIGNALS = Object.freeze([
@@ -209,20 +210,14 @@ function plannedChecks(answers) {
     )) {
       check.targets = answers.production_targets;
     }
-    const providers = new Map();
-    for (const { provider, role } of answers.provider_roles) {
-      const roles = providers.get(provider) ?? new Set();
-      roles.add(role);
-      providers.set(provider, roles);
-    }
-    checks.push(...[...providers.entries()].sort(([left], [right]) =>
-      left.localeCompare(right),
-    ).map(([provider, roles]) => ({
-      check_id: `provider.${provider}.metadata`,
-      permission_id: `provider_read:${provider}`,
-      provider,
-      roles: [...roles].sort(),
-      metadata_scope: [...roles].sort().map((role) => `${role}.configuration`),
+    checks.push(...createProviderAdapterPlan(answers.provider_roles).requests.map((request) => ({
+      check_id: `provider.${request.provider}.metadata`,
+      permission_id: request.permission_id,
+      provider: request.provider,
+      roles: request.roles,
+      adapter_version: request.adapter_version,
+      target: request.target,
+      requested_fields: request.requested_fields,
     })));
   }
   return checks;
@@ -264,6 +259,7 @@ function createAuditBrief(snapshot, answers = null, confirmed = false) {
       confirmed,
     },
     public_verification: createPublicVerificationPlan(answers),
+    provider_adapters: createProviderAdapterPlan(answers?.provider_roles),
     planned_checks: plannedChecks(answers),
   };
 }
@@ -337,12 +333,7 @@ function createNeedsInput(snapshot, state, validationErrors = []) {
 
 function authorizationPlan(answers) {
   const publicPlan = createPublicVerificationPlan(answers);
-  const providers = new Map();
-  for (const { provider, role } of answers.provider_roles) {
-    const current = providers.get(provider) ?? new Set();
-    current.add(`${role}.configuration`);
-    providers.set(provider, current);
-  }
+  const providerPlan = createProviderAdapterPlan(answers.provider_roles);
   return [
     {
       permission_id: "local_safe_scan",
@@ -357,12 +348,19 @@ function authorizationPlan(answers) {
       decision: "pending",
       scope: { targets: publicPlan.targets, probes: publicPlan.probes },
     },
-    ...[...providers.entries()].sort(([left], [right]) => left.localeCompare(right)).map(
-      ([provider, metadata]) => ({
-        permission_id: `provider_read:${provider}`,
+    ...providerPlan.requests.map(
+      (request) => ({
+        permission_id: request.permission_id,
         boundary: "provider_read",
         decision: "pending",
-        scope: { provider, metadata: [...metadata].sort() },
+        scope: {
+          provider: request.provider,
+          adapter_version: request.adapter_version,
+          operation: request.operation,
+          target: request.target,
+          requested_fields: request.requested_fields,
+          command: request.command,
+        },
       }),
     ),
   ];

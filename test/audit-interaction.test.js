@@ -31,7 +31,7 @@ async function runAudit(fixture, options = []) {
   const { stdout } = await execFileAsync(
     process.execPath,
     [cli, "audit", "--json", "--cwd", fixture, ...options],
-    { cwd: root },
+    { cwd: root, env: { ...process.env, PATH: "" } },
   );
   return JSON.parse(stdout);
 }
@@ -274,12 +274,36 @@ test("confirmation requests public and Provider permissions as distinct boundari
       {
         permission_id: "provider_read:sentry",
         boundary: "provider_read",
-        scope: { provider: "sentry", metadata: ["observability.configuration"] },
+        scope: {
+          provider: "sentry",
+          adapter_version: null,
+          operation: "read_only",
+          target: "declared_provider_role_metadata",
+          requested_fields: ["observability.configuration"],
+          command: null,
+        },
       },
       {
         permission_id: "provider_read:vercel",
         boundary: "provider_read",
-        scope: { provider: "vercel", metadata: ["deployment.configuration"] },
+        scope: {
+          provider: "vercel",
+          adapter_version: "vercel-read/v1",
+          operation: "read_only",
+          target: "authenticated_scope_projects",
+          requested_fields: [
+            "projects[].id",
+            "projects[].name",
+            "projects[].framework",
+            "projects[].nodeVersion",
+            "projects[].createdAt",
+            "projects[].updatedAt",
+          ],
+          command: {
+            executable: "vercel",
+            arguments: ["project", "ls", "--json"],
+          },
+        },
       },
     ],
   );
@@ -677,6 +701,15 @@ test("permission decisions resume independently and denials become Unverified ga
     ).decision,
     "approved",
   );
+  assert.equal(
+    completed.report.results.verification_gaps.find(
+      (gap) => gap.check_id === "provider.vercel.metadata",
+    ).reason_code,
+    "missing_provider_tool",
+  );
+  assert.deepEqual(completed.report.results.provider_evidence, []);
+  assert.deepEqual(completed.report.provenance.active_adapter_versions, ["vercel-read/v1"]);
+  assert.deepEqual(completed.report.catalog.versions.active_adapters, ["vercel-read/v1"]);
 });
 
 test("resuming cannot change repository scope or an existing permission decision", async () => {
@@ -767,7 +800,7 @@ test("Human Mode explains unknowns and previews the full plan before permission"
   );
   assert.match(
     confirmationOutput,
-    /Complete plan preview[\s\S]*Environment: production[\s\S]*Target: https:\/\/example\.com\/[\s\S]*Public probe plan:[\s\S]*DNS_LOOKUP example\.com:443\/[\s\S]*TLS_HANDSHAKE example\.com:443\/[\s\S]*GET example\.com:443\/health — Verify the conventional public health endpoint\.[\s\S]*web\.public\.availability[\s\S]*provider\.sentry\.metadata[\s\S]*Permission preview[\s\S]*public_verification: PENDING[\s\S]*No public or Provider permission has been granted[\s\S]*Confirm this Audit Brief/,
+    /Complete plan preview[\s\S]*Environment: production[\s\S]*Target: https:\/\/example\.com\/[\s\S]*Public probe plan:[\s\S]*DNS_LOOKUP example\.com:443\/[\s\S]*TLS_HANDSHAKE example\.com:443\/[\s\S]*GET example\.com:443\/health — Verify the conventional public health endpoint\.[\s\S]*Provider Adapter plan:[\s\S]*vercel: vercel-read\/v1[\s\S]*Target: authenticated_scope_projects[\s\S]*Fields: projects\[\]\.id[\s\S]*Command: vercel project ls --json[\s\S]*web\.public\.availability[\s\S]*provider\.sentry\.metadata[\s\S]*Permission preview[\s\S]*public_verification: PENDING[\s\S]*No public or Provider permission has been granted[\s\S]*Confirm this Audit Brief/,
   );
 });
 

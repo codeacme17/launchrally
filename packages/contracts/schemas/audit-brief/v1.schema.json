@@ -3,7 +3,7 @@
   "$id": "https://launchrally.dev/audit-brief/v1",
   "title": "LaunchRally Audit Brief v1",
   "type": "object",
-  "required": ["schema_version", "project", "intended_environment", "production_targets", "core_journeys", "provider_roles", "support_layers", "public_verification", "planned_checks"],
+  "required": ["schema_version", "project", "intended_environment", "production_targets", "core_journeys", "provider_roles", "support_layers", "public_verification", "provider_adapters", "planned_checks"],
   "properties": {
     "schema_version": { "const": "launchrally.dev/audit-brief/v1" },
     "project": {
@@ -54,6 +54,18 @@
         "probes": {
           "type": "array",
           "items": { "$ref": "#/$defs/publicProbe" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "provider_adapters": {
+      "type": "object",
+      "required": ["contract_version", "requests"],
+      "properties": {
+        "contract_version": { "const": "provider-adapter-contract/v1" },
+        "requests": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/providerAdapterRequest" }
         }
       },
       "additionalProperties": false
@@ -117,6 +129,34 @@
       "properties": {
         "provider": { "type": "string", "minLength": 1 },
         "role": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "providerAdapterRequest": {
+      "type": "object",
+      "required": ["provider", "permission_id", "roles", "adapter_version", "operation", "target", "requested_fields", "command"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "permission_id": { "type": "string", "pattern": "^provider_read:" },
+        "roles": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "adapter_version": { "type": ["string", "null"] },
+        "operation": { "const": "read_only" },
+        "target": { "type": "string", "minLength": 1 },
+        "requested_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "command": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["executable", "arguments"],
+              "properties": {
+                "executable": { "enum": ["wrangler", "vercel"] },
+                "arguments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
       },
       "additionalProperties": false
     },
