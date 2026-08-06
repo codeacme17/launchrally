@@ -2,8 +2,10 @@
 
 1. Resolve the repository root and exact CLI version.
 2. Run `rally audit --json --cwd <repo>` through the documented package-manager path.
-3. Treat the returned Snapshot, Assessment, gaps, and limitations as canonical.
-4. If the CLI requests input, confirmation, or permission, present that request without adding inferred approval.
-5. Never describe `Inconclusive` as ready to launch.
+3. On `needs_input`, ask only the returned fields. Present inferred candidates as unconfirmed.
+4. On `needs_confirmation`, present the entire Audit Brief, planned Checks, and authorization preview before forwarding the builder's decision.
+5. On `needs_permission`, request each public or Provider boundary separately and preserve denials.
+6. Resume with the returned token; start a new Audit on a token or scope error.
+7. Treat the completed Snapshot, Assessment, gaps, and limitations as canonical. Never describe `Inconclusive` as ready to launch.
 
-The initial local tracer discovers normalized Web project facts and runs the deterministic lockfile baseline through the Check Catalog path. A passing baseline remains `Inconclusive` while the Report contains a P0 Verification Gap. A failed P0 baseline returns `No Go`.
+The Audit Brief records intended environment, production targets, core journeys, Provider roles, support layers, and planned Checks. Local discovery is already authorized; public verification and Provider reads remain pending until their exact scopes are confirmed and approved.

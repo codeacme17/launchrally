@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/audit-brief/v1",
+  "title": "LaunchRally Audit Brief v1",
+  "type": "object",
+  "required": ["schema_version", "project", "intended_environment", "production_targets", "core_journeys", "provider_roles", "support_layers", "planned_checks"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/audit-brief/v1" },
+    "project": {
+      "type": "object",
+      "required": ["name", "type", "package_manager", "source", "confirmed"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "package_manager": { "type": "string", "minLength": 1 },
+        "source": { "const": "discovered" },
+        "confirmed": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "intended_environment": {
+      "type": "object",
+      "required": ["value", "candidates", "confirmed"],
+      "properties": {
+        "value": { "type": ["string", "null"] },
+        "candidates": { "type": "array", "items": { "type": "string" } },
+        "confirmed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "production_targets": { "$ref": "#/$defs/stringSelection" },
+    "core_journeys": { "$ref": "#/$defs/stringSelection" },
+    "provider_roles": {
+      "type": "object",
+      "required": ["values", "candidates", "confirmed"],
+      "properties": {
+        "values": { "type": "array", "items": { "$ref": "#/$defs/providerRole" } },
+        "candidates": { "type": "array", "items": { "$ref": "#/$defs/providerRole" } },
+        "confirmed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "support_layers": { "$ref": "#/$defs/stringSelection" },
+    "planned_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["check_id", "permission_id"],
+        "properties": {
+          "check_id": { "type": "string", "minLength": 1 },
+          "permission_id": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "stringSelection": {
+      "type": "object",
+      "required": ["values", "candidates", "confirmed"],
+      "properties": {
+        "values": { "type": "array", "items": { "type": "string" } },
+        "candidates": { "type": "array", "items": { "type": "string" } },
+        "confirmed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "providerRole": {
+      "type": "object",
+      "required": ["provider", "role"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

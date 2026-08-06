@@ -100,6 +100,7 @@
         "check_id": { "type": "string", "minLength": 1 },
         "priority": { "$ref": "#/$defs/priority" },
         "status": { "const": "unverified" },
+        "reason_code": { "enum": ["permission_denied"] },
         "reason": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false

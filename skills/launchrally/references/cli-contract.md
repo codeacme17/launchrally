@@ -2,12 +2,15 @@
 
 Invoke Agent Mode with `--json`. Read the `contract`, `status`, and `operation` fields before interpreting any payload.
 
-Initial statuses:
+Audit interaction statuses:
 
+- `needs_input`: answer only the typed fields in `request.fields`, then resume with the returned token.
+- `needs_confirmation`: present the complete `audit_brief`, `planned_checks`, and `authorization_plan`; pass `confirm`, `revise`, or `cancel` without inference.
+- `needs_permission`: present each entry in `request.permissions` separately and return an explicit `approved` or `denied` decision for each permission ID.
 - `completed`: the requested operation completed within its disclosed limitations.
 - `not_implemented`: the command is reserved but unavailable in the scaffold.
 - `execution_error`: the CLI could not execute the operation.
 
-Future Phase 0 states will add explicit input, scope-confirmation, and permission requests. Do not collapse a Check failure, denied permission, missing Evidence, and execution error into one result.
+Read `contract`, `status`, `operation`, and `interaction.schema_version` before the state payload. Preserve `interaction.resume_token` verbatim. A token is repository-root scoped and retains confirmed scope and prior permission decisions; resume errors require a new Audit rather than reconstructed state.
 
-The initial Audit result includes an `initial_readiness_snapshot` and a versioned Report Record. Interpret `results.checks`, `results.verification_gaps`, `results.coverage_summary`, and `limitations` together; a passing implemented Check does not override incomplete P0 coverage.
+Do not collapse a Check failure, denied permission, missing Evidence, and execution error into one result. A denied permission completes as an explicit Verification Gap. A passing implemented Check does not override incomplete P0 coverage.

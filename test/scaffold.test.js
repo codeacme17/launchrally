@@ -63,15 +63,45 @@ async function createWebFixture(name, { withLockfile = false } = {}) {
 }
 
 async function runCliAudit(fixture, { json = false, env } = {}) {
-  const args = [cli, "audit"];
-  if (json) args.push("--json");
-  args.push("--cwd", fixture);
+  const invoke = async (options, structured = true) => {
+    const args = [cli, "audit"];
+    if (structured) args.push("--json");
+    args.push("--cwd", fixture, ...options);
+    return execFileAsync(process.execPath, args, {
+      cwd: root,
+      ...(env ? { env } : {}),
+    });
+  };
 
-  const { stdout } = await execFileAsync(process.execPath, args, {
-    cwd: root,
-    ...(env ? { env } : {}),
-  });
-  return stdout;
+  const initial = JSON.parse((await invoke([])).stdout);
+  const confirmation = JSON.parse((await invoke([
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      intended_environment: "production",
+      production_targets: ["https://example.com"],
+      core_journeys: ["homepage loads"],
+      provider_roles: [],
+      support_layers: [],
+    }),
+  ])).stdout);
+  const permission = JSON.parse((await invoke([
+    "--resume",
+    confirmation.interaction.resume_token,
+    "--confirm",
+    "confirm",
+  ])).stdout);
+  const completed = await invoke(
+    [
+      "--resume",
+      permission.interaction.resume_token,
+      "--permissions",
+      JSON.stringify({ public_verification: "approved" }),
+    ],
+    json,
+  );
+  return completed.stdout;
 }
 
 test("audit returns a local Initial Readiness Snapshot and Web baseline result", async () => {
@@ -484,6 +514,8 @@ test("plugin manifests and public schemas are valid JSON", async () => {
     "adapters/claude/launchrally/.claude-plugin/plugin.json",
     "packages/contracts/schemas/manifest/v1.schema.json",
     "packages/contracts/schemas/report/v1.schema.json",
+    "packages/contracts/schemas/audit-brief/v1.schema.json",
+    "packages/contracts/schemas/audit-interaction/v1.schema.json",
   ];
 
   for (const relative of files) {

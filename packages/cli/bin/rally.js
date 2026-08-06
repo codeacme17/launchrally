@@ -14,7 +14,13 @@ const json = args.includes("--json");
 
 function commandName() {
   if (args.includes("--version")) return "version";
-  const optionsWithValues = new Set(["--cwd"]);
+  const optionsWithValues = new Set([
+    "--answers",
+    "--confirm",
+    "--cwd",
+    "--permissions",
+    "--resume",
+  ]);
   for (let index = 0; index < args.length; index += 1) {
     if (optionsWithValues.has(args[index])) {
       index += 1;
@@ -32,9 +38,116 @@ function optionValue(name) {
   return index === -1 ? undefined : args[index + 1];
 }
 
+function jsonOption(name) {
+  const value = optionValue(name);
+  if (value === undefined) {
+    return args.includes(name)
+      ? { error: true, value: undefined }
+      : { error: false, value: undefined };
+  }
+  try {
+    return { error: false, value: JSON.parse(value) };
+  } catch {
+    return { error: true, value: undefined };
+  }
+}
+
+function providerLabel(role) {
+  return `${role.provider} (${role.role})`;
+}
+
+function renderHumanInteraction(value) {
+  const brief = value.audit_brief;
+  const lines = [
+    "LaunchRally Audit",
+    "Audit Brief",
+    `Project: ${brief.project.name} (${brief.project.type})`,
+    `Package manager: ${brief.project.package_manager}`,
+    "Local Safe Scan: authorized by starting this Audit",
+  ];
+
+  if (value.status === "needs_input") {
+    lines.push(
+      "Needs input",
+      ...value.request.fields.map((field) => `  - ${field.prompt}`),
+      "Inferred candidates (not confirmed):",
+      ...(brief.provider_roles.candidates.length > 0
+        ? brief.provider_roles.candidates.map((role) => `  - ${providerLabel(role)}`)
+        : ["  - Provider roles: none discovered"]),
+      ...(brief.support_layers.candidates.length > 0
+        ? brief.support_layers.candidates.map((layer) => `  - Support layer: ${layer}`)
+        : ["  - Support layers: none discovered"]),
+    );
+    if (value.request.validation_errors.length > 0) {
+      lines.push(
+        "Input errors:",
+        ...value.request.validation_errors.map(
+          (error) => `  - ${error.field_id}: ${error.code}`,
+        ),
+      );
+    }
+  } else {
+    lines.push(
+      "Complete plan preview",
+      `Environment: ${brief.intended_environment.value}`,
+      ...brief.production_targets.values.map((target) => `Target: ${target}`),
+      ...brief.core_journeys.values.map((journey) => `Core journey: ${journey}`),
+      ...(brief.provider_roles.values.length > 0
+        ? brief.provider_roles.values.map((role) => `Provider role: ${providerLabel(role)}`)
+        : ["Provider roles: none"]),
+      ...(brief.support_layers.values.length > 0
+        ? brief.support_layers.values.map((layer) => `Support layer: ${layer}`)
+        : ["Support layers: none"]),
+      "Planned Checks:",
+      ...brief.planned_checks.map(
+        (check) => `  - ${check.check_id} [${check.permission_id}]`,
+      ),
+      "Permission preview:",
+      ...value.authorization_plan.map(
+        (permission) => `  - ${permission.permission_id}: ${permission.decision.toUpperCase()}`,
+      ),
+    );
+  }
+
+  if (value.status === "needs_confirmation") {
+    lines.push(
+      "No public or Provider permission has been granted.",
+      value.request.prompt,
+      "Choose: confirm, revise, or cancel.",
+    );
+  } else if (value.status === "needs_permission") {
+    lines.push(
+      "Permission requested only for these pending boundaries:",
+      ...value.request.permissions.map((permission) =>
+        permission.boundary === "public_network"
+          ? `  - Public verification: ${permission.scope.targets.join(", ")}`
+          : `  - ${permission.scope.provider}: ${permission.scope.metadata.join(", ")}`,
+      ),
+      "Choose approved or denied independently for each permission ID.",
+    );
+  }
+  lines.push(`Resume token: ${value.interaction.resume_token}`);
+  return lines.join("\n");
+}
+
 function print(value) {
   if (json) {
     process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
+    return;
+  }
+
+  if (
+    value.operation === "audit"
+    && ["needs_input", "needs_confirmation", "needs_permission"].includes(value.status)
+  ) {
+    process.stdout.write(`${renderHumanInteraction(value)}\n`);
+    return;
+  }
+
+  if (value.operation === "audit" && value.outcome === "scope_not_confirmed") {
+    process.stdout.write(
+      "LaunchRally Audit\nAudit Brief was not confirmed. No permission was granted and no Checks were run.\n",
+    );
     return;
   }
 
@@ -45,6 +158,10 @@ function print(value) {
       .join(" ");
     const lines = [
       "LaunchRally Audit",
+      "Audit Brief",
+      `Environment: ${value.audit_brief.intended_environment.value}`,
+      ...value.audit_brief.production_targets.values.map((target) => `Target: ${target}`),
+      ...value.audit_brief.core_journeys.values.map((journey) => `Core journey: ${journey}`),
       "Initial Readiness Snapshot",
       `Project: ${value.snapshot.project.name} (${value.snapshot.project.type})`,
       `Package manager: ${value.snapshot.project.package_manager}`,
@@ -90,7 +207,7 @@ function help() {
       "Usage: rally <command> [--json] [--cwd <path>]",
       "",
       "Commands:",
-      "  audit    Run the local Web baseline Audit",
+      "  audit    Build, confirm, authorize, and run a local-first Web Audit",
       "  init     Reserved Phase 0 initialization workflow",
       "  plan     Reserved Phase 0 read-only planning workflow",
       "  verify   Reserved Phase 0 verification workflow",
@@ -117,8 +234,26 @@ async function main() {
 
   if (command === "audit") {
     const cwd = optionValue("--cwd") ?? process.cwd();
-    print(await runAudit(cwd, VERSION));
-    return 0;
+    const answers = jsonOption("--answers");
+    const permissionDecisions = jsonOption("--permissions");
+    if (answers.error || permissionDecisions.error) {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "audit",
+        error: "invalid_option_json",
+        message: "Audit answers and permission decisions must use valid JSON.",
+      });
+      return 2;
+    }
+    const result = await runAudit(cwd, VERSION, {
+      resume_token: optionValue("--resume"),
+      answers: answers.value,
+      confirmation: optionValue("--confirm"),
+      permission_decisions: permissionDecisions.value,
+    });
+    print(result);
+    return result.status === "execution_error" ? 2 : 0;
   }
 
   if (["init", "plan", "verify"].includes(command)) {
