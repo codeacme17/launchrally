@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -147,6 +148,59 @@ test("an incomplete saved Audit bundle fails closed before dependency planning",
   assert.equal(result.error, "invalid_report_package");
   assert.equal(plannerCalled, false);
   assert.equal(await readFile(path.join(directory, "package.json"), "utf8"), packageBefore);
+  assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
+});
+
+test("every required Report, View, and Evidence Index field is required before init", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const requiredFields = {
+    report: [
+      "schema_version",
+      "report_id",
+      "created_at",
+      "assessment",
+      "provenance",
+      "policy",
+      "scope",
+      "permissions",
+      "execution",
+      "catalog",
+      "results",
+      "limitations",
+    ],
+    report_view: [
+      "schema_version",
+      "report_id",
+      "report_schema_version",
+      "generated_at",
+      "format",
+      "content",
+    ],
+    evidence_index: ["schema_version", "index_id", "report_id", "created_at", "entries"],
+  };
+  let plannerCalled = false;
+
+  for (const [document, fields] of Object.entries(requiredFields)) {
+    for (const field of fields) {
+      const incomplete = structuredClone(audit);
+      delete incomplete[document][field];
+      const result = await runInit(
+        directory,
+        "0.1.0",
+        { report_package: incomplete },
+        {
+          prepare_dependency_changes: async () => {
+            plannerCalled = true;
+            return [];
+          },
+        },
+      );
+      assert.equal(result.error, "invalid_report_package", `${document}.${field}`);
+    }
+  }
+
+  assert.equal(plannerCalled, false);
   assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
 });
 
@@ -297,6 +351,38 @@ test("declining the exact preview leaves the repository unchanged", async () => 
   assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
   assert.equal(await readFile(path.join(directory, "package.json"), "utf8"), packageBefore);
   assert.equal(await readFile(path.join(directory, "package-lock.json"), "utf8"), lockBefore);
+});
+
+test("a forged preview token cannot substitute different confirmed contents", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  const substituted = {
+    schema_version: preview.interaction.schema_version,
+    root: directory,
+    source_report_id: preview.source_report_id,
+    mode: preview.mode,
+    manifest: preview.manifest,
+    changes: structuredClone(preview.preview.changes),
+  };
+  substituted.changes.find((change) => change.path === "package.json").after =
+    "{\"forged\":true}\n";
+  const forgedPayload = Buffer.from(JSON.stringify(substituted), "utf8").toString("base64url");
+  const forgedChecksum = createHash("sha256").update(forgedPayload).digest("base64url");
+
+  const result = await runInit(directory, "0.1.0", {
+    resume_token: `${forgedPayload}.${forgedChecksum}`,
+    confirmation: "confirm",
+  });
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "invalid_resume_token");
+  assert.doesNotMatch(await readFile(path.join(directory, "package.json"), "utf8"), /forged/u);
 });
 
 test("confirming applies exactly the previewed initialization files", async () => {
@@ -485,6 +571,179 @@ test("an interrupted rollback leaves an ignored recovery journal that the next i
   assert.equal(await readFile(path.join(directory, "package.json"), "utf8"), packageBefore);
   assert.equal(await readFile(path.join(directory, "package-lock.json"), "utf8"), lockBefore);
   assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
+});
+
+test("recovery fails closed without overwriting a post-crash user edit", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(
+    directory,
+    "0.1.0",
+    { resume_token: preview.interaction.resume_token, confirmation: "confirm" },
+    {
+      file_operations: {
+        write_file: async (target, content) => {
+          if (target === path.join(directory, "package.json")) throw new Error("stop apply");
+          await writeFile(target, content, "utf8");
+        },
+      },
+    },
+  );
+  const userEdit = "{\"user_edit_after_crash\":true}\n";
+  await writeFile(path.join(directory, "package-lock.json"), userEdit);
+
+  const result = await runInit(directory, "0.1.0");
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "initialization_recovery_conflict");
+  assert.equal(await readFile(path.join(directory, "package-lock.json"), "utf8"), userEdit);
+});
+
+test("a symlinked LaunchRally directory cannot redirect initialization outside the project", async () => {
+  const directory = await fixture();
+  const outside = await mkdtemp(path.join(os.tmpdir(), "launchrally-outside-"));
+  const audit = await completeAudit(directory);
+  await symlink(outside, path.join(directory, ".launchrally"));
+  let plannerCalled = false;
+
+  const result = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    {
+      prepare_dependency_changes: async () => {
+        plannerCalled = true;
+        return [];
+      },
+    },
+  );
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "unsafe_project_path");
+  assert.equal(plannerCalled, false);
+  assert.deepEqual(await readdir(outside), []);
+});
+
+test("non-npm lockfiles must bind the exact CLI dependency and version", async () => {
+  const directory = await fixture();
+  const audit = structuredClone(await completeAudit(directory));
+  audit.report.scope.project.package_manager = "pnpm";
+  await rm(path.join(directory, "package-lock.json"));
+  await writeFile(path.join(directory, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+
+  const result = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    {
+      prepare_dependency_changes: async ({ package_json: packageJson }) => {
+        const manifest = JSON.parse(packageJson);
+        manifest.devDependencies = { "@launchrally/cli": "0.1.0" };
+        return [
+          { path: "package.json", content: `${JSON.stringify(manifest)}\n` },
+          {
+            path: "pnpm-lock.yaml",
+            content: "notes: '@launchrally/cli is mentioned; another package is 0.1.0'\n",
+          },
+        ];
+      },
+    },
+  );
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "invalid_dependency_plan");
+});
+
+test("pnpm, Yarn, and text Bun lockfiles accept exact manager-specific bindings", async () => {
+  const cases = [
+    {
+      manager: "pnpm",
+      lockfile: "pnpm-lock.yaml",
+      planned: [
+        "lockfileVersion: '9.0'",
+        "importers:",
+        "  .:",
+        "    devDependencies:",
+        "      '@launchrally/cli':",
+        "        specifier: 0.1.0",
+        "        version: 0.1.0",
+        "",
+      ].join("\n"),
+    },
+    {
+      manager: "yarn",
+      lockfile: "yarn.lock",
+      planned: '"@launchrally/cli@0.1.0":\n  version "0.1.0"\n',
+    },
+    {
+      manager: "bun",
+      lockfile: "bun.lock",
+      planned: '{"packages":{"@launchrally/cli":["@launchrally/cli@0.1.0",""]}}\n',
+    },
+  ];
+
+  for (const fixtureCase of cases) {
+    const directory = await fixture();
+    const audit = structuredClone(await completeAudit(directory));
+    audit.report.scope.project.package_manager = fixtureCase.manager;
+    await rm(path.join(directory, "package-lock.json"));
+    await writeFile(path.join(directory, fixtureCase.lockfile), "initial lock\n");
+
+    const result = await runInit(
+      directory,
+      "0.1.0",
+      { report_package: audit },
+      {
+        prepare_dependency_changes: async ({ package_json: packageJson }) => {
+          const manifest = JSON.parse(packageJson);
+          manifest.devDependencies = { "@launchrally/cli": "0.1.0" };
+          return [
+            { path: "package.json", content: `${JSON.stringify(manifest)}\n` },
+            { path: fixtureCase.lockfile, content: fixtureCase.planned },
+          ];
+        },
+      },
+    );
+
+    assert.equal(result.status, "needs_confirmation", fixtureCase.manager);
+    assert.ok(
+      result.preview.changes.some((change) => change.path === fixtureCase.lockfile),
+      fixtureCase.manager,
+    );
+  }
+});
+
+test("legacy binary Bun lockfiles fail deliberately without planning or writes", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-bun-init-"));
+  await writeFile(path.join(directory, "package.json"), '{"name":"bun-web"}\n');
+  const binaryLock = Buffer.from([0, 1, 2, 3, 255]);
+  await writeFile(path.join(directory, "bun.lockb"), binaryLock);
+  const audit = await completeAudit(directory);
+  let plannerCalled = false;
+
+  const result = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    {
+      prepare_dependency_changes: async () => {
+        plannerCalled = true;
+        return [];
+      },
+    },
+  );
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "unsupported_binary_lockfile");
+  assert.equal(result.recoverable, true);
+  assert.equal(plannerCalled, false);
+  assert.deepEqual(await readFile(path.join(directory, "bun.lockb")), binaryLock);
 });
 
 test("unconfirmed Report intent remains reasoned Unknown rather than inferred or Not Applicable", async () => {

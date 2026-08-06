@@ -1,18 +1,17 @@
 import { execFile } from "node:child_process";
-import { createHash, timingSafeEqual } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { lstat, mkdir, mkdtemp, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import {
   CLI_INTERACTION_CONTRACT,
-  EVIDENCE_INDEX_SCHEMA,
   INIT_INTERACTION_SCHEMA,
   MANIFEST_SCHEMA,
-  REPORT_VIEW_SCHEMA,
   assertSupportedManifestVersion,
   assertSupportedReportVersion,
+  assertValidReportPackage,
 } from "@launchrally/contracts";
 
 export const CLI_DEPENDENCY = "@launchrally/cli";
@@ -32,30 +31,38 @@ function digest(content) {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
 
-function encodeState(state) {
-  const payload = Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
-  const checksum = createHash("sha256").update(payload).digest("base64url");
-  return `${payload}.${checksum}`;
+async function storeState(state) {
+  const previewDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-init-preview-"));
+  const directoryToken = path.basename(previewDirectory).slice("launchrally-init-preview-".length);
+  const fileToken = randomBytes(32).toString("base64url");
+  const token = `lrinit_${directoryToken}_${fileToken}`;
+  await writeFile(
+    path.join(previewDirectory, `${fileToken}.json`),
+    `${JSON.stringify(state)}\n`,
+    { encoding: "utf8", flag: "wx", mode: 0o600 },
+  );
+  return token;
 }
 
-function decodeState(token) {
+async function loadState(token) {
   if (typeof token !== "string") return null;
-  const [payload, suppliedChecksum, extra] = token.split(".");
-  if (!payload || !suppliedChecksum || extra !== undefined) return null;
-  const expected = createHash("sha256").update(payload).digest();
-  let actual;
+  const match = token.match(/^lrinit_([A-Za-z0-9]{6})_([A-Za-z0-9_-]{43})$/u);
+  if (!match) return null;
+  const statePath = path.join(
+    os.tmpdir(),
+    `launchrally-init-preview-${match[1]}`,
+    `${match[2]}.json`,
+  );
   try {
-    actual = Buffer.from(suppliedChecksum, "base64url");
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    return state?.schema_version === INIT_INTERACTION_SCHEMA ? { state, statePath } : null;
   } catch {
     return null;
   }
-  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
-  try {
-    const state = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return state?.schema_version === INIT_INTERACTION_SCHEMA ? state : null;
-  } catch {
-    return null;
-  }
+}
+
+async function discardState(statePath) {
+  if (statePath) await rm(path.dirname(statePath), { recursive: true, force: true });
 }
 
 function declared(value) {
@@ -145,6 +152,33 @@ async function readOptional(filePath) {
   }
 }
 
+async function assertSafeRelativePath(root, relativePath) {
+  if (!APPROVED_PATHS.has(relativePath) && relativePath !== RECOVERY_RELATIVE_PATH) {
+    const error = new Error("Initialization path is not approved.");
+    error.code = "unsafe_project_path";
+    throw error;
+  }
+  let current = root;
+  for (const segment of relativePath.split("/")) {
+    current = path.join(current, segment);
+    try {
+      const stat = await lstat(current);
+      if (stat.isSymbolicLink()) {
+        const error = new Error(`Initialization refuses symlinked path: ${relativePath}`);
+        error.code = "unsafe_project_path";
+        throw error;
+      }
+    } catch (error) {
+      if (error?.code === "ENOENT") return;
+      throw error;
+    }
+  }
+}
+
+async function assertSafeChangePaths(root, changes) {
+  for (const change of changes) await assertSafeRelativePath(root, change.path);
+}
+
 function contentLines(content) {
   if (content === null || content === "") return [];
   const lines = content.split("\n");
@@ -165,13 +199,81 @@ function exactDiff(relativePath, before, after) {
   ].join("\n");
 }
 
-function lockfileFor(packageManager) {
-  return {
+async function exists(filePath) {
+  try {
+    await lstat(filePath);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+async function lockfileFor(root, packageManager) {
+  const standard = {
     npm: "package-lock.json",
     pnpm: "pnpm-lock.yaml",
     yarn: "yarn.lock",
-    bun: "bun.lock",
   }[packageManager];
+  if (standard) return { path: standard, binary: false };
+  if (packageManager !== "bun") return null;
+  if (await exists(path.join(root, "bun.lock"))) return { path: "bun.lock", binary: false };
+  if (await exists(path.join(root, "bun.lockb"))) return { path: "bun.lockb", binary: true };
+  return { path: "bun.lock", binary: false };
+}
+
+function unquote(value) {
+  return value.trim().replace(/^(?:['"])(.*)(?:['"])$/u, "$1");
+}
+
+function pnpmLocksExactDependency(lockfile, dependency, version) {
+  const lines = lockfile.split("\n");
+  const importer = lines.findIndex((line) => /^ {2}(?:\.|['"]\.['"]):\s*$/u.test(line));
+  if (importer < 0) return false;
+  const devDependencies = lines.findIndex(
+    (line, index) => index > importer && /^ {4}devDependencies:\s*$/u.test(line),
+  );
+  if (devDependencies < 0) return false;
+  const escapedDependency = dependency.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const dependencyLine = lines.findIndex((line, index) =>
+    index > devDependencies
+      && new RegExp(`^ {6}['"]?${escapedDependency}['"]?:\\s*$`, "u").test(line));
+  if (dependencyLine < 0) return false;
+  const block = [];
+  for (let index = dependencyLine + 1; index < lines.length; index += 1) {
+    if (/^ {0,6}\S/u.test(lines[index])) break;
+    block.push(lines[index]);
+  }
+  const values = Object.fromEntries(block.flatMap((line) => {
+    const match = line.match(/^ {8}(specifier|version):\s*(.+?)\s*$/u);
+    return match ? [[match[1], unquote(match[2])]] : [];
+  }));
+  return values.specifier === version && values.version === version;
+}
+
+function yarnLocksExactDependency(lockfile, dependency, version) {
+  const escapedDependency = dependency.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const header = new RegExp(
+    `^['"]?${escapedDependency}@(npm:)?${version.replaceAll(".", "\\.")}['"]?:\\s*$`,
+    "u",
+  );
+  const lines = lockfile.split("\n");
+  const entry = lines.findIndex((line) => header.test(line));
+  if (entry < 0) return false;
+  for (let index = entry + 1; index < lines.length && /^\s/u.test(lines[index]); index += 1) {
+    const match = lines[index].match(/^\s+version(?::|\s)\s*['"]?([^'"\s]+)['"]?\s*$/u);
+    if (match) return match[1] === version;
+  }
+  return false;
+}
+
+function bunLocksExactDependency(lockfile, dependency, version) {
+  const escapedDependency = dependency.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const escapedVersion = version.replaceAll(".", "\\.");
+  return new RegExp(
+    `['"]${escapedDependency}['"]\\s*:\\s*\\[\\s*['"]${escapedDependency}@${escapedVersion}['"]`,
+    "u",
+  ).test(lockfile);
 }
 
 function alreadyExact({ packageManager, packageJson, lockfile, dependency, version }) {
@@ -182,9 +284,9 @@ function alreadyExact({ packageManager, packageJson, lockfile, dependency, versi
     return false;
   }
   if (parsedPackage.devDependencies?.[dependency] !== version) return false;
-  if (packageManager !== "npm") {
-    return lockfile.includes(dependency) && lockfile.includes(version);
-  }
+  if (packageManager === "pnpm") return pnpmLocksExactDependency(lockfile, dependency, version);
+  if (packageManager === "yarn") return yarnLocksExactDependency(lockfile, dependency, version);
+  if (packageManager === "bun") return bunLocksExactDependency(lockfile, dependency, version);
   try {
     const parsedLock = JSON.parse(lockfile);
     return parsedLock.packages?.[""]?.devDependencies?.[dependency] === version
@@ -300,10 +402,25 @@ async function removeRecoveryJournal(root) {
   }
 }
 
-async function rollbackChanges(root, changes, operations) {
+async function rollbackChanges(root, changes, operations, guardCurrent = false) {
   try {
+    if (guardCurrent) {
+      await assertSafeChangePaths(root, changes);
+      for (const change of changes) {
+        const current = await readOptional(path.join(root, change.path));
+        const currentDigest = current === null ? null : digest(current);
+        if (![change.before_digest, change.after_digest].includes(currentDigest)) {
+          return { reverted: false, conflict: true };
+        }
+      }
+    }
     for (const change of [...changes].reverse()) {
       const target = path.join(root, change.path);
+      if (guardCurrent) {
+        const current = await readOptional(target);
+        const currentDigest = current === null ? null : digest(current);
+        if (currentDigest === change.before_digest) continue;
+      }
       if (change.before === null) {
         await operations.remove_file(target);
       } else {
@@ -311,9 +428,9 @@ async function rollbackChanges(root, changes, operations) {
         await operations.write_file(target, change.before);
       }
     }
-    return true;
+    return { reverted: true, conflict: false };
   } catch {
-    return false;
+    return { reverted: false, conflict: false };
   }
 }
 
@@ -327,6 +444,8 @@ async function applyChanges(root, changes, fileOperations = {}) {
   const attempted = [];
   const recoveryPath = path.join(root, RECOVERY_RELATIVE_PATH);
   try {
+    await assertSafeRelativePath(root, RECOVERY_RELATIVE_PATH);
+    await assertSafeChangePaths(root, changes);
     await mkdir(path.dirname(recoveryPath), { recursive: true });
     await writeFile(
       recoveryPath,
@@ -346,8 +465,8 @@ async function applyChanges(root, changes, fileOperations = {}) {
     await removeRecoveryJournal(root);
     return { applied: true, reverted: false };
   } catch {
-    const reverted = await rollbackChanges(root, attempted, operations);
-    if (reverted) {
+    const rollback = await rollbackChanges(root, attempted, operations);
+    if (rollback.reverted) {
       await removeRecoveryJournal(root);
       return { applied: false, reverted: true };
     }
@@ -357,6 +476,12 @@ async function applyChanges(root, changes, fileOperations = {}) {
 
 async function recoverPendingInitialization(root) {
   const recoveryPath = path.join(root, RECOVERY_RELATIVE_PATH);
+  try {
+    await assertSafeRelativePath(root, RECOVERY_RELATIVE_PATH);
+  } catch (error) {
+    if (error?.code === "unsafe_project_path") return "unsafe_path";
+    throw error;
+  }
   const content = await readOptional(recoveryPath);
   if (content === null) return null;
   let journal;
@@ -373,8 +498,14 @@ async function recoverPendingInitialization(root) {
   ) {
     return false;
   }
-  const reverted = await rollbackChanges(root, journal.changes, fileOperationAdapter());
-  if (!reverted) return false;
+  const rollback = await rollbackChanges(
+    root,
+    journal.changes,
+    fileOperationAdapter(),
+    true,
+  );
+  if (rollback.conflict) return "conflict";
+  if (!rollback.reverted) return false;
   await removeRecoveryJournal(root);
   return true;
 }
@@ -400,34 +531,6 @@ function initializationError(error, message, extra = {}) {
   };
 }
 
-function hasCompleteReportPackage(source) {
-  const report = source?.report;
-  const reportView = source?.report_view;
-  const evidenceIndex = source?.evidence_index;
-  const releaseIntent = report?.scope?.release_intent;
-  return source?.status === "completed"
-    && source?.operation === "audit"
-    && typeof report?.schema_version === "string"
-    && typeof report?.report_id === "string"
-    && typeof report?.scope?.project_root === "string"
-    && typeof report?.scope?.project?.name === "string"
-    && typeof report?.scope?.project?.type === "string"
-    && typeof report?.scope?.project?.package_manager === "string"
-    && typeof releaseIntent?.confirmed === "boolean"
-    && Array.isArray(releaseIntent?.production_targets)
-    && Array.isArray(releaseIntent?.core_journeys)
-    && Array.isArray(releaseIntent?.support_layers)
-    && Array.isArray(releaseIntent?.provider_roles)
-    && typeof report?.scope?.public_verification?.decision === "string"
-    && Array.isArray(report?.scope?.public_verification?.targets)
-    && reportView?.schema_version === REPORT_VIEW_SCHEMA
-    && reportView?.report_id === report.report_id
-    && reportView?.report_schema_version === report.schema_version
-    && evidenceIndex?.schema_version === EVIDENCE_INDEX_SCHEMA
-    && evidenceIndex?.report_id === report.report_id
-    && report?.execution?.evidence_index?.index_id === evidenceIndex.index_id;
-}
-
 export async function runInit(cwd, version, options = {}, dependencies = {}) {
   const root = path.resolve(cwd);
   const recovered = await recoverPendingInitialization(root);
@@ -450,10 +553,23 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       recoverable: true,
     };
   }
+  if (recovered === "conflict") {
+    return initializationError(
+      "initialization_recovery_conflict",
+      "Recovery stopped because a project file changed after interruption; user edits were preserved.",
+      { recoverable: true },
+    );
+  }
+  if (recovered === "unsafe_path") {
+    return initializationError(
+      "unsafe_project_path",
+      "Initialization refuses a symlinked project path that could escape the repository.",
+    );
+  }
   if (!options.report_package && !options.resume_token) return unavailable();
   if (options.resume_token) {
-    const state = decodeState(options.resume_token);
-    if (!state) {
+    const stored = await loadState(options.resume_token);
+    if (!stored) {
       return {
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
@@ -462,7 +578,9 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
         message: "The initialization preview token is invalid or corrupted.",
       };
     }
+    const { state, statePath } = stored;
     if (state.root !== root) {
+      await discardState(statePath);
       return {
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
@@ -475,6 +593,7 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       !Array.isArray(state.changes)
       || state.changes.some((change) => !APPROVED_PATHS.has(change.path))
     ) {
+      await discardState(statePath);
       return {
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
@@ -483,7 +602,21 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
         message: "The initialization preview token contains an invalid change plan.",
       };
     }
+    try {
+      await assertSafeRelativePath(root, RECOVERY_RELATIVE_PATH);
+      await assertSafeChangePaths(root, state.changes);
+    } catch (error) {
+      await discardState(statePath);
+      if (error?.code === "unsafe_project_path") {
+        return initializationError(
+          "unsafe_project_path",
+          "Initialization refuses a symlinked project path that could escape the repository.",
+        );
+      }
+      throw error;
+    }
     if (options.confirmation === "decline") {
+      await discardState(statePath);
       return {
         contract: CLI_INTERACTION_CONTRACT,
         status: "completed",
@@ -502,6 +635,7 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       };
     }
     if (!await previewIsCurrent(state.root, state.changes)) {
+      await discardState(statePath);
       return {
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
@@ -515,6 +649,7 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       state.changes,
       dependencies.file_operations,
     );
+    await discardState(statePath);
     if (!applied.applied) {
       return applied.reverted
         ? {
@@ -563,7 +698,9 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
         : "The saved Audit JSON is incomplete or invalid; nothing was changed.",
     );
   }
-  if (!hasCompleteReportPackage(source)) {
+  try {
+    assertValidReportPackage(source);
+  } catch {
     return initializationError(
       "invalid_report_package",
       "The saved Audit JSON is incomplete or invalid; nothing was changed.",
@@ -574,6 +711,19 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       "report_scope_mismatch",
       "The saved Report belongs to a different repository root; nothing was changed.",
     );
+  }
+  try {
+    await assertSafeRelativePath(root, ".launchrally/launch-manifest.json");
+    await assertSafeRelativePath(root, ".launchrally/.gitignore");
+    await assertSafeRelativePath(root, "package.json");
+  } catch (error) {
+    if (error?.code === "unsafe_project_path") {
+      return initializationError(
+        "unsafe_project_path",
+        "Initialization refuses a symlinked project path that could escape the repository.",
+      );
+    }
+    throw error;
   }
   const manifestPath = path.join(root, ".launchrally", "launch-manifest.json");
   const existingManifestContent = await readOptional(manifestPath);
@@ -595,8 +745,8 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
   const mode = existingManifestContent === null ? "initialization" : "migration";
   const manifest = createManifest(source.report);
   const packageJson = await readFile(path.join(root, "package.json"), "utf8");
-  const lockfilePath = lockfileFor(source.report.scope.project.package_manager);
-  if (!lockfilePath) {
+  const lockfile = await lockfileFor(root, source.report.scope.project.package_manager);
+  if (!lockfile) {
     return {
       contract: CLI_INTERACTION_CONTRACT,
       status: "execution_error",
@@ -605,7 +755,26 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       message: "Initialization cannot prepare an exact lockfile change for this package manager.",
     };
   }
-  const lockfile = await readFile(path.join(root, lockfilePath), "utf8");
+  if (lockfile.binary) {
+    return initializationError(
+      "unsupported_binary_lockfile",
+      "Legacy bun.lockb cannot be previewed safely; migrate it to bun.lock, rerun Audit, and retry init.",
+      { recoverable: true },
+    );
+  }
+  const lockfilePath = lockfile.path;
+  try {
+    await assertSafeRelativePath(root, lockfilePath);
+  } catch (error) {
+    if (error?.code === "unsafe_project_path") {
+      return initializationError(
+        "unsafe_project_path",
+        "Initialization refuses a symlinked project path that could escape the repository.",
+      );
+    }
+    throw error;
+  }
+  const lockfileContent = await readFile(path.join(root, lockfilePath), "utf8");
   const prepareDependencyChanges = dependencies.prepare_dependency_changes
     ?? defaultPrepareDependencyChanges;
   let dependencyChanges;
@@ -614,7 +783,7 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       cwd: root,
       package_manager: source.report.scope.project.package_manager,
       package_json: packageJson,
-      lockfile: { path: lockfilePath, content: lockfile },
+      lockfile: { path: lockfilePath, content: lockfileContent },
       dependency: CLI_DEPENDENCY,
       version,
     });
@@ -628,7 +797,9 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       recoverable: true,
     };
   }
-  const dependencyPaths = dependencyChanges.map((change) => change.path).sort();
+  const dependencyPaths = Array.isArray(dependencyChanges)
+    ? dependencyChanges.map((change) => change.path).sort()
+    : [];
   const exactDependencyPaths = ["package.json", lockfilePath].sort();
   const plannedPackage = dependencyChanges.find((change) => change.path === "package.json");
   const plannedLockfile = dependencyChanges.find((change) => change.path === lockfilePath);
@@ -696,7 +867,7 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
     preview: { changes },
     interaction: {
       schema_version: INIT_INTERACTION_SCHEMA,
-      resume_token: encodeState(state),
+      resume_token: await storeState(state),
     },
     request: {
       type: "confirmation",
