@@ -63,16 +63,17 @@ function planItem(report, action, index) {
 }
 
 function planGap(gap) {
-  const permissionRequest = ["permission_denied", "missing_provider_login"].includes(
-    gap.reason_code,
-  );
+  const permissionRequest = gap.reason_code === "permission_denied";
+  const missingProviderLogin = gap.reason_code === "missing_provider_login";
   return {
     ...structuredClone(gap),
     confirmed_fix: false,
     work_type: permissionRequest ? "permission_request" : "investigation",
     next_action: permissionRequest
       ? "Request explicit read permission before recollecting Evidence; do not treat this Gap as a confirmed fix."
-      : "Investigate and recollect the missing Evidence before proposing remediation; this Gap is not a confirmed fix.",
+      : missingProviderLogin
+        ? "Authenticate the existing read-only Provider CLI outside LaunchRally, then recollect Evidence; LaunchRally never initiates login or handles credentials."
+        : "Investigate and recollect the missing Evidence before proposing remediation; this Gap is not a confirmed fix.",
   };
 }
 
@@ -104,9 +105,29 @@ function sameIds(left, right) {
   return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
 }
 
+function hasUniqueIds(items) {
+  return new Set(items.map((item) => item.check_id)).size === items.length;
+}
+
 function reportRelationshipsAreValid(report) {
-  const checks = new Map(report.results.checks.map((check) => [check.check_id, check]));
-  const declarations = new Map(report.catalog.checks.map((check) => [check.check_id, check]));
+  const resultChecks = report.results.checks;
+  const catalogChecks = report.catalog.checks;
+  if (
+    !hasUniqueIds(resultChecks)
+    || !hasUniqueIds(catalogChecks)
+    || !hasUniqueIds(report.results.action_queue)
+    || !hasUniqueIds(report.results.verification_gaps)
+  ) return false;
+  const checks = new Map(resultChecks.map((check) => [check.check_id, check]));
+  const declarations = new Map(catalogChecks.map((check) => [check.check_id, check]));
+  const checksValid = resultChecks.every((check) => {
+    const declaration = declarations.get(check.check_id);
+    return declaration
+      && check.check_version === declaration.check_version
+      && check.risk_domain === declaration.risk_domain
+      && check.severity === declaration.severity_policy.severity
+      && check.release_gate === declaration.release_gate_policy.gate;
+  });
   const actionsValid = report.results.action_queue.every((action) => {
     const check = checks.get(action.check_id);
     const declaration = declarations.get(action.check_id);
@@ -123,12 +144,18 @@ function reportRelationshipsAreValid(report) {
   const gapsValid = report.results.verification_gaps.every((gap) => {
     const check = checks.get(gap.check_id);
     return check?.status === "unverified"
+      && gap.risk_domain === check.risk_domain
       && gap.priority === check.priority
       && gap.severity === check.severity
       && gap.gating === check.gating;
   });
-  return actionsValid
+  return checksValid
+    && actionsValid
     && gapsValid
+    && sameIds(
+      resultChecks.map((check) => check.check_id),
+      catalogChecks.map((check) => check.check_id),
+    )
     && sameIds(
       report.results.action_queue.map((action) => action.check_id),
       report.results.checks.filter((check) => check.status === "failed").map(

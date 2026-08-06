@@ -198,6 +198,48 @@ test("planning rejects inconsistent Action Queue and Check relationships", async
   });
 });
 
+test("planning rejects ambiguous or tampered Check and catalog relationships", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const changedDomain = structuredClone(audit);
+  changedDomain.report.results.checks[0].risk_domain = "availability";
+  const duplicateCheck = structuredClone(audit);
+  duplicateCheck.report.results.checks.push(structuredClone(
+    duplicateCheck.report.results.checks.find((check) => check.status === "passed"),
+  ));
+  const duplicateDeclaration = structuredClone(audit);
+  duplicateDeclaration.report.catalog.checks.push(structuredClone(
+    duplicateDeclaration.report.catalog.checks[0],
+  ));
+
+  for (const tampered of [changedDomain, duplicateCheck, duplicateDeclaration]) {
+    const result = runPlan(tampered);
+    assert.equal(result.status, "execution_error");
+    assert.equal(result.error, "invalid_report_relationships");
+  }
+});
+
+test("missing Provider login remains setup investigation and never requests permission again", async () => {
+  const directory = await fixture();
+  const audit = structuredClone(await completeAudit(directory));
+  const gap = audit.report.results.verification_gaps.find(
+    (candidate) => candidate.reason_code === "permission_denied",
+  );
+  gap.reason_code = "missing_provider_login";
+  gap.reason = "The existing read-only Provider CLI is not authenticated.";
+
+  const result = runPlan(audit);
+  const plannedGap = result.verification_gaps.find(
+    (candidate) => candidate.check_id === gap.check_id,
+  );
+
+  assert.equal(plannedGap.work_type, "investigation");
+  assert.equal(
+    plannedGap.next_action,
+    "Authenticate the existing read-only Provider CLI outside LaunchRally, then recollect Evidence; LaunchRally never initiates login or handles credentials.",
+  );
+});
+
 test("planning requires confirmed release intent before describing release impact", async () => {
   const directory = await fixture();
   const audit = await unconfirmedAudit(directory);
