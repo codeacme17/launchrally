@@ -2,7 +2,7 @@
 
 LaunchRally is a local-first, open-source launch readiness audit and verification tool for repository-owning AI builders.
 
-This repository contains the Phase 0 Audit, post-Report initialization, read-only Launch Plan, and post-remediation Verify paths. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, a policy-driven launch assessment, read-only public verification, approved Provider metadata reads, preview-first local adoption, deterministic remediation guidance, and immutable verification history.
+This repository contains the Phase 0 Audit, post-Report initialization, read-only Launch Plan, bounded Provider guidance, and post-remediation Verify paths. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, a policy-driven launch assessment, read-only public verification, approved Provider metadata reads, preview-first local adoption, deterministic remediation guidance, open Provider Decision Cards, and immutable verification history.
 
 ## Quick start
 
@@ -25,6 +25,10 @@ Save a completed Agent Mode Audit and pass it to `rally init --report <path>`. I
 
 Pass the same saved current Audit to `rally plan --report <path>`. The versioned Launch Plan preserves the Report Action Queue order and explains each confirmed Finding, its declared-release impact, investigation locations, remediation guidance, and required Evidence recollection. Verification Gaps remain separate investigation or permission work. Planning performs no source, deployment, Provider, or production mutation. Only an explicit `--handoff` assigns local remediation to the host Agent; it grants no external write authority and directs the builder back to Verify.
 
+Provider guidance starts only from a supported Failed Check (`rally providers --report <path> --gap <check-id>`) or an existing confirmed Provider role whose Decision Card conflicts with newly confirmed constraints (`--role <role>`). Before showing recommendation brands, it validates and separately confirms budget, scale, region, existing stack, operational ability, and lock-in preference. The resulting `launchrally.dev/provider-guidance/v1` shortlist is advisory, unranked, and deterministic. Each open, versioned Decision Card records capability scope, fit and non-fit contexts, compatibility, operations, lock-in, cost-model caveats, official sources, review date, and explicit Unknowns; it never claims a universal best Provider or live pricing.
+
+Selecting a Card only previews a `.launchrally/launch-manifest.json` intent change. A second explicit confirmation records that local intent, replacing only the selected capability role and binding the decision to its source Report and versioned Card so Verify can distinguish it from unrelated Manifest Drift. The selection is not Machine Evidence, never marks a Check Passed, performs no account creation, install, login, provisioning, deployment, or Provider write, and always directs the builder to configure outside LaunchRally and return to Verify. A missing initialized Manifest, a declined selection, or a Manifest changed after preview writes nothing.
+
 After remediation, run `rally verify --report <path> --scope full`. Verify reads the initialized Manifest, discloses fresh public and Provider permission boundaries, and recollects Evidence instead of reusing live observations. Full verification creates a new immutable Report and Evidence Index with an explicit comparison to the source history. Use `--scope targeted --checks '["check.id"]'` for selected Checks; targeted results are explicitly limited and never carry a whole-release Launch Assessment. Manifest/observed-state conflicts are reported as Manifest Drift and never update project intent silently.
 
 Cloudflare and Vercel have versioned, read-only Provider Adapters. Before approval, the Audit discloses the existing CLI executable, exact arguments, target, and allowlisted fields for each Provider. Successful reads become provenance-backed Machine Evidence for the catalog-declared Provider Check; missing tools or authentication and Adapter failures leave that Check Unverified. LaunchRally never installs a Provider tool, initiates login, supplies or retains credentials, or performs Provider writes.
@@ -36,7 +40,7 @@ The Local Safe Scan collects provenance-backed facts from supported source and c
 ```text
 packages/
   contracts/       Public protocol and schema constants
-  core/            Framework-neutral discovery, Check Catalog, and audit orchestration
+  core/            Framework-neutral discovery, Check Catalog, Decision Cards, and orchestration
   cli/             The `rally` executable
 skills/
   launchrally/     Canonical Agent Skill source
@@ -58,8 +62,9 @@ test/
 - Local facts include their repository-relative source path and scanner policy version.
 - Environment values and raw package script commands are never included in Audit output.
 - Approved public probes and Cloudflare/Vercel Adapter reads are bounded, read-only, and retain only normalized evidence.
+- Provider guidance reads only the supplied current Report and open local Decision Cards; it contacts no Provider and performs no external mutation.
 - Report Records and Evidence Indexes are unique, frozen in-process, and never overwrite repository files.
-- `init` is available only from a saved completed Audit and always requires preview confirmation; `plan` is deterministic and read-only from a saved current Audit; `verify` creates a new immutable full Report or an explicitly limited targeted result.
+- `init` is available only from a saved completed Audit and always requires preview confirmation; `plan` is deterministic and read-only from a saved current Audit; `providers` requires constraint confirmation and a second confirmation for local Manifest intent; `verify` creates a new immutable full Report or an explicitly limited targeted result.
 - Missing P0 coverage is always reported as a Verification Gap and cannot be treated as Passed or `Launch Ready`.
 
 ## Contribution flow

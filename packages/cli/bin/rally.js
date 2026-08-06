@@ -8,6 +8,7 @@ import {
   runAudit,
   runInit,
   runPlan,
+  runProviderGuidance,
   runVerify,
 } from "@launchrally/core";
 
@@ -20,12 +21,16 @@ function commandName() {
   const optionsWithValues = new Set([
     "--answers",
     "--confirm",
+    "--constraints",
     "--checks",
     "--cwd",
+    "--gap",
     "--permissions",
     "--report",
+    "--role",
     "--resume",
     "--scope",
+    "--select",
   ]);
   for (let index = 0; index < args.length; index += 1) {
     if (optionsWithValues.has(args[index])) {
@@ -230,6 +235,91 @@ function renderHumanPlan(value) {
   return lines.join("\n");
 }
 
+function renderHumanProviders(value) {
+  const lines = [
+    "LaunchRally Provider Guidance",
+    ...(value.source_report_id ? [`Source Report: ${value.source_report_id}`] : []),
+    ...(value.trigger?.capability_id ? [`Capability: ${value.trigger.capability_id}`] : []),
+  ];
+  if (value.trigger?.summary) lines.push(`Trigger: ${value.trigger.summary}`);
+
+  if (value.request?.kind === "provider_constraints") {
+    lines.push(
+      "Provider brands remain hidden until all six constraints are confirmed.",
+      ...value.request.fields.map((field) => `- ${field.prompt}`),
+    );
+    if (value.request.validation_errors.length > 0) {
+      lines.push(
+        "Constraint errors:",
+        ...value.request.validation_errors.map(
+          (error) => `- ${error.field_id}: ${error.code}`,
+        ),
+      );
+    }
+  } else if (value.request?.kind === "constraint_confirmation") {
+    lines.push(
+      "Confirm Provider constraints",
+      `Budget: ${value.constraints.budget}`,
+      `Scale: ${value.constraints.scale}`,
+      `Region: ${value.constraints.region}`,
+      `Existing stack: ${value.constraints.existing_stack.join(", ") || "none"}`,
+      `Operational ability: ${value.constraints.operational_ability}`,
+      `Lock-in preference: ${value.constraints.lock_in_preference}`,
+      value.request.prompt,
+      `Choose: ${value.request.choices.join(", ")}.`,
+    );
+  } else if (value.request?.kind === "provider_selection") {
+    lines.push(
+      "Advisory shortlist — no universal best Provider",
+      "Live pricing is not guaranteed; check each Card's current official sources.",
+    );
+    for (const [index, option] of value.shortlist.entries()) {
+      const { card } = option;
+      lines.push(
+        `${index + 1}. ${card.provider.name} (${card.card_id} v${card.card_version})`,
+        `   Scope: ${card.capability_scope.summary}`,
+        "   Reasons:",
+        ...option.reasons.map((reason) => `   - ${reason}`),
+        "   Limits and caveats:",
+        ...option.limits.map((limit) => `   - ${limit}`),
+        `   Compatibility: ${card.compatibility.notes.join(" ")}`,
+        `   Operations: ${card.operations.considerations.join(" ")}`,
+        `   Lock-in: ${card.lock_in.level} — ${card.lock_in.considerations.join(" ")}`,
+        `   Cost basis: ${card.cost_model.basis.join(", ")}`,
+        `   Reviewed: ${card.review_date}`,
+        "   Official sources:",
+        ...card.official_sources.map((source) => `   - ${source.title}: ${source.url}`),
+        "   Unknowns:",
+        ...card.unknowns.map((unknown) => `   - ${unknown}`),
+      );
+    }
+    lines.push(value.request.prompt);
+  } else if (value.request?.kind === "manifest_intent_confirmation") {
+    lines.push(
+      "Manifest Intent Preview",
+      `Selection: ${value.selection.provider_name} (${value.selection.provider_role})`,
+      `Path: ${value.preview.path}`,
+      `After roles: ${JSON.stringify(value.preview.after_roles)}`,
+      "This selection is Manifest intent only: it is not Machine Evidence and cannot Pass a Check.",
+      "No Provider or production mutation is authorized.",
+      value.request.prompt,
+      `Choose: ${value.request.choices.join(", ")}.`,
+    );
+  } else if (value.outcome === "manifest_intent_recorded") {
+    lines.push(
+      `Provider intent recorded: ${value.selection.provider_name} (${value.selection.provider_role}).`,
+      "The selection remains Unverified and is not Machine Evidence.",
+      value.next.message,
+    );
+  } else if (value.message) {
+    lines.push(value.message);
+  }
+  if (value.interaction?.resume_token) {
+    lines.push(`Resume token: ${value.interaction.resume_token}`);
+  }
+  return lines.join("\n");
+}
+
 function renderHumanVerify(value) {
   const targeted = value.verification_scope.mode === "targeted";
   const lines = [
@@ -294,6 +384,14 @@ function print(value) {
   }
 
   if (
+    value.operation === "providers"
+    && ["needs_input", "needs_confirmation", "completed"].includes(value.status)
+  ) {
+    process.stdout.write(`${renderHumanProviders(value)}\n`);
+    return;
+  }
+
+  if (
     value.operation === "verify"
     && ["needs_permission", "completed"].includes(value.status)
   ) {
@@ -332,6 +430,7 @@ function help() {
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
       "  init     Preview and confirm local adoption after a complete Audit Report",
       "  plan     Build a deterministic read-only Launch Plan from a current Report",
+      "  providers Guide a Provider choice from an evidenced gap or constraint mismatch",
       "  verify   Recollect fresh Evidence for full or targeted verification",
       "  version  Print CLI and interaction contract versions",
     ].join("\n"),
@@ -426,6 +525,47 @@ async function main() {
     }
     const result = runPlan(reportPackage, {
       handoff_requested: args.includes("--handoff"),
+    });
+    print(result);
+    return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+  }
+
+  if (command === "providers") {
+    const cwd = optionValue("--cwd") ?? process.cwd();
+    let reportPackage;
+    const reportPath = optionValue("--report");
+    if (reportPath) {
+      try {
+        reportPackage = JSON.parse(await readFile(reportPath, "utf8"));
+      } catch {
+        print({
+          contract: CLI_INTERACTION_CONTRACT,
+          status: "execution_error",
+          operation: "providers",
+          error: "invalid_report_file",
+          message: "The saved Audit JSON could not be read and parsed.",
+        });
+        return 2;
+      }
+    }
+    const constraints = jsonOption("--constraints");
+    if (constraints.error) {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "providers",
+        error: "invalid_option_json",
+        message: "Provider constraints must use valid JSON.",
+      });
+      return 2;
+    }
+    const result = await runProviderGuidance(cwd, reportPackage, {
+      source_check_id: optionValue("--gap"),
+      provider_role: optionValue("--role"),
+      resume_token: optionValue("--resume"),
+      constraints: constraints.value,
+      confirmation: optionValue("--confirm"),
+      selection: optionValue("--select"),
     });
     print(result);
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;

@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/provider-decision-card/v1",
+  "title": "LaunchRally Provider Decision Card v1",
+  "type": "object",
+  "required": ["schema_version", "card_id", "card_version", "provider", "capability_scope", "fit_contexts", "non_fit_contexts", "compatibility", "constraints", "operations", "lock_in", "cost_model", "official_sources", "review_date", "unknowns"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/provider-decision-card/v1" },
+    "card_id": { "type": "string", "pattern": "^[a-z0-9.-]+$" },
+    "card_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "provider": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "name": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "capability_scope": {
+      "type": "object",
+      "required": ["id", "provider_role", "summary", "includes", "excludes"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "provider_role": { "type": "string", "minLength": 1 },
+        "summary": { "type": "string", "minLength": 1 },
+        "includes": { "$ref": "#/$defs/nonEmptyStrings" },
+        "excludes": { "$ref": "#/$defs/nonEmptyStrings" }
+      },
+      "additionalProperties": false
+    },
+    "fit_contexts": { "$ref": "#/$defs/nonEmptyStrings" },
+    "non_fit_contexts": { "$ref": "#/$defs/nonEmptyStrings" },
+    "compatibility": {
+      "type": "object",
+      "required": ["stack_signals", "incompatible_stack_signals", "region_signals", "deployment_shapes", "notes"],
+      "properties": {
+        "stack_signals": { "$ref": "#/$defs/nonEmptyStrings" },
+        "incompatible_stack_signals": { "$ref": "#/$defs/stringSet" },
+        "region_signals": { "$ref": "#/$defs/nonEmptyStrings" },
+        "deployment_shapes": { "$ref": "#/$defs/nonEmptyStrings" },
+        "notes": { "$ref": "#/$defs/nonEmptyStrings" }
+      },
+      "additionalProperties": false
+    },
+    "constraints": {
+      "type": "object",
+      "required": ["budgets", "scales", "minimum_operational_ability", "lock_in_level"],
+      "properties": {
+        "budgets": {
+          "type": "array",
+          "items": { "enum": ["free_tier_required", "cost_sensitive", "flexible", "enterprise"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "scales": {
+          "type": "array",
+          "items": { "enum": ["prototype", "small", "growing", "high_scale"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "minimum_operational_ability": { "enum": ["minimal", "moderate", "specialist"] },
+        "lock_in_level": { "enum": ["low", "moderate", "high"] }
+      },
+      "additionalProperties": false
+    },
+    "operations": {
+      "type": "object",
+      "required": ["model", "builder_responsibilities", "considerations"],
+      "properties": {
+        "model": { "enum": ["managed", "shared", "self_managed"] },
+        "builder_responsibilities": { "$ref": "#/$defs/nonEmptyStrings" },
+        "considerations": { "$ref": "#/$defs/nonEmptyStrings" }
+      },
+      "additionalProperties": false
+    },
+    "lock_in": {
+      "type": "object",
+      "required": ["level", "considerations", "exit_considerations"],
+      "properties": {
+        "level": { "enum": ["low", "moderate", "high"] },
+        "considerations": { "$ref": "#/$defs/nonEmptyStrings" },
+        "exit_considerations": { "$ref": "#/$defs/nonEmptyStrings" }
+      },
+      "additionalProperties": false
+    },
+    "cost_model": {
+      "type": "object",
+      "required": ["basis", "caveats", "live_pricing_guaranteed"],
+      "properties": {
+        "basis": { "$ref": "#/$defs/nonEmptyStrings" },
+        "caveats": { "$ref": "#/$defs/nonEmptyStrings" },
+        "live_pricing_guaranteed": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "official_sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "url", "kind"],
+        "properties": {
+          "title": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "format": "uri" },
+          "kind": { "enum": ["capabilities", "compatibility", "operations", "pricing", "limits", "regions"] }
+        },
+        "additionalProperties": false
+      },
+      "minItems": 3
+    },
+    "review_date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "unknowns": { "$ref": "#/$defs/nonEmptyStrings" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nonEmptyStrings": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "stringSet": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    }
+  },
+  "x-launchrally-contract-major": 1,
+  "x-launchrally-status": "provider-guidance"
+}

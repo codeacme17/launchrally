@@ -7,6 +7,7 @@ import path from "node:path";
 import {
   AUDIT_BRIEF_SCHEMA,
   CLI_INTERACTION_CONTRACT,
+  PROVIDER_INTENT_DECISION_SCHEMA,
   VERIFY_INTERACTION_SCHEMA,
   assertSupportedManifestVersion,
   assertSupportedReportVersion,
@@ -17,6 +18,7 @@ import {
 import { describeWebBaselineCatalog, executeWebBaseline } from "./check-catalog.js";
 import { scanRepository } from "./local-safe-scan.js";
 import { createProviderAdapterPlan, executeProviderAdapters } from "./provider-adapters.js";
+import { matchesProviderDecisionCard } from "./provider-decision-cards.js";
 import { createPublicVerificationPlan, collectPublicEvidence } from "./public-verification.js";
 import { createReportPackage, createVerificationContext } from "./reporting.js";
 
@@ -355,6 +357,26 @@ function same(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function confirmedProviderDecisionMatchesSource(manifest, source) {
+  const decision = manifest.providers.decision;
+  if (
+    !decision
+    || decision.schema_version !== PROVIDER_INTENT_DECISION_SCHEMA
+    || decision.source_report_id !== source.report_id
+    || manifest.providers.roles.state !== "declared"
+    || !matchesProviderDecisionCard(decision)
+  ) return false;
+  const expectedRoles = [
+    ...source.scope.release_intent.provider_roles.filter(
+      ({ role }) => role !== decision.role,
+    ),
+    { provider: decision.provider, role: decision.role },
+  ].sort((left, right) =>
+    `${left.role}:${left.provider}`.localeCompare(`${right.role}:${right.provider}`),
+  );
+  return same(manifest.providers.roles.value, expectedRoles);
+}
+
 function manifestDrift(state, snapshot, brief, providerResult) {
   const manifest = state.manifest;
   const source = state.source.report;
@@ -411,7 +433,14 @@ function manifestDrift(state, snapshot, brief, providerResult) {
     "source_report",
   );
   compare("support.layers", manifest.support.layers, historical.support_layers, "source_report");
-  compare("providers.roles", manifest.providers.roles, historical.provider_roles, "source_report");
+  if (!confirmedProviderDecisionMatchesSource(manifest, source)) {
+    compare(
+      "providers.roles",
+      manifest.providers.roles,
+      historical.provider_roles,
+      "source_report",
+    );
+  }
   const declaredProviders = new Set(brief.provider_roles.values.map(({ provider }) => provider));
   for (const evidence of providerResult.evidence) {
     if (!declaredProviders.has(evidence.provider)) {

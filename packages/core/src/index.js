@@ -153,4 +153,5 @@ export {
 } from "./policy-engine.js";
 export { runInit } from "./initialization.js";
 export { runPlan } from "./planning.js";
+export { runProviderGuidance } from "./provider-guidance.js";
 export { runVerify } from "./verification.js";

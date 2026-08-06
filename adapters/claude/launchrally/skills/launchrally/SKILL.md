@@ -24,7 +24,9 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - Confirm material release intent before passing it to the CLI.
 - Ask for explicit permission at the boundary requested by the CLI.
 - Never change a Check result, Severity, Gate, Assessment, or immutable Report.
-- Keep Phase 0 read-only outside approved local initialization. Never create or modify production resources.
+- Keep Phase 0 read-only outside approved local initialization and explicitly confirmed Provider Manifest intent. Never create or modify production resources.
+- Present Provider guidance only for the CLI-reported evidenced gap or confirmed constraint mismatch. Never rank a Card as universally best or present its pricing as live.
+- Treat a confirmed Provider selection as Manifest intent only. It is not Machine Evidence and remains Unverified until Verify succeeds.
 - If the user explicitly requests local code remediation, state that it is a host-Agent task outside LaunchRally controlled Apply guarantees, then return to `verify`.
 - Present Verify scope, fresh-read permissions, Manifest Drift, and source comparison exactly as returned; only a full current Report can carry a whole-release Assessment.
 
