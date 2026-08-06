@@ -168,17 +168,20 @@ test("audit returns a local Initial Readiness Snapshot and Web baseline result",
     required: false,
     message: "No input or approval is required for this local-only Audit.",
   });
-  assert.deepEqual(result.report.results.checks, [
-    {
-      check_id: "web.baseline.lockfile",
-      check_version: 1,
-      priority: "p0",
-      status: "passed",
-      summary: "A dependency lockfile is present for reproducible installs.",
-      evidence: [{ kind: "file", path: "package-lock.json" }],
-    },
-  ]);
-  assert.equal(result.report.results.verification_gaps.length, 1);
+  assert.equal(result.report.results.checks.length, 9);
+  assert.equal(
+    result.report.results.checks.find(
+      (check) => check.check_id === "web.baseline.lockfile",
+    ).status,
+    "passed",
+  );
+  assert.equal(result.report.catalog.risk_domains.length, 8);
+  assert.equal(result.report.results.domain_coverage.length, 8);
+  assert.equal(result.report.provenance.check_catalog_version, "web-baseline-check-catalog/v1");
+  assert.equal(result.report.provenance.baseline_version, "web-application-baseline/v1");
+  assert.deepEqual(result.report.provenance.active_profile_versions, []);
+  assert.deepEqual(result.report.provenance.active_adapter_versions, []);
+  assert.ok(result.report.results.verification_gaps.length > 0);
   assert.equal(result.report.results.verification_gaps[0].priority, "p0");
   assert.equal(result.report.results.verification_gaps[0].status, "unverified");
   assert.equal(result.report.results.coverage_summary[0].coverage, "partial");
@@ -194,7 +197,7 @@ test("audit renders the Snapshot, Check, gap, and limitation for a person", asyn
 
   assert.match(
     stdout,
-    /Initial Readiness Snapshot[\s\S]*Project: terminal-web \(web\)[\s\S]*PASS \[P0\] web\.baseline\.lockfile[\s\S]*Assessment: Inconclusive[\s\S]*UNVERIFIED \[P0\] web\.p0\.remaining-coverage[\s\S]*Limitations:/,
+    /Initial Readiness Snapshot[\s\S]*Project: terminal-web \(web\)[\s\S]*PASS \[P0\] web\.baseline\.lockfile[\s\S]*Assessment: Inconclusive[\s\S]*UNVERIFIED \[P0\] web\.public\.availability[\s\S]*Limitations:/,
   );
 });
 
@@ -203,16 +206,14 @@ test("audit reports a failed Web baseline Check when the lockfile is missing", a
   const stdout = await runCliAudit(fixture, { json: true });
   const result = JSON.parse(stdout);
 
-  assert.deepEqual(result.report.results.checks, [
-    {
-      check_id: "web.baseline.lockfile",
-      check_version: 1,
-      priority: "p0",
-      status: "failed",
-      summary: "No dependency lockfile was found, so installs are not reproducible.",
-      evidence: [],
-    },
-  ]);
+  const lockfileCheck = result.report.results.checks.find(
+    (check) => check.check_id === "web.baseline.lockfile",
+  );
+  assert.equal(lockfileCheck.status, "failed");
+  assert.equal(
+    lockfileCheck.summary,
+    "No dependency lockfile was found, so installs are not reproducible.",
+  );
   assert.deepEqual(result.report.results.action_queue, [
     {
       check_id: "web.baseline.lockfile",
@@ -235,7 +236,12 @@ test("audit recognizes the binary Bun lockfile without reading its contents", as
 
   assert.equal(result.snapshot.project.package_manager, "bun");
   assert.ok(result.snapshot.project.detected_files.includes("bun.lockb"));
-  assert.equal(result.report.results.checks[0].status, "passed");
+  assert.equal(
+    result.report.results.checks.find(
+      (check) => check.check_id === "web.baseline.lockfile",
+    ).status,
+    "passed",
+  );
   assert.doesNotMatch(JSON.stringify(result), new RegExp(SECRET_SENTINEL));
 });
 

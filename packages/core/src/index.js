@@ -9,46 +9,16 @@ import {
 import {
   LOCAL_SAFE_SCAN_POLICY,
   scanRepository,
-  SUPPORTED_LOCKFILES,
 } from "./local-safe-scan.js";
 import {
   advanceAuditInteraction,
   createInitialAuditInteraction,
 } from "./audit-interaction.js";
-
-const WEB_CHECK_CATALOG = Object.freeze([
-  {
-    check_id: "web.baseline.lockfile",
-    check_version: 1,
-    priority: "p0",
-    appliesTo(project) {
-      return project.type === "web";
-    },
-    run(project) {
-      const lockfile = project.detected_files.find((file) =>
-        SUPPORTED_LOCKFILES.some(([candidate]) => candidate === file),
-      );
-
-      if (lockfile) {
-        return {
-          status: "passed",
-          summary: "A dependency lockfile is present for reproducible installs.",
-          evidence: [{ kind: "file", path: lockfile }],
-        };
-      }
-
-      return {
-        status: "failed",
-        summary: "No dependency lockfile was found, so installs are not reproducible.",
-        evidence: [],
-      };
-    },
-  },
-]);
+import { executeWebBaseline } from "./check-catalog.js";
 
 const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
-  "Only local repository facts were inspected; public and Provider network Checks were not run.",
-  "The P0 Web Check Catalog is incomplete, so this Audit cannot establish Launch Ready status.",
+  "Local Checks use only normalized, secret-safe repository facts.",
+  "Public and Provider specialist executors are not available in this catalog version, so their Checks remain Unverified.",
 ]);
 
 export async function discoverProject(cwd) {
@@ -103,36 +73,27 @@ export async function createInitialSnapshot(cwd) {
   };
 }
 
-function runApplicableChecks(project) {
-  return WEB_CHECK_CATALOG
-    .filter((check) => check.appliesTo(project))
-    .map((check) => ({
-      check_id: check.check_id,
-      check_version: check.check_version,
-      priority: check.priority,
-      ...check.run(project),
-    }));
-}
-
-function permissionVerificationGaps(authorizationPlan = []) {
+function providerVerificationGaps(authorizationPlan = []) {
   return authorizationPlan
-    .filter((permission) => permission.decision === "denied")
+    .filter((permission) => permission.boundary === "provider_read")
     .map((permission) => {
-      if (permission.boundary === "public_network") {
-        return {
-          check_id: "web.public.endpoint",
-          priority: "p0",
-          status: "unverified",
-          reason_code: "permission_denied",
-          reason: `Public verification permission was denied for: ${permission.scope.targets.join(", ")}.`,
-        };
-      }
+      const roles = permission.scope.metadata.map((item) => item.split(".")[0]);
+      const riskDomain = roles.includes("observability")
+        ? "observability_and_operations"
+        : roles.includes("deployment")
+          ? "deployment"
+          : "data_and_integrations";
       return {
         check_id: `provider.${permission.scope.provider}.metadata`,
+        risk_domain: riskDomain,
         priority: "p0",
         status: "unverified",
-        reason_code: "permission_denied",
-        reason: `Provider read permission was denied for ${permission.scope.provider} metadata: ${permission.scope.metadata.join(", ")}.`,
+        reason_code: permission.decision === "denied"
+          ? "permission_denied"
+          : "specialist_support_unavailable",
+        reason: permission.decision === "denied"
+          ? `Provider read permission was denied for ${permission.scope.provider} metadata: ${permission.scope.metadata.join(", ")}.`
+          : `Provider read permission is authorized for ${permission.scope.provider}, but its specialist executor is unavailable.`,
       };
     });
 }
@@ -145,10 +106,20 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
   const interactionResult = advanceAuditInteraction(snapshot, interactionOptions);
   if (interactionResult.status !== "completed") return interactionResult;
   if (interactionResult.outcome === "scope_not_confirmed") return interactionResult;
-  const checks = runApplicableChecks(snapshot.project);
+  const baseline = executeWebBaseline({
+    project: snapshot.project,
+    audit_brief: interactionResult.audit_brief,
+    authorization_plan: interactionResult.authorization_plan,
+  });
+  const checks = baseline.checks;
   const passedChecks = checks.filter((check) => check.status === "passed").length;
   const failedChecks = checks.filter((check) => check.status === "failed").length;
-  const permissionGaps = permissionVerificationGaps(interactionResult.authorization_plan);
+  const notApplicableChecks = checks.filter(
+    (check) => check.status === "not_applicable",
+  ).length;
+  const providerGaps = providerVerificationGaps(interactionResult.authorization_plan);
+  const verificationGaps = [...baseline.verification_gaps, ...providerGaps];
+  const reportChecks = checks.map(({ action: _action, reason_code: _reasonCode, ...check }) => check);
 
   return {
     contract: CLI_INTERACTION_CONTRACT,
@@ -164,7 +135,10 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
       assessment: failedChecks > 0 ? "no_go" : "inconclusive",
       provenance: {
         cli_version: version,
-        check_catalog_version: "web-baseline/v1",
+        check_catalog_version: baseline.catalog.versions.check_catalog,
+        baseline_version: baseline.catalog.versions.baseline,
+        active_profile_versions: baseline.catalog.versions.active_profiles,
+        active_adapter_versions: baseline.catalog.versions.active_adapters,
         scan_policy_version: LOCAL_SAFE_SCAN_POLICY,
       },
       scope: {
@@ -173,33 +147,28 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
         access: "local_read_only",
         excluded: ["public_network", "providers", "production"],
       },
+      catalog: baseline.catalog,
       results: {
-        checks,
+        checks: reportChecks,
         action_queue: checks
           .filter((check) => check.status === "failed")
           .map((check) => ({
             check_id: check.check_id,
             priority: check.priority,
-            action: "Commit the package manager lockfile generated by the project dependency install.",
+            action: check.action ?? "Resolve the failed baseline verification rule.",
           })),
-        verification_gaps: [
-          {
-            check_id: "web.p0.remaining-coverage",
-            priority: "p0",
-            status: "unverified",
-            reason: "The P0 Web Check Catalog is incomplete; only the lockfile baseline is implemented.",
-          },
-          ...permissionGaps,
-        ],
+        verification_gaps: verificationGaps,
+        domain_coverage: baseline.domain_coverage,
         coverage_summary: [
           {
             priority: "p0",
-            applicable_checks: checks.length,
-            executed_checks: checks.length,
+            applicable_checks: checks.length - notApplicableChecks,
+            executed_checks: passedChecks + failedChecks,
             passed_checks: passedChecks,
             failed_checks: failedChecks,
-            verification_gaps: 1 + permissionGaps.length,
-            coverage: "partial",
+            not_applicable_checks: notApplicableChecks,
+            verification_gaps: verificationGaps.length,
+            coverage: verificationGaps.length === 0 ? "complete" : "partial",
           },
         ],
       },

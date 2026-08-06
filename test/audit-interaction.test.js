@@ -111,11 +111,17 @@ test("Agent Mode previews the complete unconfirmed plan before permission", asyn
   assert.deepEqual(
     result.audit_brief.planned_checks.map((check) => check.check_id),
     [
+      "web.baseline.package-manifest",
       "web.baseline.lockfile",
-      "web.public.endpoint",
+      "web.baseline.runtime-inputs",
+      "web.baseline.build-command",
+      "web.public.availability",
+      "web.public.transport-security",
+      "web.baseline.data-state",
+      "web.baseline.observability",
+      "web.public.core-journeys",
       "provider.sentry.metadata",
       "provider.vercel.metadata",
-      "web.support.monitoring.baseline",
     ],
   );
   assert.deepEqual(
@@ -228,7 +234,12 @@ test("permission decisions resume independently and denials become Unverified ga
     completed.report.results.verification_gaps
       .filter((gap) => gap.reason_code === "permission_denied")
       .map((gap) => gap.check_id),
-    ["web.public.endpoint", "provider.sentry.metadata"],
+    [
+      "web.public.availability",
+      "web.public.transport-security",
+      "web.public.core-journeys",
+      "provider.sentry.metadata",
+    ],
   );
   assert.equal(
     completed.authorization_plan.find(
@@ -326,7 +337,7 @@ test("Human Mode explains unknowns and previews the full plan before permission"
   );
   assert.match(
     confirmationOutput,
-    /Complete plan preview[\s\S]*Environment: production[\s\S]*Target: https:\/\/example\.com\/[\s\S]*web\.public\.endpoint[\s\S]*provider\.sentry\.metadata[\s\S]*Permission preview[\s\S]*public_verification: PENDING[\s\S]*No public or Provider permission has been granted[\s\S]*Confirm this Audit Brief/,
+    /Complete plan preview[\s\S]*Environment: production[\s\S]*Target: https:\/\/example\.com\/[\s\S]*web\.public\.availability[\s\S]*provider\.sentry\.metadata[\s\S]*Permission preview[\s\S]*public_verification: PENDING[\s\S]*No public or Provider permission has been granted[\s\S]*Confirm this Audit Brief/,
   );
 });
 
