@@ -3,13 +3,14 @@
   "$id": "https://launchrally.dev/report/v1",
   "title": "LaunchRally Report Record v1",
   "type": "object",
-  "required": ["schema_version", "report_id", "created_at", "assessment", "provenance", "scope", "permissions", "execution", "catalog", "results", "limitations"],
+  "required": ["schema_version", "report_id", "created_at", "assessment", "provenance", "policy", "scope", "permissions", "execution", "catalog", "results", "limitations"],
   "properties": {
     "schema_version": { "const": "launchrally.dev/report/v1" },
     "report_id": { "type": "string", "minLength": 1 },
     "created_at": { "type": "string", "format": "date-time" },
     "assessment": {
-      "enum": ["launch_ready", "ready_with_warnings", "no_go", "inconclusive"]
+      "type": ["string", "null"],
+      "enum": ["launch_ready", "ready_with_warnings", "no_go", "inconclusive", null]
     },
     "provenance": {
       "type": "object",
@@ -30,6 +31,28 @@
           "uniqueItems": true
         },
         "scan_policy_version": { "const": "local_safe_scan/v1" }
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "required": ["engine_version", "current", "currentness"],
+      "properties": {
+        "engine_version": { "const": "launch-policy-engine/v1" },
+        "current": { "type": "boolean" },
+        "currentness": {
+          "type": "object",
+          "required": ["status", "evaluated_at", "reasons"],
+          "properties": {
+            "status": { "enum": ["current", "non_current"] },
+            "evaluated_at": { "type": "string", "format": "date-time" },
+            "reasons": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/currentnessReason" }
+            }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
@@ -184,6 +207,7 @@
   "x-launchrally-contract-major": 1,
   "$defs": {
     "priority": { "enum": ["p0", "p1", "p2"] },
+    "severity": { "enum": ["critical", "major", "moderate"] },
     "riskDomain": {
       "enum": ["build_integrity", "configuration", "deployment", "availability", "security_and_privacy", "data_and_integrations", "observability_and_operations", "user_experience"]
     },
@@ -263,14 +287,15 @@
     },
     "check": {
       "type": "object",
-      "required": ["check_id", "check_version", "risk_domain", "priority", "severity", "release_gate", "applicability", "status", "summary", "evidence"],
+      "required": ["check_id", "check_version", "risk_domain", "priority", "severity", "release_gate", "gating", "applicability", "status", "summary", "evidence"],
       "properties": {
         "check_id": { "type": "string", "minLength": 1 },
         "check_version": { "type": "integer", "minimum": 1 },
         "risk_domain": { "$ref": "#/$defs/riskDomain" },
         "priority": { "$ref": "#/$defs/priority" },
-        "severity": { "enum": ["critical", "major", "moderate"] },
+        "severity": { "$ref": "#/$defs/severity" },
         "release_gate": { "enum": ["always", "policy", "never"] },
+        "gating": { "type": "boolean" },
         "applicability": { "$ref": "#/$defs/applicabilityResult" },
         "status": { "enum": ["passed", "failed", "unverified", "not_applicable"] },
         "summary": { "type": "string", "minLength": 1 },
@@ -280,36 +305,43 @@
     },
     "action": {
       "type": "object",
-      "required": ["check_id", "priority", "action"],
+      "required": ["check_id", "priority", "severity", "gating", "dependency_unblocking", "core_journey_impact", "action"],
       "properties": {
         "check_id": { "type": "string", "minLength": 1 },
         "priority": { "$ref": "#/$defs/priority" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "gating": { "type": "boolean" },
+        "dependency_unblocking": { "type": "boolean" },
+        "core_journey_impact": { "enum": ["direct", "indirect", "none"] },
         "action": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },
     "verificationGap": {
       "type": "object",
-      "required": ["check_id", "risk_domain", "priority", "status", "reason_code", "reason"],
+      "required": ["check_id", "risk_domain", "priority", "severity", "gating", "status", "reason_code", "reason"],
       "properties": {
         "check_id": { "type": "string", "minLength": 1 },
         "risk_domain": { "$ref": "#/$defs/riskDomain" },
         "priority": { "$ref": "#/$defs/priority" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "gating": { "type": "boolean" },
         "status": { "const": "unverified" },
-        "reason_code": { "enum": ["permission_denied", "missing_required_input", "conflicting_evidence", "applicability_unresolved", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence", "missing_provider_tool", "missing_provider_login", "unsupported_provider", "adapter_error"] },
+        "reason_code": { "enum": ["permission_denied", "missing_required_input", "insufficient_evidence", "conflicting_evidence", "applicability_unresolved", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence", "partial_provider_evidence", "missing_provider_tool", "missing_provider_login", "unsupported_provider", "adapter_error"] },
         "reason": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },
     "coverageSummary": {
       "type": "object",
-      "required": ["priority", "applicable_checks", "executed_checks", "passed_checks", "failed_checks", "not_applicable_checks", "verification_gaps", "coverage"],
+      "required": ["priority", "applicable_checks", "executed_checks", "passed_checks", "failed_checks", "unverified_checks", "not_applicable_checks", "verification_gaps", "coverage"],
       "properties": {
         "priority": { "$ref": "#/$defs/priority" },
         "applicable_checks": { "type": "integer", "minimum": 0 },
         "executed_checks": { "type": "integer", "minimum": 0 },
         "passed_checks": { "type": "integer", "minimum": 0 },
         "failed_checks": { "type": "integer", "minimum": 0 },
+        "unverified_checks": { "type": "integer", "minimum": 0 },
         "not_applicable_checks": { "type": "integer", "minimum": 0 },
         "verification_gaps": { "type": "integer", "minimum": 0 },
         "coverage": { "enum": ["complete", "partial", "none"] }
@@ -358,7 +390,7 @@
     },
     "checkDeclaration": {
       "type": "object",
-      "required": ["check_id", "check_version", "risk_domain", "permission_id", "applicability", "required_inputs", "evidence_requirement", "verification_rules", "severity_policy", "release_gate_policy", "freshness_behavior"],
+      "required": ["check_id", "check_version", "risk_domain", "permission_id", "applicability", "required_inputs", "evidence_requirement", "verification_rules", "severity_policy", "release_gate_policy", "freshness_behavior", "remediation_order_policy"],
       "properties": {
         "check_id": { "type": "string", "minLength": 1 },
         "check_version": { "type": "integer", "minimum": 1 },
@@ -370,7 +402,8 @@
         "verification_rules": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
         "severity_policy": { "$ref": "#/$defs/severityPolicy" },
         "release_gate_policy": { "$ref": "#/$defs/releaseGatePolicy" },
-        "freshness_behavior": { "$ref": "#/$defs/freshnessBehavior" }
+        "freshness_behavior": { "$ref": "#/$defs/freshnessBehavior" },
+        "remediation_order_policy": { "$ref": "#/$defs/remediationOrderPolicy" }
       },
       "additionalProperties": false
     },
@@ -387,7 +420,7 @@
       "type": "object",
       "required": ["accepted_kinds", "minimum_items", "provenance_required"],
       "properties": {
-        "accepted_kinds": { "type": "array", "items": { "enum": ["file", "project_fact", "release_intent", "public_observation"] }, "minItems": 1, "uniqueItems": true },
+        "accepted_kinds": { "type": "array", "items": { "enum": ["file", "project_fact", "release_intent", "public_observation", "machine_evidence"] }, "minItems": 1, "uniqueItems": true },
         "minimum_items": { "type": "integer", "minimum": 1 },
         "provenance_required": { "const": true }
       },
@@ -397,7 +430,7 @@
       "type": "object",
       "required": ["severity", "rationale"],
       "properties": {
-        "severity": { "enum": ["critical", "major", "moderate"] },
+        "severity": { "$ref": "#/$defs/severity" },
         "rationale": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
@@ -417,7 +450,29 @@
       "properties": {
         "mode": { "enum": ["content_bound", "release_intent_bound", "live_state"] },
         "max_age_seconds": { "type": "integer", "minimum": 1 },
-        "invalidated_by": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+        "invalidated_by": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "minItems": 1 }
+      },
+      "additionalProperties": false
+    },
+    "remediationOrderPolicy": {
+      "type": "object",
+      "required": ["dependency_unblocking", "core_journey_impact"],
+      "properties": {
+        "dependency_unblocking": { "type": "boolean" },
+        "core_journey_impact": { "enum": ["direct", "indirect", "none"] }
+      },
+      "additionalProperties": false
+    },
+    "currentnessReason": {
+      "type": "object",
+      "required": ["check_id", "reason_code"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "reason_code": { "enum": ["content_changed", "live_evidence_stale"] },
+        "change": { "type": "string", "minLength": 1 },
+        "evidence_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "collected_at": { "type": "string", "format": "date-time" },
+        "max_age_seconds": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
     },

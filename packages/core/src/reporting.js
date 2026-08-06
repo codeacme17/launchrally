@@ -8,6 +8,7 @@ import {
 } from "@launchrally/contracts";
 
 import { LOCAL_SAFE_SCAN_POLICY } from "./local-safe-scan.js";
+import { evaluateLaunchPolicy } from "./policy-engine.js";
 
 export const REPORT_GENERATOR_VERSION = "report-generator/v1";
 
@@ -117,9 +118,8 @@ function createEvidenceRegistry({ reportId, createdAt, id }) {
 }
 
 function indexedCheck(check, evidenceRegistry) {
-  const { action: _action, reason_code: _reasonCode, ...serializableCheck } = check;
   return {
-    ...structuredClone(serializableCheck),
+    ...structuredClone(check),
     applicability: {
       ...structuredClone(check.applicability),
       evidence: check.applicability.evidence.map(evidenceRegistry.reference),
@@ -225,7 +225,8 @@ export function renderReportMarkdown(record) {
     "",
     `Report Record: ${oneLine(record.report_id)}`,
     `Created: ${oneLine(record.created_at)}`,
-    `Assessment: ${titleCase(record.assessment)}`,
+    `Assessment: ${record.assessment ? titleCase(record.assessment) : "Not Current"}`,
+    `Report Current: ${record.policy.current ? "Yes" : "No"}`,
     "",
     "## Audit Brief",
     "",
@@ -296,6 +297,7 @@ export function createReportPackage({
   public_evidence,
   provider_result,
   limitations,
+  content_changes = [],
 }, dependencies = {}) {
   assertSupportedReportVersion(REPORT_SCHEMA);
   const now = dependencies.now ?? (() => new Date());
@@ -307,20 +309,50 @@ export function createReportPackage({
   const publicEvidenceRefs = public_evidence.map(evidenceRegistry.reference);
   const providerEvidenceRefs = provider_result.evidence.map(evidenceRegistry.reference);
   const evidenceIndex = evidenceRegistry.index();
-  const passedChecks = checks.filter((check) => check.status === "passed").length;
-  const failedChecks = checks.filter((check) => check.status === "failed").length;
-  const notApplicableChecks = checks.filter(
-    (check) => check.status === "not_applicable",
-  ).length;
-  const verificationGaps = [
-    ...structuredClone(baseline.verification_gaps),
-    ...structuredClone(provider_result.verification_gaps),
-  ];
+  const scopeConfirmed = [
+    audit_brief.intended_environment,
+    audit_brief.production_targets,
+    audit_brief.core_journeys,
+    audit_brief.provider_roles,
+    audit_brief.support_layers,
+  ].every((selection) => selection.confirmed);
+  const policyResult = evaluateLaunchPolicy({
+    catalog: baseline.catalog,
+    checks,
+    scope: {
+      confirmed: scopeConfirmed,
+    },
+    evidence_index: evidenceIndex,
+    evaluated_at: createdAt,
+    content_changes,
+  });
+  const evidenceCurrentness = new Map(
+    policyResult.evidence_currentness.map((state) => [state.digest, state]),
+  );
+  for (const entry of evidenceIndex.entries) {
+    const state = evidenceCurrentness.get(entry.digest);
+    entry.current = state.current;
+    entry.currentness = structuredClone(state.currentness);
+  }
+  const domainCoverage = baseline.catalog.risk_domains.map((risk_domain) => {
+    const domainChecks = policyResult.findings.filter(
+      (check) => check.risk_domain === risk_domain,
+    );
+    return {
+      risk_domain,
+      check_ids: domainChecks.map((check) => check.check_id),
+      statuses: [...new Set(domainChecks.map((check) => check.status))].sort(),
+    };
+  });
+  const coverage = policyResult.coverage_summary;
+  const reportChecks = policyResult.findings.map(
+    ({ action: _action, reason_code: _reasonCode, ...check }) => check,
+  );
   const record = {
     schema_version: REPORT_SCHEMA,
     report_id: reportId,
     created_at: createdAt,
-    assessment: failedChecks > 0 ? "no_go" : "inconclusive",
+    assessment: policyResult.assessment,
     provenance: {
       generator_version: REPORT_GENERATOR_VERSION,
       cli_version,
@@ -329,6 +361,11 @@ export function createReportPackage({
       active_profile_versions: structuredClone(baseline.catalog.versions.active_profiles),
       active_adapter_versions: structuredClone(provider_result.active_adapter_versions),
       scan_policy_version: LOCAL_SAFE_SCAN_POLICY,
+    },
+    policy: {
+      engine_version: policyResult.policy_version,
+      current: policyResult.current,
+      currentness: structuredClone(policyResult.currentness),
     },
     scope: reportScope({
       snapshot,
@@ -344,27 +381,22 @@ export function createReportPackage({
     }),
     catalog: structuredClone(baseline.catalog),
     results: {
-      checks,
+      checks: reportChecks,
       public_evidence_refs: publicEvidenceRefs,
       provider_evidence_refs: providerEvidenceRefs,
-      action_queue: baseline.checks
-        .filter((check) => check.status === "failed")
-        .map((check) => ({
-          check_id: check.check_id,
-          priority: check.priority,
-          action: check.action ?? "Resolve the failed baseline verification rule.",
-        })),
-      verification_gaps: verificationGaps,
-      domain_coverage: structuredClone(baseline.domain_coverage),
+      action_queue: policyResult.action_queue,
+      verification_gaps: policyResult.verification_gaps,
+      domain_coverage: domainCoverage,
       coverage_summary: [{
         priority: "p0",
-        applicable_checks: checks.length - notApplicableChecks,
-        executed_checks: passedChecks + failedChecks,
-        passed_checks: passedChecks,
-        failed_checks: failedChecks,
-        not_applicable_checks: notApplicableChecks,
-        verification_gaps: verificationGaps.length,
-        coverage: verificationGaps.length === 0 ? "complete" : "partial",
+        applicable_checks: coverage.applicable_checks,
+        executed_checks: coverage.passed_checks + coverage.failed_checks,
+        passed_checks: coverage.passed_checks,
+        failed_checks: coverage.failed_checks,
+        unverified_checks: coverage.unverified_checks,
+        not_applicable_checks: coverage.not_applicable_checks,
+        verification_gaps: policyResult.verification_gaps.length,
+        coverage: coverage.coverage,
       }],
     },
     limitations: structuredClone(limitations),

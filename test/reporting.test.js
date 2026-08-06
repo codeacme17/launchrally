@@ -43,7 +43,7 @@ async function reachConfirmation(directory) {
   });
 }
 
-async function complete(directory) {
+async function complete(directory, finalOptions = {}) {
   const confirmation = await reachConfirmation(directory);
   const permission = await runAudit(directory, "0.1.0", {
     resume_token: confirmation.interaction.resume_token,
@@ -52,6 +52,7 @@ async function complete(directory) {
   return runAudit(directory, "0.1.0", {
     resume_token: permission.interaction.resume_token,
     permission_decisions: { public_verification: "denied" },
+    ...finalOptions,
   });
 }
 
@@ -76,6 +77,22 @@ test("every completed Audit returns one frozen Record, derived Markdown View, an
   assert.ok(report.report_id);
   assert.ok(!Number.isNaN(Date.parse(report.created_at)));
   assert.equal(report.provenance.generator_version, "report-generator/v1");
+  assert.deepEqual(report.policy, {
+    engine_version: "launch-policy-engine/v1",
+    current: true,
+    currentness: {
+      status: "current",
+      evaluated_at: report.created_at,
+      reasons: [],
+    },
+  });
+  assert.ok(report.results.checks.every((check) => typeof check.gating === "boolean"));
+  assert.ok(report.results.action_queue.every((item) =>
+    report.results.checks.some(
+      (check) => check.check_id === item.check_id && check.status === "failed",
+    ),
+  ));
+  assert.ok(report.results.verification_gaps.every((gap) => gap.status === "unverified"));
   assert.deepEqual(report.permissions, result.authorization_plan);
   assert.equal(report.scope.release_intent.confirmed, true);
   assert.equal(report.execution.disclosure_version, "audit-execution-disclosure/v1");
@@ -87,6 +104,7 @@ test("every completed Audit returns one frozen Record, derived Markdown View, an
   assert.equal(view.content, renderReportMarkdown(report));
   assert.match(view.content, /^# LaunchRally Audit Report/mu);
   assert.match(view.content, new RegExp(`Report Record: ${report.report_id}`, "u"));
+  assert.match(view.content, /Assessment: Inconclusive/u);
 
   const indexedDigests = new Set(index.entries.map((entry) => entry.digest));
   const references = evidenceReferences(report);
@@ -96,6 +114,11 @@ test("every completed Audit returns one frozen Record, derived Markdown View, an
   assert.ok(index.entries.every((entry) => entry.source && entry.target));
   assert.ok(index.entries.every((entry) => !Number.isNaN(Date.parse(entry.collected_at))));
   assert.ok(index.entries.every((entry) => entry.freshness_class && entry.redaction_state));
+  assert.ok(index.entries.every((entry) => entry.current === true));
+  assert.ok(index.entries.every(
+    (entry) => entry.currentness.status === "current"
+      && entry.currentness.evaluated_at === report.created_at,
+  ));
   assert.doesNotMatch(JSON.stringify(report), /normalized_artifact/u);
 
   assert.ok(Object.isFrozen(report));
@@ -143,6 +166,30 @@ test("an unconfirmed scope still produces a useful local Record with execution g
   assert.deepEqual(result.report.results.public_evidence_refs, []);
   assert.deepEqual(result.report.results.provider_evidence_refs, []);
   assert.equal(result.report_view.content, renderReportMarkdown(result.report));
+});
+
+test("declared content changes make the Record and derived View non-current", async () => {
+  const directory = await fixture();
+  const result = await complete(directory, {
+    content_changes: ["package_manifest_changed"],
+  });
+
+  assert.equal(result.report.policy.current, false);
+  assert.equal(result.report.assessment, null);
+  assert.ok(result.report.policy.currentness.reasons.some((reason) =>
+    reason.reason_code === "content_changed"
+    && reason.check_id === "web.baseline.package-manifest",
+  ));
+  assert.equal(result.report_view.content, renderReportMarkdown(result.report));
+  assert.match(result.report_view.content, /Assessment: Not Current/u);
+  assert.match(result.report_view.content, /Report Current: No/u);
+  const packageEvidence = result.evidence_index.entries.find(
+    (entry) => entry.target === "repository:package.json",
+  );
+  assert.equal(packageEvidence.current, false);
+  assert.ok(packageEvidence.currentness.reasons.some((reason) =>
+    reason.reason_code === "content_changed",
+  ));
 });
 
 test("Manifest and Report major versions are independent and future majors fail closed", () => {

@@ -121,16 +121,16 @@ export function createProviderAdapterPlan(providerRoles = []) {
   };
 }
 
-function riskDomain(request) {
-  if (request.roles.includes("observability")) return "observability_and_operations";
-  if (request.roles.includes("deployment")) return "deployment";
+export function providerRiskDomain(roles) {
+  if (roles.includes("observability")) return "observability_and_operations";
+  if (roles.includes("deployment")) return "deployment";
   return "data_and_integrations";
 }
 
 function gap(request, reason_code, reason) {
   return {
     check_id: `provider.${request.provider}.metadata`,
-    risk_domain: riskDomain(request),
+    risk_domain: providerRiskDomain(request.roles),
     priority: "p0",
     status: "unverified",
     reason_code,

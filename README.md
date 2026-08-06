@@ -2,7 +2,7 @@
 
 LaunchRally is a local-first, open-source launch readiness audit and verification tool for repository-owning AI builders.
 
-This repository contains the first Phase 0 Audit path. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, read-only public verification, and approved Provider metadata reads. Initialization writes, plans, and the full verification engine are intentionally not implemented yet.
+This repository contains the first Phase 0 Audit path. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, a policy-driven launch assessment, read-only public verification, and approved Provider metadata reads. Initialization writes, plans, and post-initialization verification are intentionally not implemented yet.
 
 ## Quick start
 
@@ -15,11 +15,13 @@ npm run rally -- audit --json
 
 The first Audit invocation performs a Local Safe Scan and returns a versioned Audit Brief interaction. Unknown release intent becomes typed input, inferred values remain candidates until the builder confirms the complete Check plan, and public or Provider permissions are requested as separate boundaries. Resume tokens preserve repository scope and earlier decisions without repository writes.
 
-After explicit confirmation and permission decisions, the Audit checks for a dependency lockfile through the Web Check Catalog path. A passing baseline remains `Inconclusive` because P0 coverage is incomplete; a failed baseline is `No Go`. Denied permissions become explicit Verification Gaps rather than aborting the Audit.
+After explicit confirmation and permission decisions, the Audit evaluates every Web Baseline Check against its declared severity, release-gate, evidence, freshness, and remediation-order policies. Critical failures are always gating; Major failures gate only under policy with confirmed scope; Moderate failures remain non-gating in Phase 0. Denied permissions and insufficient evidence become explicit Verification Gaps rather than aborting the Audit.
+
+The same deterministic policy result drives both the JSON Record and Markdown View. Current reports are `Launch Ready` when all applicable Checks pass, `Ready with Warnings` for non-gating failures, `No Go` for gating failures, and `Inconclusive` when verification gaps remain. Declared content changes or stale live-state evidence mark affected Evidence Index entries and the Report non-current, in which case it carries no current Launch Assessment. The Action Queue contains only Failed Checks, ordered by severity, dependency-unblocking value, and core-journey impact; Verification Gaps contain only Unverified Checks.
 
 Each completed Audit returns an immutable, time-stamped JSON Report Record, a Markdown Report View generated only from that Record, and a separately versioned Evidence Index. The Record captures its exact scope, permissions, execution disclosure, results, provenance, and limitations. Evidence is content-addressed and referenced by digest and collection metadata; normalized artifacts live in the Index rather than becoming uncontrolled Report content. Before `init` exists, the complete package remains in CLI output and no LaunchRally files are written into the repository.
 
-Cloudflare and Vercel have versioned, read-only Provider Adapters. Before approval, the Audit discloses the existing CLI executable, exact arguments, target, and allowlisted fields for each Provider. LaunchRally never installs a Provider tool, initiates login, supplies or retains credentials, or performs Provider writes; missing tools or authentication and Adapter failures become Verification Gaps.
+Cloudflare and Vercel have versioned, read-only Provider Adapters. Before approval, the Audit discloses the existing CLI executable, exact arguments, target, and allowlisted fields for each Provider. Successful reads become provenance-backed Machine Evidence for the catalog-declared Provider Check; missing tools or authentication and Adapter failures leave that Check Unverified. LaunchRally never installs a Provider tool, initiates login, supplies or retains credentials, or performs Provider writes.
 
 The Local Safe Scan collects provenance-backed facts from supported source and configuration files without retaining their contents in facts or outputs. It respects repository ignore rules and built-in exclusions for dependencies and build outputs, rejects binary and oversized artifacts, never follows symlinks, and stops at nested repository boundaries. Environment files are the deliberate ignore-rule exception: even a gitignored `.env*` file contributes variable names only. Package scripts likewise contribute script names rather than commands, so secret values cannot flow into snapshots, evidence, reports, terminal output, or errors.
 
@@ -44,7 +46,7 @@ test/
 ## Current safety boundary
 
 - No LaunchRally account or server is used.
-- `audit` performs a boundary-checked Local Safe Scan and deterministic lockfile Check without repository writes.
+- `audit` performs a boundary-checked Local Safe Scan and deterministic policy evaluation without repository writes.
 - Human Mode explains missing intent and previews the complete plan before permission; Agent Mode exposes versioned typed interaction states.
 - Local scan, public verification, and each Provider read are distinct authorization boundaries.
 - Local facts include their repository-relative source path and scanner policy version.
@@ -52,7 +54,7 @@ test/
 - Approved public probes and Cloudflare/Vercel Adapter reads are bounded, read-only, and retain only normalized evidence.
 - Report Records and Evidence Indexes are unique, frozen in-process, and never overwrite repository files.
 - `init`, `plan`, and `verify` return an explicit `not_implemented` state.
-- Missing P0 coverage is always reported as a Verification Gap, so the local tracer cannot return `Launch Ready`.
+- Missing P0 coverage is always reported as a Verification Gap and cannot be treated as Passed or `Launch Ready`.
 
 ## Contribution flow
 
