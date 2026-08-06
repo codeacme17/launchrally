@@ -165,7 +165,11 @@ function print(value) {
     return;
   }
 
-  if (value.operation === "audit" && value.outcome === "scope_not_confirmed") {
+  if (
+    value.operation === "audit"
+    && value.outcome === "scope_not_confirmed"
+    && !value.report
+  ) {
     process.stdout.write(
       "LaunchRally Audit\nAudit Brief was not confirmed. No permission was granted and no Checks were run.\n",
     );
@@ -173,50 +177,7 @@ function print(value) {
   }
 
   if (value.operation === "audit" && value.report) {
-    const assessment = value.report.assessment
-      .split("_")
-      .map((word) => `${word[0].toUpperCase()}${word.slice(1)}`)
-      .join(" ");
-    const lines = [
-      "LaunchRally Audit",
-      "Audit Brief",
-      `Environment: ${value.audit_brief.intended_environment.value}`,
-      ...value.audit_brief.production_targets.values.map((target) => `Target: ${target}`),
-      ...value.audit_brief.core_journeys.values.map((journey) =>
-        typeof journey === "string"
-          ? `Core journey: ${journey}`
-          : `Core journey: ${journey.method} ${journey.path} — ${journey.purpose}`,
-      ),
-      "Initial Readiness Snapshot",
-      `Project: ${value.snapshot.project.name} (${value.snapshot.project.type})`,
-      `Package manager: ${value.snapshot.project.package_manager}`,
-      "Scope: local repository, read-only",
-      "Obvious Blockers:",
-      ...(value.snapshot.obvious_blockers.length > 0
-        ? value.snapshot.obvious_blockers.map((blocker) => `  - ${blocker}`)
-        : ["  None"]),
-      "Checks:",
-      ...value.report.results.checks.map(
-        (check) =>
-          `  ${{ passed: "PASS", failed: "FAIL" }[check.status] ?? check.status.toUpperCase()} [${check.priority.toUpperCase()}] ${check.check_id} — ${check.summary}`,
-      ),
-      `Assessment: ${assessment}`,
-      "Action Queue:",
-      ...(value.report.results.action_queue.length > 0
-        ? value.report.results.action_queue.map(
-          (item) => `  [${item.priority.toUpperCase()}] ${item.check_id} — ${item.action}`,
-        )
-        : ["  None"]),
-      "Verification Gaps:",
-      ...value.report.results.verification_gaps.map(
-        (gap) =>
-          `  ${gap.status.toUpperCase()} [${gap.priority.toUpperCase()}] ${gap.check_id} — ${gap.reason}`,
-      ),
-      "Limitations:",
-      ...value.report.limitations.map((limitation) => `  - ${limitation}`),
-      `Next input/approval: ${value.snapshot.next.message}`,
-    ];
-    process.stdout.write(`${lines.join("\n")}\n`);
+    process.stdout.write(value.report_view.content);
     return;
   }
 

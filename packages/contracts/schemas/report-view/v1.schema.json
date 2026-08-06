@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/report-view/v1",
+  "title": "LaunchRally Markdown Report View v1",
+  "type": "object",
+  "required": ["schema_version", "report_id", "report_schema_version", "generated_at", "format", "content"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/report-view/v1" },
+    "report_id": { "type": "string", "minLength": 1 },
+    "report_schema_version": { "const": "launchrally.dev/report/v1" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "format": { "const": "markdown" },
+    "content": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

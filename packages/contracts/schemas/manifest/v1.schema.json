@@ -13,5 +13,6 @@
     "providers": { "type": "object" }
   },
   "additionalProperties": false,
+  "x-launchrally-contract-major": 1,
   "x-launchrally-status": "template"
 }
