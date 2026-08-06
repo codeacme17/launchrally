@@ -26,7 +26,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - Never change a Check result, Severity, Gate, Assessment, or immutable Report.
 - Keep Phase 0 read-only outside approved local initialization. Never create or modify production resources.
 - If the user explicitly requests local code remediation, state that it is a host-Agent task outside LaunchRally controlled Apply guarantees, then return to `verify`.
-- If `verify` reports `not_implemented`, explain that the workflow is unavailable; do not simulate it.
+- Present Verify scope, fresh-read permissions, Manifest Drift, and source comparison exactly as returned; only a full current Report can carry a whole-release Assessment.
 
 ## Start safely
 

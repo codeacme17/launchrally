@@ -31,7 +31,7 @@ export async function discoverProject(cwd) {
   );
   const packageManifestStatus = packageFact?.status ?? "missing";
 
-  return {
+  const project = {
     root: scan.root,
     name: packageFact?.name ?? path.basename(scan.root),
     type: packageManifestStatus === "valid" ? "web" : "unknown",
@@ -49,6 +49,11 @@ export async function discoverProject(cwd) {
       errors: scan.errors,
     },
   };
+  Object.defineProperty(project, "content_digests", {
+    value: scan.content_digests,
+    enumerable: false,
+  });
+  return project;
 }
 
 export async function createInitialSnapshot(cwd) {
@@ -110,6 +115,7 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
     provider_result: providerResult,
     limitations: LOCAL_AUDIT_LIMITATIONS,
     content_changes: interactionOptions.content_changes ?? [],
+    repository_digests: snapshot.project.content_digests,
   });
 
   return {
@@ -147,12 +153,4 @@ export {
 } from "./policy-engine.js";
 export { runInit } from "./initialization.js";
 export { runPlan } from "./planning.js";
-
-export function createNotImplementedResult(operation) {
-  return {
-    contract: CLI_INTERACTION_CONTRACT,
-    status: "not_implemented",
-    operation,
-    message: `The ${operation} workflow is reserved by the Phase 0 contract but is not implemented in this scaffold.`,
-  };
-}
+export { runVerify } from "./verification.js";

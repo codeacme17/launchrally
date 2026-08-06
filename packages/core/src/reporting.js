@@ -28,6 +28,24 @@ function digest(value) {
   return `sha256:${createHash("sha256").update(serialized).digest("hex")}`;
 }
 
+export function createVerificationContext({ repository_digests = {}, audit_brief }) {
+  const repositoryDigests = Object.entries(repository_digests)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([path, contentDigest]) => ({ path, digest: contentDigest }));
+  return {
+    digest_version: "verification-scope-digests/v1",
+    repository_digests: repositoryDigests,
+    manifest_digest: repository_digests[".launchrally/launch-manifest.json"] ?? null,
+    target_digest: digest({
+      intended_environment: audit_brief.intended_environment.value,
+      production_targets: audit_brief.production_targets.values,
+      core_journeys: audit_brief.core_journeys.values,
+      provider_roles: audit_brief.provider_roles.values,
+      support_layers: audit_brief.support_layers.values,
+    }),
+  };
+}
+
 function deepFreeze(value) {
   if (!value || typeof value !== "object" || Object.isFrozen(value)) return value;
   for (const child of Object.values(value)) deepFreeze(child);
@@ -85,11 +103,14 @@ function evidenceMetadata(evidence, createdAt) {
   throw error;
 }
 
-function createEvidenceRegistry({ reportId, createdAt, id }) {
+function createEvidenceRegistry({ reportId, createdAt, id, repositoryDigests }) {
   const byDigest = new Map();
 
   function reference(evidence) {
     const normalizedArtifact = structuredClone(evidence);
+    if (evidence.kind === "file") {
+      normalizedArtifact.content_digest = repositoryDigests[evidence.path] ?? null;
+    }
     const artifactDigest = digest(normalizedArtifact);
     if (!byDigest.has(artifactDigest)) {
       byDigest.set(artifactDigest, {
@@ -298,13 +319,20 @@ export function createReportPackage({
   provider_result,
   limitations,
   content_changes = [],
+  repository_digests = {},
+  currentness_reasons = [],
 }, dependencies = {}) {
   assertSupportedReportVersion(REPORT_SCHEMA);
   const now = dependencies.now ?? (() => new Date());
   const id = dependencies.id ?? randomUUID;
   const createdAt = now().toISOString();
   const reportId = id();
-  const evidenceRegistry = createEvidenceRegistry({ reportId, createdAt, id });
+  const evidenceRegistry = createEvidenceRegistry({
+    reportId,
+    createdAt,
+    id,
+    repositoryDigests: repository_digests,
+  });
   const checks = baseline.checks.map((check) => indexedCheck(check, evidenceRegistry));
   const publicEvidenceRefs = public_evidence.map(evidenceRegistry.reference);
   const providerEvidenceRefs = provider_result.evidence.map(evidenceRegistry.reference);
@@ -325,6 +353,7 @@ export function createReportPackage({
     evidence_index: evidenceIndex,
     evaluated_at: createdAt,
     content_changes,
+    currentness_reasons,
   });
   const evidenceCurrentness = new Map(
     policyResult.evidence_currentness.map((state) => [state.digest, state]),
@@ -367,6 +396,10 @@ export function createReportPackage({
       current: policyResult.current,
       currentness: structuredClone(policyResult.currentness),
     },
+    verification_context: createVerificationContext({
+      repository_digests,
+      audit_brief,
+    }),
     scope: reportScope({
       snapshot,
       auditBrief: audit_brief,

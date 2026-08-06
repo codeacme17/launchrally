@@ -59,12 +59,13 @@ function currentness({
   evidenceIndex,
   evaluatedAt,
   contentChanges,
+  externalReasons,
 }) {
   const evidenceByDigest = new Map(
     evidenceIndex.entries.map((entry) => [entry.digest, entry]),
   );
   const evaluatedTime = Date.parse(evaluatedAt);
-  const reasons = [];
+  const reasons = structuredClone(externalReasons);
   const evidenceCurrentness = new Map(evidenceIndex.entries.map((entry) => [
     entry.digest,
     {
@@ -137,6 +138,7 @@ export function evaluateLaunchPolicy({
   evidence_index = { entries: [] },
   evaluated_at,
   content_changes = [],
+  currentness_reasons = [],
 }) {
   const declarations = new Map(catalog.checks.map((check) => [check.check_id, check]));
   const evidenceByDigest = new Map(
@@ -188,6 +190,7 @@ export function evaluateLaunchPolicy({
     evidenceIndex: evidence_index,
     evaluatedAt: evaluated_at,
     contentChanges: content_changes,
+    externalReasons: currentness_reasons,
   });
   const reportCurrentness = derivedCurrentness.report;
   const current = reportCurrentness.status === "current";

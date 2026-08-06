@@ -5,6 +5,8 @@ const reportSchema = require("../schemas/report/v1.schema.json");
 const reportViewSchema = require("../schemas/report-view/v1.schema.json");
 const evidenceIndexSchema = require("../schemas/evidence-index/v1.schema.json");
 const launchPlanSchema = require("../schemas/launch-plan/v1.schema.json");
+const manifestSchema = require("../schemas/manifest/v1.schema.json");
+const verificationResultSchema = require("../schemas/verification-result/v1.schema.json");
 
 export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v0";
 export const MANIFEST_SCHEMA = "launchrally.dev/manifest/v1";
@@ -16,7 +18,9 @@ export const EVIDENCE_INDEX_SCHEMA = "launchrally.dev/evidence-index/v1";
 export const AUDIT_BRIEF_SCHEMA = "launchrally.dev/audit-brief/v1";
 export const AUDIT_INTERACTION_SCHEMA = "launchrally.dev/audit-interaction/v1";
 export const INIT_INTERACTION_SCHEMA = "launchrally.dev/init-interaction/v1";
+export const VERIFY_INTERACTION_SCHEMA = "launchrally.dev/verify-interaction/v1";
 export const LAUNCH_PLAN_SCHEMA = "launchrally.dev/launch-plan/v1";
+export const VERIFICATION_RESULT_SCHEMA = "launchrally.dev/verification-result/v1";
 
 function jsonType(value) {
   if (value === null) return "null";
@@ -37,6 +41,10 @@ function validatesSchema(value, schema, root = schema) {
   if (schema.$ref) {
     const referenced = schemaNodeAt(root, schema.$ref);
     return referenced ? validatesSchema(value, referenced, root) : false;
+  }
+  if (schema.oneOf) {
+    const matches = schema.oneOf.filter((candidate) => validatesSchema(value, candidate, root));
+    if (matches.length !== 1) return false;
   }
   const allowedTypes = Array.isArray(schema.type) ? schema.type : [schema.type].filter(Boolean);
   const actualType = jsonType(value);
@@ -85,7 +93,8 @@ function validatesSchema(value, schema, root = schema) {
 
 export function assertValidReportPackage(source) {
   const valid = source?.status === "completed"
-    && source?.operation === "audit"
+    && ["audit", "verify"].includes(source?.operation)
+    && (source?.operation !== "verify" || source?.verification_scope?.whole_release === true)
     && validatesSchema(source.report, reportSchema)
     && validatesSchema(source.report_view, reportViewSchema)
     && validatesSchema(source.evidence_index, evidenceIndexSchema)
@@ -105,6 +114,48 @@ export function assertValidLaunchPlan(plan) {
   if (!validatesSchema(plan, launchPlanSchema)) {
     const error = new Error("The Launch Plan is incomplete or invalid.");
     error.code = "invalid_launch_plan";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidManifest(manifest) {
+  if (!validatesSchema(manifest, manifestSchema)) {
+    const error = new Error("The LaunchRally Manifest is incomplete or invalid.");
+    error.code = "invalid_manifest";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidVerificationResult(result) {
+  const commonHistory = result?.history?.source_report_id === result?.comparison?.source_report_id;
+  const fullHistory = result?.verification_scope?.whole_release
+    && result?.history?.current_report_id === result?.report?.report_id
+    && result?.history?.current_evidence_index_id === result?.evidence_index?.index_id
+    && result?.comparison?.current_report_id === result?.report?.report_id
+    && result?.assessment === result?.report?.assessment;
+  const targetedHistory = result?.verification_scope?.whole_release === false
+    && result?.history?.current_result_id === result?.targeted_result?.result_id
+    && result?.comparison?.current_result_id === result?.targeted_result?.result_id
+    && JSON.stringify(result?.verification_scope?.check_ids)
+      === JSON.stringify(result?.targeted_result?.check_ids)
+    && JSON.stringify(result?.manifest_drift)
+      === JSON.stringify(result?.targeted_result?.manifest_drift);
+  const valid = validatesSchema(result, verificationResultSchema)
+    && commonHistory
+    && (result.verification_scope.whole_release
+      ? (() => {
+        try {
+          return fullHistory && assertValidReportPackage(result);
+        } catch {
+          return false;
+        }
+      })()
+      : targetedHistory && result.assessment === null && !Object.hasOwn(result, "report"));
+  if (!valid) {
+    const error = new Error("The Verification Result is incomplete or invalid.");
+    error.code = "invalid_verification_result";
     throw error;
   }
   return true;
