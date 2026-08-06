@@ -1,0 +1,147 @@
+{
+  "schema_version": "launchrally.dev/provider-decision-card/v1",
+  "card_id": "managed-web-delivery.vercel",
+  "card_version": "1.0.0",
+  "provider": {
+    "id": "vercel",
+    "name": "Vercel"
+  },
+  "capability_scope": {
+    "id": "managed_web_delivery",
+    "provider_role": "deployment",
+    "summary": "Managed Web application builds, deployments, delivery, and request-driven compute on Vercel.",
+    "includes": [
+      "Git-oriented Web builds and deployments",
+      "Static delivery and managed CDN behavior",
+      "Request-driven Vercel Functions"
+    ],
+    "excludes": [
+      "A guarantee that every framework feature or runtime dependency is compatible",
+      "Long-running general-purpose server or virtual-machine operation",
+      "Application migration, account setup, or deployment execution"
+    ]
+  },
+  "fit_contexts": [
+    "Teams wanting managed Web builds, previews, deployments, CDN delivery, and functions",
+    "Framework-based Web applications that fit documented Vercel build and runtime behavior",
+    "Teams preferring low infrastructure-operation overhead"
+  ],
+  "non_fit_contexts": [
+    "Applications requiring unrestricted operating-system or long-running process control",
+    "Workloads whose cost or execution shape does not fit usage-based managed resources",
+    "Teams requiring a provider-neutral deployment model with minimal platform coupling"
+  ],
+  "compatibility": {
+    "stack_signals": [
+      "astro",
+      "javascript",
+      "next.js",
+      "node.js",
+      "react",
+      "remix",
+      "sveltekit",
+      "typescript",
+      "vite",
+      "vue"
+    ],
+    "incompatible_stack_signals": [
+      "cloudflare_workers_runtime",
+      "long_running_server",
+      "unrestricted_os_access"
+    ],
+    "region_signals": [
+      "global",
+      "north_america",
+      "europe",
+      "asia_pacific"
+    ],
+    "deployment_shapes": [
+      "full_stack_web",
+      "serverless",
+      "static_web"
+    ],
+    "notes": [
+      "Vercel supports many Web application shapes, but framework detection does not prove project-specific compatibility.",
+      "Function runtime, duration, memory, region, and plan limits must be checked against the actual workload."
+    ]
+  },
+  "constraints": {
+    "budgets": [
+      "free_tier_required",
+      "cost_sensitive",
+      "flexible",
+      "enterprise"
+    ],
+    "scales": [
+      "prototype",
+      "small",
+      "growing",
+      "high_scale"
+    ],
+    "minimum_operational_ability": "minimal",
+    "lock_in_level": "moderate"
+  },
+  "operations": {
+    "model": "managed",
+    "builder_responsibilities": [
+      "Configure builds, routes, environment variables, functions, and regions",
+      "Monitor application behavior, limits, and usage",
+      "Own incident response and application rollback decisions"
+    ],
+    "considerations": [
+      "Framework-defined infrastructure influences runtime behavior and resource usage.",
+      "Spend controls, regional placement, and function limits need deliberate review."
+    ]
+  },
+  "lock_in": {
+    "level": "moderate",
+    "considerations": [
+      "Vercel build behavior, functions, caching, routing, and platform services can become application dependencies."
+    ],
+    "exit_considerations": [
+      "Keep build and runtime assumptions explicit and testable outside the platform.",
+      "Plan replacements for Vercel-specific configuration and managed services before migration."
+    ]
+  },
+  "cost_model": {
+    "basis": [
+      "Data transfer and edge requests",
+      "Build resources",
+      "Function CPU, memory, invocations, and selected platform services"
+    ],
+    "caveats": [
+      "Included usage, limits, regional rates, and plan eligibility can change after this Card's review date.",
+      "Actual cost depends on framework behavior, traffic, caching, build frequency, function workload, region, and plan; calculate it from current official pricing."
+    ],
+    "live_pricing_guaranteed": false
+  },
+  "official_sources": [
+    {
+      "title": "Vercel documentation overview",
+      "url": "https://vercel.com/docs",
+      "kind": "capabilities"
+    },
+    {
+      "title": "Vercel Functions",
+      "url": "https://vercel.com/docs/functions",
+      "kind": "compatibility"
+    },
+    {
+      "title": "Pricing on Vercel",
+      "url": "https://vercel.com/docs/pricing",
+      "kind": "pricing"
+    },
+    {
+      "title": "Vercel limits",
+      "url": "https://vercel.com/docs/limits",
+      "kind": "limits"
+    }
+  ],
+  "review_date": "2026-08-07",
+  "unknowns": [
+    "The application's project-specific build, framework, and runtime compatibility has not been tested.",
+    "The required region, jurisdiction, and data-residency fit has not been verified.",
+    "The actual bill for the confirmed traffic, build, and compute profile is unknown.",
+    "Current account, plan, quota, and contractual availability is unknown."
+  ]
+}

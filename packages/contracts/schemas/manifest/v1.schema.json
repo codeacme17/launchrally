@@ -48,7 +48,8 @@
       "type": "object",
       "required": ["roles"],
       "properties": {
-        "roles": { "$ref": "#/$defs/intentState" }
+        "roles": { "$ref": "#/$defs/intentState" },
+        "decision": { "$ref": "#/$defs/providerDecision" }
       },
       "additionalProperties": false
     }
@@ -86,6 +87,21 @@
       "properties": {
         "state": { "const": "not_applicable" },
         "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "providerDecision": {
+      "type": "object",
+      "required": ["schema_version", "source_report_id", "card_id", "card_version", "capability_id", "provider", "role", "confirmed"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/provider-intent-decision/v1" },
+        "source_report_id": { "type": "string", "minLength": 1 },
+        "card_id": { "type": "string", "pattern": "^[a-z0-9.-]+$" },
+        "card_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "capability_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "provider": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "role": { "type": "string", "minLength": 1 },
+        "confirmed": { "const": true }
       },
       "additionalProperties": false
     }

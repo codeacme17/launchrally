@@ -534,6 +534,9 @@ test("plugin manifests and public schemas are valid JSON", async () => {
     "packages/contracts/schemas/launch-plan/v1.schema.json",
     "packages/contracts/schemas/verify-interaction/v1.schema.json",
     "packages/contracts/schemas/verification-result/v1.schema.json",
+    "packages/contracts/schemas/provider-decision-card/v1.schema.json",
+    "packages/contracts/schemas/provider-guidance-interaction/v1.schema.json",
+    "packages/contracts/schemas/provider-guidance/v1.schema.json",
   ];
 
   for (const relative of files) {

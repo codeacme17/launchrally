@@ -7,6 +7,10 @@ const evidenceIndexSchema = require("../schemas/evidence-index/v1.schema.json");
 const launchPlanSchema = require("../schemas/launch-plan/v1.schema.json");
 const manifestSchema = require("../schemas/manifest/v1.schema.json");
 const verificationResultSchema = require("../schemas/verification-result/v1.schema.json");
+const providerDecisionCardSchema = require(
+  "../schemas/provider-decision-card/v1.schema.json",
+);
+const providerGuidanceSchema = require("../schemas/provider-guidance/v1.schema.json");
 
 export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v0";
 export const MANIFEST_SCHEMA = "launchrally.dev/manifest/v1";
@@ -21,6 +25,13 @@ export const INIT_INTERACTION_SCHEMA = "launchrally.dev/init-interaction/v1";
 export const VERIFY_INTERACTION_SCHEMA = "launchrally.dev/verify-interaction/v1";
 export const LAUNCH_PLAN_SCHEMA = "launchrally.dev/launch-plan/v1";
 export const VERIFICATION_RESULT_SCHEMA = "launchrally.dev/verification-result/v1";
+export const PROVIDER_GUIDANCE_INTERACTION_SCHEMA =
+  "launchrally.dev/provider-guidance-interaction/v1";
+export const PROVIDER_GUIDANCE_SCHEMA = "launchrally.dev/provider-guidance/v1";
+export const PROVIDER_DECISION_CARD_SCHEMA =
+  "launchrally.dev/provider-decision-card/v1";
+export const PROVIDER_INTENT_DECISION_SCHEMA =
+  "launchrally.dev/provider-intent-decision/v1";
 
 function jsonType(value) {
   if (value === null) return "null";
@@ -156,6 +167,26 @@ export function assertValidVerificationResult(result) {
   if (!valid) {
     const error = new Error("The Verification Result is incomplete or invalid.");
     error.code = "invalid_verification_result";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidProviderDecisionCard(card) {
+  if (!validatesSchema(card, providerDecisionCardSchema)) {
+    const error = new Error("The Provider Decision Card is incomplete or invalid.");
+    error.code = "invalid_provider_decision_card";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidProviderGuidance(guidance) {
+  const validCards = !Array.isArray(guidance?.shortlist)
+    || guidance.shortlist.every(({ card }) => validatesSchema(card, providerDecisionCardSchema));
+  if (!validatesSchema(guidance, providerGuidanceSchema) || !validCards) {
+    const error = new Error("The Provider Guidance result is incomplete or invalid.");
+    error.code = "invalid_provider_guidance";
     throw error;
   }
   return true;
