@@ -111,7 +111,7 @@ test("an unknown conventional Web framework reaches the Baseline without unsuppo
   );
 });
 
-test("unknown facts and unavailable specialist support produce reasoned Verification Gaps", () => {
+test("unknown facts and missing public observations produce reasoned Verification Gaps", () => {
   const result = execute();
   const runtime = result.checks.find(
     (check) => check.check_id === "web.baseline.runtime-inputs",
@@ -123,7 +123,7 @@ test("unknown facts and unavailable specialist support produce reasoned Verifica
   assert.equal(runtime.status, "unverified");
   assert.equal(runtime.reason_code, "missing_required_input");
   assert.equal(availability.status, "unverified");
-  assert.equal(availability.reason_code, "specialist_support_unavailable");
+  assert.equal(availability.reason_code, "partial_public_evidence");
   assert.ok(result.verification_gaps.every((gap) => gap.reason.length > 0));
 });
 

@@ -91,13 +91,21 @@ function renderHumanInteraction(value) {
       "Complete plan preview",
       `Environment: ${brief.intended_environment.value}`,
       ...brief.production_targets.values.map((target) => `Target: ${target}`),
-      ...brief.core_journeys.values.map((journey) => `Core journey: ${journey}`),
+      ...brief.core_journeys.values.map((journey) =>
+        typeof journey === "string"
+          ? `Core journey: ${journey}`
+          : `Core journey: ${journey.method} ${journey.path} — ${journey.purpose}`,
+      ),
       ...(brief.provider_roles.values.length > 0
         ? brief.provider_roles.values.map((role) => `Provider role: ${providerLabel(role)}`)
         : ["Provider roles: none"]),
       ...(brief.support_layers.values.length > 0
         ? brief.support_layers.values.map((layer) => `Support layer: ${layer}`)
         : ["Support layers: none"]),
+      "Public probe plan:",
+      ...brief.public_verification.probes.map(
+        (probe) => `  - ${probe.method} ${probe.host}:${probe.port}${probe.path} — ${probe.purpose}`,
+      ),
       "Planned Checks:",
       ...brief.planned_checks.map(
         (check) => `  - ${check.check_id} [${check.permission_id}]`,
@@ -161,7 +169,11 @@ function print(value) {
       "Audit Brief",
       `Environment: ${value.audit_brief.intended_environment.value}`,
       ...value.audit_brief.production_targets.values.map((target) => `Target: ${target}`),
-      ...value.audit_brief.core_journeys.values.map((journey) => `Core journey: ${journey}`),
+      ...value.audit_brief.core_journeys.values.map((journey) =>
+        typeof journey === "string"
+          ? `Core journey: ${journey}`
+          : `Core journey: ${journey.method} ${journey.path} — ${journey.purpose}`,
+      ),
       "Initial Readiness Snapshot",
       `Project: ${value.snapshot.project.name} (${value.snapshot.project.type})`,
       `Package manager: ${value.snapshot.project.package_manager}`,

@@ -15,10 +15,11 @@ import {
   createInitialAuditInteraction,
 } from "./audit-interaction.js";
 import { executeWebBaseline } from "./check-catalog.js";
+import { collectPublicEvidence } from "./public-verification.js";
 
 const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
   "Local Checks use only normalized, secret-safe repository facts.",
-  "Public and Provider specialist executors are not available in this catalog version, so their Checks remain Unverified.",
+  "Provider specialist executors are not available in this catalog version, so their Checks remain Unverified.",
 ]);
 
 export async function discoverProject(cwd) {
@@ -106,10 +107,17 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
   const interactionResult = advanceAuditInteraction(snapshot, interactionOptions);
   if (interactionResult.status !== "completed") return interactionResult;
   if (interactionResult.outcome === "scope_not_confirmed") return interactionResult;
+  const publicPermission = interactionResult.authorization_plan.find(
+    (permission) => permission.permission_id === "public_verification",
+  );
+  const publicEvidence = publicPermission?.decision === "approved"
+    ? await collectPublicEvidence(interactionResult.audit_brief.public_verification)
+    : [];
   const baseline = executeWebBaseline({
     project: snapshot.project,
     audit_brief: interactionResult.audit_brief,
     authorization_plan: interactionResult.authorization_plan,
+    public_evidence: publicEvidence,
   });
   const checks = baseline.checks;
   const passedChecks = checks.filter((check) => check.status === "passed").length;
@@ -144,12 +152,22 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
       scope: {
         project_root: snapshot.project.root,
         project_type: snapshot.project.type,
-        access: "local_read_only",
-        excluded: ["public_network", "providers", "production"],
+        access: publicPermission?.decision === "approved"
+          ? "local_and_public_read_only"
+          : "local_read_only",
+        public_verification: {
+          decision: publicPermission?.decision ?? "denied",
+          targets: interactionResult.audit_brief.public_verification.targets,
+          probe_ids: publicEvidence.map((item) => item.probe_id),
+        },
+        excluded: publicPermission?.decision === "approved"
+          ? ["providers", "production_mutations"]
+          : ["public_network", "providers", "production_mutations"],
       },
       catalog: baseline.catalog,
       results: {
         checks: reportChecks,
+        public_evidence: publicEvidence,
         action_queue: checks
           .filter((check) => check.status === "failed")
           .map((check) => ({

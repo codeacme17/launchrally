@@ -62,7 +62,7 @@ async function createWebFixture(name, { withLockfile = false } = {}) {
   return fixture;
 }
 
-async function runCliAudit(fixture, { json = false, env } = {}) {
+async function runCliAudit(fixture, { json = false, env, publicDecision = "denied" } = {}) {
   const invoke = async (options, structured = true) => {
     const args = [cli, "audit"];
     if (structured) args.push("--json");
@@ -97,7 +97,7 @@ async function runCliAudit(fixture, { json = false, env } = {}) {
       "--resume",
       permission.interaction.resume_token,
       "--permissions",
-      JSON.stringify({ public_verification: "approved" }),
+      JSON.stringify({ public_verification: publicDecision }),
     ],
     json,
   );

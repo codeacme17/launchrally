@@ -7,6 +7,7 @@ import {
 } from "@launchrally/contracts";
 
 import { describeWebBaselineCatalog } from "./check-catalog.js";
+import { createPublicVerificationPlan } from "./public-verification.js";
 
 const PROVIDER_SIGNALS = Object.freeze([
   { prefix: "CLOUDFLARE_", provider: "cloudflare", role: "deployment" },
@@ -96,6 +97,10 @@ function normalizeAnswers(answers) {
       try {
         const url = new URL(target);
         if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+        if (url.username || url.password || url.search || url.hash) {
+          errors.push({ field_id: "production_targets", code: "unsafe_public_target" });
+          break;
+        }
         productionTargets.push(url.toString());
       } catch {
         errors.push({ field_id: "production_targets", code: "invalid_url" });
@@ -104,12 +109,45 @@ function normalizeAnswers(answers) {
     }
   }
 
-  const coreJourneys = Array.isArray(answers?.core_journeys)
-    ? answers.core_journeys
-      .filter((journey) => typeof journey === "string" && journey.trim())
-      .map((journey) => journey.trim())
-    : [];
-  if (coreJourneys.length === 0) {
+  const coreJourneys = [];
+  if (Array.isArray(answers?.core_journeys)) {
+    for (const journey of answers.core_journeys) {
+      if (typeof journey === "string" && journey.trim()) {
+        coreJourneys.push(journey.trim());
+        continue;
+      }
+      const purpose = typeof journey?.purpose === "string" ? journey.purpose.trim() : "";
+      const journeyPath = typeof journey?.path === "string" ? journey.path.trim() : "";
+      const method = typeof journey?.method === "string" ? journey.method.toUpperCase() : "";
+      let staysOnConfirmedOrigins = true;
+      try {
+        staysOnConfirmedOrigins = productionTargets.every((target) => {
+          const origin = new URL(target).origin;
+          return new URL(journeyPath, origin).origin === origin;
+        });
+      } catch {
+        staysOnConfirmedOrigins = false;
+      }
+      if (
+        !purpose
+        || !journeyPath.startsWith("/")
+        || journeyPath.startsWith("//")
+        || journeyPath.includes("\\")
+        || journeyPath.includes("?")
+        || journeyPath.includes("#")
+        || method !== "GET"
+        || !staysOnConfirmedOrigins
+      ) {
+        errors.push({ field_id: "core_journeys", code: "invalid_public_journey" });
+        break;
+      }
+      coreJourneys.push({ purpose, path: journeyPath, method: "GET" });
+    }
+  }
+  if (
+    coreJourneys.length === 0
+    && !errors.some((error) => error.field_id === "core_journeys")
+  ) {
     errors.push({ field_id: "core_journeys", code: "required" });
   }
 
@@ -140,7 +178,12 @@ function normalizeAnswers(answers) {
     answers: {
       intended_environment: intendedEnvironment,
       production_targets: [...new Set(productionTargets)].sort(),
-      core_journeys: [...new Set(coreJourneys)].sort(),
+      core_journeys: [...new Map(coreJourneys.map((journey) => [
+        typeof journey === "string" ? `description:${journey}` : JSON.stringify(journey),
+        journey,
+      ])).values()].sort((left, right) =>
+        JSON.stringify(left).localeCompare(JSON.stringify(right)),
+      ),
       provider_roles: [...new Map(providerRoles.map((entry) => [
         `${entry.provider}:${entry.role}`,
         entry,
@@ -220,6 +263,7 @@ function createAuditBrief(snapshot, answers = null, confirmed = false) {
       candidates: supportCandidates(snapshot.project),
       confirmed,
     },
+    public_verification: createPublicVerificationPlan(answers),
     planned_checks: plannedChecks(answers),
   };
 }
@@ -242,8 +286,8 @@ function inputFields(auditBrief) {
     },
     {
       field_id: "core_journeys",
-      value_type: "string_array",
-      prompt: "Which user journeys must work for this release?",
+      value_type: "journey_array",
+      prompt: "Which GET paths and user journeys must work for this release?",
       candidates: [],
       current_value: auditBrief.core_journeys.values,
     },
@@ -292,6 +336,7 @@ function createNeedsInput(snapshot, state, validationErrors = []) {
 }
 
 function authorizationPlan(answers) {
+  const publicPlan = createPublicVerificationPlan(answers);
   const providers = new Map();
   for (const { provider, role } of answers.provider_roles) {
     const current = providers.get(provider) ?? new Set();
@@ -310,7 +355,7 @@ function authorizationPlan(answers) {
       permission_id: "public_verification",
       boundary: "public_network",
       decision: "pending",
-      scope: { targets: answers.production_targets },
+      scope: { targets: publicPlan.targets, probes: publicPlan.probes },
     },
     ...[...providers.entries()].sort(([left], [right]) => left.localeCompare(right)).map(
       ([provider, metadata]) => ({
