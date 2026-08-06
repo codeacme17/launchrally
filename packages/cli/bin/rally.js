@@ -5,10 +5,10 @@ import process from "node:process";
 
 import { CLI_INTERACTION_CONTRACT } from "@launchrally/contracts";
 import {
-  createNotImplementedResult,
   runAudit,
   runInit,
   runPlan,
+  runVerify,
 } from "@launchrally/core";
 
 const VERSION = "0.1.0";
@@ -20,10 +20,12 @@ function commandName() {
   const optionsWithValues = new Set([
     "--answers",
     "--confirm",
+    "--checks",
     "--cwd",
     "--permissions",
     "--report",
     "--resume",
+    "--scope",
   ]);
   for (let index = 0; index < args.length; index += 1) {
     if (optionsWithValues.has(args[index])) {
@@ -228,6 +230,45 @@ function renderHumanPlan(value) {
   return lines.join("\n");
 }
 
+function renderHumanVerify(value) {
+  const targeted = value.verification_scope.mode === "targeted";
+  const lines = [
+    `LaunchRally ${targeted ? "Targeted" : "Full"} Verification`,
+    `Whole release: ${value.verification_scope.whole_release ? "YES" : "NO"}`,
+    "Checks:",
+    ...value.verification_scope.check_ids.map((checkId) => `  - ${checkId}`),
+  ];
+  if (value.status === "needs_permission") {
+    lines.push("Fresh Evidence permission boundary:");
+    for (const permission of value.request.permissions) {
+      if (permission.boundary === "public_network") {
+        lines.push(
+          `  - Public verification: ${permission.scope.targets.join(", ")}`,
+          ...permission.scope.probes.map(
+            (probe) => `    ${probe.method} ${probe.target} — ${probe.purpose}`,
+          ),
+        );
+      } else {
+        lines.push(
+          `  - Provider read ${permission.scope.provider}: ${permission.scope.target}`,
+        );
+      }
+    }
+    lines.push(
+      "Choose approved or denied independently for each permission ID.",
+      `Resume token: ${value.interaction.resume_token}`,
+    );
+  } else {
+    lines.push(
+      `Assessment scope: ${value.assessment_scope}`,
+      `Launch Assessment: ${value.assessment ?? "not available"}`,
+      `Manifest Drift: ${value.manifest_drift.length}`,
+      `Source Report: ${value.history.source_report_id}`,
+    );
+  }
+  return lines.join("\n");
+}
+
 function print(value) {
   if (json) {
     process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -249,6 +290,14 @@ function print(value) {
 
   if (value.operation === "plan" && value.status === "completed") {
     process.stdout.write(`${renderHumanPlan(value)}\n`);
+    return;
+  }
+
+  if (
+    value.operation === "verify"
+    && ["needs_permission", "completed"].includes(value.status)
+  ) {
+    process.stdout.write(`${renderHumanVerify(value)}\n`);
     return;
   }
 
@@ -283,7 +332,7 @@ function help() {
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
       "  init     Preview and confirm local adoption after a complete Audit Report",
       "  plan     Build a deterministic read-only Launch Plan from a current Report",
-      "  verify   Reserved Phase 0 verification workflow",
+      "  verify   Recollect fresh Evidence for full or targeted verification",
       "  version  Print CLI and interaction contract versions",
     ].join("\n"),
   };
@@ -383,8 +432,44 @@ async function main() {
   }
 
   if (command === "verify") {
-    print(createNotImplementedResult(command));
-    return 2;
+    const cwd = optionValue("--cwd") ?? process.cwd();
+    let reportPackage;
+    const reportPath = optionValue("--report");
+    if (reportPath) {
+      try {
+        reportPackage = JSON.parse(await readFile(reportPath, "utf8"));
+      } catch {
+        print({
+          contract: CLI_INTERACTION_CONTRACT,
+          status: "execution_error",
+          operation: "verify",
+          error: "invalid_report_file",
+          message: "The saved source Report JSON could not be read and parsed.",
+        });
+        return 2;
+      }
+    }
+    const checks = jsonOption("--checks");
+    const permissionDecisions = jsonOption("--permissions");
+    if (checks.error || permissionDecisions.error) {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "verify",
+        error: "invalid_option_json",
+        message: "Verify Check IDs and permission decisions must use valid JSON.",
+      });
+      return 2;
+    }
+    const result = await runVerify(cwd, VERSION, {
+      report_package: reportPackage,
+      scope: optionValue("--scope"),
+      check_ids: checks.value,
+      resume_token: optionValue("--resume"),
+      permission_decisions: permissionDecisions.value,
+    });
+    print(result);
+    return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
   }
 
   print({

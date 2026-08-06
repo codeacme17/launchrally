@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/verify-interaction/v1",
+  "title": "LaunchRally Verify Interaction v1",
+  "type": "object",
+  "required": ["schema_version", "interaction_id", "revision"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/verify-interaction/v1" },
+    "interaction_id": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "resume_token": { "type": "string", "minLength": 20 }
+  },
+  "additionalProperties": false
+}

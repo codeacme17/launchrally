@@ -56,6 +56,28 @@
       },
       "additionalProperties": false
     },
+    "verification_context": {
+      "type": "object",
+      "required": ["digest_version", "repository_digests", "manifest_digest", "target_digest"],
+      "properties": {
+        "digest_version": { "const": "verification-scope-digests/v1" },
+        "repository_digests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "digest"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "manifest_digest": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$" },
+        "target_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    },
     "catalog": { "$ref": "#/$defs/catalog" },
     "scope": {
       "type": "object",
@@ -465,10 +487,11 @@
     },
     "currentnessReason": {
       "type": "object",
-      "required": ["check_id", "reason_code"],
+      "required": ["reason_code"],
       "properties": {
         "check_id": { "type": "string", "minLength": 1 },
-        "reason_code": { "enum": ["content_changed", "live_evidence_stale"] },
+        "reason_code": { "enum": ["content_changed", "live_evidence_stale", "manifest_drift"] },
+        "field": { "type": "string", "minLength": 1 },
         "change": { "type": "string", "minLength": 1 },
         "evidence_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
         "collected_at": { "type": "string", "format": "date-time" },

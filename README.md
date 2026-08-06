@@ -2,7 +2,7 @@
 
 LaunchRally is a local-first, open-source launch readiness audit and verification tool for repository-owning AI builders.
 
-This repository contains the first Phase 0 Audit, post-Report initialization, and read-only Launch Plan paths. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, a policy-driven launch assessment, read-only public verification, approved Provider metadata reads, preview-first local adoption, and deterministic remediation guidance. Post-remediation verification is intentionally not implemented yet.
+This repository contains the Phase 0 Audit, post-Report initialization, read-only Launch Plan, and post-remediation Verify paths. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, a policy-driven launch assessment, read-only public verification, approved Provider metadata reads, preview-first local adoption, deterministic remediation guidance, and immutable verification history.
 
 ## Quick start
 
@@ -24,6 +24,8 @@ Each completed Audit returns an immutable, time-stamped JSON Report Record, a Ma
 Save a completed Agent Mode Audit and pass it to `rally init --report <path>`. Initialization displays exact before/after contents, digests, and diffs for every proposed change. Only `--confirm confirm` applies the previewed `.launchrally` Manifest and ignore rules, exact CLI devDependency, and lockfile update. Declining, stale previews, and dependency-planning failures write nothing; interrupted partial writes are rolled back or recovered from the ignored transaction journal on the next `init`. LaunchRally never stages or commits these project-owned files.
 
 Pass the same saved current Audit to `rally plan --report <path>`. The versioned Launch Plan preserves the Report Action Queue order and explains each confirmed Finding, its declared-release impact, investigation locations, remediation guidance, and required Evidence recollection. Verification Gaps remain separate investigation or permission work. Planning performs no source, deployment, Provider, or production mutation. Only an explicit `--handoff` assigns local remediation to the host Agent; it grants no external write authority and directs the builder back to Verify.
+
+After remediation, run `rally verify --report <path> --scope full`. Verify reads the initialized Manifest, discloses fresh public and Provider permission boundaries, and recollects Evidence instead of reusing live observations. Full verification creates a new immutable Report and Evidence Index with an explicit comparison to the source history. Use `--scope targeted --checks '["check.id"]'` for selected Checks; targeted results are explicitly limited and never carry a whole-release Launch Assessment. Manifest/observed-state conflicts are reported as Manifest Drift and never update project intent silently.
 
 Cloudflare and Vercel have versioned, read-only Provider Adapters. Before approval, the Audit discloses the existing CLI executable, exact arguments, target, and allowlisted fields for each Provider. Successful reads become provenance-backed Machine Evidence for the catalog-declared Provider Check; missing tools or authentication and Adapter failures leave that Check Unverified. LaunchRally never installs a Provider tool, initiates login, supplies or retains credentials, or performs Provider writes.
 
@@ -57,7 +59,7 @@ test/
 - Environment values and raw package script commands are never included in Audit output.
 - Approved public probes and Cloudflare/Vercel Adapter reads are bounded, read-only, and retain only normalized evidence.
 - Report Records and Evidence Indexes are unique, frozen in-process, and never overwrite repository files.
-- `init` is available only from a saved completed Audit and always requires preview confirmation; `plan` is deterministic and read-only from a saved current Audit; `verify` returns an explicit `not_implemented` state.
+- `init` is available only from a saved completed Audit and always requires preview confirmation; `plan` is deterministic and read-only from a saved current Audit; `verify` creates a new immutable full Report or an explicitly limited targeted result.
 - Missing P0 coverage is always reported as a Verification Gap and cannot be treated as Passed or `Launch Ready`.
 
 ## Contribution flow

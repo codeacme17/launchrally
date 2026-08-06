@@ -1,4 +1,5 @@
 import { constants } from "node:fs";
+import { createHash } from "node:crypto";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 
@@ -101,6 +102,7 @@ export async function scanRepository(selectedRoot) {
   const facts = [];
   const errors = [];
   const exclusions = emptyExclusions();
+  const contentDigests = {};
 
   function exclude(reason) {
     exclusions[reason] += 1;
@@ -111,7 +113,7 @@ export async function scanRepository(selectedRoot) {
     exclude(code === "outside_root" ? "outside_root" : "unreadable");
   }
 
-  async function readSafeFile(absolutePath, relativePath, knownStat) {
+  async function readSafeFile(absolutePath, relativePath, knownStat, options = {}) {
     let handle;
     try {
       const currentStat = knownStat ?? await lstat(absolutePath);
@@ -150,7 +152,9 @@ export async function scanRepository(selectedRoot) {
         return null;
       }
       const content = await handle.readFile();
+      contentDigests[relativePath] = `sha256:${createHash("sha256").update(content).digest("hex")}`;
       if (isBinary(content)) {
+        if (options.allow_binary) return "";
         exclude("binary");
         return null;
       }
@@ -268,6 +272,7 @@ export async function scanRepository(selectedRoot) {
       }
 
       if (packageManager && entry.name === "bun.lockb") {
+        await readSafeFile(absolutePath, relativePath, undefined, { allow_binary: true });
         facts.push({
           kind: "lockfile",
           package_manager: packageManager,
@@ -296,5 +301,12 @@ export async function scanRepository(selectedRoot) {
   }
 
   await walk(root, "", []);
-  return { root: selectedPath, policy_version: LOCAL_SAFE_SCAN_POLICY, facts, exclusions, errors };
+  return {
+    root: selectedPath,
+    policy_version: LOCAL_SAFE_SCAN_POLICY,
+    facts,
+    exclusions,
+    errors,
+    content_digests: contentDigests,
+  };
 }
