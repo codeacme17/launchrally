@@ -199,6 +199,7 @@ test("audit renders the Snapshot, Check, gap, and limitation for a person", asyn
     stdout,
     /LaunchRally Audit Report[\s\S]*Assessment: Inconclusive[\s\S]*Initial Readiness Snapshot[\s\S]*Project: terminal-web \(web\)[\s\S]*PASS \[P0\] web\.baseline\.lockfile[\s\S]*UNVERIFIED \[P0\] web\.public\.availability[\s\S]*Limitations/,
   );
+  assert.match(stdout, /Save this complete Audit JSON, then run rally init --report/u);
 });
 
 test("audit reports a failed Web baseline Check when the lockfile is missing", async () => {
@@ -528,6 +529,7 @@ test("plugin manifests and public schemas are valid JSON", async () => {
     "packages/contracts/schemas/evidence-index/v1.schema.json",
     "packages/contracts/schemas/audit-brief/v1.schema.json",
     "packages/contracts/schemas/audit-interaction/v1.schema.json",
+    "packages/contracts/schemas/init-interaction/v1.schema.json",
   ];
 
   for (const relative of files) {

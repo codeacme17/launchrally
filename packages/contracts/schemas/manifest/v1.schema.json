@@ -1,18 +1,95 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchrally.dev/manifest/v1",
-  "title": "LaunchRally Manifest v1 scaffold",
+  "title": "LaunchRally Manifest v1",
   "type": "object",
   "required": ["schema_version", "project", "release", "execution", "support", "providers"],
   "properties": {
     "schema_version": { "const": "launchrally.dev/manifest/v1" },
-    "project": { "type": "object" },
-    "release": { "type": "object" },
-    "execution": { "type": "object" },
-    "support": { "type": "object" },
-    "providers": { "type": "object" }
+    "project": {
+      "type": "object",
+      "required": ["name", "type", "package_manager"],
+      "properties": {
+        "name": { "$ref": "#/$defs/intentState" },
+        "type": { "$ref": "#/$defs/intentState" },
+        "package_manager": { "$ref": "#/$defs/intentState" }
+      },
+      "additionalProperties": false
+    },
+    "release": {
+      "type": "object",
+      "required": ["intended_environment", "production_targets", "core_journeys"],
+      "properties": {
+        "intended_environment": { "$ref": "#/$defs/intentState" },
+        "production_targets": { "$ref": "#/$defs/intentState" },
+        "core_journeys": { "$ref": "#/$defs/intentState" }
+      },
+      "additionalProperties": false
+    },
+    "execution": {
+      "type": "object",
+      "required": ["source_report_id", "assessment", "public_verification"],
+      "properties": {
+        "source_report_id": { "$ref": "#/$defs/intentState" },
+        "assessment": { "$ref": "#/$defs/intentState" },
+        "public_verification": { "$ref": "#/$defs/intentState" }
+      },
+      "additionalProperties": false
+    },
+    "support": {
+      "type": "object",
+      "required": ["layers"],
+      "properties": {
+        "layers": { "$ref": "#/$defs/intentState" }
+      },
+      "additionalProperties": false
+    },
+    "providers": {
+      "type": "object",
+      "required": ["roles"],
+      "properties": {
+        "roles": { "$ref": "#/$defs/intentState" }
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false,
+  "$defs": {
+    "intentState": {
+      "oneOf": [
+        { "$ref": "#/$defs/declaredState" },
+        { "$ref": "#/$defs/unknownState" },
+        { "$ref": "#/$defs/notApplicableState" }
+      ]
+    },
+    "declaredState": {
+      "type": "object",
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "declared" },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "unknownState": {
+      "type": "object",
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "notApplicableState": {
+      "type": "object",
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "not_applicable" },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
   "x-launchrally-contract-major": 1,
-  "x-launchrally-status": "template"
+  "x-launchrally-status": "initialization"
 }

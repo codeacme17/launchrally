@@ -102,6 +102,12 @@ test("every completed Audit returns one frozen Record, derived Markdown View, an
   assert.equal(view.report_id, report.report_id);
   assert.equal(view.report_schema_version, report.schema_version);
   assert.equal(view.content, renderReportMarkdown(report));
+  assert.deepEqual(result.next, {
+    type: "init",
+    required: false,
+    report_id: report.report_id,
+    message: "Save this complete Audit JSON, then run rally init --report <path> to preview adoption.",
+  });
   assert.match(view.content, /^# LaunchRally Audit Report/mu);
   assert.match(view.content, new RegExp(`Report Record: ${report.report_id}`, "u"));
   assert.match(view.content, /Assessment: Inconclusive/u);

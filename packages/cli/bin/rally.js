@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
+import { readFile } from "node:fs/promises";
 import process from "node:process";
 
 import { CLI_INTERACTION_CONTRACT } from "@launchrally/contracts";
 import {
   createNotImplementedResult,
   runAudit,
+  runInit,
 } from "@launchrally/core";
 
 const VERSION = "0.1.0";
@@ -19,6 +21,7 @@ function commandName() {
     "--confirm",
     "--cwd",
     "--permissions",
+    "--report",
     "--resume",
   ]);
   for (let index = 0; index < args.length; index += 1) {
@@ -151,6 +154,32 @@ function renderHumanInteraction(value) {
   return lines.join("\n");
 }
 
+function renderHumanInit(value) {
+  const lines = [
+    "LaunchRally Initialization Preview",
+    `Mode: ${value.mode}`,
+    `Source Report: ${value.source_report_id}`,
+    "",
+  ];
+  for (const change of value.preview.changes) {
+    lines.push(
+      `${change.operation.toUpperCase()} ${change.path}`,
+      `Before digest: ${change.before_digest ?? "none"}`,
+      `After digest: ${change.after_digest}`,
+      "Diff:",
+      change.diff,
+      "After content:",
+      change.after,
+    );
+  }
+  lines.push(
+    value.request.prompt,
+    "Choose: confirm or decline.",
+    `Resume token: ${value.interaction.resume_token}`,
+  );
+  return lines.join("\n");
+}
+
 function print(value) {
   if (json) {
     process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -162,6 +191,11 @@ function print(value) {
     && ["needs_input", "needs_confirmation", "needs_permission"].includes(value.status)
   ) {
     process.stdout.write(`${renderHumanInteraction(value)}\n`);
+    return;
+  }
+
+  if (value.operation === "init" && value.status === "needs_confirmation") {
+    process.stdout.write(`${renderHumanInit(value)}\n`);
     return;
   }
 
@@ -177,7 +211,7 @@ function print(value) {
   }
 
   if (value.operation === "audit" && value.report) {
-    process.stdout.write(value.report_view.content);
+    process.stdout.write(`${value.report_view.content}\n${value.next.message}\n`);
     return;
   }
 
@@ -194,7 +228,7 @@ function help() {
       "",
       "Commands:",
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
-      "  init     Reserved Phase 0 initialization workflow",
+      "  init     Preview and confirm local adoption after a complete Audit Report",
       "  plan     Reserved Phase 0 read-only planning workflow",
       "  verify   Reserved Phase 0 verification workflow",
       "  version  Print CLI and interaction contract versions",
@@ -242,7 +276,35 @@ async function main() {
     return result.status === "execution_error" ? 2 : 0;
   }
 
-  if (["init", "plan", "verify"].includes(command)) {
+  if (command === "init") {
+    const cwd = optionValue("--cwd") ?? process.cwd();
+    let reportPackage;
+    const reportPath = optionValue("--report");
+    if (reportPath) {
+      try {
+        reportPackage = JSON.parse(await readFile(reportPath, "utf8"));
+      } catch {
+        const result = {
+          contract: CLI_INTERACTION_CONTRACT,
+          status: "execution_error",
+          operation: "init",
+          error: "invalid_report_file",
+          message: "The saved Audit JSON could not be read and parsed.",
+        };
+        print(result);
+        return 2;
+      }
+    }
+    const result = await runInit(cwd, VERSION, {
+      resume_token: optionValue("--resume"),
+      confirmation: optionValue("--confirm"),
+      report_package: reportPackage,
+    });
+    print(result);
+    return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+  }
+
+  if (["plan", "verify"].includes(command)) {
     print(createNotImplementedResult(command));
     return 2;
   }
