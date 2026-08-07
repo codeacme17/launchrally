@@ -2,6 +2,7 @@
   "name": "@launchrally/claude-plugin",
   "version": "0.1.0",
   "description": "LaunchRally Plugin adapter for Claude Code",
+  "license": "Apache-2.0",
   "files": [
     ".claude-plugin/",
     "skills/"

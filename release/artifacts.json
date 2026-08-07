@@ -9,6 +9,7 @@
         "src/"
       ],
       "files": [
+        "LICENSE",
         "package.json",
         "schemas/audit-brief/v1.schema.json",
         "schemas/audit-interaction/v1.schema.json",
@@ -34,6 +35,7 @@
         "src/"
       ],
       "files": [
+        "LICENSE",
         "package.json",
         "provider-decision-cards/v1/cloudflare-workers.json",
         "provider-decision-cards/v1/vercel.json",
@@ -61,6 +63,7 @@
         "bin/"
       ],
       "files": [
+        "LICENSE",
         "bin/rally.js",
         "package.json"
       ]
@@ -73,6 +76,7 @@
         "skills/"
       ],
       "files": [
+        "LICENSE",
         ".codex-plugin/plugin.json",
         "package.json",
         "skills/launchrally/agents/openai.yaml",
@@ -95,6 +99,7 @@
         "skills/"
       ],
       "files": [
+        "LICENSE",
         ".claude-plugin/plugin.json",
         "package.json",
         "skills/launchrally/references/audit.md",

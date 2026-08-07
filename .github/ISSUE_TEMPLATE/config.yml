@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and voluntary field reports
+    url: https://github.com/codeacme17/launchrally/discussions
+    about: Share non-sensitive usage context, feedback categories, and P1 requests.
+  - name: Existing issues
+    url: https://github.com/codeacme17/launchrally/issues
+    about: Search for an existing defect or scoped feature request before opening a new issue.
+  - name: Private security report
+    url: https://github.com/codeacme17/launchrally/security/advisories/new
+    about: Report suspected vulnerabilities privately; do not disclose them in a public issue.

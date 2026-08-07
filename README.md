@@ -2,6 +2,10 @@
 
 LaunchRally is a local-first, open-source launch readiness audit and verification tool for repository-owning AI builders.
 
+> **Status: Experimental.** The P0 delivery and quality floor is Product Complete, but real-world Telemetry-Free Validation is still in progress. LaunchRally is not yet P0 Validated, and its contracts may change before P1.
+
+Use the [Quickstart](docs/quickstart.md), understand the [Manifest, Report, and Evidence model](docs/data-model.md), and review the [permission and privacy boundaries](docs/privacy.md). Questions and voluntary field reports belong in [GitHub Discussions](https://github.com/codeacme17/launchrally/discussions); actionable defects belong in [GitHub Issues](https://github.com/codeacme17/launchrally/issues). See [SECURITY.md](SECURITY.md) for private vulnerability reports and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
+
 This repository contains the Phase 0 Audit, post-Report initialization, read-only Launch Plan, bounded Provider guidance, and post-remediation Verify paths. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, a policy-driven launch assessment, read-only public verification, approved Provider metadata reads, preview-first local adoption, deterministic remediation guidance, open Provider Decision Cards, and immutable verification history.
 
 ## First Audit
@@ -88,6 +92,6 @@ test/
 
 `dev` is the repository's default branch so new pull requests target it by default.
 
-## Licence
+## License
 
-The Phase 0 open-source licence must be selected before Repository Publication. No licence is asserted by this initial scaffold.
+LaunchRally source, documentation, and public release artifacts are licensed under [Apache-2.0](LICENSE).
