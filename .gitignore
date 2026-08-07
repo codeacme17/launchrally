@@ -3,6 +3,9 @@ coverage/
 *.log
 .DS_Store
 
+# Local product-planning sources are intentionally not version-controlled.
+docs/product/
+
 .launchrally/reports/
 .launchrally/evidence/
 .launchrally/cache/
