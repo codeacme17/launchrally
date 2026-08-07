@@ -10,6 +10,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 
 ## Route the request
 
+- For the complete Audit → optional Init → Read-only Plan → explicit Remediation Handoff → Verify flow, read [references/reference-journey.md](references/reference-journey.md).
 - For a first or repeated readiness assessment, read [references/audit.md](references/audit.md).
 - For post-report project adoption, read [references/init.md](references/init.md).
 - For remediation guidance or Provider choices, read [references/plan.md](references/plan.md).
@@ -33,8 +34,9 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 ## Start safely
 
 1. Resolve the exact repository root without changing files.
-2. Check for a project-pinned compatible CLI.
-3. If absent, disclose the exact package, version, source, and command before proposing `npm exec`.
-4. Preserve the package manager's download confirmation.
-5. Invoke Agent Mode with structured output and handle the returned state.
-6. Always disclose scaffold limitations and Verification Gaps.
+2. Require `@launchrally/cli@0.1.0` and check a project-pinned CLI first.
+3. Before any journey command, invoke that executable with `--version --json` and require `contract: "launchrally.dev/cli/v0"`, `operation: "version"`, `status: "completed"`, and `cli_version: "0.1.0"`; stop on any mismatch.
+4. If the executable is absent, disclose the exact package, version, source, and command before proposing `npm exec`.
+5. Preserve the package manager's download confirmation.
+6. Invoke Agent Mode with structured output and handle the returned state.
+7. Always disclose scaffold limitations and Verification Gaps.

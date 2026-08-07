@@ -1,19 +1,26 @@
 # CLI interaction contract
 
-Invoke Agent Mode with `--json`. Read the `contract`, `status`, and `operation` fields before interpreting any payload.
+Invoke Agent Mode with `--json`. Read `contract`, `status`, and `operation` before interpreting any payload. When `interaction` is present, read `interaction.schema_version` before its state payload and require the exact supported schema for that operation. Stop on an unknown contract, operation, status, or schema version. Never parse or branch on Human Mode terminal prose.
 
-Audit interaction statuses:
+## State router
 
-- `needs_input`: answer only the typed fields in `request.fields`, then resume with the returned token.
-- `needs_confirmation`: present the complete `audit_brief`, `planned_checks`, and `authorization_plan`; pass `confirm`, `revise`, or `cancel` without inference.
-- `needs_permission`: present each entry in `request.permissions` separately and return an explicit `approved` or `denied` decision for each permission ID.
-- `completed`: the requested operation completed within its disclosed limitations.
-- `unavailable`: a prerequisite such as a complete first Report has not been supplied.
-- `execution_error`: the CLI could not execute the operation.
+Use this router for every operation. Operation-specific sections below constrain which fields and response values are valid.
 
-Read `contract`, `status`, `operation`, and `interaction.schema_version` before the state payload. Preserve `interaction.resume_token` verbatim. A token is repository-root scoped and retains confirmed scope and prior permission decisions; resume errors require a new Audit rather than reconstructed state.
+| `status` | Required handling |
+| --- | --- |
+| `needs_input` | Present only typed fields from the structured request, collect the user's answers, and resume with those answers. Never fill a material release fact silently. |
+| `needs_confirmation` | Present the exact structured preview and only offer the response values declared by that operation. Never infer confirmation. |
+| `needs_permission` | Present every structured permission separately and resume with an explicit decision for each permission ID. Never reuse earlier permission for a fresh-read boundary. |
+| `needs_selection` | Present only the CLI's versioned options and rankings, then resume with the user's exact selection. Never invent or rerank an option. |
+| `completed` | Validate the operation's versioned result shape and explain it without changing its Checks, Evidence, policy, Report, or Assessment. |
+| `unavailable` | Stop the operation and present the structured prerequisite or reason. Do not synthesize the missing input. |
+| `execution_error` | Stop and present the structured error. Do not reinterpret it as a Check failure or reconstruct interaction state. |
+
+Preserve `interaction.resume_token` verbatim. A token is repository-root scoped and retains confirmed scope and prior permission decisions; resume errors require a new operation rather than reconstructed state.
 
 Do not collapse a Check failure, denied permission, missing Evidence, and execution error into one result. A denied permission completes as an explicit Verification Gap. A passing implemented Check does not override incomplete P0 coverage.
+
+Audit interaction uses `launchrally.dev/audit-interaction/v1`. For `needs_input`, answer only `request.fields`. For `needs_confirmation`, present the complete `audit_brief`, `planned_checks`, and `authorization_plan`; pass only `confirm`, `revise`, or `cancel`. For `needs_permission`, return only explicit `approved` or `denied` decisions for the requested permission IDs.
 
 Initialization interaction uses `launchrally.dev/init-interaction/v1`. Read the exact `preview.changes`, preserve `interaction.resume_token`, and return only `confirm` or `decline`. Never infer approval from a completed Audit.
 
