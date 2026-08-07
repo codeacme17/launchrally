@@ -199,24 +199,25 @@ test("declared content changes make the Record and derived View non-current", as
 });
 
 test("Manifest and Report major versions are independent and future majors fail closed", () => {
-  assert.equal(MANIFEST_CONTRACT_MAJOR, 1);
-  assert.equal(REPORT_CONTRACT_MAJOR, 1);
-  assert.equal(assertSupportedManifestVersion(MANIFEST_SCHEMA), 1);
-  assert.equal(assertSupportedReportVersion(REPORT_SCHEMA), 1);
-  assert.equal(assertSupportedManifestVersion({ schema_version: MANIFEST_SCHEMA }), 1);
-  assert.equal(assertSupportedReportVersion({ schema_version: REPORT_SCHEMA }), 1);
+  assert.equal(MANIFEST_CONTRACT_MAJOR, 2);
+  assert.equal(REPORT_CONTRACT_MAJOR, 2);
+  assert.equal(assertSupportedManifestVersion(MANIFEST_SCHEMA), 2);
+  assert.equal(assertSupportedReportVersion(REPORT_SCHEMA), 2);
+  assert.equal(assertSupportedManifestVersion({ schema_version: MANIFEST_SCHEMA }), 2);
+  assert.equal(assertSupportedReportVersion({ schema_version: REPORT_SCHEMA }), 2);
+  assert.equal(assertSupportedReportVersion("launchrally.dev/report/v1"), 1);
 
   assert.throws(
-    () => assertSupportedManifestVersion("launchrally.dev/manifest/v2"),
+    () => assertSupportedManifestVersion("launchrally.dev/manifest/v3"),
     (error) => error.code === "unsupported_manifest_version",
   );
   assert.throws(
-    () => assertSupportedReportVersion("launchrally.dev/report/v2"),
+    () => assertSupportedReportVersion("launchrally.dev/report/v3"),
     (error) => error.code === "unsupported_report_version",
   );
   assert.throws(
-    () => renderReportMarkdown({ schema_version: "launchrally.dev/report/v2" }),
+    () => renderReportMarkdown({ schema_version: "launchrally.dev/report/v3" }),
     (error) => error.code === "unsupported_report_version",
   );
-  assert.equal(assertSupportedManifestVersion(MANIFEST_SCHEMA), 1);
+  assert.equal(assertSupportedManifestVersion(MANIFEST_SCHEMA), 2);
 });

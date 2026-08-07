@@ -11,13 +11,24 @@ import {
   MANIFEST_SCHEMA,
   assertSupportedManifestVersion,
   assertSupportedReportVersion,
+  assertValidLegacyManifest,
+  assertValidManifest,
   assertValidReportPackage,
 } from "@launchrally/contracts";
+
+import {
+  LEGACY_MANIFEST_RELATIVE_PATH,
+  MANIFEST_RELATIVE_PATH,
+  parseManifest,
+  serializeManifest,
+} from "./manifest.js";
+import { createNeedsRefreshResult } from "./interaction-result.js";
 
 export const CLI_DEPENDENCY = "@launchrally/cli";
 const APPROVED_PATHS = new Set([
   ".launchrally/.gitignore",
-  ".launchrally/launch-manifest.json",
+  LEGACY_MANIFEST_RELATIVE_PATH,
+  MANIFEST_RELATIVE_PATH,
   "bun.lock",
   "package-lock.json",
   "package.json",
@@ -75,10 +86,14 @@ function declaredOrUnknown(value, reason) {
     : declared(value);
 }
 
-function declaredOrNotApplicable(values, reason) {
+function declaredOrNotApplicable(values, reason, sourceReportId, field) {
   return values.length > 0
     ? declared(values)
-    : { state: "not_applicable", reason };
+    : {
+      state: "not_applicable",
+      reason,
+      evidence: [{ source_report_id: sourceReportId, field }],
+    };
 }
 
 function createManifest(report) {
@@ -123,6 +138,8 @@ function createManifest(report) {
         ? declaredOrNotApplicable(
           release.support_layers,
           "No support layers were declared for this release.",
+          report.report_id,
+          "scope.release_intent.support_layers",
         )
         : {
           state: "unknown",
@@ -134,6 +151,8 @@ function createManifest(report) {
         ? declaredOrNotApplicable(
           release.provider_roles,
           "No Provider roles were declared for this release.",
+          report.report_id,
+          "scope.release_intent.provider_roles",
         )
         : {
           state: "unknown",
@@ -141,6 +160,58 @@ function createManifest(report) {
         },
     },
   };
+}
+
+function legacyEvidenceMismatch(message) {
+  const error = new Error(message);
+  error.code = "legacy_manifest_evidence_mismatch";
+  throw error;
+}
+
+function migratedIntentState(state, report, field, reportValues) {
+  if (state?.state !== "not_applicable") return structuredClone(state);
+  if (
+    report.scope.release_intent.confirmed !== true
+    || !Array.isArray(reportValues)
+    || reportValues.length !== 0
+  ) {
+    legacyEvidenceMismatch(
+      `The legacy not-applicable state for ${field} conflicts with the supplied Report.`,
+    );
+  }
+  return {
+    ...structuredClone(state),
+    evidence: [{ source_report_id: report.report_id, field }],
+  };
+}
+
+function migrateLegacyManifest(legacy, report) {
+  const legacySource = legacy.execution?.source_report_id;
+  if (
+    legacySource?.state !== "declared"
+    || typeof legacySource.value !== "string"
+    || legacySource.value !== report.report_id
+  ) {
+    legacyEvidenceMismatch(
+      "The legacy Manifest source Report does not match the supplied Report.",
+    );
+  }
+  const manifest = structuredClone(legacy);
+  manifest.schema_version = MANIFEST_SCHEMA;
+  manifest.support.layers = migratedIntentState(
+    legacy.support.layers,
+    report,
+    "scope.release_intent.support_layers",
+    report.scope.release_intent.support_layers,
+  );
+  manifest.providers.roles = migratedIntentState(
+    legacy.providers.roles,
+    report,
+    "scope.release_intent.provider_roles",
+    report.scope.release_intent.provider_roles,
+  );
+  assertValidManifest(manifest);
+  return manifest;
 }
 
 async function readOptional(filePath) {
@@ -191,7 +262,7 @@ function exactDiff(relativePath, before, after) {
   const afterLines = contentLines(after);
   return [
     `--- ${before === null ? "/dev/null" : `a/${relativePath}`}`,
-    `+++ b/${relativePath}`,
+    `+++ ${after === null ? "/dev/null" : `b/${relativePath}`}`,
     `@@ -1,${beforeLines.length} +1,${afterLines.length} @@`,
     ...beforeLines.map((line) => `-${line}`),
     ...afterLines.map((line) => `+${line}`),
@@ -362,11 +433,11 @@ async function previewChange(root, relativePath, after) {
   const before = await readOptional(path.join(root, relativePath));
   return {
     path: relativePath,
-    operation: before === null ? "create" : "update",
+    operation: after === null ? "delete" : before === null ? "create" : "update",
     before,
     after,
     before_digest: before === null ? null : digest(before),
-    after_digest: digest(after),
+    after_digest: after === null ? null : digest(after),
     diff: exactDiff(relativePath, before, after),
   };
 }
@@ -436,7 +507,7 @@ async function rollbackChanges(root, changes, operations, guardCurrent = false) 
 
 async function applyChanges(root, changes, fileOperations = {}) {
   const operations = fileOperationAdapter(fileOperations);
-  const manifestPath = ".launchrally/launch-manifest.json";
+  const manifestPath = MANIFEST_RELATIVE_PATH;
   const ordered = [
     ...changes.filter((change) => change.path !== manifestPath),
     ...changes.filter((change) => change.path === manifestPath),
@@ -459,8 +530,12 @@ async function applyChanges(root, changes, fileOperations = {}) {
     for (const change of ordered) {
       const target = path.join(root, change.path);
       attempted.push(change);
-      await operations.mkdir(path.dirname(target), { recursive: true });
-      await operations.write_file(target, change.after);
+      if (change.after === null) {
+        await operations.remove_file(target);
+      } else {
+        await operations.mkdir(path.dirname(target), { recursive: true });
+        await operations.write_file(target, change.after);
+      }
     }
     await removeRecoveryJournal(root);
     return { applied: true, reverted: false };
@@ -712,8 +787,16 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       "The saved Report belongs to a different repository root; nothing was changed.",
     );
   }
+  if (!source.report.policy.current) {
+    return createNeedsRefreshResult(
+      "init",
+      source.report.report_id,
+      "Initialization requires a current Report; run full Verify first.",
+    );
+  }
   try {
-    await assertSafeRelativePath(root, ".launchrally/launch-manifest.json");
+    await assertSafeRelativePath(root, MANIFEST_RELATIVE_PATH);
+    await assertSafeRelativePath(root, LEGACY_MANIFEST_RELATIVE_PATH);
     await assertSafeRelativePath(root, ".launchrally/.gitignore");
     await assertSafeRelativePath(root, "package.json");
   } catch (error) {
@@ -725,11 +808,23 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
     }
     throw error;
   }
-  const manifestPath = path.join(root, ".launchrally", "launch-manifest.json");
+  const manifestPath = path.join(root, MANIFEST_RELATIVE_PATH);
+  const legacyManifestPath = path.join(root, LEGACY_MANIFEST_RELATIVE_PATH);
   const existingManifestContent = await readOptional(manifestPath);
+  const legacyManifestContent = await readOptional(legacyManifestPath);
+  if (existingManifestContent !== null && legacyManifestContent !== null) {
+    return initializationError(
+      "ambiguous_manifest",
+      "Both the canonical YAML Manifest and legacy JSON Manifest exist; neither was changed.",
+    );
+  }
+  let legacyManifest = null;
+  let existingManifest = null;
   if (existingManifestContent !== null) {
     try {
-      assertSupportedManifestVersion(JSON.parse(existingManifestContent));
+      existingManifest = parseManifest(existingManifestContent);
+      assertSupportedManifestVersion(existingManifest);
+      assertValidManifest(existingManifest);
     } catch (error) {
       return {
         contract: CLI_INTERACTION_CONTRACT,
@@ -742,8 +837,41 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       };
     }
   }
-  const mode = existingManifestContent === null ? "initialization" : "migration";
-  const manifest = createManifest(source.report);
+  if (legacyManifestContent !== null) {
+    try {
+      legacyManifest = JSON.parse(legacyManifestContent);
+      if (legacyManifest?.schema_version !== "launchrally.dev/manifest/v1") {
+        assertSupportedManifestVersion(legacyManifest);
+      }
+      assertValidLegacyManifest(legacyManifest);
+    } catch (error) {
+      return {
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "init",
+        error: error?.code ?? "invalid_manifest",
+        message: error?.code === "unsupported_manifest_version"
+          ? "The legacy Launch Manifest uses an unsupported future major version."
+          : "The legacy Launch Manifest is invalid and was not changed.",
+      };
+    }
+  }
+  const mode = legacyManifestContent !== null
+    ? "migration"
+    : existingManifestContent === null ? "initialization" : "update";
+  let manifest;
+  try {
+    manifest = legacyManifest
+      ? migrateLegacyManifest(legacyManifest, source.report)
+      : existingManifest ?? createManifest(source.report);
+  } catch (error) {
+    return initializationError(
+      error?.code ?? "invalid_manifest",
+      error?.code === "legacy_manifest_evidence_mismatch"
+        ? "The legacy Manifest cannot be evidenced by the supplied Report; nothing was changed."
+        : "The Launch Manifest is invalid and was not changed.",
+    );
+  }
   const packageJson = await readFile(path.join(root, "package.json"), "utf8");
   const lockfile = await lockfileFor(root, source.report.scope.project.package_manager);
   if (!lockfile) {
@@ -830,9 +958,12 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
     "/reports/\n/evidence/\n/.init-transaction/\n",
   );
   plannedContents.set(
-    ".launchrally/launch-manifest.json",
-    `${JSON.stringify(manifest, null, 2)}\n`,
+    MANIFEST_RELATIVE_PATH,
+    serializeManifest(manifest),
   );
+  if (legacyManifestContent !== null) {
+    plannedContents.set(LEGACY_MANIFEST_RELATIVE_PATH, null);
+  }
   const previewedChanges = await Promise.all(
     [...plannedContents.entries()]
       .sort(([left], [right]) => left.localeCompare(right))

@@ -3,7 +3,7 @@ import {
   providerRiskDomain,
 } from "./provider-adapters.js";
 
-const CHECK_CATALOG_VERSION = "web-baseline-check-catalog/v1";
+const CHECK_CATALOG_VERSION = "web-baseline-check-catalog/v2";
 const BASELINE_VERSION = "web-application-baseline/v1";
 
 const WEB_RISK_DOMAINS = Object.freeze([

@@ -111,7 +111,7 @@ test("initialization is unavailable until a complete first Report is supplied", 
   const result = await runInit(directory, "0.1.0");
 
   assert.deepEqual(result, {
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
     status: "unavailable",
     operation: "init",
     reason: "complete_report_required",
@@ -233,7 +233,7 @@ test("a complete Report from another project root fails closed before dependency
 test("an unsupported future Report major fails closed before dependency planning", async () => {
   const directory = await fixture();
   const audit = structuredClone(await completeAudit(directory));
-  audit.report.schema_version = "launchrally.dev/report/v2";
+  audit.report.schema_version = "launchrally.dev/report/v3";
   let plannerCalled = false;
 
   const result = await runInit(
@@ -272,7 +272,7 @@ test("a complete Report produces an exact secret-free preview without repository
   assert.equal(result.source_report_id, audit.report.report_id);
   assert.ok(result.interaction.resume_token.length > 20);
   assert.deepEqual(result.manifest, {
-    schema_version: "launchrally.dev/manifest/v1",
+    schema_version: "launchrally.dev/manifest/v2",
     project: {
       name: { state: "declared", value: "init-web" },
       type: { state: "declared", value: "web" },
@@ -295,12 +295,20 @@ test("a complete Report produces an exact secret-free preview without repository
       layers: {
         state: "not_applicable",
         reason: "No support layers were declared for this release.",
+        evidence: [{
+          source_report_id: audit.report.report_id,
+          field: "scope.release_intent.support_layers",
+        }],
       },
     },
     providers: {
       roles: {
         state: "not_applicable",
         reason: "No Provider roles were declared for this release.",
+        evidence: [{
+          source_report_id: audit.report.report_id,
+          field: "scope.release_intent.provider_roles",
+        }],
       },
     },
   });
@@ -310,7 +318,7 @@ test("a complete Report produces an exact secret-free preview without repository
     operation,
   })), [
     { path: ".launchrally/.gitignore", operation: "create" },
-    { path: ".launchrally/launch-manifest.json", operation: "create" },
+    { path: ".launchrally/manifest.yaml", operation: "create" },
     { path: "package-lock.json", operation: "update" },
     { path: "package.json", operation: "update" },
   ]);
@@ -342,7 +350,7 @@ test("declining the exact preview leaves the repository unchanged", async () => 
   });
 
   assert.deepEqual(result, {
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
     status: "completed",
     operation: "init",
     outcome: "initialization_declined",
@@ -401,7 +409,7 @@ test("confirming applies exactly the previewed initialization files", async () =
   });
 
   assert.deepEqual(result, {
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
     status: "completed",
     operation: "init",
     outcome: "initialized",
@@ -417,7 +425,7 @@ test("confirming applies exactly the previewed initialization files", async () =
   );
   assert.deepEqual(
     (await readdir(path.join(directory, ".launchrally"))).sort(),
-    [".gitignore", "launch-manifest.json"],
+    [".gitignore", "manifest.yaml"],
   );
 });
 
@@ -476,7 +484,7 @@ test("a partial filesystem failure rolls back every attempted change", async () 
   );
 
   assert.deepEqual(result, {
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
     status: "execution_error",
     operation: "init",
     error: "initialization_failed_reverted",
@@ -507,7 +515,7 @@ test("dependency planning failures are recoverable and leave the repository unch
   );
 
   assert.deepEqual(result, {
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
     status: "execution_error",
     operation: "init",
     error: "dependency_plan_failed",
@@ -562,7 +570,7 @@ test("an interrupted rollback leaves an ignored recovery journal that the next i
   const recovered = await runInit(directory, "0.1.0");
 
   assert.deepEqual(recovered, {
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
     status: "completed",
     operation: "init",
     outcome: "initialization_recovered",
@@ -785,9 +793,9 @@ test("an unsupported future Manifest major fails closed without planning or writ
   const directory = await fixture();
   const audit = await completeAudit(directory);
   await mkdir(path.join(directory, ".launchrally"));
-  const futureManifest = '{"schema_version":"launchrally.dev/manifest/v2"}\n';
+  const futureManifest = "schema_version: launchrally.dev/manifest/v3\n";
   await writeFile(
-    path.join(directory, ".launchrally", "launch-manifest.json"),
+    path.join(directory, ".launchrally", "manifest.yaml"),
     futureManifest,
   );
   let plannerCalled = false;
@@ -808,7 +816,7 @@ test("an unsupported future Manifest major fails closed without planning or writ
   assert.equal(result.error, "unsupported_manifest_version");
   assert.equal(plannerCalled, false);
   assert.equal(
-    await readFile(path.join(directory, ".launchrally", "launch-manifest.json"), "utf8"),
+    await readFile(path.join(directory, ".launchrally", "manifest.yaml"), "utf8"),
     futureManifest,
   );
 });
@@ -826,14 +834,18 @@ test("a supported Manifest migration shows only its exact diff and requires appr
     resume_token: initialPreview.interaction.resume_token,
     confirmation: "confirm",
   });
-  const manifestPath = path.join(directory, ".launchrally", "launch-manifest.json");
-  const legacy = JSON.parse(await readFile(manifestPath, "utf8"));
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
+  const legacyPath = path.join(directory, ".launchrally", "launch-manifest.json");
+  const legacy = structuredClone(initialPreview.manifest);
+  legacy.schema_version = "launchrally.dev/manifest/v1";
   legacy.support.layers = {
     state: "unknown",
     reason: "Legacy Manifest did not capture support intent.",
   };
+  delete legacy.providers.roles.evidence;
   const legacyContent = `${JSON.stringify(legacy, null, 2)}\n`;
-  await writeFile(manifestPath, legacyContent);
+  await rm(manifestPath);
+  await writeFile(legacyPath, legacyContent);
 
   const migration = await runInit(
     directory,
@@ -846,21 +858,23 @@ test("a supported Manifest migration shows only its exact diff and requires appr
   assert.equal(migration.mode, "migration");
   assert.deepEqual(migration.preview.changes.map((change) => change.path), [
     ".launchrally/launch-manifest.json",
+    ".launchrally/manifest.yaml",
   ]);
   assert.equal(migration.preview.changes[0].before, legacyContent);
-  assert.notEqual(migration.preview.changes[0].after, legacyContent);
+  assert.equal(migration.preview.changes[0].after, null);
   assert.match(
     migration.preview.changes[0].diff,
-    /^--- a\/\.launchrally\/launch-manifest\.json\n\+\+\+ b\/\.launchrally\/launch-manifest\.json\n@@/u,
+    /^--- a\/\.launchrally\/launch-manifest\.json\n\+\+\+ \/dev\/null\n@@/u,
   );
-  assert.equal(await readFile(manifestPath, "utf8"), legacyContent);
+  assert.equal(await readFile(legacyPath, "utf8"), legacyContent);
 
   const applied = await runInit(directory, "0.1.0", {
     resume_token: migration.interaction.resume_token,
     confirmation: "confirm",
   });
   assert.equal(applied.outcome, "migrated");
-  assert.equal(await readFile(manifestPath, "utf8"), migration.preview.changes[0].after);
+  await assert.rejects(readFile(legacyPath, "utf8"), { code: "ENOENT" });
+  assert.equal(await readFile(manifestPath, "utf8"), migration.preview.changes[1].after);
 });
 
 test("the CLI keeps init unavailable when no complete Report is supplied", async () => {
@@ -899,7 +913,7 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
   assert.equal(preview.status, "needs_confirmation");
   assert.deepEqual(preview.preview.changes.map((change) => change.path), [
     ".launchrally/.gitignore",
-    ".launchrally/launch-manifest.json",
+    ".launchrally/manifest.yaml",
   ]);
   assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
 
@@ -937,7 +951,7 @@ test("Human Mode renders every exact initialization change before confirmation",
   assert.match(processResult.stdout, /^LaunchRally Initialization Preview/mu);
   assert.match(processResult.stdout, /CREATE \.launchrally\/\.gitignore/u);
   assert.match(processResult.stdout, /\/reports\/\n\/evidence\/\n\/\.init-transaction\//u);
-  assert.match(processResult.stdout, /CREATE \.launchrally\/launch-manifest\.json/u);
+  assert.match(processResult.stdout, /CREATE \.launchrally\/manifest\.yaml/u);
   assert.match(processResult.stdout, /Apply exactly these local initialization changes\?/u);
   assert.match(processResult.stdout, /Resume token: .{20,}/u);
 });

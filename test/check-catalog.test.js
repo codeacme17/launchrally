@@ -76,7 +76,7 @@ test("the versioned Web Baseline catalog declares every required policy", () => 
 
   assert.deepEqual(catalog.risk_domains, WEB_RISK_DOMAINS);
   assert.equal(new Set(catalog.risk_domains).size, 8);
-  assert.match(catalog.versions.check_catalog, /\/v1$/u);
+  assert.match(catalog.versions.check_catalog, /\/v2$/u);
   assert.match(catalog.versions.baseline, /\/v1$/u);
   assert.deepEqual(catalog.versions.active_profiles, []);
   assert.deepEqual(catalog.versions.active_adapters, []);

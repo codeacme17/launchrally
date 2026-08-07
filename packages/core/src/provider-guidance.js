@@ -28,6 +28,12 @@ import {
 } from "@launchrally/contracts";
 
 import { PROVIDER_DECISION_CARDS } from "./provider-decision-cards.js";
+import {
+  MANIFEST_RELATIVE_PATH,
+  parseManifest,
+  serializeManifest,
+} from "./manifest.js";
+import { createNeedsRefreshResult } from "./interaction-result.js";
 
 const CAPABILITY_BY_CHECK = Object.freeze({
   "web.public.availability": "managed_web_delivery",
@@ -396,7 +402,7 @@ async function manifestLocation(root) {
       code: "invalid_manifest_file",
     });
   }
-  const manifestPath = path.join(manifestDirectory, "launch-manifest.json");
+  const manifestPath = path.join(rootPath, MANIFEST_RELATIVE_PATH);
   return { manifestDirectory, manifestPath };
 }
 
@@ -428,7 +434,7 @@ async function readManifest(root) {
       });
     }
     const content = await handle.readFile({ encoding: "utf8" });
-    const manifest = JSON.parse(content);
+    const manifest = parseManifest(content);
     assertSupportedManifestVersion(manifest);
     assertValidManifest(manifest);
     const roles = manifest.providers.roles;
@@ -537,7 +543,7 @@ async function previewSelection(state, statePath, token, selection) {
     return manifestError(error);
   }
   const updated = manifestWithSelection(current.manifest, card, state.source_report_id);
-  const after = `${JSON.stringify(updated, null, 2)}\n`;
+  const after = serializeManifest(updated);
   state.step = "selection_confirmation";
   state.selection = selectedProvider(card);
   state.manifest_before_digest = digest(current.content);
@@ -551,7 +557,7 @@ async function previewSelection(state, statePath, token, selection) {
     selection: structuredClone(state.selection),
     classification: classification(),
     preview: {
-      path: ".launchrally/launch-manifest.json",
+      path: MANIFEST_RELATIVE_PATH,
       before_digest: state.manifest_before_digest,
       after_digest: digest(after),
       before_roles: structuredClone(current.manifest.providers.roles),
@@ -608,7 +614,7 @@ async function readTransactionOwner(transactionPath) {
 async function recoverStaleManifestTransaction(transactionPath, manifestPath) {
   const transactionStat = await lstat(transactionPath);
   if (!transactionStat.isDirectory() || transactionStat.isSymbolicLink()) return false;
-  const previousPath = path.join(transactionPath, "previous.json");
+  const previousPath = path.join(transactionPath, "previous.yaml");
   if (!(await exists(manifestPath)) && await exists(previousPath)) {
     try {
       await link(previousPath, manifestPath);
@@ -669,8 +675,8 @@ async function acquireManifestTransaction(manifestDirectory, manifestPath, inter
     }
     return {
       transactionPath,
-      nextPath: path.join(transactionPath, "next.json"),
-      previousPath: path.join(transactionPath, "previous.json"),
+      nextPath: path.join(transactionPath, "next.yaml"),
+      previousPath: path.join(transactionPath, "previous.yaml"),
     };
   }
   return {
@@ -741,11 +747,9 @@ async function writeConfirmedManifest(state, dependencies = {}) {
         message: "The Provider selection preview is invalid; start Provider guidance again.",
       });
     }
-    const expectedAfter = `${JSON.stringify(
+    const expectedAfter = serializeManifest(
       manifestWithSelection(current.manifest, card, state.source_report_id),
-      null,
-      2,
-    )}\n`;
+    );
     if (state.manifest_after !== expectedAfter) {
       return result("execution_error", {
         error: "invalid_interaction_state",
@@ -997,11 +1001,11 @@ function validateReport(reportPackage) {
     });
   }
   if (!reportPackage.report.policy.current) {
-    return result("unavailable", {
-      reason: "current_report_required",
-      source_report_id: reportPackage.report.report_id,
-      message: "Provider guidance requires a current Report; run a new Audit first.",
-    });
+    return createNeedsRefreshResult(
+      "providers",
+      reportPackage.report.report_id,
+      "Provider guidance requires a current Report; run full Verify first.",
+    );
   }
   return null;
 }

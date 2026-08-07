@@ -118,7 +118,7 @@ test("audit returns a local Initial Readiness Snapshot and Web baseline result",
   });
   const result = JSON.parse(stdout);
 
-  assert.equal(result.contract, "launchrally.dev/cli/v0");
+  assert.equal(result.contract, "launchrally.dev/cli/v2");
   assert.equal(result.status, "completed");
   assert.equal(result.operation, "audit");
   assert.equal(result.snapshot.kind, "initial_readiness_snapshot");
@@ -177,7 +177,7 @@ test("audit returns a local Initial Readiness Snapshot and Web baseline result",
   );
   assert.equal(result.report.catalog.risk_domains.length, 8);
   assert.equal(result.report.results.domain_coverage.length, 8);
-  assert.equal(result.report.provenance.check_catalog_version, "web-baseline-check-catalog/v1");
+  assert.equal(result.report.provenance.check_catalog_version, "web-baseline-check-catalog/v2");
   assert.equal(result.report.provenance.baseline_version, "web-application-baseline/v1");
   assert.deepEqual(result.report.provenance.active_profile_versions, []);
   assert.deepEqual(result.report.provenance.active_adapter_versions, []);
@@ -496,7 +496,7 @@ test("audit errors never expose filesystem details or secret-like values", async
       assert.doesNotMatch(output, new RegExp(SECRET_SENTINEL));
       const result = JSON.parse(error.stdout);
       assert.deepEqual(result, {
-        contract: "launchrally.dev/cli/v0",
+        contract: "launchrally.dev/cli/v2",
         status: "execution_error",
         operation: "audit",
         error: "local_safe_scan_failed",
@@ -525,18 +525,25 @@ test("plugin manifests and public schemas are valid JSON", async () => {
     "adapters/codex/launchrally/.codex-plugin/plugin.json",
     "adapters/claude/launchrally/.claude-plugin/plugin.json",
     "packages/contracts/schemas/manifest/v1.schema.json",
+    "packages/contracts/schemas/manifest/v2.schema.json",
     "packages/contracts/schemas/report/v1.schema.json",
+    "packages/contracts/schemas/report/v2.schema.json",
     "packages/contracts/schemas/report-view/v1.schema.json",
+    "packages/contracts/schemas/report-view/v2.schema.json",
     "packages/contracts/schemas/evidence-index/v1.schema.json",
     "packages/contracts/schemas/audit-brief/v1.schema.json",
     "packages/contracts/schemas/audit-interaction/v1.schema.json",
     "packages/contracts/schemas/init-interaction/v1.schema.json",
     "packages/contracts/schemas/launch-plan/v1.schema.json",
+    "packages/contracts/schemas/launch-plan/v2.schema.json",
     "packages/contracts/schemas/verify-interaction/v1.schema.json",
     "packages/contracts/schemas/verification-result/v1.schema.json",
+    "packages/contracts/schemas/verification-result/v2.schema.json",
     "packages/contracts/schemas/provider-decision-card/v1.schema.json",
     "packages/contracts/schemas/provider-guidance-interaction/v1.schema.json",
     "packages/contracts/schemas/provider-guidance/v1.schema.json",
+    "packages/contracts/schemas/provider-guidance/v2.schema.json",
+    "packages/contracts/schemas/cli/v2.schema.json",
   ];
 
   for (const relative of files) {

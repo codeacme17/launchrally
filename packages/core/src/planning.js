@@ -6,6 +6,8 @@ import {
   assertValidReportPackage,
 } from "@launchrally/contracts";
 
+import { createNeedsRefreshResult } from "./interaction-result.js";
+
 function titleCase(value) {
   return `${value[0].toUpperCase()}${value.slice(1)}`;
 }
@@ -217,14 +219,11 @@ export function runPlan(reportPackage, options = {}) {
     };
   }
   if (!report.policy.current) {
-    return {
-      contract: CLI_INTERACTION_CONTRACT,
-      status: "unavailable",
-      operation: "plan",
-      reason: "current_report_required",
-      source_report_id: report.report_id,
-      message: "The saved Report is non-current; run a new Audit before planning remediation.",
-    };
+    return createNeedsRefreshResult(
+      "plan",
+      report.report_id,
+      "The saved Report is non-current; run full Verify before planning remediation.",
+    );
   }
   const plan = {
     contract: CLI_INTERACTION_CONTRACT,

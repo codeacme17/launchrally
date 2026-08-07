@@ -237,7 +237,7 @@ function renderHumanPlan(value) {
 
 function renderHumanProviders(value) {
   const lines = [
-    "LaunchRally Provider Guidance",
+    "LaunchRally Advisory Provider Guidance",
     ...(value.source_report_id ? [`Source Report: ${value.source_report_id}`] : []),
     ...(value.trigger?.capability_id ? [`Capability: ${value.trigger.capability_id}`] : []),
   ];
@@ -399,6 +399,14 @@ function print(value) {
     return;
   }
 
+  if (value.status === "needs_refresh") {
+    process.stdout.write([
+      value.message,
+      `Next operation: ${value.request.operation} (${value.request.scope}).`,
+    ].join("\n") + "\n");
+    return;
+  }
+
   if (
     value.operation === "audit"
     && value.outcome === "scope_not_confirmed"
@@ -423,15 +431,23 @@ function help() {
     contract: CLI_INTERACTION_CONTRACT,
     status: "completed",
     operation: "help",
+    commands: {
+      core: ["audit", "init", "plan", "verify"],
+      supporting: [{ operation: "providers", mode: "advisory" }],
+    },
     message: [
       "Usage: rally <command> [--json] [--cwd <path>]",
       "",
-      "Commands:",
+      "Core commands:",
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
       "  init     Preview and confirm local adoption after a complete Audit Report",
       "  plan     Build a deterministic read-only Launch Plan from a current Report",
-      "  providers Guide a Provider choice from an evidenced gap or constraint mismatch",
       "  verify   Recollect fresh Evidence for full or targeted verification",
+      "",
+      "Supporting advisory operation:",
+      "  providers Guide a Provider choice from an evidenced gap or constraint mismatch",
+      "",
+      "Utility commands:",
       "  version  Print CLI and interaction contract versions",
     ].join("\n"),
   };

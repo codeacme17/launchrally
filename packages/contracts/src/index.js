@@ -1,33 +1,37 @@
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const reportSchema = require("../schemas/report/v1.schema.json");
-const reportViewSchema = require("../schemas/report-view/v1.schema.json");
+const cliInteractionSchema = require("../schemas/cli/v2.schema.json");
+const reportSchemaV1 = require("../schemas/report/v1.schema.json");
+const reportSchemaV2 = require("../schemas/report/v2.schema.json");
+const reportViewSchemaV1 = require("../schemas/report-view/v1.schema.json");
+const reportViewSchemaV2 = require("../schemas/report-view/v2.schema.json");
 const evidenceIndexSchema = require("../schemas/evidence-index/v1.schema.json");
-const launchPlanSchema = require("../schemas/launch-plan/v1.schema.json");
-const manifestSchema = require("../schemas/manifest/v1.schema.json");
-const verificationResultSchema = require("../schemas/verification-result/v1.schema.json");
+const launchPlanSchema = require("../schemas/launch-plan/v2.schema.json");
+const legacyManifestSchema = require("../schemas/manifest/v1.schema.json");
+const manifestSchema = require("../schemas/manifest/v2.schema.json");
+const verificationResultSchema = require("../schemas/verification-result/v2.schema.json");
 const providerDecisionCardSchema = require(
   "../schemas/provider-decision-card/v1.schema.json",
 );
-const providerGuidanceSchema = require("../schemas/provider-guidance/v1.schema.json");
+const providerGuidanceSchema = require("../schemas/provider-guidance/v2.schema.json");
 
-export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v0";
-export const MANIFEST_SCHEMA = "launchrally.dev/manifest/v1";
-export const REPORT_SCHEMA = "launchrally.dev/report/v1";
-export const MANIFEST_CONTRACT_MAJOR = 1;
-export const REPORT_CONTRACT_MAJOR = 1;
-export const REPORT_VIEW_SCHEMA = "launchrally.dev/report-view/v1";
+export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v2";
+export const MANIFEST_SCHEMA = "launchrally.dev/manifest/v2";
+export const REPORT_SCHEMA = "launchrally.dev/report/v2";
+export const MANIFEST_CONTRACT_MAJOR = 2;
+export const REPORT_CONTRACT_MAJOR = 2;
+export const REPORT_VIEW_SCHEMA = "launchrally.dev/report-view/v2";
 export const EVIDENCE_INDEX_SCHEMA = "launchrally.dev/evidence-index/v1";
 export const AUDIT_BRIEF_SCHEMA = "launchrally.dev/audit-brief/v1";
 export const AUDIT_INTERACTION_SCHEMA = "launchrally.dev/audit-interaction/v1";
 export const INIT_INTERACTION_SCHEMA = "launchrally.dev/init-interaction/v1";
 export const VERIFY_INTERACTION_SCHEMA = "launchrally.dev/verify-interaction/v1";
-export const LAUNCH_PLAN_SCHEMA = "launchrally.dev/launch-plan/v1";
-export const VERIFICATION_RESULT_SCHEMA = "launchrally.dev/verification-result/v1";
+export const LAUNCH_PLAN_SCHEMA = "launchrally.dev/launch-plan/v2";
+export const VERIFICATION_RESULT_SCHEMA = "launchrally.dev/verification-result/v2";
 export const PROVIDER_GUIDANCE_INTERACTION_SCHEMA =
   "launchrally.dev/provider-guidance-interaction/v1";
-export const PROVIDER_GUIDANCE_SCHEMA = "launchrally.dev/provider-guidance/v1";
+export const PROVIDER_GUIDANCE_SCHEMA = "launchrally.dev/provider-guidance/v2";
 export const PROVIDER_DECISION_CARD_SCHEMA =
   "launchrally.dev/provider-decision-card/v1";
 export const PROVIDER_INTENT_DECISION_SCHEMA =
@@ -103,9 +107,21 @@ function validatesSchema(value, schema, root = schema) {
 }
 
 export function assertValidReportPackage(source) {
+  const reportSchemas = {
+    "launchrally.dev/report/v1": reportSchemaV1,
+    "launchrally.dev/report/v2": reportSchemaV2,
+  };
+  const reportViewSchemas = {
+    "launchrally.dev/report-view/v1": reportViewSchemaV1,
+    "launchrally.dev/report-view/v2": reportViewSchemaV2,
+  };
+  const reportSchema = reportSchemas[source?.report?.schema_version];
+  const reportViewSchema = reportViewSchemas[source?.report_view?.schema_version];
   const valid = source?.status === "completed"
     && ["audit", "verify"].includes(source?.operation)
     && (source?.operation !== "verify" || source?.verification_scope?.whole_release === true)
+    && reportSchema
+    && reportViewSchema
     && validatesSchema(source.report, reportSchema)
     && validatesSchema(source.report_view, reportViewSchema)
     && validatesSchema(source.evidence_index, evidenceIndexSchema)
@@ -133,6 +149,24 @@ export function assertValidLaunchPlan(plan) {
 export function assertValidManifest(manifest) {
   if (!validatesSchema(manifest, manifestSchema)) {
     const error = new Error("The LaunchRally Manifest is incomplete or invalid.");
+    error.code = "invalid_manifest";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidCliInteraction(interaction) {
+  if (!validatesSchema(interaction, cliInteractionSchema)) {
+    const error = new Error("The CLI interaction is incomplete or invalid.");
+    error.code = "invalid_cli_interaction";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidLegacyManifest(manifest) {
+  if (!validatesSchema(manifest, legacyManifestSchema)) {
+    const error = new Error("The legacy LaunchRally Manifest is incomplete or invalid.");
     error.code = "invalid_manifest";
     throw error;
   }
@@ -192,24 +226,25 @@ export function assertValidProviderGuidance(guidance) {
   return true;
 }
 
-function assertSupportedMajor(value, contract, supported, errorCode) {
+function assertSupportedMajor(value, contract, supportedMajors, errorCode) {
   const schemaVersion = typeof value === "string" ? value : value?.schema_version;
   const match = typeof schemaVersion === "string"
     ? schemaVersion.match(new RegExp(`^launchrally\\.dev/${contract}/v(\\d+)$`, "u"))
     : null;
-  if (!match || Number(match[1]) !== supported) {
+  const actual = match ? Number(match[1]) : null;
+  if (!match || !supportedMajors.includes(actual)) {
     const error = new Error(`Unsupported ${contract} contract major version.`);
     error.code = errorCode;
     throw error;
   }
-  return supported;
+  return actual;
 }
 
 export function assertSupportedManifestVersion(value) {
   return assertSupportedMajor(
     value,
     "manifest",
-    MANIFEST_CONTRACT_MAJOR,
+    [MANIFEST_CONTRACT_MAJOR],
     "unsupported_manifest_version",
   );
 }
@@ -218,7 +253,7 @@ export function assertSupportedReportVersion(value) {
   return assertSupportedMajor(
     value,
     "report",
-    REPORT_CONTRACT_MAJOR,
+    [1, REPORT_CONTRACT_MAJOR],
     "unsupported_report_version",
   );
 }

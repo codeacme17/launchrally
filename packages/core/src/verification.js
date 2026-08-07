@@ -3,11 +3,13 @@ import { constants } from "node:fs";
 import { lstat, mkdtemp, open, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   AUDIT_BRIEF_SCHEMA,
   CLI_INTERACTION_CONTRACT,
   PROVIDER_INTENT_DECISION_SCHEMA,
+  VERIFICATION_RESULT_SCHEMA,
   VERIFY_INTERACTION_SCHEMA,
   assertSupportedManifestVersion,
   assertSupportedReportVersion,
@@ -16,6 +18,7 @@ import {
 } from "@launchrally/contracts";
 
 import { describeWebBaselineCatalog, executeWebBaseline } from "./check-catalog.js";
+import { MANIFEST_RELATIVE_PATH, parseManifest } from "./manifest.js";
 import { scanRepository } from "./local-safe-scan.js";
 import { createProviderAdapterPlan, executeProviderAdapters } from "./provider-adapters.js";
 import { matchesProviderDecisionCard } from "./provider-decision-cards.js";
@@ -162,7 +165,7 @@ async function readManifest(cwd) {
   let handle;
   try {
     const root = await realpath(path.resolve(cwd));
-    const manifestPath = path.join(root, ".launchrally", "launch-manifest.json");
+    const manifestPath = path.join(root, MANIFEST_RELATIVE_PATH);
     const stat = await lstat(manifestPath);
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("invalid_manifest_file");
     const canonical = await realpath(manifestPath);
@@ -175,7 +178,7 @@ async function readManifest(cwd) {
     if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino) {
       throw new Error("invalid_manifest_file");
     }
-    const manifest = JSON.parse(await handle.readFile({ encoding: "utf8" }));
+    const manifest = parseManifest(await handle.readFile({ encoding: "utf8" }));
     assertSupportedManifestVersion(manifest);
     assertValidManifest(manifest);
     return manifest;
@@ -354,7 +357,7 @@ function auditBrief(state, snapshot) {
 }
 
 function same(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return isDeepStrictEqual(left, right);
 }
 
 function confirmedProviderDecisionMatchesSource(manifest, source) {
@@ -543,10 +546,10 @@ function compareScopeDigests(source, current) {
   });
   if (
     source.manifest_digest !== current.manifest_digest
-    && !changes.some(({ target }) => target === "repository:.launchrally/launch-manifest.json")
+    && !changes.some(({ target }) => target === `repository:${MANIFEST_RELATIVE_PATH}`)
   ) {
     changes.push({
-      target: "manifest:launch-manifest.json",
+      target: `manifest:${path.basename(MANIFEST_RELATIVE_PATH)}`,
       reason_code: source.manifest_digest === null
         ? "scope_digest_added"
         : current.manifest_digest === null
@@ -787,7 +790,7 @@ async function resumeVerify(cwd, options, dependencies) {
     );
     return deepFreeze({
       contract: CLI_INTERACTION_CONTRACT,
-      schema_version: "launchrally.dev/verification-result/v1",
+      schema_version: VERIFICATION_RESULT_SCHEMA,
       status: "completed",
       operation: "verify",
       outcome: "targeted_verification_completed",
@@ -848,7 +851,7 @@ async function resumeVerify(cwd, options, dependencies) {
   });
   return deepFreeze({
     contract: CLI_INTERACTION_CONTRACT,
-    schema_version: "launchrally.dev/verification-result/v1",
+    schema_version: VERIFICATION_RESULT_SCHEMA,
     status: "completed",
     operation: "verify",
     outcome: "verification_completed",
