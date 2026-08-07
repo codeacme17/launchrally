@@ -15,6 +15,8 @@
     "build": "npm run sync:skills",
     "sync:skills": "node scripts/sync-skills.mjs",
     "check:skills": "node scripts/sync-skills.mjs --check",
+    "validate:release": "node scripts/validate-release.mjs",
+    "test:artifacts": "node scripts/test-release-artifacts.mjs",
     "rally": "node packages/cli/bin/rally.js",
     "test": "npm run check:skills && node --test",
     "validate": "npm test"
@@ -26,5 +28,9 @@
   "bugs": {
     "url": "https://github.com/codeacme17/launchrally/issues"
   },
-  "homepage": "https://github.com/codeacme17/launchrally#readme"
+  "homepage": "https://github.com/codeacme17/launchrally#readme",
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "2.1.224",
+    "@openai/codex": "0.147.0"
+  }
 }

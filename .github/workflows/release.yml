@@ -1,0 +1,37 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Pin npm Trusted Publishing client
+        run: npm install --global npm@11.17.0
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Verify generated Plugin bundles are committed
+        run: git diff --exit-code
+      - run: npm test
+      - run: npm run validate:release -- --tag "$GITHUB_REF_NAME"
+      - run: npm run test:artifacts
+      - name: Publish public packages with provenance
+        run: node scripts/publish-release.mjs

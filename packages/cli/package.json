@@ -1,7 +1,6 @@
 {
   "name": "@launchrally/cli",
   "version": "0.1.0",
-  "private": true,
   "description": "LaunchRally local-first audit CLI",
   "type": "module",
   "bin": {
@@ -21,5 +20,9 @@
     "type": "git",
     "url": "git+https://github.com/codeacme17/launchrally.git",
     "directory": "packages/cli"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }
