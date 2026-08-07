@@ -2,6 +2,7 @@
   "name": "@launchrally/codex-plugin",
   "version": "0.1.0",
   "description": "LaunchRally Plugin adapter for Codex",
+  "license": "Apache-2.0",
   "files": [
     ".codex-plugin/",
     "skills/"

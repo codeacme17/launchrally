@@ -1,0 +1,91 @@
+{
+  "schema_version": "launchrally.dev/p0-release/v1",
+  "phase": "p0",
+  "release_status": "experimental",
+  "validation_mode": "telemetry_free",
+  "license": "Apache-2.0",
+  "feedback_channels": [
+    "discussions",
+    "issues",
+    "security"
+  ],
+  "required_documents": [
+    {
+      "path": "README.md",
+      "includes": [
+        "Status: Experimental",
+        "github.com/codeacme17/launchrally/issues",
+        "github.com/codeacme17/launchrally/discussions",
+        "SECURITY.md",
+        "CONTRIBUTING.md"
+      ]
+    },
+    {
+      "path": "docs/quickstart.md",
+      "includes": [
+        "Direct CLI Quickstart",
+        "Skill Quickstart",
+        "@launchrally/cli@0.1.0",
+        "secret-free"
+      ]
+    },
+    {
+      "path": "docs/data-model.md",
+      "includes": [
+        "Launch Manifest",
+        "Report Record",
+        "Evidence Index"
+      ]
+    },
+    {
+      "path": "docs/privacy.md",
+      "includes": [
+        "no LaunchRally account",
+        "no default telemetry",
+        "no mandatory Report upload",
+        "no user-level analytics",
+        "no LaunchRally private service"
+      ]
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "includes": [
+        "GitHub Discussions",
+        "GitHub Issues",
+        "Apache-2.0"
+      ]
+    },
+    {
+      "path": "SECURITY.md",
+      "includes": [
+        "private vulnerability reporting",
+        "security/advisories/new"
+      ]
+    },
+    {
+      "path": "docs/phase-0-validation.md",
+      "includes": [
+        "P0 Product Complete",
+        "Experimental release",
+        "Telemetry-Free Validation",
+        "P0 Validated",
+        "No hard download quota"
+      ]
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "includes": [
+        "github.com/codeacme17/launchrally/issues",
+        "github.com/codeacme17/launchrally/discussions",
+        "security/advisories/new"
+      ]
+    }
+  ],
+  "validation_log": "docs/phase-0-validation-log.json",
+  "quality_floor": [
+    "reference_journey",
+    "coverage_acceptance_matrix",
+    "release_packaging",
+    "p0_release_contract"
+  ]
+}

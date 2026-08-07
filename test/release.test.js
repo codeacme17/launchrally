@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
@@ -15,8 +15,7 @@ const releaseManifest = JSON.parse(await readFile(
 ));
 
 async function createReleaseFixture() {
-  const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-release-"));
-  for (const relative of [
+  return copyRepositoryFixture(root, "launchrally-release-", [
     ".agents",
     ".claude-plugin",
     "package.json",
@@ -25,10 +24,7 @@ async function createReleaseFixture() {
     "adapters",
     "release",
     "skills",
-  ]) {
-    await cp(path.join(root, relative), path.join(fixture, relative), { recursive: true });
-  }
-  return fixture;
+  ]);
 }
 
 test("release validation proves one SemVer across CLI, Plugins, and bundled Skills", async () => {

@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Local-first launch readiness audit and verification",
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -15,6 +16,7 @@
     "build": "npm run sync:skills",
     "sync:skills": "node scripts/sync-skills.mjs",
     "check:skills": "node scripts/sync-skills.mjs --check",
+    "validate:p0": "node scripts/validate-p0.mjs",
     "validate:release": "node scripts/validate-release.mjs",
     "test:artifacts": "node scripts/test-release-artifacts.mjs",
     "rally": "node packages/cli/bin/rally.js",

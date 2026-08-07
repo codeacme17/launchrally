@@ -1,0 +1,31 @@
+{
+  "schema_version": "launchrally.dev/phase-0-validation-log/v1",
+  "collection_mode": "telemetry_free",
+  "updated_at": "2026-08-07",
+  "entries": [
+    {
+      "period": "experimental-release-baseline",
+      "aggregate_adoption_trends": {
+        "signal": "baseline_not_established",
+        "sources": [
+          "voluntary_github_feedback",
+          "public_aggregate_package_trends"
+        ],
+        "notes": "No field adoption conclusion is available at release start."
+      },
+      "voluntary_feedback_categories": [],
+      "represented_contexts": {
+        "frameworks": [],
+        "deployments": []
+      },
+      "recurring_p1_requests": [],
+      "product_decisions": [
+        {
+          "decision": "begin_telemetry_free_validation",
+          "outcome": "experimental_release",
+          "rationale": "The P0 delivery and quality floor is complete; real-world validation evidence has not yet been collected."
+        }
+      ]
+    }
+  ]
+}

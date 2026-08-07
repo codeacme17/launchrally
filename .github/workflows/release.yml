@@ -31,6 +31,7 @@ jobs:
       - name: Verify generated Plugin bundles are committed
         run: git diff --exit-code
       - run: npm test
+      - run: npm run validate:p0
       - run: npm run validate:release -- --tag "$GITHUB_REF_NAME"
       - run: npm run test:artifacts
       - name: Publish public packages with provenance
