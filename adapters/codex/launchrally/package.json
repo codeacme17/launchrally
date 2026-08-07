@@ -1,7 +1,6 @@
 {
   "name": "@launchrally/codex-plugin",
   "version": "0.1.0",
-  "private": true,
   "description": "LaunchRally Plugin adapter for Codex",
   "files": [
     ".codex-plugin/",
@@ -11,5 +10,9 @@
     "type": "git",
     "url": "git+https://github.com/codeacme17/launchrally.git",
     "directory": "adapters/codex/launchrally"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

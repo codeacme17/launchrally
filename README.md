@@ -4,13 +4,22 @@ LaunchRally is a local-first, open-source launch readiness audit and verificatio
 
 This repository contains the Phase 0 Audit, post-Report initialization, read-only Launch Plan, bounded Provider guidance, and post-remediation Verify paths. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, a policy-driven launch assessment, read-only public verification, approved Provider metadata reads, preview-first local adoption, deterministic remediation guidance, open Provider Decision Cards, and immutable verification history.
 
-## Quick start
+## First Audit
 
 ```bash
-npm install
+npm exec --package=@launchrally/cli@0.1.0 -- rally audit --json --cwd .
+```
+
+This exact-version path requires no global installation and makes no project change. When npm needs to download the package, review and accept its normal package-manager confirmation; LaunchRally never bypasses that prompt. After a completed Audit, optional `rally init` separately previews an exact CLI devDependency and lockfile update before asking for confirmation.
+
+For Codex and Claude Plugin installation, controlled updates, uninstallation, and artifact verification, see the [Install and release guide](docs/install.md).
+
+For repository development, use the committed workspace lockfile:
+
+```bash
+npm ci
 npm run build
 npm test
-npm run rally -- audit --json
 ```
 
 For runnable cross-ecosystem examples, use the [Coverage Acceptance Matrix](docs/coverage-acceptance.md). Its JavaScript, non-JavaScript, split, multi-app, and custom fixtures are public demonstrations of the universal Baseline entry path, not a framework or Provider support allowlist.

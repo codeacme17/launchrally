@@ -1,0 +1,20 @@
+{
+  "name": "launchrally",
+  "interface": {
+    "displayName": "LaunchRally"
+  },
+  "plugins": [
+    {
+      "name": "launchrally",
+      "source": {
+        "source": "local",
+        "path": "./adapters/codex/launchrally"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Engineering"
+    }
+  ]
+}
