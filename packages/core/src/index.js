@@ -47,6 +47,7 @@ export async function discoverProject(cwd) {
       policy_version: scan.policy_version,
       exclusions: scan.exclusions,
       errors: scan.errors,
+      coverage: scan.coverage,
     },
   };
   Object.defineProperty(project, "content_digests", {
@@ -151,6 +152,7 @@ export {
   evaluateLaunchPolicy,
   POLICY_ENGINE_VERSION,
 } from "./policy-engine.js";
+export { evaluateReportCurrentness } from "./report-currentness.js";
 export { runInit } from "./initialization.js";
 export { runPlan } from "./planning.js";
 export { runProviderGuidance } from "./provider-guidance.js";

@@ -101,6 +101,27 @@ const directJourney = {
       ["init", "completed"],
     ],
     [
+      "plan_refresh",
+      ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      ["plan", "needs_refresh"],
+    ],
+    [
+      "refresh_permission",
+      [
+        "verify", "--json", "--cwd", "{repository_root}", "--report", "{report_path}",
+        "--scope", "full",
+      ],
+      ["verify", "needs_permission"],
+    ],
+    [
+      "refresh_completed",
+      [
+        "verify", "--json", "--cwd", "{repository_root}", "--resume", "{refresh_resume}",
+        "--permissions", "{permissions_json}",
+      ],
+      ["verify", "completed"],
+    ],
+    [
       "plan",
       ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
       ["plan", "completed"],
@@ -133,7 +154,9 @@ const directJourney = {
     id,
     ...(id.startsWith("init_")
       ? { guard: { kind: "optional", intent: "initialize_project" } }
-      : id === "handoff"
+      : ["plan_refresh", "refresh_permission", "refresh_completed"].includes(id)
+        ? { guard: { kind: "when_source_non_current", intent: "refresh_report" } }
+        : id === "handoff"
         ? {
           guard: {
             kind: "requires_explicit_user_request",
@@ -318,6 +341,17 @@ async function executeReferenceJourney(
       initPreview = await invoke("init_preview");
       values.init_resume = initPreview.interaction.resume_token;
       init = await invoke("init_completed");
+      requireGuard("plan_refresh", {
+        kind: "when_source_non_current",
+        intent: "refresh_report",
+      });
+      await invoke("plan_refresh");
+      const refreshPermission = await invoke("refresh_permission");
+      values.refresh_resume = refreshPermission.interaction.resume_token;
+      const refreshed = await invoke("refresh_completed");
+      const refreshedPath = path.join(savedDirectory, "refreshed.json");
+      await writeFile(refreshedPath, JSON.stringify(refreshed));
+      values.report_path = refreshedPath;
     }
     const plan = await invoke("plan");
     requireGuard("handoff", {
@@ -406,6 +440,9 @@ test("native adapters ship the canonical Reference Journey for the exact CLI ver
       "audit_completed",
       "init_preview",
       "init_completed",
+      "plan_refresh",
+      "refresh_permission",
+      "refresh_completed",
       "plan",
       "handoff",
       "verify_permission",

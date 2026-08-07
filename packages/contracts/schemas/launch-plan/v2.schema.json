@@ -112,7 +112,7 @@
       "properties": {
         "accepted_kinds": {
           "type": "array",
-          "items": { "enum": ["file", "project_fact", "release_intent", "public_observation", "machine_evidence"] },
+          "items": { "enum": ["file", "local_observation", "project_fact", "release_intent", "public_observation", "machine_evidence"] },
           "minItems": 1,
           "uniqueItems": true
         },

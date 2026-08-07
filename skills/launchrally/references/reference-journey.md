@@ -22,23 +22,23 @@ Explain the CLI's Checks, Evidence, policy, Verification Gaps, and final Assessm
 
 Offer Init only after a complete Audit and only if the user wants project adoption. Run `rally init --json --cwd <repository-root> --report <audit-json>`, present every exact local change in `preview.changes`, and apply it only after the user explicitly confirms the returned interaction. Declining Init leaves the repository unchanged and does not block Plan.
 
-Init is the only LaunchRally-controlled mutation in this journey. It is local, bounded to its preview, and grants no deployment, production, or Provider write authority.
+Init is the only LaunchRally-controlled mutation in this journey. It is local, bounded to its preview, and grants no deployment, production, or Provider write authority. Its confirmed dependency and Manifest changes make the immutable Audit Report historical; follow the typed `needs_refresh` response with full Verify and use that new current Report for Plan.
 
 ## 3. Read-only Plan
 
-Run `rally plan --json --cwd <repository-root> --report <audit-json>` without `--handoff`. Present ranked items and Verification Gaps separately, preserving their Check IDs, Severity, gate effects, Evidence targets, and Report semantics. Require `read_only: true` and `none` for every returned mutation effect.
+Run `rally plan --json --cwd <repository-root> --report <current-report-json>` without `--handoff`. Present ranked items and Verification Gaps separately, preserving their Check IDs, Severity, gate effects, Evidence targets, and Report semantics. Require `read_only: true` and `none` for every returned mutation effect.
 
 Provider Decision Guidance is optional and advisory. Decision Cards, third-party Skills, host-model output, and user statements are never Provider Evidence and cannot change a Check, Severity, gate, Report, or Assessment. Only the CLI may record confirmed local Manifest intent; it still remains Unverified until Verify collects acceptable Evidence.
 
 ## 4. Explicit Remediation Handoff
 
-Run the Plan again with `--handoff` only after the user explicitly asks the host Agent to remediate local code: `rally plan --json --cwd <repository-root> --report <audit-json> --handoff`. Explain that the handoff assigns local implementation to the host Agent outside LaunchRally controlled Apply guarantees. It grants no Provider, deployment, production, secret, or network-write permission.
+Run the Plan again with `--handoff` only after the user explicitly asks the host Agent to remediate local code: `rally plan --json --cwd <repository-root> --report <current-report-json> --handoff`. Explain that the handoff assigns local implementation to the host Agent outside LaunchRally controlled Apply guarantees. It grants no Provider, deployment, production, secret, or network-write permission.
 
 After the host Agent changes local code, do not claim the Findings are fixed. Return to the CLI for Verify.
 
 ## 5. Verify
 
-Run `rally verify --json --cwd <repository-root> --report <audit-json> --scope full` for a whole-release reassessment. If the user explicitly requests a bounded check subset, use targeted scope and the exact Check IDs instead. Present each fresh permission request and preserve every denial as a Verification Gap.
+Run `rally verify --json --cwd <repository-root> --report <current-report-json> --scope full` for a whole-release reassessment. If the user explicitly requests a bounded check subset, use targeted scope and the exact Check IDs instead. Present each fresh permission request and preserve every denial as a Verification Gap.
 
 Explain `verification_scope`, Manifest Drift, Evidence, history, comparison, policy currentness, and Assessment exactly as returned. A targeted result has no whole-release Assessment. Only a full, current CLI Report may carry the final whole-release Assessment.
 

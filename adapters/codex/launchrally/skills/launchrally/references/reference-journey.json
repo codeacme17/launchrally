@@ -60,6 +60,32 @@
       "expect": { "operation": "init", "status": "completed" }
     },
     {
+      "id": "plan_refresh",
+      "guard": { "kind": "when_source_non_current", "intent": "refresh_report" },
+      "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      "expect": { "operation": "plan", "status": "needs_refresh" }
+    },
+    {
+      "id": "refresh_permission",
+      "guard": { "kind": "when_source_non_current", "intent": "refresh_report" },
+      "arguments": ["verify", "--json", "--cwd", "{repository_root}", "--report", "{report_path}", "--scope", "full"],
+      "expect": {
+        "operation": "verify",
+        "status": "needs_permission",
+        "interaction_schema": "launchrally.dev/verify-interaction/v1"
+      }
+    },
+    {
+      "id": "refresh_completed",
+      "guard": { "kind": "when_source_non_current", "intent": "refresh_report" },
+      "arguments": ["verify", "--json", "--cwd", "{repository_root}", "--resume", "{refresh_resume}", "--permissions", "{permissions_json}"],
+      "expect": {
+        "operation": "verify",
+        "status": "completed",
+        "schema_version": "launchrally.dev/verification-result/v2"
+      }
+    },
+    {
       "id": "plan",
       "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
       "expect": {

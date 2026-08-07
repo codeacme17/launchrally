@@ -19,6 +19,7 @@ const WEB_RISK_DOMAINS = Object.freeze([
 
 function project(overrides = {}) {
   return {
+    root: "/tmp/launchrally-check-catalog",
     type: "web",
     package_manifest: { path: "package.json", status: "valid" },
     script_names: ["build"],
@@ -36,6 +37,12 @@ function project(overrides = {}) {
         provenance: { path: "package-lock.json", collector: "local_safe_scan/v1" },
       },
     ],
+    safe_scan: {
+      policy_version: "local_safe_scan/v1",
+      exclusions: {},
+      errors: [],
+      coverage: { root_lockfiles: { complete: true, uncovered: [] } },
+    },
     ...overrides,
   };
 }
@@ -85,7 +92,8 @@ test("the versioned Web Baseline catalog declares every required policy", () => 
     assert.ok(check.applicability.rule);
     assert.ok(check.applicability.required_evidence.length > 0);
     assert.ok(check.required_inputs.length > 0);
-    assert.ok(check.evidence_requirement.accepted_kinds.length > 0);
+    assert.ok(check.pass_evidence_requirement.accepted_kinds.length > 0);
+    assert.ok(check.failure_evidence_requirement.accepted_kinds.length > 0);
     assert.ok(check.verification_rules.length > 0);
     assert.ok(check.severity_policy.severity);
     assert.ok(check.release_gate_policy.gate);
@@ -162,6 +170,57 @@ test("Not Applicable requires a reason and applicability evidence", () => {
   }
 });
 
+test("a complete negative lockfile finding carries provenance-bearing local observation Evidence", () => {
+  const value = project({
+    facts: project().facts.filter((fact) => fact.kind !== "lockfile"),
+  });
+  const result = execute(value);
+  const lockfile = result.checks.find(
+    (check) => check.check_id === "web.baseline.lockfile",
+  );
+
+  assert.equal(lockfile.status, "failed");
+  assert.equal(lockfile.evidence.length, 1);
+  assert.deepEqual(lockfile.evidence[0], {
+    kind: "local_observation",
+    target: "repository:root-lockfiles",
+    outcome: "No supported root dependency lockfile was present in the complete Local Safe Scan.",
+    collection: {
+      root: "/tmp/launchrally-check-catalog",
+      complete: true,
+      exclusions: {},
+    },
+    provenance: {
+      collector: "local_safe_scan/v1",
+      exact_target: "repository:root-lockfiles",
+    },
+  });
+});
+
+test("an uncovered root lockfile candidate stays Unverified instead of becoming a negative finding", () => {
+  const value = project({
+    facts: project().facts.filter((fact) => fact.kind !== "lockfile"),
+    safe_scan: {
+      policy_version: "local_safe_scan/v1",
+      exclusions: { ignored: 1 },
+      errors: [],
+      coverage: {
+        root_lockfiles: {
+          complete: false,
+          uncovered: [{ path: "package-lock.json", reason: "ignored" }],
+        },
+      },
+    },
+  });
+  const lockfile = execute(value).checks.find(
+    (check) => check.check_id === "web.baseline.lockfile",
+  );
+
+  assert.equal(lockfile.status, "unverified");
+  assert.equal(lockfile.reason_code, "uncovered_scope");
+  assert.deepEqual(lockfile.evidence, []);
+});
+
 test("current Provider Machine Evidence resolves the catalog-declared Provider Check", () => {
   const brief = auditBrief({
     provider_roles: {
@@ -202,7 +261,8 @@ test("current Provider Machine Evidence resolves the catalog-declared Provider C
   assert.deepEqual(passed.evidence, [machineEvidence]);
   assert.equal(declared.severity_policy.severity, "major");
   assert.equal(declared.release_gate_policy.gate, "policy");
-  assert.deepEqual(declared.evidence_requirement.accepted_kinds, ["machine_evidence"]);
+  assert.deepEqual(declared.pass_evidence_requirement.accepted_kinds, ["machine_evidence"]);
+  assert.deepEqual(declared.failure_evidence_requirement.accepted_kinds, ["machine_evidence"]);
 
   const gapResult = execute(project(), brief, "denied", {
     evidence: [],

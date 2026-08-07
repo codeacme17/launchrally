@@ -241,6 +241,7 @@
     "evidenceArtifact": {
       "oneOf": [
         { "$ref": "#/$defs/fileEvidence" },
+        { "$ref": "#/$defs/localObservationEvidence" },
         { "$ref": "#/$defs/projectFactEvidence" },
         { "$ref": "#/$defs/releaseIntentEvidence" },
         { "$ref": "#/$defs/publicObservationEvidence" },
@@ -254,6 +255,35 @@
         "kind": { "const": "file" },
         "path": { "type": "string", "minLength": 1 },
         "content_digest": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "localObservationEvidence": {
+      "type": "object",
+      "required": ["kind", "target", "outcome", "collection", "provenance"],
+      "properties": {
+        "kind": { "const": "local_observation" },
+        "target": { "type": "string", "minLength": 1 },
+        "outcome": { "type": "string", "minLength": 1 },
+        "collection": {
+          "type": "object",
+          "required": ["root", "complete", "exclusions"],
+          "properties": {
+            "root": { "type": "string", "minLength": 1 },
+            "complete": { "const": true },
+            "exclusions": { "type": "object" }
+          },
+          "additionalProperties": false
+        },
+        "provenance": {
+          "type": "object",
+          "required": ["collector", "exact_target"],
+          "properties": {
+            "collector": { "const": "local_safe_scan/v1" },
+            "exact_target": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },

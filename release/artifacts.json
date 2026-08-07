@@ -61,6 +61,7 @@
         "src/provider-decision-cards.js",
         "src/provider-guidance.js",
         "src/public-verification.js",
+        "src/report-currentness.js",
         "src/reporting.js",
         "src/verification.js"
       ]

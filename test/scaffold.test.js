@@ -160,6 +160,9 @@ test("audit returns a local Initial Readiness Snapshot and Web baseline result",
         unreadable: 0,
       },
       errors: [],
+      coverage: {
+        root_lockfiles: { complete: true, uncovered: [] },
+      },
     },
   });
   assert.deepEqual(result.snapshot.obvious_blockers, []);
@@ -427,6 +430,29 @@ test("audit fails closed when repository ignore rules cannot be read safely", as
   assert.doesNotMatch(stdout, new RegExp(SECRET_SENTINEL));
   assert.deepEqual(result.snapshot.project.facts, []);
   assert.equal(result.snapshot.project.safe_scan.exclusions.large, 1);
+});
+
+test("an ignored root lockfile is uncovered scope and never a complete negative finding", async () => {
+  const fixture = await createWebFixture("ignored-lockfile", { withLockfile: true });
+  await writeFile(path.join(fixture, ".gitignore"), "package-lock.json\n");
+
+  const result = JSON.parse(await runCliAudit(fixture, { json: true }));
+  const lockfile = result.report.results.checks.find(
+    (check) => check.check_id === "web.baseline.lockfile",
+  );
+
+  assert.equal(result.snapshot.project.safe_scan.coverage.root_lockfiles.complete, false);
+  assert.deepEqual(result.snapshot.project.safe_scan.coverage.root_lockfiles.uncovered, [{
+    path: "package-lock.json",
+    reason: "ignored",
+  }]);
+  assert.equal(lockfile.status, "unverified");
+  assert.equal(
+    result.report.results.verification_gaps.find(
+      (gap) => gap.check_id === "web.baseline.lockfile",
+    ).reason_code,
+    "uncovered_scope",
+  );
 });
 
 test("audit never follows symlinks or enters nested repositories", async () => {

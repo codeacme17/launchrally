@@ -7,7 +7,11 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 import { assertValidLaunchPlan } from "../packages/contracts/src/index.js";
-import { runAudit, runPlan } from "../packages/core/src/index.js";
+import {
+  evaluateReportCurrentness,
+  runAudit,
+  runPlan,
+} from "../packages/core/src/index.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
@@ -185,6 +189,154 @@ test("planning fails closed without a complete current Report", async () => {
     },
     message: "The saved Report is non-current; run full Verify before planning remediation.",
   });
+});
+
+test("read-time repository drift blocks Plan", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  await writeFile(path.join(directory, "new-runtime-config.json"), '{"enabled":true}\n');
+
+  const plan = runPlan(audit);
+  assert.equal(plan.status, "needs_refresh");
+  assert.equal(plan.reason, "current_report_required");
+
+});
+
+test("read-time support versions and Not Applicable evidence cannot be forged current", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const unsupportedProfile = structuredClone(audit);
+  unsupportedProfile.report.provenance.active_profile_versions = ["unknown-profile/v9"];
+  unsupportedProfile.report.catalog.versions.active_profiles = ["unknown-profile/v9"];
+  assert.equal(runPlan(unsupportedProfile).status, "needs_refresh");
+
+  const missingApplicabilityEvidence = structuredClone(audit);
+  const notApplicable = missingApplicabilityEvidence.report.results.checks.find(
+    (check) => check.status === "not_applicable",
+  );
+  const removedDigest = notApplicable.applicability.evidence[0].digest;
+  missingApplicabilityEvidence.evidence_index.entries =
+    missingApplicabilityEvidence.evidence_index.entries.filter(
+      (entry) => entry.digest !== removedDigest,
+    );
+  assert.equal(runPlan(missingApplicabilityEvidence).status, "needs_refresh");
+});
+
+test("read-time currentness rejects Passed and Failed findings without declared Evidence", async () => {
+  const directory = await fixture();
+  const original = await completeAudit(directory);
+  for (const status of ["passed", "failed"]) {
+    const audit = structuredClone(original);
+    const finding = audit.report.results.checks.find(
+      (check) => check.status === status && check.evidence.length > 0,
+    );
+    assert.ok(finding, `expected an evidenced ${status} finding`);
+    const removedDigest = finding.evidence[0].digest;
+    audit.evidence_index.entries = audit.evidence_index.entries.filter(
+      (entry) => entry.digest !== removedDigest,
+    );
+
+    const result = runPlan(audit);
+
+    assert.equal(result.status, "needs_refresh");
+    assert.equal(result.reason, "current_report_required");
+  }
+});
+
+test("read-time currentness rejects tampered references and stored non-current Evidence", async () => {
+  const directory = await fixture();
+  const original = await completeAudit(directory);
+  const finding = original.report.results.checks.find(
+    (check) => check.status === "passed" && check.evidence.length > 0,
+  );
+  assert.ok(finding, "expected an evidenced passed finding");
+
+  const tamperedReference = structuredClone(original);
+  tamperedReference.report.results.checks
+    .find((check) => check.check_id === finding.check_id)
+    .evidence[0].source = "forged-source";
+
+  const storedNonCurrent = structuredClone(original);
+  const evidence = storedNonCurrent.evidence_index.entries.find(
+    (entry) => entry.digest === finding.evidence[0].digest,
+  );
+  evidence.current = false;
+
+  const storedNonCurrentStatus = structuredClone(original);
+  storedNonCurrentStatus.evidence_index.entries.find(
+    (entry) => entry.digest === finding.evidence[0].digest,
+  ).currentness.status = "non_current";
+
+  for (const reportPackage of [
+    tamperedReference,
+    storedNonCurrent,
+    storedNonCurrentStatus,
+  ]) {
+    assert.equal(runPlan(reportPackage).status, "needs_refresh");
+  }
+});
+
+test("read-time currentness rederives gating before accepting failure Evidence", async () => {
+  const directory = await fixture();
+  const audit = structuredClone(await completeAudit(directory));
+  const finding = audit.report.results.checks.find(
+    (check) => check.status === "failed" && check.gating && check.evidence.length > 0,
+  );
+  assert.ok(finding, "expected an evidenced gating failure");
+  const declaration = audit.report.catalog.checks.find(
+    (check) => check.check_id === finding.check_id,
+  );
+  declaration.failure_evidence_requirement.accepted_kinds = ["release_intent"];
+  const evidence = audit.evidence_index.entries.find(
+    (entry) => entry.digest === finding.evidence[0].digest,
+  );
+  evidence.evidence_kind = "release_intent";
+  finding.gating = false;
+
+  const currentness = evaluateReportCurrentness(audit, { cwd: directory });
+
+  assert.equal(currentness.current, false);
+  assert.ok(currentness.currentness.reasons.some(
+    (reason) => reason.reason_code === "insufficient_machine_evidence",
+  ));
+});
+
+test("a valid historical Report without digest context needs refresh instead of throwing", async () => {
+  const directory = await fixture();
+  const historical = structuredClone(await completeAudit(directory));
+  delete historical.report.verification_context;
+
+  const result = runPlan(historical);
+
+  assert.equal(result.status, "needs_refresh");
+  assert.equal(result.reason, "current_report_required");
+});
+
+test("read-time currentness advances the clock for live Evidence", async () => {
+  const directory = await fixture();
+  const audit = structuredClone(await completeAudit(directory));
+  const availability = audit.report.results.checks.find(
+    (check) => check.check_id === "web.public.availability",
+  );
+  const evidence = audit.evidence_index.entries[0];
+  availability.status = "passed";
+  availability.evidence = [{
+    digest: evidence.digest,
+    source: evidence.source,
+    target: evidence.target,
+    collected_at: evidence.collected_at,
+    freshness_class: evidence.freshness_class,
+    redaction_state: evidence.redaction_state,
+  }];
+  const result = evaluateReportCurrentness(audit, {
+    cwd: directory,
+    now: () => new Date(Date.parse(evidence.collected_at) + 901_000),
+  });
+
+  assert.equal(result.current, false);
+  assert.ok(result.currentness.reasons.some(
+    (reason) => reason.reason_code === "live_evidence_stale",
+  ));
 });
 
 test("planning rejects inconsistent Action Queue and Check relationships", async () => {

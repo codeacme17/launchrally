@@ -640,10 +640,9 @@ test("a symlinked LaunchRally directory cannot redirect initialization outside t
 
 test("non-npm lockfiles must bind the exact CLI dependency and version", async () => {
   const directory = await fixture();
-  const audit = structuredClone(await completeAudit(directory));
-  audit.report.scope.project.package_manager = "pnpm";
   await rm(path.join(directory, "package-lock.json"));
   await writeFile(path.join(directory, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+  const audit = await completeAudit(directory);
 
   const result = await runInit(
     directory,
@@ -698,10 +697,9 @@ test("pnpm, Yarn, and text Bun lockfiles accept exact manager-specific bindings"
 
   for (const fixtureCase of cases) {
     const directory = await fixture();
-    const audit = structuredClone(await completeAudit(directory));
-    audit.report.scope.project.package_manager = fixtureCase.manager;
     await rm(path.join(directory, "package-lock.json"));
     await writeFile(path.join(directory, fixtureCase.lockfile), "initial lock\n");
+    const audit = await completeAudit(directory);
 
     const result = await runInit(
       directory,
@@ -834,13 +832,16 @@ test("a supported Manifest migration shows only its exact diff and requires appr
     resume_token: initialPreview.interaction.resume_token,
     confirmation: "confirm",
   });
+  const currentAudit = await completeAudit(directory);
   const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
   const legacyPath = path.join(directory, ".launchrally", "launch-manifest.json");
   const legacy = structuredClone(initialPreview.manifest);
   legacy.schema_version = "launchrally.dev/manifest/v1";
+  legacy.execution.source_report_id.value = currentAudit.report.report_id;
+  legacy.execution.assessment.value = currentAudit.report.assessment;
   legacy.support.layers = {
-    state: "unknown",
-    reason: "Legacy Manifest did not capture support intent.",
+    state: "not_applicable",
+    reason: "No support layers were declared for this release.",
   };
   delete legacy.providers.roles.evidence;
   const legacyContent = `${JSON.stringify(legacy, null, 2)}\n`;
@@ -850,7 +851,7 @@ test("a supported Manifest migration shows only its exact diff and requires appr
   const migration = await runInit(
     directory,
     "0.1.0",
-    { report_package: audit },
+    { report_package: currentAudit },
     { prepare_dependency_changes: prepareNpmChanges },
   );
 

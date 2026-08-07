@@ -72,6 +72,15 @@ function evidenceMetadata(evidence, createdAt) {
       redaction_state: "allowlisted",
     };
   }
+  if (evidence.kind === "local_observation") {
+    return {
+      source: evidence.provenance.collector,
+      target: evidence.provenance.exact_target,
+      collected_at: createdAt,
+      freshness_class: "repository_snapshot",
+      redaction_state: "metadata_only",
+    };
+  }
   if (evidence.kind === "file") {
     return {
       source: "local_safe_scan/v1",

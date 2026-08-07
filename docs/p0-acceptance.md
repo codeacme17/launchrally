@@ -27,12 +27,12 @@ available.
 | P0-CONTRACT-02 | Manifest v2 contains Project, Release, Execution, Support, and Providers with uniform intent states | Schema and CLI interaction tests | #35 | Complete |
 | P0-CONTRACT-03 | Check Catalog v2 uses the eight approved Launch Risk Domains | Catalog contract tests | #35 | Complete |
 | P0-CONTRACT-04 | CLI Interaction Contract v2 exposes typed `needs_refresh` and advisory `providers` behavior | Direct CLI and Skill parity tests | #35 | Complete |
-| P0-EVIDENCE-01 | Passed and Failed outcomes satisfy distinct Evidence Requirements | Policy invariant tests | #36 | Open |
-| P0-EVIDENCE-02 | Negative findings require complete provenance-bearing local observations | Safe-scan and insufficient-scope tests | #36 | Open |
-| P0-ASSESS-01 | Gating Unverified is Inconclusive; non-gating Unverified is Ready with Warnings | Assessment precedence fixtures | #36 | Open |
-| P0-ASSESS-02 | No-Go requires a gating failure supported by qualifying Machine Evidence | Adversarial policy fixtures | #36 | Open |
-| P0-CURRENT-01 | Currentness is reevaluated from clock, Manifest, repository, catalog, support, and applicability evidence | Clock-forward and drift tests | #36 | Open |
-| P0-CURRENT-02 | Init, Plan, and Providers require current Reports; Verify can refresh valid history | Operation contract tests | #36 | Open |
+| P0-EVIDENCE-01 | Passed and Failed outcomes satisfy distinct Evidence Requirements | Policy invariant tests | #36 | Complete |
+| P0-EVIDENCE-02 | Negative findings require complete provenance-bearing local observations | Safe-scan and insufficient-scope tests | #36 | Complete |
+| P0-ASSESS-01 | Gating Unverified is Inconclusive; non-gating Unverified is Ready with Warnings | Assessment precedence fixtures | #36 | Complete |
+| P0-ASSESS-02 | No-Go requires a gating failure supported by qualifying Machine Evidence | Adversarial policy fixtures | #36 | Complete |
+| P0-CURRENT-01 | Currentness is reevaluated from clock, Manifest, repository, catalog, support, and applicability evidence | Clock-forward and drift tests | #36 | Complete |
+| P0-CURRENT-02 | Init, Plan, and Providers require current Reports; Verify can refresh valid history | Operation contract tests | #36 | Complete |
 | P0-HISTORY-01 | Initialized full Audit and Verify persist atomic immutable local history | Persistence and recovery tests | #37 | Open |
 | P0-HISTORY-02 | Historical Records remain immutable and Report/Evidence history is never automatically pruned | Integrity and retention tests | #37 | Open |
 | P0-TOOLCHAIN-01 | Every ecosystem uses an isolated exact LaunchRally npm toolchain without modifying application dependencies | Cross-ecosystem Init tests | #38 | Open |

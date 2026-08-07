@@ -173,6 +173,19 @@ test("init previews and confirms a fail-closed legacy JSON Manifest migration", 
   const legacyContent = `${JSON.stringify(legacy, null, 2)}\n`;
   await writeFile(legacyPath, legacyContent);
 
+  const alteredLegacy = structuredClone(legacy);
+  alteredLegacy.project.name.value = "different-project";
+  await writeFile(legacyPath, `${JSON.stringify(alteredLegacy, null, 2)}\n`);
+  const nonCurrent = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  assert.equal(nonCurrent.status, "needs_refresh");
+  assert.equal(nonCurrent.reason, "current_report_required");
+  await writeFile(legacyPath, legacyContent);
+
   const preview = await runInit(
     directory,
     "0.1.0",
@@ -305,6 +318,11 @@ test("new Reports bind Check Catalog v2 while historical Report v1 remains reada
   historical.report.schema_version = "launchrally.dev/report/v1";
   historical.report.provenance.check_catalog_version = "web-baseline-check-catalog/v1";
   historical.report.catalog.versions.check_catalog = "web-baseline-check-catalog/v1";
+  for (const declaration of historical.report.catalog.checks) {
+    declaration.evidence_requirement = declaration.pass_evidence_requirement;
+    delete declaration.pass_evidence_requirement;
+    delete declaration.failure_evidence_requirement;
+  }
   historical.report_view.schema_version = "launchrally.dev/report-view/v1";
   historical.report_view.report_schema_version = "launchrally.dev/report/v1";
 

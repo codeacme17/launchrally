@@ -34,6 +34,7 @@ import {
   serializeManifest,
 } from "./manifest.js";
 import { createNeedsRefreshResult } from "./interaction-result.js";
+import { evaluateReportCurrentness } from "./report-currentness.js";
 
 const CAPABILITY_BY_CHECK = Object.freeze({
   "web.public.availability": "managed_web_delivery",
@@ -979,7 +980,7 @@ async function resumeGuidance(cwd, options, dependencies) {
   });
 }
 
-function validateReport(reportPackage) {
+function validateReport(cwd, reportPackage, dependencies) {
   try {
     if (typeof reportPackage?.report?.schema_version === "string") {
       assertSupportedReportVersion(reportPackage.report);
@@ -1000,7 +1001,11 @@ function validateReport(reportPackage) {
       message: "Provider guidance requires confirmed release intent from a complete Audit.",
     });
   }
-  if (!reportPackage.report.policy.current) {
+  const currentness = evaluateReportCurrentness(reportPackage, {
+    cwd,
+    ...(dependencies.now ? { now: dependencies.now } : {}),
+  });
+  if (!currentness.current) {
     return createNeedsRefreshResult(
       "providers",
       reportPackage.report.report_id,
@@ -1020,7 +1025,7 @@ export async function runProviderGuidance(cwd, reportPackage, options = {}, depe
   if (options.resume_token) {
     return resumeGuidance(cwd, options, dependencies);
   }
-  const reportError = validateReport(reportPackage);
+  const reportError = validateReport(cwd, reportPackage, dependencies);
   if (reportError) return reportError;
 
   const report = reportPackage.report;

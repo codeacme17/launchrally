@@ -6,6 +6,16 @@ import { evaluateLaunchPolicy } from "../packages/core/src/index.js";
 function declaration(check_id, severity, gate, remediation = {}) {
   return {
     check_id,
+    pass_evidence_requirement: {
+      accepted_kinds: ["file"],
+      minimum_items: 1,
+      provenance_required: true,
+    },
+    failure_evidence_requirement: {
+      accepted_kinds: ["file"],
+      minimum_items: 1,
+      provenance_required: true,
+    },
     severity_policy: { severity },
     release_gate_policy: { gate, unverified_blocks_launch_ready: true },
     freshness_behavior: remediation.freshness_behavior
@@ -22,7 +32,7 @@ function finding(check_id, status, action) {
     check_id,
     status,
     summary: `${check_id} is ${status}`,
-    evidence: [],
+    evidence: [{ digest: `sha256:${check_id}` }],
     ...(action ? { action } : {}),
   };
 }
@@ -35,11 +45,24 @@ function evaluate({
   evaluated_at = "2026-08-06T12:00:00.000Z",
   content_changes = [],
 }) {
+  const supplied = new Map(evidence_entries.map((entry) => [entry.digest, entry]));
+  for (const check of checks) {
+    for (const reference of check.evidence) {
+      if (!supplied.has(reference.digest)) {
+        supplied.set(reference.digest, {
+          digest: reference.digest,
+          evidence_kind: "file",
+          source: "local_safe_scan/v1",
+          collected_at: evaluated_at,
+        });
+      }
+    }
+  }
   return evaluateLaunchPolicy({
     catalog: { checks: declarations },
     checks,
     scope: { confirmed: scope_confirmed, core_journeys: ["checkout"] },
-    evidence_index: { entries: evidence_entries },
+    evidence_index: { entries: [...supplied.values()] },
     evaluated_at,
     content_changes,
   });
@@ -280,7 +303,7 @@ test("a declared content change makes prior Evidence and the Report non-current"
 
 test("a Passed claim without required Evidence is downgraded and can never be Launch Ready", () => {
   const required = declaration("critical-security", "critical", "always");
-  required.evidence_requirement = {
+  required.pass_evidence_requirement = {
     accepted_kinds: ["public_observation"],
     minimum_items: 1,
     provenance_required: true,
@@ -297,9 +320,76 @@ test("a Passed claim without required Evidence is downgraded and can never be La
   assert.equal(result.verification_gaps[0].reason_code, "insufficient_evidence");
 });
 
+test("a gating Failed claim without qualifying failure Evidence is Unverified, never No-Go", () => {
+  const required = declaration("critical-security", "critical", "always");
+  required.failure_evidence_requirement = {
+    accepted_kinds: ["public_observation"],
+    minimum_items: 1,
+    provenance_required: true,
+  };
+  const result = evaluate({
+    declarations: [required],
+    checks: [finding("critical-security", "failed", "Fix transport security.")],
+  });
+
+  assert.equal(result.findings[0].status, "unverified");
+  assert.equal(result.findings[0].reason_code, "insufficient_evidence");
+  assert.equal(result.assessment, "inconclusive");
+  assert.deepEqual(result.action_queue, []);
+});
+
+test("a gating Failed claim backed only by release intent cannot produce No-Go", () => {
+  const required = declaration("critical-transport", "critical", "always");
+  required.failure_evidence_requirement = {
+    accepted_kinds: ["release_intent"],
+    minimum_items: 1,
+    provenance_required: true,
+  };
+  const evidence = {
+    digest: "sha256:declared-target",
+    evidence_kind: "release_intent",
+    source: "audit-brief/v1",
+    collected_at: "2026-08-06T12:00:00.000Z",
+  };
+  const unrelatedMachineEvidence = {
+    digest: "sha256:unrelated-file",
+    evidence_kind: "file",
+    source: "local_safe_scan/v1",
+    collected_at: "2026-08-06T12:00:00.000Z",
+  };
+  const result = evaluate({
+    declarations: [required],
+    checks: [{
+      ...finding("critical-transport", "failed"),
+      evidence: [
+        { digest: evidence.digest },
+        { digest: unrelatedMachineEvidence.digest },
+      ],
+    }],
+    evidence_entries: [evidence, unrelatedMachineEvidence],
+  });
+
+  assert.equal(result.findings[0].status, "unverified");
+  assert.equal(result.findings[0].reason_code, "insufficient_machine_evidence");
+  assert.equal(result.assessment, "inconclusive");
+});
+
+test("non-gating Unverified produces Ready with Warnings, not Inconclusive", () => {
+  const result = evaluate({
+    declarations: [declaration("moderate-optional", "moderate", "never")],
+    checks: [{
+      ...finding("moderate-optional", "unverified"),
+      reason_code: "missing_required_input",
+    }],
+  });
+
+  assert.equal(result.findings[0].gating, false);
+  assert.equal(result.assessment, "ready_with_warnings");
+});
+
 test("a declared Provider Check uses Machine Evidence and prevents unsupported Passed claims", () => {
   const providerDeclaration = declaration("provider.vercel.metadata", "major", "policy");
-  providerDeclaration.evidence_requirement = {
+  providerDeclaration.pass_evidence_requirement = {
     accepted_kinds: ["machine_evidence"],
     minimum_items: 1,
     provenance_required: true,
