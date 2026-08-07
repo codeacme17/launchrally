@@ -22,7 +22,7 @@ Do not collapse a Check failure, denied permission, missing Evidence, and execut
 
 Audit interaction uses `launchrally.dev/audit-interaction/v1`. For `needs_input`, answer only `request.fields`. For `needs_confirmation`, present the complete `audit_brief`, `planned_checks`, and `authorization_plan`; pass only `confirm`, `revise`, or `cancel`. For `needs_permission`, return only explicit `approved` or `denied` decisions for the requested permission IDs.
 
-Initialization interaction uses `launchrally.dev/init-interaction/v1`. Read the exact `preview.changes`, preserve `interaction.resume_token`, and return only `confirm` or `decline`. Never infer approval from a completed Audit.
+Initialization interaction uses `launchrally.dev/init-interaction/v1`. If isolated toolchain resolution misses the offline npm cache, present the sole `npm_registry_read` permission with its exact package, version, registry source, and command; resume with only `approved` or `denied`. Registry approval does not confirm file changes. After resolution, read the exact `preview.changes`, preserve `interaction.resume_token`, and return only `confirm` or `decline`. Never infer either permission or confirmation from a completed Audit.
 
 Planning uses `launchrally.dev/launch-plan/v2`. Supply a saved complete current Audit with `--report`. Read `items` in rank order and keep `verification_gaps` separate. Confirm `read_only` and every `effects` value before presenting the Plan. Pass `--handoff` only after an explicit user request for host-Agent local remediation; the handoff grants no Provider, deployment, or production write permission and always returns to Verify.
 

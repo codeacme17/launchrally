@@ -22,6 +22,8 @@ Install the versioned Codex or Claude Plugin by following the [install guide](in
 
 The Skill is an interaction layer. The local CLI remains the authority for Checks, Evidence, Severity, gates, and Assessments. The Skill cannot manufacture missing Evidence or silently grant permissions.
 
+Optional Init pins the exact CLI in `.launchrally/toolchain` for every ecosystem, without editing application dependency files. It tries offline npm resolution first. If the cache is insufficient, approve or deny the separately disclosed `npm_registry_read` request before Init prepares its file preview; npm lifecycle scripts remain disabled.
+
 ## Secret-free ecosystem examples
 
 The committed coverage fixtures use synthetic configuration and `.env.example` variable names only. They contain no credentials and require no LaunchRally account or private service:

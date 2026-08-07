@@ -34,18 +34,18 @@ import {
 import { evaluateReportCurrentness } from "./report-currentness.js";
 
 export const CLI_DEPENDENCY = "@launchrally/cli";
+export const TOOLCHAIN_PACKAGE_PATH = ".launchrally/toolchain/package.json";
+export const TOOLCHAIN_LOCKFILE_PATH = ".launchrally/toolchain/package-lock.json";
 const APPROVED_PATHS = new Set([
   ".launchrally/.gitignore",
+  TOOLCHAIN_LOCKFILE_PATH,
+  TOOLCHAIN_PACKAGE_PATH,
   LEGACY_MANIFEST_RELATIVE_PATH,
   MANIFEST_RELATIVE_PATH,
-  "bun.lock",
-  "package-lock.json",
-  "package.json",
-  "pnpm-lock.yaml",
-  "yarn.lock",
 ]);
 const execFileAsync = promisify(execFile);
 const RECOVERY_RELATIVE_PATH = ".launchrally/.init-transaction/recovery.json";
+const REGISTRY_PERMISSION_CAPABILITY = Symbol("registry-permission-capability");
 
 function isApprovedPath(relativePath) {
   return APPROVED_PATHS.has(relativePath) || isLocalHistoryPath(relativePath);
@@ -289,162 +289,182 @@ function exactDiff(relativePath, before, after) {
   ].join("\n");
 }
 
-async function exists(filePath) {
-  try {
-    await lstat(filePath);
-    return true;
-  } catch (error) {
-    if (error?.code === "ENOENT") return false;
-    throw error;
-  }
+function toolchainPackageContent(version) {
+  return `${JSON.stringify({
+    name: "launchrally-toolchain",
+    private: true,
+    version: "0.0.0",
+    devDependencies: { [CLI_DEPENDENCY]: version },
+  }, null, 2)}\n`;
 }
 
-async function lockfileFor(root, packageManager) {
-  const standard = {
-    npm: "package-lock.json",
-    pnpm: "pnpm-lock.yaml",
-    yarn: "yarn.lock",
-  }[packageManager];
-  if (standard) return { path: standard, binary: false };
-  if (packageManager !== "bun") return null;
-  if (await exists(path.join(root, "bun.lock"))) return { path: "bun.lock", binary: false };
-  if (await exists(path.join(root, "bun.lockb"))) return { path: "bun.lockb", binary: true };
-  return { path: "bun.lock", binary: false };
-}
-
-function unquote(value) {
-  return value.trim().replace(/^(?:['"])(.*)(?:['"])$/u, "$1");
-}
-
-function pnpmLocksExactDependency(lockfile, dependency, version) {
-  const lines = lockfile.split("\n");
-  const importer = lines.findIndex((line) => /^ {2}(?:\.|['"]\.['"]):\s*$/u.test(line));
-  if (importer < 0) return false;
-  const devDependencies = lines.findIndex(
-    (line, index) => index > importer && /^ {4}devDependencies:\s*$/u.test(line),
-  );
-  if (devDependencies < 0) return false;
-  const escapedDependency = dependency.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const dependencyLine = lines.findIndex((line, index) =>
-    index > devDependencies
-      && new RegExp(`^ {6}['"]?${escapedDependency}['"]?:\\s*$`, "u").test(line));
-  if (dependencyLine < 0) return false;
-  const block = [];
-  for (let index = dependencyLine + 1; index < lines.length; index += 1) {
-    if (/^ {0,6}\S/u.test(lines[index])) break;
-    block.push(lines[index]);
-  }
-  const values = Object.fromEntries(block.flatMap((line) => {
-    const match = line.match(/^ {8}(specifier|version):\s*(.+?)\s*$/u);
-    return match ? [[match[1], unquote(match[2])]] : [];
-  }));
-  return values.specifier === version && values.version === version;
-}
-
-function yarnLocksExactDependency(lockfile, dependency, version) {
-  const escapedDependency = dependency.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const header = new RegExp(
-    `^['"]?${escapedDependency}@(npm:)?${version.replaceAll(".", "\\.")}['"]?:\\s*$`,
-    "u",
-  );
-  const lines = lockfile.split("\n");
-  const entry = lines.findIndex((line) => header.test(line));
-  if (entry < 0) return false;
-  for (let index = entry + 1; index < lines.length && /^\s/u.test(lines[index]); index += 1) {
-    const match = lines[index].match(/^\s+version(?::|\s)\s*['"]?([^'"\s]+)['"]?\s*$/u);
-    if (match) return match[1] === version;
-  }
-  return false;
-}
-
-function bunLocksExactDependency(lockfile, dependency, version) {
-  const escapedDependency = dependency.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const escapedVersion = version.replaceAll(".", "\\.");
-  return new RegExp(
-    `['"]${escapedDependency}['"]\\s*:\\s*\\[\\s*['"]${escapedDependency}@${escapedVersion}['"]`,
-    "u",
-  ).test(lockfile);
-}
-
-function alreadyExact({ packageManager, packageJson, lockfile, dependency, version }) {
+function alreadyExact({ packageJson, lockfile, dependency, version }) {
   let parsedPackage;
   try {
     parsedPackage = JSON.parse(packageJson);
   } catch {
     return false;
   }
-  if (parsedPackage.devDependencies?.[dependency] !== version) return false;
-  if (packageManager === "pnpm") return pnpmLocksExactDependency(lockfile, dependency, version);
-  if (packageManager === "yarn") return yarnLocksExactDependency(lockfile, dependency, version);
-  if (packageManager === "bun") return bunLocksExactDependency(lockfile, dependency, version);
+  if (
+    JSON.stringify(Object.keys(parsedPackage).sort()) !== JSON.stringify([
+      "devDependencies",
+      "name",
+      "private",
+      "version",
+    ])
+    || parsedPackage.name !== "launchrally-toolchain"
+    || parsedPackage.private !== true
+    || parsedPackage.version !== "0.0.0"
+    || JSON.stringify(parsedPackage.devDependencies) !== JSON.stringify({ [dependency]: version })
+  ) return false;
   try {
     const parsedLock = JSON.parse(lockfile);
-    return parsedLock.packages?.[""]?.devDependencies?.[dependency] === version
-      && parsedLock.packages?.[`node_modules/${dependency}`]?.version === version;
+    const expectedPackages = [
+      "",
+      "node_modules/@launchrally/cli",
+      "node_modules/@launchrally/contracts",
+      "node_modules/@launchrally/core",
+    ];
+    const validIntegrity = (integrity) => {
+      if (typeof integrity !== "string" || !integrity.startsWith("sha512-")) return false;
+      const encoded = integrity.slice("sha512-".length);
+      try {
+        const decoded = Buffer.from(encoded, "base64");
+        return decoded.length === 64 && decoded.toString("base64") === encoded;
+      } catch {
+        return false;
+      }
+    };
+    const validEntry = (name, expected) => {
+      const entry = parsedLock.packages?.[`node_modules/${name}`];
+      const tarballName = name.slice("@launchrally/".length);
+      return entry?.version === version
+        && entry.dev === true
+        && entry.link !== true
+        && JSON.stringify(Object.keys(entry).sort())
+          === JSON.stringify(Object.keys(expected).sort())
+        && entry.resolved
+          === `https://registry.npmjs.org/${name}/-/${tarballName}-${version}.tgz`
+        && validIntegrity(entry.integrity)
+        && JSON.stringify(entry.dependencies ?? {})
+          === JSON.stringify(expected.dependencies ?? {})
+        && JSON.stringify(entry.bin ?? {}) === JSON.stringify(expected.bin ?? {})
+        && JSON.stringify(entry.engines ?? {}) === JSON.stringify(expected.engines ?? {})
+        && entry.license === "Apache-2.0";
+    };
+    return JSON.stringify(Object.keys(parsedLock).sort()) === JSON.stringify([
+      "lockfileVersion",
+      "name",
+      "packages",
+      "requires",
+      "version",
+    ])
+      && parsedLock.name === "launchrally-toolchain"
+      && parsedLock.version === "0.0.0"
+      && parsedLock.lockfileVersion === 3
+      && parsedLock.requires === true
+      && JSON.stringify(Object.keys(parsedLock.packages ?? {}).sort())
+        === JSON.stringify(expectedPackages)
+      && JSON.stringify(parsedLock.packages[""]?.devDependencies)
+        === JSON.stringify({ [dependency]: version })
+      && JSON.stringify(Object.keys(parsedLock.packages[""] ?? {}).sort())
+        === JSON.stringify(["devDependencies", "name", "version"])
+      && parsedLock.packages[""].name === "launchrally-toolchain"
+      && parsedLock.packages[""].version === "0.0.0"
+      && validEntry("@launchrally/cli", {
+        version,
+        resolved: true,
+        integrity: true,
+        dev: true,
+        license: true,
+        dependencies: {
+          "@launchrally/contracts": version,
+          "@launchrally/core": version,
+        },
+        bin: { rally: "bin/rally.js" },
+        engines: { node: ">=20" },
+      })
+      && validEntry("@launchrally/contracts", {
+        version,
+        resolved: true,
+        integrity: true,
+        dev: true,
+        license: true,
+      })
+      && validEntry("@launchrally/core", {
+        version,
+        resolved: true,
+        integrity: true,
+        dev: true,
+        license: true,
+        dependencies: { "@launchrally/contracts": version },
+      });
   } catch {
     return false;
   }
 }
 
 async function defaultPrepareDependencyChanges({
-  package_manager: packageManager,
   package_json: packageJson,
+  package_path: packagePath,
   lockfile,
   dependency,
   version,
+  registry_allowed: registryAllowed = false,
 }) {
   if (alreadyExact({
-    packageManager,
     packageJson,
     lockfile: lockfile.content,
     dependency,
     version,
   })) {
     return [
-      { path: "package.json", content: packageJson },
+      { path: packagePath, content: packageJson },
       { path: lockfile.path, content: lockfile.content },
     ];
   }
-  const commands = {
-    npm: ["npm", [
-      "install",
-      "--package-lock-only",
-      "--ignore-scripts",
-      "--save-dev",
-      "--save-exact",
-      "--no-audit",
-      "--no-fund",
-      `${dependency}@${version}`,
-    ]],
-    pnpm: ["pnpm", [
-      "add",
-      "--lockfile-only",
-      "--ignore-scripts",
-      "--save-dev",
-      "--save-exact",
-      `${dependency}@${version}`,
-    ]],
-    yarn: ["yarn", ["add", "--ignore-scripts", "--dev", "--exact", `${dependency}@${version}`]],
-    bun: ["bun", ["add", "--lockfile-only", "--dev", "--exact", `${dependency}@${version}`]],
+  const prepare = async (offline) => {
+    const staging = await mkdtemp(path.join(os.tmpdir(), "launchrally-dependency-plan-"));
+    try {
+      await writeFile(path.join(staging, "package.json"), packageJson, "utf8");
+      await writeFile(path.join(staging, "package-lock.json"), lockfile.content, "utf8");
+      await execFileAsync("npm", [
+        "install",
+        "--package-lock-only",
+        "--ignore-scripts",
+        "--save-dev",
+        "--save-exact",
+        "--no-audit",
+        "--no-fund",
+        ...(offline
+          ? ["--offline"]
+          : ["--registry=https://registry.npmjs.org"]),
+        `${dependency}@${version}`,
+      ], {
+        cwd: staging,
+        encoding: "utf8",
+        timeout: 120_000,
+        maxBuffer: 1024 * 1024,
+      });
+      return [
+        { path: packagePath, content: await readFile(path.join(staging, "package.json"), "utf8") },
+        { path: lockfile.path, content: await readFile(path.join(staging, "package-lock.json"), "utf8") },
+      ];
+    } finally {
+      await rm(staging, { recursive: true, force: true });
+    }
   };
-  const command = commands[packageManager];
-  if (!command) throw new Error("unsupported_package_manager");
-  const staging = await mkdtemp(path.join(os.tmpdir(), "launchrally-dependency-plan-"));
   try {
-    await writeFile(path.join(staging, "package.json"), packageJson, "utf8");
-    await writeFile(path.join(staging, lockfile.path), lockfile.content, "utf8");
-    await execFileAsync(command[0], command[1], {
-      cwd: staging,
-      encoding: "utf8",
-      timeout: 120_000,
-      maxBuffer: 1024 * 1024,
-    });
-    return [
-      { path: "package.json", content: await readFile(path.join(staging, "package.json"), "utf8") },
-      { path: lockfile.path, content: await readFile(path.join(staging, lockfile.path), "utf8") },
-    ];
-  } finally {
-    await rm(staging, { recursive: true, force: true });
+    return await prepare(true);
+  } catch (error) {
+    const offlineCacheMiss = /(?:ENOTCACHED|cache mode is ['"]only-if-cached['"])/u.test(
+      `${error?.stderr ?? ""}\n${error?.message ?? ""}`,
+    );
+    if (!offlineCacheMiss) throw error;
+    if (registryAllowed) return prepare(false);
+    const permissionError = new Error("The exact CLI is not available in the offline npm cache.");
+    permissionError.code = "registry_permission_required";
+    throw permissionError;
   }
 }
 
@@ -859,6 +879,48 @@ function initializationError(error, message, extra = {}) {
   };
 }
 
+function registryPermissionRequest(version, resumeToken) {
+  return {
+    contract: CLI_INTERACTION_CONTRACT,
+    status: "needs_permission",
+    operation: "init",
+    interaction: {
+      schema_version: INIT_INTERACTION_SCHEMA,
+      resume_token: resumeToken,
+    },
+    request: {
+      type: "permission",
+      permissions: [{
+        id: "npm_registry_read",
+        boundary: "public_network",
+        source: "https://registry.npmjs.org",
+        package: CLI_DEPENDENCY,
+        version,
+        command: `npm install --package-lock-only --ignore-scripts --save-dev --save-exact --no-audit --no-fund --registry=https://registry.npmjs.org ${CLI_DEPENDENCY}@${version}`,
+      }],
+    },
+  };
+}
+
+function registryPermissionStateIsValid(state, root, version) {
+  try {
+    return JSON.stringify(Object.keys(state).sort()) === JSON.stringify([
+      "kind",
+      "report_package",
+      "root",
+      "schema_version",
+      "version",
+    ])
+      && state.kind === "registry_permission"
+      && state.root === root
+      && state.version === version
+      && state.schema_version === INIT_INTERACTION_SCHEMA
+      && (assertValidReportPackage(state.report_package) ?? true);
+  } catch {
+    return false;
+  }
+}
+
 async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
   const root = path.resolve(cwd);
   const recovered = await recoverPendingInitialization(root);
@@ -919,6 +981,36 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       };
     }
     const { state, statePath } = stored;
+    if (state.kind === "registry_permission") {
+      if (!registryPermissionStateIsValid(state, root, version)) {
+        await discardState(statePath);
+        return initializationError(
+          "invalid_resume_token",
+          "The registry permission token is invalid or corrupted.",
+        );
+      }
+      const decision = options.permission_decisions?.npm_registry_read;
+      if (decision === "denied") {
+        await discardState(statePath);
+        return initializationError(
+          "registry_permission_denied",
+          "The npm registry read was denied; no initialization changes were prepared.",
+          { recoverable: true },
+        );
+      }
+      if (decision !== "approved") {
+        return initializationError(
+          "invalid_permission_decision",
+          "The npm registry permission decision must be approved or denied.",
+          { recoverable: true },
+        );
+      }
+      await discardState(statePath);
+      return runInitLocked(cwd, version, {
+        report_package: state.report_package,
+        [REGISTRY_PERMISSION_CAPABILITY]: true,
+      }, dependencies);
+    }
     if (state.root !== root) {
       await discardState(statePath);
       return {
@@ -1166,7 +1258,8 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
     await assertSafeRelativePath(root, MANIFEST_RELATIVE_PATH);
     await assertSafeRelativePath(root, LEGACY_MANIFEST_RELATIVE_PATH);
     await assertSafeRelativePath(root, ".launchrally/.gitignore");
-    await assertSafeRelativePath(root, "package.json");
+    await assertSafeRelativePath(root, TOOLCHAIN_PACKAGE_PATH);
+    await assertSafeRelativePath(root, TOOLCHAIN_LOCKFILE_PATH);
   } catch (error) {
     if (error?.code === "unsafe_project_path") {
       return initializationError(
@@ -1252,71 +1345,68 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       "Initialization requires a current Report; run full Verify first.",
     );
   }
-  const packageJson = await readFile(path.join(root, "package.json"), "utf8");
-  const lockfile = await lockfileFor(root, source.report.scope.project.package_manager);
-  if (!lockfile) {
-    return {
-      contract: CLI_INTERACTION_CONTRACT,
-      status: "execution_error",
-      operation: "init",
-      error: "unsupported_package_manager",
-      message: "Initialization cannot prepare an exact lockfile change for this package manager.",
-    };
-  }
-  if (lockfile.binary) {
-    return initializationError(
-      "unsupported_binary_lockfile",
-      "Legacy bun.lockb cannot be previewed safely; migrate it to bun.lock, rerun Audit, and retry init.",
-      { recoverable: true },
-    );
-  }
-  const lockfilePath = lockfile.path;
-  try {
-    await assertSafeRelativePath(root, lockfilePath);
-  } catch (error) {
-    if (error?.code === "unsafe_project_path") {
-      return initializationError(
-        "unsafe_project_path",
-        "Initialization refuses a symlinked project path that could escape the repository.",
-      );
-    }
-    throw error;
-  }
-  const lockfileContent = await readFile(path.join(root, lockfilePath), "utf8");
+  const packageJson = toolchainPackageContent(version);
+  const lockfilePath = TOOLCHAIN_LOCKFILE_PATH;
+  const lockfileContent = await readOptional(path.join(root, lockfilePath))
+    ?? `${JSON.stringify({
+      name: "launchrally-toolchain",
+      version: "0.0.0",
+      lockfileVersion: 3,
+      requires: true,
+      packages: { "": {} },
+    }, null, 2)}\n`;
   const prepareDependencyChanges = dependencies.prepare_dependency_changes
     ?? defaultPrepareDependencyChanges;
   let dependencyChanges;
   try {
     dependencyChanges = await prepareDependencyChanges({
       cwd: root,
-      package_manager: source.report.scope.project.package_manager,
       package_json: packageJson,
+      package_path: TOOLCHAIN_PACKAGE_PATH,
       lockfile: { path: lockfilePath, content: lockfileContent },
       dependency: CLI_DEPENDENCY,
       version,
+      registry_allowed: options[REGISTRY_PERMISSION_CAPABILITY] === true,
     });
-  } catch {
+  } catch (error) {
+    if (
+      error?.code === "registry_permission_required"
+      && options[REGISTRY_PERMISSION_CAPABILITY] !== true
+    ) {
+      const permissionState = {
+        schema_version: INIT_INTERACTION_SCHEMA,
+        kind: "registry_permission",
+        root,
+        version,
+        report_package: structuredClone(source),
+      };
+      return registryPermissionRequest(
+        version,
+        await (dependencies.store_state ?? storeState)(permissionState),
+      );
+    }
     return {
       contract: CLI_INTERACTION_CONTRACT,
       status: "execution_error",
       operation: "init",
       error: "dependency_plan_failed",
-      message: "The exact CLI dependency and lockfile preview could not be prepared; nothing was changed.",
+      message: "The isolated exact CLI toolchain preview could not be prepared; nothing was changed.",
       recoverable: true,
     };
   }
   const dependencyPaths = Array.isArray(dependencyChanges)
     ? dependencyChanges.map((change) => change.path).sort()
     : [];
-  const exactDependencyPaths = ["package.json", lockfilePath].sort();
-  const plannedPackage = dependencyChanges.find((change) => change.path === "package.json");
+  const exactDependencyPaths = [TOOLCHAIN_PACKAGE_PATH, lockfilePath].sort();
+  const plannedPackage = dependencyChanges.find(
+    (change) => change.path === TOOLCHAIN_PACKAGE_PATH,
+  );
   const plannedLockfile = dependencyChanges.find((change) => change.path === lockfilePath);
   if (
     !Array.isArray(dependencyChanges)
     || JSON.stringify(dependencyPaths) !== JSON.stringify(exactDependencyPaths)
     || dependencyChanges.some((change) => typeof change.content !== "string")
     || !alreadyExact({
-      packageManager: source.report.scope.project.package_manager,
       packageJson: plannedPackage?.content,
       lockfile: plannedLockfile?.content,
       dependency: CLI_DEPENDENCY,
@@ -1328,7 +1418,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       status: "execution_error",
       operation: "init",
       error: "invalid_dependency_plan",
-      message: "The dependency planner did not produce only the exact CLI devDependency and lockfile change.",
+      message: "The toolchain planner did not produce only the isolated exact CLI package and npm lockfile.",
       recoverable: true,
     };
   }

@@ -201,6 +201,13 @@ test("public tarballs install together and smoke-test the CLI in a clean project
       operation: "version",
       cli_version: "0.1.0",
       audit_status: "needs_input",
+      coverage_journeys: [
+        "astro-hosted-web",
+        "custom-self-hosted",
+        "fastapi-container",
+        "pnpm-edge-monorepo",
+        "react-go-split",
+      ],
     },
     native_plugins: "skipped",
   });

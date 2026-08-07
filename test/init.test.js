@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 
 import { renderReportMarkdown, runAudit, runInit, runVerify } from "../packages/core/src/index.js";
 import { createHistoryFiles, persistLocalHistory } from "../packages/core/src/local-history.js";
+import { prepareExactToolchainChanges as prepareNpmChanges } from "./helpers/exact-toolchain.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
@@ -42,15 +43,28 @@ async function fixture() {
 async function fixtureWithCliDependency() {
   const directory = await fixture();
   const changes = await prepareNpmChanges({
-    package_json: await readFile(path.join(directory, "package.json"), "utf8"),
+    package_json: `${JSON.stringify({
+      name: "launchrally-toolchain",
+      private: true,
+      version: "0.0.0",
+      devDependencies: { "@launchrally/cli": "0.1.0" },
+    }, null, 2)}\n`,
+    package_path: ".launchrally/toolchain/package.json",
     lockfile: {
-      path: "package-lock.json",
-      content: await readFile(path.join(directory, "package-lock.json"), "utf8"),
+      path: ".launchrally/toolchain/package-lock.json",
+      content: `${JSON.stringify({
+        name: "launchrally-toolchain",
+        version: "0.0.0",
+        lockfileVersion: 3,
+        requires: true,
+        packages: { "": {} },
+      }, null, 2)}\n`,
     },
     dependency: "@launchrally/cli",
     version: "0.1.0",
   });
   for (const change of changes) {
+    await mkdir(path.dirname(path.join(directory, change.path)), { recursive: true });
     await writeFile(path.join(directory, change.path), change.content);
   }
   return directory;
@@ -84,26 +98,206 @@ async function unconfirmedAudit(directory) {
   });
 }
 
-async function prepareNpmChanges({ package_json, lockfile, dependency, version }) {
-  const packageJson = JSON.parse(package_json);
-  packageJson.devDependencies = {
-    ...(packageJson.devDependencies ?? {}),
-    [dependency]: version,
+test("Init adopts every ecosystem through an isolated committed npm toolchain", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const packageBefore = await readFile(path.join(directory, "package.json"), "utf8");
+  const applicationLockBefore = await readFile(
+    path.join(directory, "package-lock.json"),
+    "utf8",
+  );
+
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+
+  assert.equal(preview.status, "needs_confirmation");
+  const changedPaths = preview.preview.changes.map(({ path: changedPath }) => changedPath);
+  assert.ok(changedPaths.includes(".launchrally/toolchain/package.json"));
+  assert.ok(changedPaths.includes(".launchrally/toolchain/package-lock.json"));
+  assert.equal(changedPaths.includes("package.json"), false);
+  assert.equal(changedPaths.includes("package-lock.json"), false);
+
+  const completed = await runInit(directory, "0.1.0", {
+    resume_token: preview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+
+  assert.equal(completed.status, "completed");
+  assert.equal(await readFile(path.join(directory, "package.json"), "utf8"), packageBefore);
+  assert.equal(
+    await readFile(path.join(directory, "package-lock.json"), "utf8"),
+    applicationLockBefore,
+  );
+  assert.deepEqual(
+    JSON.parse(await readFile(
+      path.join(directory, ".launchrally", "toolchain", "package.json"),
+      "utf8",
+    )).devDependencies,
+    { "@launchrally/cli": "0.1.0" },
+  );
+});
+
+test("Init canonicalizes an existing toolchain without retaining lifecycle scripts", async () => {
+  const directory = await fixture();
+  const toolchain = path.join(directory, ".launchrally", "toolchain");
+  await mkdir(toolchain, { recursive: true });
+  await writeFile(path.join(toolchain, "package.json"), `${JSON.stringify({
+    name: "launchrally-toolchain",
+    private: true,
+    version: "0.0.0",
+    scripts: { preinstall: "must-not-run" },
+    devDependencies: { "@launchrally/cli": "0.1.0" },
+  })}\n`);
+  await writeFile(path.join(toolchain, "package-lock.json"), `${JSON.stringify({
+    name: "launchrally-toolchain",
+    version: "0.0.0",
+    lockfileVersion: 3,
+    packages: {
+      "": { devDependencies: { "@launchrally/cli": "0.1.0" } },
+      "node_modules/@launchrally/cli": {
+        version: "0.1.0",
+        resolved: "file:../../untrusted-cli",
+      },
+    },
+  })}\n`);
+  const audit = await completeAudit(directory);
+
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+
+  assert.equal(preview.status, "needs_confirmation");
+  const packageChange = preview.preview.changes.find(
+    (change) => change.path === ".launchrally/toolchain/package.json",
+  );
+  assert.equal(JSON.parse(packageChange.after).scripts, undefined);
+  const lockChange = preview.preview.changes.find(
+    (change) => change.path === ".launchrally/toolchain/package-lock.json",
+  );
+  assert.equal(
+    JSON.parse(lockChange.after).packages["node_modules/@launchrally/cli"].resolved,
+    "https://registry.npmjs.org/@launchrally/cli/-/cli-0.1.0.tgz",
+  );
+});
+
+test("Init rejects truncated integrity metadata from the exact-toolchain fast path", async () => {
+  const directory = await fixtureWithCliDependency();
+  const lockPath = path.join(directory, ".launchrally", "toolchain", "package-lock.json");
+  const lockfile = JSON.parse(await readFile(lockPath, "utf8"));
+  lockfile.packages["node_modules/@launchrally/cli"].integrity = "sha512-QUFBQQ==";
+  await writeFile(lockPath, `${JSON.stringify(lockfile, null, 2)}\n`);
+  const audit = await completeAudit(directory);
+  let resolutions = 0;
+
+  const result = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    {
+      prepare_dependency_changes: async (request) => {
+        resolutions += 1;
+        return prepareNpmChanges(request);
+      },
+    },
+  );
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.equal(resolutions, 1);
+});
+
+test("Init cannot bypass registry disclosure through public API options", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const attempts = [];
+  const prepare = async (request) => {
+    attempts.push(request.registry_allowed);
+    const error = new Error("offline cache miss");
+    error.code = "registry_permission_required";
+    throw error;
   };
-  const packageLock = JSON.parse(lockfile.content);
-  packageLock.packages[""].devDependencies = {
-    ...(packageLock.packages[""].devDependencies ?? {}),
-    [dependency]: version,
+
+  const result = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepare, registry_allowed: true },
+  );
+
+  assert.equal(result.status, "needs_permission");
+  assert.deepEqual(attempts, [false]);
+});
+
+test("Init attempts offline toolchain resolution before disclosing registry permission", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const attempts = [];
+  const prepare = async (request) => {
+    attempts.push(request.registry_allowed);
+    if (!request.registry_allowed) {
+      const error = new Error("offline cache miss");
+      error.code = "registry_permission_required";
+      throw error;
+    }
+    return prepareNpmChanges(request);
   };
-  packageLock.packages[`node_modules/${dependency}`] = {
-    version,
-    dev: true,
-  };
-  return [
-    { path: "package.json", content: `${JSON.stringify(packageJson, null, 2)}\n` },
-    { path: lockfile.path, content: `${JSON.stringify(packageLock, null, 2)}\n` },
-  ];
-}
+
+  const permission = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepare },
+  );
+
+  assert.equal(permission.status, "needs_permission");
+  assert.deepEqual(attempts, [false]);
+  assert.deepEqual(permission.request.permissions, [{
+    id: "npm_registry_read",
+    boundary: "public_network",
+    source: "https://registry.npmjs.org",
+    package: "@launchrally/cli",
+    version: "0.1.0",
+    command: "npm install --package-lock-only --ignore-scripts --save-dev --save-exact --no-audit --no-fund --registry=https://registry.npmjs.org @launchrally/cli@0.1.0",
+  }]);
+
+  const denied = await runInit(
+    directory,
+    "0.1.0",
+    {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: { npm_registry_read: "denied" },
+    },
+    { prepare_dependency_changes: prepare },
+  );
+  assert.equal(denied.error, "registry_permission_denied");
+  assert.deepEqual(attempts, [false]);
+  assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
+
+  const secondPermission = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepare },
+  );
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    {
+      resume_token: secondPermission.interaction.resume_token,
+      permission_decisions: { npm_registry_read: "approved" },
+    },
+    { prepare_dependency_changes: prepare },
+  );
+
+  assert.equal(preview.status, "needs_confirmation");
+  assert.deepEqual(attempts, [false, false, true]);
+});
 
 test("initialization is unavailable until a complete first Report is supplied", async () => {
   const directory = await fixture();
@@ -438,8 +632,8 @@ test("a complete Report produces an exact secret-free preview without repository
   for (const expected of [
     { path: ".launchrally/.gitignore", operation: "create" },
     { path: ".launchrally/manifest.yaml", operation: "create" },
-    { path: "package-lock.json", operation: "update" },
-    { path: "package.json", operation: "update" },
+    { path: ".launchrally/toolchain/package-lock.json", operation: "create" },
+    { path: ".launchrally/toolchain/package.json", operation: "create" },
   ]) assert.ok(previewChanges.some((change) =>
     change.path === expected.path && change.operation === expected.operation));
   assert.ok(previewChanges.some(({ path: changedPath }) => changedPath.includes("/reports/")));
@@ -501,7 +695,9 @@ test("a forged preview token cannot substitute different confirmed contents", as
     manifest: preview.manifest,
     changes: structuredClone(preview.preview.changes),
   };
-  substituted.changes.find((change) => change.path === "package.json").after =
+  substituted.changes.find(
+    (change) => change.path === ".launchrally/toolchain/package.json",
+  ).after =
     "{\"forged\":true}\n";
   const forgedPayload = Buffer.from(JSON.stringify(substituted), "utf8").toString("base64url");
   const forgedChecksum = createHash("sha256").update(forgedPayload).digest("base64url");
@@ -564,7 +760,9 @@ test("Init rejects structurally substituted apply and Report state even through 
       },
     },
   );
-  storedState.changes.find(({ path: changedPath }) => changedPath === "package.json").after =
+  storedState.changes.find(
+    ({ path: changedPath }) => changedPath === ".launchrally/toolchain/package.json",
+  ).after =
     "{\"substituted\":true}\n";
 
   const result = await runInit(
@@ -636,12 +834,17 @@ test("confirming applies exactly the previewed initialization files", async () =
     assert.equal(await readFile(path.join(directory, change.path), "utf8"), change.after);
   }
   assert.deepEqual(
-    JSON.parse(await readFile(path.join(directory, "package.json"), "utf8")).devDependencies,
+    JSON.parse(await readFile(path.join(
+      directory,
+      ".launchrally",
+      "toolchain",
+      "package.json",
+    ), "utf8")).devDependencies,
     { "@launchrally/cli": "0.1.0" },
   );
   assert.deepEqual(
     (await readdir(path.join(directory, ".launchrally"))).sort(),
-    [".gitignore", "evidence", "locks", "manifest.yaml", "reports", "transactions"],
+    [".gitignore", "evidence", "locks", "manifest.yaml", "reports", "toolchain", "transactions"],
   );
 });
 
@@ -778,7 +981,12 @@ test("Init crash recovery preserves already committed immutable history", async 
   assert.equal(recovered.outcome, "initialized");
   assert.equal(recovered.recovery, "committed_history_finalized");
   assert.deepEqual(
-    JSON.parse(await readFile(path.join(directory, "package.json"), "utf8")).devDependencies,
+    JSON.parse(await readFile(path.join(
+      directory,
+      ".launchrally",
+      "toolchain",
+      "package.json",
+    ), "utf8")).devDependencies,
     { "@launchrally/cli": "0.1.0" },
   );
   assert.deepEqual(
@@ -838,7 +1046,12 @@ test("Init committed-phase recovery refuses missing physical history without rol
 
   assert.equal(recovered.error, "invalid_recovery_journal");
   assert.deepEqual(
-    JSON.parse(await readFile(path.join(directory, "package.json"), "utf8")).devDependencies,
+    JSON.parse(await readFile(path.join(
+      directory,
+      ".launchrally",
+      "toolchain",
+      "package.json",
+    ), "utf8")).devDependencies,
     { "@launchrally/cli": "0.1.0" },
   );
   assert.equal(JSON.parse(await readFile(recoveryPath, "utf8")).phase, "history_committed");
@@ -875,7 +1088,12 @@ test("a concurrent Init cannot recover or roll back another live adoption", asyn
 
   assert.equal(concurrent.error, "initialization_busy");
   assert.deepEqual(
-    JSON.parse(await readFile(path.join(directory, "package.json"), "utf8")).devDependencies,
+    JSON.parse(await readFile(path.join(
+      directory,
+      ".launchrally",
+      "toolchain",
+      "package.json",
+    ), "utf8")).devDependencies,
     { "@launchrally/cli": "0.1.0" },
   );
   allowPersistence();
@@ -952,7 +1170,11 @@ test("a stale preview fails before applying any initialization change", async ()
     { report_package: audit },
     { prepare_dependency_changes: prepareNpmChanges },
   );
-  await writeFile(path.join(directory, "package.json"), "{\"changed\":true}\n");
+  await mkdir(path.join(directory, ".launchrally", "toolchain"), { recursive: true });
+  await writeFile(
+    path.join(directory, ".launchrally", "toolchain", "package.json"),
+    "{\"changed\":true}\n",
+  );
 
   const result = await runInit(directory, "0.1.0", {
     resume_token: preview.interaction.resume_token,
@@ -961,7 +1183,7 @@ test("a stale preview fails before applying any initialization change", async ()
 
   assert.equal(result.status, "execution_error");
   assert.equal(result.error, "preview_stale");
-  assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
+  assert.deepEqual(await readdir(directory), [".launchrally", "package-lock.json", "package.json"]);
 });
 
 test("Init confirmation refuses to recreate preexisting immutable history deleted after preview", async () => {
@@ -1040,7 +1262,12 @@ test("a partial filesystem failure rolls back every attempted change", async () 
     {
       file_operations: {
         write_file: async (target, content) => {
-          if (!failed && target === path.join(directory, "package.json")) {
+          if (!failed && target === path.join(
+            directory,
+            ".launchrally",
+            "toolchain",
+            "package.json",
+          )) {
             failed = true;
             throw new Error("simulated partial write failure");
           }
@@ -1086,7 +1313,7 @@ test("dependency planning failures are recoverable and leave the repository unch
     status: "execution_error",
     operation: "init",
     error: "dependency_plan_failed",
-    message: "The exact CLI dependency and lockfile preview could not be prepared; nothing was changed.",
+    message: "The isolated exact CLI toolchain preview could not be prepared; nothing was changed.",
     recoverable: true,
   });
   assert.equal(await readFile(path.join(directory, "package.json"), "utf8"), packageBefore);
@@ -1116,7 +1343,12 @@ test("an interrupted rollback leaves an ignored recovery journal that the next i
     {
       file_operations: {
         write_file: async (target, content) => {
-          if (target === path.join(directory, "package.json")) {
+          if (target === path.join(
+            directory,
+            ".launchrally",
+            "toolchain",
+            "package.json",
+          )) {
             throw new Error("simulated persistent write failure");
           }
           await writeFile(target, content, "utf8");
@@ -1167,7 +1399,12 @@ test("recovery fails closed without overwriting a post-crash user edit", async (
     {
       file_operations: {
         write_file: async (target, content) => {
-          if (target === path.join(directory, "package.json")) throw new Error("stop apply");
+          if (target === path.join(
+            directory,
+            ".launchrally",
+            "toolchain",
+            "package.json",
+          )) throw new Error("stop apply");
           await writeFile(target, content, "utf8");
         },
         remove_file: async () => {
@@ -1177,13 +1414,19 @@ test("recovery fails closed without overwriting a post-crash user edit", async (
     },
   );
   const userEdit = "{\"user_edit_after_crash\":true}\n";
-  await writeFile(path.join(directory, "package-lock.json"), userEdit);
+  const toolchainLock = path.join(
+    directory,
+    ".launchrally",
+    "toolchain",
+    "package-lock.json",
+  );
+  await writeFile(toolchainLock, userEdit);
 
   const result = await runInit(directory, "0.1.0");
 
   assert.equal(result.status, "execution_error");
   assert.equal(result.error, "initialization_recovery_conflict");
-  assert.equal(await readFile(path.join(directory, "package-lock.json"), "utf8"), userEdit);
+  assert.equal(await readFile(toolchainLock, "utf8"), userEdit);
 });
 
 test("a symlinked LaunchRally directory cannot redirect initialization outside the project", async () => {
@@ -1300,118 +1543,32 @@ test("Init refuses a predictable temp lock root symlink without writing through 
   }
 });
 
-test("non-npm lockfiles must bind the exact CLI dependency and version", async () => {
-  const directory = await fixture();
-  await rm(path.join(directory, "package-lock.json"));
-  await writeFile(path.join(directory, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
-  const audit = await completeAudit(directory);
-
-  const result = await runInit(
-    directory,
-    "0.1.0",
-    { report_package: audit },
-    {
-      prepare_dependency_changes: async ({ package_json: packageJson }) => {
-        const manifest = JSON.parse(packageJson);
-        manifest.devDependencies = { "@launchrally/cli": "0.1.0" };
-        return [
-          { path: "package.json", content: `${JSON.stringify(manifest)}\n` },
-          {
-            path: "pnpm-lock.yaml",
-            content: "notes: '@launchrally/cli is mentioned; another package is 0.1.0'\n",
-          },
-        ];
-      },
-    },
-  );
-
-  assert.equal(result.status, "execution_error");
-  assert.equal(result.error, "invalid_dependency_plan");
-});
-
-test("pnpm, Yarn, and text Bun lockfiles accept exact manager-specific bindings", async () => {
-  const cases = [
-    {
-      manager: "pnpm",
-      lockfile: "pnpm-lock.yaml",
-      planned: [
-        "lockfileVersion: '9.0'",
-        "importers:",
-        "  .:",
-        "    devDependencies:",
-        "      '@launchrally/cli':",
-        "        specifier: 0.1.0",
-        "        version: 0.1.0",
-        "",
-      ].join("\n"),
-    },
-    {
-      manager: "yarn",
-      lockfile: "yarn.lock",
-      planned: '"@launchrally/cli@0.1.0":\n  version "0.1.0"\n',
-    },
-    {
-      manager: "bun",
-      lockfile: "bun.lock",
-      planned: '{"packages":{"@launchrally/cli":["@launchrally/cli@0.1.0",""]}}\n',
-    },
-  ];
-
-  for (const fixtureCase of cases) {
+test("application package-manager files never control or receive the npm toolchain", async () => {
+  for (const applicationLock of ["pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"]) {
     const directory = await fixture();
     await rm(path.join(directory, "package-lock.json"));
-    await writeFile(path.join(directory, fixtureCase.lockfile), "initial lock\n");
+    const applicationContent = applicationLock === "bun.lockb"
+      ? Buffer.from([0, 1, 2, 3, 255])
+      : Buffer.from("application lock remains unchanged\n");
+    await writeFile(path.join(directory, applicationLock), applicationContent);
     const audit = await completeAudit(directory);
 
     const result = await runInit(
       directory,
       "0.1.0",
       { report_package: audit },
-      {
-        prepare_dependency_changes: async ({ package_json: packageJson }) => {
-          const manifest = JSON.parse(packageJson);
-          manifest.devDependencies = { "@launchrally/cli": "0.1.0" };
-          return [
-            { path: "package.json", content: `${JSON.stringify(manifest)}\n` },
-            { path: fixtureCase.lockfile, content: fixtureCase.planned },
-          ];
-        },
-      },
+      { prepare_dependency_changes: prepareNpmChanges },
     );
 
-    assert.equal(result.status, "needs_confirmation", fixtureCase.manager);
-    assert.ok(
-      result.preview.changes.some((change) => change.path === fixtureCase.lockfile),
-      fixtureCase.manager,
-    );
+    assert.equal(result.status, "needs_confirmation", applicationLock);
+    assert.ok(result.preview.changes.some(
+      (change) => change.path === ".launchrally/toolchain/package.json"), applicationLock);
+    assert.ok(result.preview.changes.some(
+      (change) => change.path === ".launchrally/toolchain/package-lock.json"), applicationLock);
+    assert.equal(result.preview.changes.some(
+      (change) => change.path === applicationLock), false, applicationLock);
+    assert.deepEqual(await readFile(path.join(directory, applicationLock)), applicationContent);
   }
-});
-
-test("legacy binary Bun lockfiles fail deliberately without planning or writes", async () => {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-bun-init-"));
-  await writeFile(path.join(directory, "package.json"), '{"name":"bun-web"}\n');
-  const binaryLock = Buffer.from([0, 1, 2, 3, 255]);
-  await writeFile(path.join(directory, "bun.lockb"), binaryLock);
-  const audit = await completeAudit(directory);
-  let plannerCalled = false;
-
-  const result = await runInit(
-    directory,
-    "0.1.0",
-    { report_package: audit },
-    {
-      prepare_dependency_changes: async () => {
-        plannerCalled = true;
-        return [];
-      },
-    },
-  );
-
-  assert.equal(result.status, "execution_error");
-  assert.equal(result.error, "unsupported_binary_lockfile");
-  assert.equal(result.recoverable, true);
-  assert.equal(plannerCalled, false);
-  assert.deepEqual(await readFile(path.join(directory, "bun.lockb")), binaryLock);
 });
 
 test("unconfirmed Report intent remains reasoned Unknown rather than inferred or Not Applicable", async () => {
@@ -1561,6 +1718,48 @@ test("the CLI keeps init unavailable when no complete Report is supplied", async
   );
 });
 
+test("the CLI exposes and honors the isolated toolchain registry permission", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-registry-report-"));
+  const reportPath = path.join(reportDirectory, "audit.json");
+  await writeFile(reportPath, JSON.stringify(audit));
+
+  const permission = JSON.parse((await execFileAsync(process.execPath, [
+    cli,
+    "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ])).stdout);
+
+  assert.equal(permission.status, "needs_permission");
+  assert.equal(permission.request.permissions[0].id, "npm_registry_read");
+  assert.match(permission.request.permissions[0].command, /--ignore-scripts/u);
+  assert.match(permission.request.permissions[0].command, /registry\.npmjs\.org/u);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      cli,
+      "init",
+      "--json",
+      "--cwd",
+      directory,
+      "--resume",
+      permission.interaction.resume_token,
+      "--permissions",
+      JSON.stringify({ npm_registry_read: "denied" }),
+    ]),
+    (error) => {
+      const result = JSON.parse(error.stdout);
+      assert.equal(result.error, "registry_permission_denied");
+      return true;
+    },
+  );
+  assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
+});
+
 test("the CLI previews a saved complete Audit and decline applies nothing", async () => {
   const directory = await fixtureWithCliDependency();
   const audit = await completeAudit(directory);
@@ -1585,7 +1784,7 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
   assert.ok(previewPaths.includes(".launchrally/manifest.yaml"));
   assert.ok(previewPaths.some((changedPath) => changedPath.includes("/reports/")));
   assert.ok(previewPaths.some((changedPath) => changedPath.includes("/evidence/sha256/")));
-  assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
+  assert.deepEqual(await readdir(directory), [".launchrally", "package-lock.json", "package.json"]);
 
   const declineProcess = await execFileAsync(process.execPath, [
     cli,
@@ -1599,7 +1798,7 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
     "decline",
   ]);
   assert.equal(JSON.parse(declineProcess.stdout).outcome, "initialization_declined");
-  assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
+  assert.deepEqual(await readdir(directory), [".launchrally", "package-lock.json", "package.json"]);
 });
 
 test("Human Mode renders every exact initialization change before confirmation", async () => {
