@@ -1,0 +1,7 @@
+{
+  "name": "coverage-typescript-astro",
+  "private": true,
+  "scripts": {
+    "build": "astro build"
+  }
+}

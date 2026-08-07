@@ -19,9 +19,9 @@
     "capabilities": ["Interactive", "Read"],
     "websiteURL": "https://github.com/codeacme17/launchrally",
     "defaultPrompt": [
-      "Audit this repository for production launch readiness.",
-      "Explain the launch blockers in this project.",
-      "Verify this repository after my remediation changes."
+      "Audit this JavaScript or non-JavaScript repository for production launch readiness.",
+      "Assess this split frontend/backend or multi-app repository without assuming a deployment platform.",
+      "Verify this custom framework repository after my remediation changes."
     ]
   }
 }

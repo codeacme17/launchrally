@@ -1,0 +1,7 @@
+{
+  "name": "coverage-custom-self-hosted",
+  "private": true,
+  "scripts": {
+    "build": "node custom-build.js"
+  }
+}

@@ -1,0 +1,2 @@
+command: node dist/server.js
+supervisor: custom-init

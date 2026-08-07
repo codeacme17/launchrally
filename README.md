@@ -13,6 +13,8 @@ npm test
 npm run rally -- audit --json
 ```
 
+For runnable cross-ecosystem examples, use the [Coverage Acceptance Matrix](docs/coverage-acceptance.md). Its JavaScript, non-JavaScript, split, multi-app, and custom fixtures are public demonstrations of the universal Baseline entry path, not a framework or Provider support allowlist.
+
 The first Audit invocation performs a Local Safe Scan and returns a versioned Audit Brief interaction. Unknown release intent becomes typed input, inferred values remain candidates until the builder confirms the complete Check plan, and public or Provider permissions are requested as separate boundaries. Resume tokens preserve repository scope and earlier decisions without repository writes.
 
 After explicit confirmation and permission decisions, the Audit evaluates every Web Baseline Check against its declared severity, release-gate, evidence, freshness, and remediation-order policies. Critical failures are always gating; Major failures gate only under policy with confirmed scope; Moderate failures remain non-gating in Phase 0. Denied permissions and insufficient evidence become explicit Verification Gaps rather than aborting the Audit.
@@ -49,6 +51,8 @@ adapters/
   claude/          Claude Code Plugin package
 scripts/
   sync-skills.mjs  Keeps both Plugin copies aligned with the canonical Skill
+fixtures/
+  coverage/         Cross-ecosystem acceptance representatives
 test/
   scaffold.test.js Initial contract and safety tests
 ```

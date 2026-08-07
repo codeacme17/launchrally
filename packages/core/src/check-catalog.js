@@ -142,6 +142,11 @@ const CHECKS = Object.freeze([
       },
     }),
     applicability(project) {
+      if (project.package_manifest?.status !== "valid") {
+        return unresolvedApplicability(
+          "A valid conventional Web manifest is required before root lockfile applicability can be confirmed; other ecosystem dependency locks require specialized support.",
+        );
+      }
       return applicable("Dependency reproducibility applies to conventional Web projects.", [
         factEvidence("project.type", project.type ?? "unknown"),
       ]);
