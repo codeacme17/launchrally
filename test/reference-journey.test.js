@@ -579,13 +579,19 @@ test("each native package contract drives the same offline CLI Reference Journey
         handoff: "completed",
         verify: ["needs_permission", "completed"],
       });
-      assert.deepEqual(result.init, {
-        outcome: "initialized",
-        changed_paths: [
-          ".launchrally/.gitignore",
-          ".launchrally/manifest.yaml",
-        ],
-      });
+      assert.equal(result.init.outcome, "initialized");
+      assert.ok(result.init.changed_paths.includes(".launchrally/.gitignore"));
+      assert.ok(result.init.changed_paths.includes(".launchrally/manifest.yaml"));
+      const reportPaths = result.init.changed_paths.filter((changedPath) =>
+        changedPath.includes("/.launchrally/reports/")
+        || changedPath.startsWith(".launchrally/reports/"));
+      assert.equal(reportPaths.length, 4);
+      assert.deepEqual(
+        reportPaths.map((changedPath) => path.basename(changedPath)).sort(),
+        ["evidence-index.json", "record.json", "record.sha256", "view.md"],
+      );
+      assert.ok(result.init.changed_paths.some((changedPath) =>
+        /^\.launchrally\/evidence\/sha256\/[a-f0-9]{64}\.json$/u.test(changedPath)));
       assert.deepEqual(result.semantics, direct.semantics);
     }
     for (const result of skippedResults) {

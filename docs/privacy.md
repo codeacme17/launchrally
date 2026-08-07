@@ -12,7 +12,7 @@ Public verification and every Provider Adapter are separate permission boundarie
 
 ## Local writes
 
-Audit and Plan are read-only. Optional Init and Provider-intent selection display exact local changes and require separate confirmation. LaunchRally never stages or commits files. Verify creates new immutable result data and never silently updates intent.
+Audit and Plan are read-only. Before Init, Audit is output-only. Optional Init and Provider-intent selection display exact local changes and require separate confirmation. Confirmed Init and completed full Verify keep canonical Reports, derived Views, Evidence Indexes, and structurally allowlisted normalized Evidence only in the explicit current repository's ignored `.launchrally/` local-history boundaries. Persisted Views are rederived from Records, and unreferenced or non-allowlisted Evidence is rejected. LaunchRally never stages or commits files through Git. Verify creates new immutable result data and never silently updates intent; local history is never automatically uploaded or pruned.
 
 ## Telemetry-Free Validation
 

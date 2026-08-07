@@ -522,6 +522,7 @@ async function main() {
   }
 
   if (command === "plan") {
+    const cwd = optionValue("--cwd") ?? process.cwd();
     let reportPackage;
     const reportPath = optionValue("--report");
     if (reportPath) {
@@ -540,6 +541,7 @@ async function main() {
       }
     }
     const result = runPlan(reportPackage, {
+      cwd,
       handoff_requested: args.includes("--handoff"),
     });
     print(result);

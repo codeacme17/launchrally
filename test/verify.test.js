@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -224,6 +225,890 @@ test("full Verify recollects Evidence and creates a distinct immutable comparabl
   assert.deepEqual(source, sourceBefore);
   assert.equal(Object.isFrozen(result.report), true);
   assert.equal(Object.isFrozen(result.evidence_index), true);
+});
+
+test("completed full Verify atomically persists its new immutable Report history", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.status, "completed");
+  const reportDirectory = path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    result.report.report_id,
+  );
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(reportDirectory, "record.json"), "utf8")),
+    result.report,
+  );
+  assert.equal(await readFile(path.join(reportDirectory, "view.md"), "utf8"), result.report_view.content);
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(reportDirectory, "evidence-index.json"), "utf8")),
+    result.evidence_index,
+  );
+  assert.equal(
+    (await readdir(path.join(directory, ".launchrally", "transactions"))).length,
+    0,
+  );
+  assert.deepEqual(
+    JSON.parse(await readFile(
+      path.join(directory, ".launchrally", "cache", "current-report.json"),
+      "utf8",
+    )),
+    {
+      schema_version: "launchrally.dev/local-history-pointer/v1",
+      report_id: result.report.report_id,
+      record_digest: (await readFile(path.join(reportDirectory, "record.sha256"), "utf8")).trim(),
+    },
+  );
+});
+
+test("a partial Verify history write returns recoverable output without visible half-history", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+
+  const result = await runVerify(
+    directory,
+    "0.1.0",
+    {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: { public_verification: "denied" },
+    },
+    {
+      history_file_operations: {
+        write_file: async (target, content, options) => {
+          if (target.endsWith(`${path.sep}view.md`)) {
+            const error = new Error("simulated permission failure");
+            error.code = "EACCES";
+            throw error;
+          }
+          await writeFile(target, content, options);
+        },
+      },
+    },
+  );
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "EACCES");
+  assert.equal(result.recoverable, true);
+  assert.ok(result.generated_report_id);
+  await assert.rejects(
+    readFile(path.join(
+      directory,
+      ".launchrally",
+      "reports",
+      result.generated_report_id,
+      "record.json",
+    )),
+    { code: "ENOENT" },
+  );
+  assert.deepEqual(await readdir(path.join(directory, ".launchrally", "transactions")), []);
+  assert.deepEqual(
+    await readdir(path.join(directory, ".launchrally", "evidence", "sha256")),
+    [],
+  );
+});
+
+test("a cache permission failure cannot turn committed Verify history into false failure", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+
+  const result = await runVerify(
+    directory,
+    "0.1.0",
+    {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: { public_verification: "denied" },
+    },
+    {
+      history_file_operations: {
+        mkdir: async (target, options) => {
+          if (target.endsWith(`${path.sep}.launchrally${path.sep}cache`)) {
+            const error = new Error("cache is read-only");
+            error.code = "EACCES";
+            throw error;
+          }
+          await mkdir(target, options);
+        },
+      },
+    },
+  );
+
+  assert.equal(result.status, "completed");
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(
+      directory,
+      ".launchrally",
+      "reports",
+      result.report.report_id,
+      "record.json",
+    ), "utf8")),
+    result.report,
+  );
+  await assert.rejects(
+    readFile(path.join(directory, ".launchrally", "cache", "current-report.json")),
+    { code: "ENOENT" },
+  );
+});
+
+test("a writer-lock release failure cannot create false failure or block recovery", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  let releaseFailed = false;
+  const first = await runVerify(
+    directory,
+    "0.1.0",
+    {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: { public_verification: "denied" },
+    },
+    {
+      history_file_operations: {
+        remove: async (target, options) => {
+          if (!releaseFailed && target.endsWith(`${path.sep}history-writer.lock`)) {
+            releaseFailed = true;
+            const error = new Error("simulated lock release failure");
+            error.code = "EACCES";
+            throw error;
+          }
+          return rm(target, options);
+        },
+      },
+    },
+  );
+  assert.equal(first.status, "completed");
+  assert.equal(releaseFailed, true);
+  const retryPermission = await runVerify(directory, "0.1.0", {
+    report_package: first,
+    scope: "full",
+  });
+
+  const retry = await runVerify(directory, "0.1.0", {
+    resume_token: retryPermission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(retry.status, "completed");
+});
+
+test("Verify refuses a symlinked lock root before history acquisition", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const outside = await mkdtemp(path.join(os.tmpdir(), "launchrally-history-lock-outside-"));
+  await symlink(outside, path.join(directory, ".launchrally", "locks"));
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.error, "unsafe_history_path");
+  assert.deepEqual(await readdir(outside), []);
+});
+
+test("Verify recovers a validated crashed transaction created under an earlier Report ID", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const transactions = path.join(directory, ".launchrally", "transactions");
+  const crashedId = randomUUID();
+  const crashed = path.join(transactions, `report-${crashedId}`);
+  const orphanContent = "{\"kind\":\"release_intent\",\"field\":\"orphan\",\"value\":\"safe\"}";
+  const orphanDigest = `sha256:${createHash("sha256").update(orphanContent).digest("hex")}`;
+  const orphanRelativePath = `.launchrally/evidence/sha256/${orphanDigest.slice(7)}.json`;
+  const orphanPath = path.join(directory, orphanRelativePath);
+  await mkdir(path.dirname(orphanPath), { recursive: true });
+  await mkdir(path.join(crashed, "bundle"), { recursive: true });
+  const stagedOrphan = path.join(crashed, "evidence", `${orphanDigest.slice(7)}.json`);
+  await mkdir(path.dirname(stagedOrphan), { recursive: true });
+  await writeFile(stagedOrphan, orphanContent);
+  await link(stagedOrphan, orphanPath);
+  await writeFile(path.join(crashed, "transaction.json"), `${JSON.stringify({
+    schema_version: "launchrally.dev/local-history-transaction/v1",
+    transaction_id: crashedId,
+    report_id: "crashed-old-report",
+    record_digest: `sha256:${"1".repeat(64)}`,
+    new_evidence: [{ path: orphanRelativePath, digest: orphanDigest }],
+    state: "staging",
+    owner_pid: 2_147_483_647,
+  })}\n`);
+  let nextId = 0;
+
+  const result = await runVerify(
+    directory,
+    "0.1.0",
+    {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: { public_verification: "denied" },
+    },
+    { id: () => ["recovery-report", "recovery-index"][nextId++] },
+  );
+
+  assert.equal(result.status, "completed");
+  await assert.rejects(readFile(path.join(crashed, "transaction.json")), { code: "ENOENT" });
+  await assert.rejects(readFile(orphanPath), { code: "ENOENT" });
+});
+
+test("Verify fails closed without passing a live transaction for another Report ID", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const transactionId = randomUUID();
+  const transaction = path.join(
+    directory,
+    ".launchrally",
+    "transactions",
+    `report-${transactionId}`,
+  );
+  await mkdir(transaction, { recursive: true });
+  await writeFile(path.join(transaction, "transaction.json"), `${JSON.stringify({
+    schema_version: "launchrally.dev/local-history-transaction/v1",
+    transaction_id: transactionId,
+    report_id: "unrelated-live-report",
+    record_digest: `sha256:${"2".repeat(64)}`,
+    new_evidence: [],
+    state: "staging",
+    owner_pid: process.pid,
+  })}\n`);
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.error, "history_transaction_busy");
+  assert.equal(
+    JSON.parse(await readFile(path.join(transaction, "transaction.json"), "utf8")).owner_pid,
+    process.pid,
+  );
+});
+
+test("Verify preserves transaction Evidence when visible final history is incomplete", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const transactionId = randomUUID();
+  const reportId = "incomplete-visible-report";
+  const transaction = path.join(
+    directory,
+    ".launchrally",
+    "transactions",
+    `report-${transactionId}`,
+  );
+  const content = "{\"kind\":\"release_intent\",\"field\":\"baseline\",\"value\":\"web-application-baseline/v1\"}";
+  const evidenceDigest = `sha256:${createHash("sha256").update(content).digest("hex")}`;
+  const evidencePath = path.join(
+    directory,
+    ".launchrally",
+    "evidence",
+    "sha256",
+    `${evidenceDigest.slice(7)}.json`,
+  );
+  const staged = path.join(transaction, "evidence", `${evidenceDigest.slice(7)}.json`);
+  await mkdir(path.dirname(staged), { recursive: true });
+  await mkdir(path.dirname(evidencePath), { recursive: true });
+  await writeFile(staged, content);
+  await link(staged, evidencePath);
+  await writeFile(path.join(transaction, "transaction.json"), `${JSON.stringify({
+    schema_version: "launchrally.dev/local-history-transaction/v1",
+    transaction_id: transactionId,
+    report_id: reportId,
+    record_digest: `sha256:${"3".repeat(64)}`,
+    new_evidence: [{
+      path: `.launchrally/evidence/sha256/${evidenceDigest.slice(7)}.json`,
+      digest: evidenceDigest,
+    }],
+    state: "staging",
+    owner_pid: 2_147_483_647,
+  })}\n`);
+  const finalReport = path.join(directory, ".launchrally", "reports", reportId);
+  await mkdir(finalReport, { recursive: true });
+  await writeFile(path.join(finalReport, "record.json"), "{}\n");
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.error, "history_collision");
+  assert.equal(await readFile(evidencePath, "utf8"), content);
+  assert.equal(JSON.parse(await readFile(path.join(transaction, "transaction.json"), "utf8")).report_id, reportId);
+});
+
+test("Verify recovery refuses a symlinked historical Report directory before bundle reads", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const transactionId = randomUUID();
+  const reportId = "symlinked-stale-report";
+  const transaction = path.join(
+    directory,
+    ".launchrally",
+    "transactions",
+    `report-${transactionId}`,
+  );
+  await mkdir(transaction, { recursive: true });
+  await writeFile(path.join(transaction, "transaction.json"), `${JSON.stringify({
+    schema_version: "launchrally.dev/local-history-transaction/v1",
+    transaction_id: transactionId,
+    report_id: reportId,
+    record_digest: `sha256:${"7".repeat(64)}`,
+    new_evidence: [],
+    state: "staging",
+    owner_pid: 2_147_483_647,
+  })}\n`);
+  const outside = await mkdtemp(path.join(os.tmpdir(), "launchrally-report-symlink-outside-"));
+  await writeFile(path.join(outside, "marker"), "outside\n");
+  const reports = path.join(directory, ".launchrally", "reports");
+  await mkdir(reports, { recursive: true });
+  await symlink(outside, path.join(reports, reportId));
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.error, "unsafe_history_path");
+  assert.equal(await readFile(path.join(outside, "marker"), "utf8"), "outside\n");
+  assert.equal(
+    JSON.parse(await readFile(path.join(transaction, "transaction.json"), "utf8")).report_id,
+    reportId,
+  );
+});
+
+test("Verify never deletes Evidence referenced by committed history from a forged stale journal", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const firstPermission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const first = await runVerify(directory, "0.1.0", {
+    resume_token: firstPermission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const entry = first.evidence_index.entries[0];
+  const evidencePath = path.join(
+    directory,
+    ".launchrally",
+    "evidence",
+    "sha256",
+    `${entry.digest.slice(7)}.json`,
+  );
+  const content = await readFile(evidencePath, "utf8");
+  const transactionId = randomUUID();
+  const transaction = path.join(
+    directory,
+    ".launchrally",
+    "transactions",
+    `report-${transactionId}`,
+  );
+  const staged = path.join(transaction, "evidence", `${entry.digest.slice(7)}.json`);
+  await mkdir(path.dirname(staged), { recursive: true });
+  await link(evidencePath, staged);
+  await writeFile(path.join(transaction, "transaction.json"), `${JSON.stringify({
+    schema_version: "launchrally.dev/local-history-transaction/v1",
+    transaction_id: transactionId,
+    report_id: "forged-stale-report",
+    record_digest: `sha256:${"4".repeat(64)}`,
+    new_evidence: [{
+      path: `.launchrally/evidence/sha256/${entry.digest.slice(7)}.json`,
+      digest: entry.digest,
+    }],
+    state: "staging",
+    owner_pid: 2_147_483_647,
+  })}\n`);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: first,
+    scope: "full",
+  });
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.error, "invalid_history_transaction");
+  assert.equal(await readFile(evidencePath, "utf8"), content);
+  assert.equal(JSON.parse(await readFile(path.join(transaction, "transaction.json"), "utf8")).report_id, "forged-stale-report");
+});
+
+test("Verify preserves Evidence when any visible Evidence Index is malformed during recovery", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const firstPermission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const first = await runVerify(directory, "0.1.0", {
+    resume_token: firstPermission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const entry = first.evidence_index.entries[0];
+  const evidencePath = path.join(
+    directory,
+    ".launchrally",
+    "evidence",
+    "sha256",
+    `${entry.digest.slice(7)}.json`,
+  );
+  const content = await readFile(evidencePath, "utf8");
+  await writeFile(path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    first.report.report_id,
+    "evidence-index.json",
+  ), "{malformed\n");
+  const transactionId = randomUUID();
+  const transaction = path.join(
+    directory,
+    ".launchrally",
+    "transactions",
+    `report-${transactionId}`,
+  );
+  const staged = path.join(transaction, "evidence", `${entry.digest.slice(7)}.json`);
+  await mkdir(path.dirname(staged), { recursive: true });
+  await link(evidencePath, staged);
+  await writeFile(path.join(transaction, "transaction.json"), `${JSON.stringify({
+    schema_version: "launchrally.dev/local-history-transaction/v1",
+    transaction_id: transactionId,
+    report_id: "malformed-index-recovery",
+    record_digest: `sha256:${"5".repeat(64)}`,
+    new_evidence: [{
+      path: `.launchrally/evidence/sha256/${entry.digest.slice(7)}.json`,
+      digest: entry.digest,
+    }],
+    state: "staging",
+    owner_pid: 2_147_483_647,
+  })}\n`);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: first,
+    scope: "full",
+  });
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.error, "history_collision");
+  assert.equal(await readFile(evidencePath, "utf8"), content);
+  assert.equal(JSON.parse(await readFile(path.join(transaction, "transaction.json"), "utf8")).report_id, "malformed-index-recovery");
+});
+
+test("Verify rejects a well-formed Evidence Index that omits canonical Record references before cleanup", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const firstPermission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const first = await runVerify(directory, "0.1.0", {
+    resume_token: firstPermission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const entry = first.evidence_index.entries[0];
+  const evidencePath = path.join(
+    directory,
+    ".launchrally",
+    "evidence",
+    "sha256",
+    `${entry.digest.slice(7)}.json`,
+  );
+  const content = await readFile(evidencePath, "utf8");
+  await writeFile(path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    first.report.report_id,
+    "evidence-index.json",
+  ), `${JSON.stringify({ ...first.evidence_index, entries: [] })}\n`);
+  const transactionId = randomUUID();
+  const transaction = path.join(
+    directory,
+    ".launchrally",
+    "transactions",
+    `report-${transactionId}`,
+  );
+  const staged = path.join(transaction, "evidence", `${entry.digest.slice(7)}.json`);
+  await mkdir(path.dirname(staged), { recursive: true });
+  await link(evidencePath, staged);
+  await writeFile(path.join(transaction, "transaction.json"), `${JSON.stringify({
+    schema_version: "launchrally.dev/local-history-transaction/v1",
+    transaction_id: transactionId,
+    report_id: "semantic-index-tamper-recovery",
+    record_digest: `sha256:${"6".repeat(64)}`,
+    new_evidence: [{
+      path: `.launchrally/evidence/sha256/${entry.digest.slice(7)}.json`,
+      digest: entry.digest,
+    }],
+    state: "staging",
+    owner_pid: 2_147_483_647,
+  })}\n`);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: first,
+    scope: "full",
+  });
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.error, "history_collision");
+  assert.equal(await readFile(evidencePath, "utf8"), content);
+  assert.equal(
+    JSON.parse(await readFile(path.join(transaction, "transaction.json"), "utf8")).report_id,
+    "semantic-index-tamper-recovery",
+  );
+});
+
+test("Verify fails closed on a transaction prefix lookalike and preserves it", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const lookalike = path.join(
+    directory,
+    ".launchrally",
+    "transactions",
+    `report-${randomUUID()}-extra`,
+  );
+  await mkdir(lookalike, { recursive: true });
+  await writeFile(path.join(lookalike, "transaction.json"), "{}\n");
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "invalid_history_transaction");
+  assert.equal(await readFile(path.join(lookalike, "transaction.json"), "utf8"), "{}\n");
+});
+
+test("synchronized stale-lock contenders cannot remove a replacement history owner", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permissions = await Promise.all([0, 1].map(() => runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  })));
+  const token = randomUUID();
+  const locks = path.join(directory, ".launchrally", "locks");
+  const owners = path.join(locks, "owners");
+  const staleOwner = path.join(owners, `history-writer-${token}.lock`);
+  const canonical = path.join(locks, "history-writer.lock");
+  await mkdir(owners, { recursive: true });
+  await writeFile(staleOwner, `${JSON.stringify({
+    schema_version: "launchrally.dev/owned-lock/v1",
+    name: "history-writer",
+    token,
+    owner_pid: 2_147_483_647,
+  })}\n`);
+  await link(staleOwner, canonical);
+  let removers = 0;
+  let releaseRemovers;
+  const bothRemoving = new Promise((resolve) => { releaseRemovers = resolve; });
+  const remove = async (target, options) => {
+    if (target === staleOwner && options?.force === false) {
+      removers += 1;
+      if (removers === 2) releaseRemovers();
+      await bothRemoving;
+    }
+    return rm(target, options);
+  };
+
+  const results = await Promise.all(permissions.map((permission) => runVerify(
+    directory,
+    "0.1.0",
+    {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: { public_verification: "denied" },
+    },
+    { history_file_operations: { remove } },
+  )));
+
+  assert.ok(results.some(({ status }) => status === "completed"));
+  assert.ok(results.every((result) =>
+    result.status === "completed" || result.error === "history_writer_busy"));
+  for (const result of results.filter(({ status }) => status === "completed")) {
+    assert.deepEqual(
+      JSON.parse(await readFile(path.join(
+        directory,
+        ".launchrally",
+        "reports",
+        result.report.report_id,
+        "record.json",
+      ), "utf8")),
+      result.report,
+    );
+  }
+});
+
+test("Verify detects tampered digest-addressed Evidence and never overwrites it", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const first = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const entry = first.evidence_index.entries.find(({ evidence_kind }) => evidence_kind === "file");
+  const evidencePath = path.join(
+    directory,
+    ".launchrally",
+    "evidence",
+    "sha256",
+    `${entry.digest.slice(7)}.json`,
+  );
+  const tampered = "{\"tampered\":true}\n";
+  await writeFile(evidencePath, tampered);
+  const secondPermission = await runVerify(directory, "0.1.0", {
+    report_package: first,
+    scope: "full",
+  });
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: secondPermission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "history_collision");
+  assert.equal(result.recoverable, true);
+  assert.equal(await readFile(evidencePath, "utf8"), tampered);
+});
+
+test("Verify refuses a colliding Report ID without overwriting the existing Record", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const collisionDirectory = path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    "collision-report",
+  );
+  await mkdir(collisionDirectory, { recursive: true });
+  const collisionPath = path.join(collisionDirectory, "record.json");
+  const existing = "{\"existing\":true}\n";
+  await writeFile(collisionPath, existing);
+  let nextId = 0;
+
+  const result = await runVerify(
+    directory,
+    "0.1.0",
+    {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: { public_verification: "denied" },
+    },
+    { id: () => ["collision-report", "collision-index"][nextId++] },
+  );
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "history_collision");
+  assert.equal(result.recoverable, true);
+  assert.equal(await readFile(collisionPath, "utf8"), existing);
+});
+
+test("Verify treats an unexpected Report bundle child as a collision", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const firstPermission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const secondPermission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const createdAt = "2026-08-06T12:00:00.000Z";
+  const dependencies = () => {
+    let nextId = 0;
+    return {
+      now: () => new Date(createdAt),
+      id: () => ["exact-child-report", "exact-child-index"][nextId++],
+    };
+  };
+  const first = await runVerify(
+    directory,
+    "0.1.0",
+    {
+      resume_token: firstPermission.interaction.resume_token,
+      permission_decisions: { public_verification: "denied" },
+    },
+    dependencies(),
+  );
+  assert.equal(first.status, "completed");
+  const unexpected = path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    first.report.report_id,
+    "unexpected.json",
+  );
+  await writeFile(unexpected, "{}\n");
+
+  const result = await runVerify(
+    directory,
+    "0.1.0",
+    {
+      resume_token: secondPermission.interaction.resume_token,
+      permission_decisions: { public_verification: "denied" },
+    },
+    dependencies(),
+  );
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "history_collision");
+  assert.equal(await readFile(unexpected, "utf8"), "{}\n");
+});
+
+test("Verify reconciles a rename that commits successfully before returning EIO", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  let raced = false;
+
+  const result = await runVerify(
+    directory,
+    "0.1.0",
+    {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: { public_verification: "denied" },
+    },
+    {
+      history_file_operations: {
+        rename: async (sourcePath, targetPath) => {
+          if (!raced && targetPath.includes(`${path.sep}.launchrally${path.sep}reports${path.sep}`)) {
+            raced = true;
+            await rename(sourcePath, targetPath);
+            const error = new Error("rename reported an I/O error after commit");
+            error.code = "EIO";
+            throw error;
+          }
+          await rename(sourcePath, targetPath);
+        },
+      },
+    },
+  );
+
+  assert.equal(raced, true);
+  assert.equal(result.status, "completed");
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(
+      directory,
+      ".launchrally",
+      "reports",
+      result.report.report_id,
+      "record.json",
+    ), "utf8")),
+    result.report,
+  );
+});
+
+test("repeated full Verify retains every historical Report and Evidence object", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const firstPermission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const first = await runVerify(directory, "0.1.0", {
+    resume_token: firstPermission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const secondPermission = await runVerify(directory, "0.1.0", {
+    report_package: first,
+    scope: "full",
+  });
+  const second = await runVerify(directory, "0.1.0", {
+    resume_token: secondPermission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(second.status, "completed");
+  const reports = await readdir(path.join(directory, ".launchrally", "reports"));
+  assert.ok(reports.includes(first.report.report_id));
+  assert.ok(reports.includes(second.report.report_id));
+  const retainedEvidence = await readdir(
+    path.join(directory, ".launchrally", "evidence", "sha256"),
+  );
+  const historicalDigests = new Set([
+    ...first.evidence_index.entries.map(({ digest }) => digest.slice(7)),
+    ...second.evidence_index.entries.map(({ digest }) => digest.slice(7)),
+  ]);
+  assert.ok([...historicalDigests].every((digest) => retainedEvidence.includes(`${digest}.json`)));
 });
 
 test("targeted Verify limits collection and cannot represent the whole release as ready", async () => {

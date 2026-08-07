@@ -33,8 +33,8 @@ available.
 | P0-ASSESS-02 | No-Go requires a gating failure supported by qualifying Machine Evidence | Adversarial policy fixtures | #36 | Complete |
 | P0-CURRENT-01 | Currentness is reevaluated from clock, Manifest, repository, catalog, support, and applicability evidence | Clock-forward and drift tests | #36 | Complete |
 | P0-CURRENT-02 | Init, Plan, and Providers require current Reports; Verify can refresh valid history | Operation contract tests | #36 | Complete |
-| P0-HISTORY-01 | Initialized full Audit and Verify persist atomic immutable local history | Persistence and recovery tests | #37 | Open |
-| P0-HISTORY-02 | Historical Records remain immutable and Report/Evidence history is never automatically pruned | Integrity and retention tests | #37 | Open |
+| P0-HISTORY-01 | Initialized full Audit and Verify persist atomic immutable local history | Persistence and recovery tests | #37 | Complete |
+| P0-HISTORY-02 | Historical Records remain immutable and Report/Evidence history is never automatically pruned | Integrity and retention tests | #37 | Complete |
 | P0-TOOLCHAIN-01 | Every ecosystem uses an isolated exact LaunchRally npm toolchain without modifying application dependencies | Cross-ecosystem Init tests | #38 | Open |
 | P0-PERMISSION-01 | Registry fallback is disclosed and separately approved; lifecycle scripts never execute | Network-denial and permission tests | #38 | Open |
 | P0-COVERAGE-01 | Direct full journey passes for all five representative repositories | Coverage Acceptance Matrix | #38 | Open |
