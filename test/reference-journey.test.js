@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+
+import { exactToolchainLock, writeExactToolchain } from "./helpers/exact-toolchain.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(root, "packages", "cli", "bin", "rally.js");
@@ -90,6 +92,14 @@ const directJourney = {
     [
       "init_preview",
       ["init", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      ["init", ["needs_confirmation", "needs_permission"]],
+    ],
+    [
+      "init_registry_permission",
+      [
+        "init", "--json", "--cwd", "{repository_root}", "--resume", "{init_registry_resume}",
+        "--permissions", "{init_registry_permissions_json}",
+      ],
       ["init", "needs_confirmation"],
     ],
     [
@@ -152,7 +162,9 @@ const directJourney = {
     ],
   ].map(([id, args, [operation, status]]) => ({
     id,
-    ...(id.startsWith("init_")
+    ...(id === "init_registry_permission"
+      ? { guard: { kind: "when_registry_permission_requested", intent: "resolve_toolchain" } }
+      : id.startsWith("init_")
       ? { guard: { kind: "optional", intent: "initialize_project" } }
       : ["plan_refresh", "refresh_permission", "refresh_completed"].includes(id)
         ? { guard: { kind: "when_source_non_current", intent: "refresh_report" } }
@@ -173,21 +185,40 @@ async function json(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
 }
 
-async function createFixture(host) {
+async function createRegistryNpmStub(version = "0.1.0") {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-stub-"));
+  const executable = path.join(directory, "npm");
+  const lockfile = JSON.stringify(exactToolchainLock()).replaceAll("0.1.0", version);
+  await writeFile(executable, [
+    "#!/usr/bin/env node",
+    'const fs = require("node:fs");',
+    'const path = require("node:path");',
+    'if (process.argv.includes("--offline")) {',
+    '  process.stderr.write("ENOTCACHED: package is not in the offline cache\\n");',
+    "  process.exit(1);",
+    "}",
+    `fs.writeFileSync(path.join(process.cwd(), "package-lock.json"), ${JSON.stringify(`${lockfile}\n`)});`,
+  ].join("\n"));
+  await chmod(executable, 0o755);
+  return directory;
+}
+
+async function createFixture(host, sourceFixture = null, { preseedToolchain = true } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), `launchrally-${host}-journey-`));
-  await writeFile(path.join(directory, "package.json"), `${JSON.stringify({
-    name: "reference-journey-web",
-    scripts: { build: "node build.js" },
-    devDependencies: { "@launchrally/cli": "0.1.0" },
-  }, null, 2)}\n`);
-  await writeFile(path.join(directory, "package-lock.json"), `${JSON.stringify({
-    name: "reference-journey-web",
-    lockfileVersion: 3,
-    packages: {
-      "": { devDependencies: { "@launchrally/cli": "0.1.0" } },
-      "node_modules/@launchrally/cli": { version: "0.1.0", dev: true },
-    },
-  }, null, 2)}\n`);
+  if (sourceFixture) {
+    await cp(sourceFixture, directory, { recursive: true });
+  } else {
+    await writeFile(path.join(directory, "package.json"), `${JSON.stringify({
+      name: "reference-journey-web",
+      scripts: { build: "node build.js" },
+    }, null, 2)}\n`);
+    await writeFile(path.join(directory, "package-lock.json"), `${JSON.stringify({
+      name: "reference-journey-web",
+      lockfileVersion: 3,
+      packages: { "": {} },
+    }, null, 2)}\n`);
+  }
+  if (preseedToolchain) await writeExactToolchain(directory);
   return directory;
 }
 
@@ -210,12 +241,13 @@ async function createNetworkGuard() {
   return { directory, guard };
 }
 
-function normalized(value) {
-  if (Array.isArray(value)) return value.map(normalized);
+function normalized(value, parentKey = null) {
+  if (Array.isArray(value)) return value.map((child) => normalized(child, parentKey));
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value).flatMap(([key, child]) => {
     if (volatileKeys.has(key)) return [];
-    return [[key, normalized(child)]];
+    if (parentKey === "project" && key === "name") return [[key, "<project>"]];
+    return [[key, normalized(child, key)]];
   }));
 }
 
@@ -274,9 +306,18 @@ async function executeReferenceJourney(
     verifyAfterRemediation = true,
     publicPermission = "denied",
     productionTarget = "https://example.com",
+    fixturePath = null,
+    providerRoles = [],
+    exerciseRegistryPermission = false,
   } = {},
 ) {
-  const directory = await createFixture(label);
+  const directory = await createFixture(label, fixturePath, {
+    preseedToolchain: !exerciseRegistryPermission,
+  });
+  const registryStub = exerciseRegistryPermission ? await createRegistryNpmStub() : null;
+  const journeyEnv = registryStub
+    ? { ...env, PATH: `${registryStub}${path.delimiter}${env.PATH ?? ""}` }
+    : env;
   const savedDirectory = await mkdtemp(path.join(os.tmpdir(), `launchrally-${label}-reports-`));
   const values = {
     repository_root: directory,
@@ -284,10 +325,16 @@ async function executeReferenceJourney(
       intended_environment: "production",
       production_targets: [productionTarget],
       core_journeys: [{ method: "GET", path: "/", purpose: "homepage loads" }],
-      provider_roles: [],
+      provider_roles: providerRoles,
       support_layers: [],
     }),
-    permissions_json: JSON.stringify({ public_verification: publicPermission }),
+    permissions_json: JSON.stringify({
+      public_verification: publicPermission,
+      ...Object.fromEntries(providerRoles.map(({ provider }) => [
+        `provider_read:${provider}`,
+        publicPermission,
+      ])),
+    }),
   };
   const operations = [];
   const invoke = async (id) => {
@@ -295,11 +342,15 @@ async function executeReferenceJourney(
     const result = JSON.parse((await execFileAsync(
       process.execPath,
       [cli, ...invocation.arguments],
-      { cwd: root, env },
+      { cwd: root, env: journeyEnv },
     )).stdout);
     assert.equal(result.contract, journey.cli.contract, `${id} contract`);
     assert.equal(result.operation, invocation.expect.operation, `${id} operation`);
-    assert.equal(result.status, invocation.expect.status, `${id} status`);
+    if (Array.isArray(invocation.expect.status)) {
+      assert.ok(invocation.expect.status.includes(result.status), `${id} status`);
+    } else {
+      assert.equal(result.status, invocation.expect.status, `${id} status`);
+    }
     if (invocation.expect.schema_version) {
       assert.equal(result.schema_version, invocation.expect.schema_version, `${id} schema`);
     }
@@ -337,10 +388,25 @@ async function executeReferenceJourney(
     requireGuard("init_completed", { kind: "optional", intent: "initialize_project" });
     let initPreview = null;
     let init = null;
+    const initStates = [];
     if (initialize) {
       initPreview = await invoke("init_preview");
+      initStates.push(initPreview.status);
+      if (initPreview.status === "needs_permission") {
+        requireGuard("init_registry_permission", {
+          kind: "when_registry_permission_requested",
+          intent: "resolve_toolchain",
+        });
+        values.init_registry_resume = initPreview.interaction.resume_token;
+        values.init_registry_permissions_json = JSON.stringify({
+          npm_registry_read: "approved",
+        });
+        initPreview = await invoke("init_registry_permission");
+        initStates.push(initPreview.status);
+      }
       values.init_resume = initPreview.interaction.resume_token;
       init = await invoke("init_completed");
+      initStates.push(init.status);
       requireGuard("plan_refresh", {
         kind: "when_source_non_current",
         intent: "refresh_report",
@@ -359,6 +425,13 @@ async function executeReferenceJourney(
       intent: "local_remediation",
     });
     const handoff = remediationRequested ? await invoke("handoff") : null;
+    if (handoff) {
+      await writeFile(
+        path.join(directory, ".env.example"),
+        "LAUNCHRALLY_REMEDIATION_CHECK=1\n",
+        { flag: "a" },
+      );
+    }
     let verifyPermission = null;
     let verify = null;
     if (verifyAfterRemediation) {
@@ -371,7 +444,7 @@ async function executeReferenceJourney(
       operations,
       states: {
         audit: [auditInput.status, auditConfirmation.status, auditPermission.status, audit.status],
-        init: init ? [initPreview.status, init.status] : null,
+        init: init ? initStates : null,
         plan: plan.status,
         handoff: handoff?.status ?? null,
         verify: verify ? [verifyPermission.status, verify.status] : null,
@@ -383,6 +456,9 @@ async function executeReferenceJourney(
             ({ path: changedPath }) => changedPath,
           ),
         }
+        : null,
+      remediation_verified: verify
+        ? verify.comparison?.source_report_id !== verify.comparison?.current_report_id
         : null,
       semantics: normalized({
         audit: { report: audit.report, evidence_index: audit.evidence_index },
@@ -401,6 +477,7 @@ async function executeReferenceJourney(
   } finally {
     await rm(directory, { recursive: true, force: true });
     await rm(savedDirectory, { recursive: true, force: true });
+    if (registryStub) await rm(registryStub, { recursive: true, force: true });
   }
 }
 
@@ -439,6 +516,7 @@ test("native adapters ship the canonical Reference Journey for the exact CLI ver
       "audit_permission",
       "audit_completed",
       "init_preview",
+      "init_registry_permission",
       "init_completed",
       "plan_refresh",
       "refresh_permission",
@@ -459,6 +537,10 @@ test("native adapters ship the canonical Reference Journey for the exact CLI ver
   assert.deepEqual(invocationById.get("init_completed").guard, {
     kind: "optional",
     intent: "initialize_project",
+  });
+  assert.deepEqual(invocationById.get("init_registry_permission").guard, {
+    kind: "when_registry_permission_requested",
+    intent: "resolve_toolchain",
   });
   assert.deepEqual(invocationById.get("handoff").guard, {
     kind: "requires_explicit_user_request",
@@ -612,6 +694,60 @@ test("each native package contract drives the same offline CLI Reference Journey
   }
 });
 
+test("the direct CLI completes the full Reference Journey for every coverage representative", async () => {
+  const network = await createNetworkGuard();
+  const env = {
+    ...process.env,
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require=${network.guard}`.trim(),
+  };
+  const matrix = await json("fixtures/coverage/matrix.json");
+
+  try {
+    for (const representative of matrix.fixtures) {
+      const result = await executeReferenceJourney(
+        `direct-${representative.id}`,
+        directJourney,
+        env,
+        {
+          fixturePath: path.join(root, "fixtures", "coverage", representative.path),
+          productionTarget: representative.production_target,
+          providerRoles: representative.provider_roles ?? [],
+          publicPermission: "denied",
+        },
+      );
+
+      assert.deepEqual(result.states, {
+        audit: ["needs_input", "needs_confirmation", "needs_permission", "completed"],
+        init: ["needs_confirmation", "completed"],
+        plan: "completed",
+        handoff: "completed",
+        verify: ["needs_permission", "completed"],
+      }, representative.id);
+      assert.equal(result.init.outcome, "initialized", representative.id);
+      assert.equal(
+        result.init.changed_paths.some((changedPath) => [
+          "package.json",
+          "package-lock.json",
+          "pnpm-lock.yaml",
+          "yarn.lock",
+          "bun.lock",
+          "bun.lockb",
+        ].includes(changedPath)),
+        false,
+        representative.id,
+      );
+      assert.notEqual(
+        result.semantics.verify.assessment,
+        "launch_ready",
+        representative.id,
+      );
+      assert.equal(result.remediation_verified, true, representative.id);
+    }
+  } finally {
+    await rm(network.directory, { recursive: true, force: true });
+  }
+});
+
 test("direct and Skill journeys preserve semantics with complete public-read permission", async () => {
   const requests = [];
   const server = createServer((request, response) => {
@@ -647,5 +783,72 @@ test("direct and Skill journeys preserve semantics with complete public-read per
     assert.ok(requests.length > 0);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("native Skills complete JavaScript and non-JavaScript journeys with complete and partial permissions", async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    requests.push({ method: request.method, url: request.url });
+    response.writeHead(request.url === "/health" ? 204 : 200);
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const target = `http://127.0.0.1:${server.address().port}/`;
+  const network = await createNetworkGuard();
+  const deniedEnv = {
+    ...process.env,
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require=${network.guard}`.trim(),
+  };
+  const representatives = ["typescript-astro", "python-fastapi"];
+
+  try {
+    for (const representative of representatives) {
+      for (const permission of ["approved", "denied"]) {
+        const options = {
+          fixturePath: path.join(root, "fixtures", "coverage", representative),
+          productionTarget: permission === "approved" ? target : "https://denied.example.com",
+          publicPermission: permission,
+          exerciseRegistryPermission: true,
+        };
+        const env = permission === "approved" ? process.env : deniedEnv;
+        const direct = await executeReferenceJourney(
+          `direct-${representative}-${permission}`,
+          directJourney,
+          env,
+          options,
+        );
+
+        for (const adapter of adapters) {
+          const adapterJourney = await loadAdapterJourney(adapter);
+          const result = await executeReferenceJourney(
+            `${adapter.host}-${representative}-${permission}`,
+            adapterJourney,
+            env,
+            options,
+          );
+          assert.deepEqual(
+            result.semantics,
+            direct.semantics,
+            `${adapter.host}:${representative}:${permission}`,
+          );
+          assert.equal(
+            result.semantics.audit.report.scope.public_verification.decision,
+            permission,
+          );
+          assert.notEqual(result.semantics.verify.assessment, "launch_ready");
+          assert.deepEqual(result.states.init, [
+            "needs_permission",
+            "needs_confirmation",
+            "completed",
+          ]);
+          assert.equal(result.remediation_verified, true);
+        }
+      }
+    }
+    assert.ok(requests.length > 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    await rm(network.directory, { recursive: true, force: true });
   }
 });

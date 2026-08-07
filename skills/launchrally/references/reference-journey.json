@@ -49,6 +49,16 @@
       "arguments": ["init", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
       "expect": {
         "operation": "init",
+        "status": ["needs_confirmation", "needs_permission"],
+        "interaction_schema": "launchrally.dev/init-interaction/v1"
+      }
+    },
+    {
+      "id": "init_registry_permission",
+      "guard": { "kind": "when_registry_permission_requested", "intent": "resolve_toolchain" },
+      "arguments": ["init", "--json", "--cwd", "{repository_root}", "--resume", "{init_registry_resume}", "--permissions", "{init_registry_permissions_json}"],
+      "expect": {
+        "operation": "init",
         "status": "needs_confirmation",
         "interaction_schema": "launchrally.dev/init-interaction/v1"
       }

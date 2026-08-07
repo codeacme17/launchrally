@@ -17,6 +17,7 @@ import {
   runAudit,
   runInit,
 } from "../packages/core/src/index.js";
+import { prepareExactToolchainChanges as prepareNpmChanges } from "./helpers/exact-toolchain.js";
 
 const ANSWERS = Object.freeze({
   intended_environment: "production",
@@ -57,18 +58,6 @@ async function completeAudit(directory, finalOptions = {}) {
     permission_decisions: { public_verification: "denied" },
     ...finalOptions,
   });
-}
-
-async function prepareNpmChanges({ package_json: packageJsonText, lockfile, dependency, version }) {
-  const packageJson = JSON.parse(packageJsonText);
-  packageJson.devDependencies = { [dependency]: version };
-  const packageLock = JSON.parse(lockfile.content);
-  packageLock.packages[""].devDependencies = { [dependency]: version };
-  packageLock.packages[`node_modules/${dependency}`] = { version, dev: true };
-  return [
-    { path: "package.json", content: `${JSON.stringify(packageJson, null, 2)}\n` },
-    { path: lockfile.path, content: `${JSON.stringify(packageLock, null, 2)}\n` },
-  ];
 }
 
 test("init previews the canonical deterministic Manifest v2 YAML", async () => {

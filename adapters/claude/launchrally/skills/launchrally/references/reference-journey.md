@@ -20,7 +20,7 @@ Explain the CLI's Checks, Evidence, policy, Verification Gaps, and final Assessm
 
 ## 2. Optional Init
 
-Offer Init only after a complete Audit and only if the user wants project adoption. Run `rally init --json --cwd <repository-root> --report <audit-json>`, present every exact local change in `preview.changes`, and apply it only after the user explicitly confirms the returned interaction. Declining Init leaves the repository unchanged and does not block Plan.
+Offer Init only after a complete Audit and only if the user wants project adoption. Run `rally init --json --cwd <repository-root> --report <audit-json>`. Init uses the committed `.launchrally/toolchain` npm package and lockfile for every ecosystem and never changes application dependencies. It attempts offline resolution first. If the result is `needs_permission`, present the exact `npm_registry_read` package, version, `https://registry.npmjs.org` source, and lifecycle-script-disabled command, then resume with the user's explicit decision. Registry approval does not approve file changes. Present every exact local change in `preview.changes`, and apply it only after the user explicitly confirms the returned interaction. Declining Init or denying registry access leaves the repository unchanged and does not block Plan.
 
 Init is the only LaunchRally-controlled mutation in this journey. It is local, bounded to its preview, and grants no deployment, production, or Provider write authority. Its confirmed dependency and Manifest changes make the immutable Audit Report historical; follow the typed `needs_refresh` response with full Verify and use that new current Report for Plan.
 

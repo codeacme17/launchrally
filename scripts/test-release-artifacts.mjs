@@ -6,6 +6,8 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { writeExactToolchain } from "../test/helpers/exact-toolchain.js";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
 
@@ -105,12 +107,155 @@ async function smokeCli(temporaryRoot, cacheDirectory, tarballs, version) {
     throw new Error(`cli_artifact_smoke_failed: first Audit returned ${audit.status}`);
   }
 
+  const matrix = await json(path.join(root, "fixtures", "coverage", "matrix.json"));
+  const networkGuard = path.join(temporaryRoot, "deny-network.cjs");
+  await cp(path.join(root, "fixtures", "coverage", "deny-network.cjs"), networkGuard);
+  const coverageEnvironment = {
+    ...process.env,
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require=${networkGuard}`.trim(),
+  };
+  const coverageJourneys = [];
+  for (const representative of matrix.fixtures) {
+    const repository = path.join(temporaryRoot, "coverage", representative.id);
+    await cp(
+      path.join(root, "fixtures", "coverage", representative.path),
+      repository,
+      { recursive: true },
+    );
+    const invoke = async (arguments_) => JSON.parse((await run(
+      rally,
+      arguments_,
+      { cwd: cleanProject, env: coverageEnvironment },
+    )).stdout);
+    await writeExactToolchain(repository, version);
+    const input = await invoke(["audit", "--json", "--cwd", repository]);
+    const confirmation = await invoke([
+      "audit", "--json", "--cwd", repository,
+      "--resume", input.interaction.resume_token,
+      "--answers", JSON.stringify({
+        intended_environment: "production",
+        production_targets: [representative.production_target],
+        core_journeys: [{ method: "GET", path: "/", purpose: "coverage smoke" }],
+        provider_roles: representative.provider_roles ?? [],
+        support_layers: [],
+      }),
+    ]);
+    const permission = await invoke([
+      "audit", "--json", "--cwd", repository,
+      "--resume", confirmation.interaction.resume_token,
+      "--confirm", "confirm",
+    ]);
+    const completed = await invoke([
+      "audit", "--json", "--cwd", repository,
+      "--resume", permission.interaction.resume_token,
+      "--permissions", JSON.stringify({
+        public_verification: "denied",
+        ...Object.fromEntries((representative.provider_roles ?? []).map(({ provider }) => [
+          `provider_read:${provider}`,
+          "denied",
+        ])),
+      }),
+    ]);
+    if (
+      completed.status !== "completed"
+      || completed.operation !== "audit"
+      || !completed.report
+      || completed.report.assessment === "launch_ready"
+    ) {
+      throw new Error(`coverage_artifact_journey_failed: ${representative.id}`);
+    }
+    const reports = path.join(temporaryRoot, "coverage-reports");
+    await mkdir(reports, { recursive: true });
+    const auditPath = path.join(reports, `${representative.id}-audit.json`);
+    await writeFile(auditPath, JSON.stringify(completed));
+    const initPreview = await invoke([
+      "init", "--json", "--cwd", repository, "--report", auditPath,
+    ]);
+    if (initPreview.status !== "needs_confirmation") {
+      throw new Error(`coverage_artifact_init_preview_failed: ${representative.id}`);
+    }
+    const initialized = await invoke([
+      "init", "--json", "--cwd", repository,
+      "--resume", initPreview.interaction.resume_token,
+      "--confirm", "confirm",
+    ]);
+    if (initialized.status !== "completed") {
+      throw new Error(`coverage_artifact_init_failed: ${representative.id}`);
+    }
+    const stalePlan = await invoke([
+      "plan", "--json", "--cwd", repository, "--report", auditPath,
+    ]);
+    if (stalePlan.status !== "needs_refresh") {
+      throw new Error(`coverage_artifact_stale_plan_failed: ${representative.id}`);
+    }
+    const refreshPermission = await invoke([
+      "verify", "--json", "--cwd", repository, "--report", auditPath, "--scope", "full",
+    ]);
+    const refreshed = await invoke([
+      "verify", "--json", "--cwd", repository,
+      "--resume", refreshPermission.interaction.resume_token,
+      "--permissions", JSON.stringify({
+        public_verification: "denied",
+        ...Object.fromEntries((representative.provider_roles ?? []).map(({ provider }) => [
+          `provider_read:${provider}`,
+          "denied",
+        ])),
+      }),
+    ]);
+    if (refreshed.status !== "completed") {
+      throw new Error(`coverage_artifact_refresh_failed: ${representative.id}`);
+    }
+    const refreshedPath = path.join(reports, `${representative.id}-refreshed.json`);
+    await writeFile(refreshedPath, JSON.stringify(refreshed));
+    const plan = await invoke([
+      "plan", "--json", "--cwd", repository, "--report", refreshedPath,
+    ]);
+    const handoff = await invoke([
+      "plan", "--json", "--cwd", repository, "--report", refreshedPath, "--handoff",
+    ]);
+    if (plan.status !== "completed" || handoff.status !== "completed") {
+      throw new Error(`coverage_artifact_plan_failed: ${representative.id}`);
+    }
+    await writeFile(
+      path.join(repository, ".env.example"),
+      "LAUNCHRALLY_REMEDIATION_CHECK=1\n",
+      { flag: "a" },
+    );
+    const verifyPermission = await invoke([
+      "verify", "--json", "--cwd", repository,
+      "--report", refreshedPath,
+      "--scope", "full",
+    ]);
+    const verified = await invoke([
+      "verify", "--json", "--cwd", repository,
+      "--resume", verifyPermission.interaction.resume_token,
+      "--permissions", JSON.stringify({
+        public_verification: "denied",
+        ...Object.fromEntries((representative.provider_roles ?? []).map(({ provider }) => [
+          `provider_read:${provider}`,
+          "denied",
+        ])),
+      }),
+    ]);
+    if (
+      verified.status !== "completed"
+      || verified.comparison?.source_report_id === verified.comparison?.current_report_id
+      || !verified.comparison?.invalidated_evidence?.some(
+        ({ target }) => target === "repository:.env.example",
+      )
+    ) {
+      throw new Error(`coverage_artifact_verification_failed: ${representative.id}`);
+    }
+    coverageJourneys.push(representative.id);
+  }
+
   return {
     cleanProject,
     result: {
       operation: versionResult.operation,
       cli_version: versionResult.cli_version,
       audit_status: audit.status,
+      coverage_journeys: coverageJourneys.sort(),
     },
   };
 }

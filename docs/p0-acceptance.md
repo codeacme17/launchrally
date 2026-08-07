@@ -35,10 +35,10 @@ available.
 | P0-CURRENT-02 | Init, Plan, and Providers require current Reports; Verify can refresh valid history | Operation contract tests | #36 | Complete |
 | P0-HISTORY-01 | Initialized full Audit and Verify persist atomic immutable local history | Persistence and recovery tests | #37 | Complete |
 | P0-HISTORY-02 | Historical Records remain immutable and Report/Evidence history is never automatically pruned | Integrity and retention tests | #37 | Complete |
-| P0-TOOLCHAIN-01 | Every ecosystem uses an isolated exact LaunchRally npm toolchain without modifying application dependencies | Cross-ecosystem Init tests | #38 | Open |
-| P0-PERMISSION-01 | Registry fallback is disclosed and separately approved; lifecycle scripts never execute | Network-denial and permission tests | #38 | Open |
-| P0-COVERAGE-01 | Direct full journey passes for all five representative repositories | Coverage Acceptance Matrix | #38 | Open |
-| P0-COVERAGE-02 | Skill full journey passes for JavaScript and non-JavaScript representatives under complete and partial permissions | Skill Reference Journey matrix | #38 | Open |
+| P0-TOOLCHAIN-01 | Every ecosystem uses an isolated exact LaunchRally npm toolchain without modifying application dependencies | Cross-ecosystem Init tests | #38 | Complete |
+| P0-PERMISSION-01 | Registry fallback is disclosed and separately approved; lifecycle scripts never execute | Network-denial and permission tests | #38 | Complete |
+| P0-COVERAGE-01 | Direct full journey passes for all five representative repositories | Coverage Acceptance Matrix | #38 | Complete |
+| P0-COVERAGE-02 | Skill full journey passes for JavaScript and non-JavaScript representatives under complete and partial permissions | Skill Reference Journey matrix | #38 | Complete |
 | P0-QUALITY-01 | PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates | CI validation | #39 | Open |
 | P0-PLATFORM-01 | Contract suites cover Node 20, 22, and 24; clean journeys cover Linux, macOS, and Windows on Node 22 | GitHub Actions matrix | #39 | Open |
 | P0-RELEASE-01 | Five exact public packages publish with provenance under the Experimental channel | Registry and provenance verification | #40 | Open |

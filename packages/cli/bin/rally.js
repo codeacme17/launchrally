@@ -373,9 +373,23 @@ function print(value) {
     return;
   }
 
-  if (value.operation === "init" && value.status === "needs_confirmation") {
-    process.stdout.write(`${renderHumanInit(value)}\n`);
-    return;
+  if (value.operation === "init") {
+    if (value.status === "needs_confirmation") {
+      process.stdout.write(`${renderHumanInit(value)}\n`);
+      return;
+    }
+    if (value.status === "needs_permission") {
+      const permission = value.request.permissions[0];
+      process.stdout.write([
+        "LaunchRally Init requires an npm registry read after the offline cache attempt failed.",
+        `Source: ${permission.source}`,
+        `Package: ${permission.package}@${permission.version}`,
+        `Command: ${permission.command}`,
+        "Lifecycle scripts remain disabled. Choose approved or denied for npm_registry_read.",
+        `Resume token: ${value.interaction.resume_token}`,
+      ].join("\n") + "\n");
+      return;
+    }
   }
 
   if (value.operation === "plan" && value.status === "completed") {
@@ -495,6 +509,17 @@ async function main() {
 
   if (command === "init") {
     const cwd = optionValue("--cwd") ?? process.cwd();
+    const permissionDecisions = jsonOption("--permissions");
+    if (permissionDecisions.error) {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "init",
+        error: "invalid_option_json",
+        message: "Init permission decisions must use valid JSON.",
+      });
+      return 2;
+    }
     let reportPackage;
     const reportPath = optionValue("--report");
     if (reportPath) {
@@ -515,6 +540,7 @@ async function main() {
     const result = await runInit(cwd, VERSION, {
       resume_token: optionValue("--resume"),
       confirmation: optionValue("--confirm"),
+      permission_decisions: permissionDecisions.value,
       report_package: reportPackage,
     });
     print(result);

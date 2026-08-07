@@ -10,7 +10,7 @@ Run the exact public CLI version without a global install:
 npm exec --package=@launchrally/cli@0.1.0 -- rally audit --json --cwd .
 ```
 
-If npm needs to download the package, review its normal confirmation. Do not bypass that prompt. The first Audit does not modify the project. Optional project adoption happens later through the separately confirmed `rally init` preview, which records `@launchrally/cli` as an exact devDependency and updates the detected committed lockfile.
+If npm needs to download the package, review its normal confirmation. Do not bypass that prompt. The first Audit does not modify the project. Optional project adoption happens later through `rally init`, which pins `@launchrally/cli` in the committed `.launchrally/toolchain/package.json` and npm lockfile without changing application dependencies. Init tries npm's offline cache first. A cache miss produces a typed permission request that discloses the exact package, version, registry source, and lifecycle-script-disabled command before any registry read; the file preview and confirmation follow only after resolution succeeds.
 
 ## Codex Plugin
 

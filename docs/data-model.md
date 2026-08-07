@@ -8,6 +8,10 @@ LaunchRally keeps declared intent, conclusions, and supporting observations sepa
 
 A valid legacy `.launchrally/launch-manifest.json` Manifest v1 is readable only for migration. Init previews the canonical YAML creation and legacy JSON deletion together, then applies neither without confirmation. Invalid, ambiguous, symlinked, or unsupported inputs fail closed.
 
+## Isolated toolchain
+
+`.launchrally/toolchain/package.json` and `package-lock.json` are the committed execution dependency boundary for every ecosystem. They contain the exact `@launchrally/cli` version and are previewed and recovered with the other Init-owned files. LaunchRally never adds itself to an application manifest or application lockfile. Toolchain resolution tries npm's offline cache first; only an explicit `npm_registry_read` decision permits the disclosed read from `https://registry.npmjs.org`, and lifecycle scripts remain disabled.
+
 ## Report Record
 
 Every completed full Audit or Verify produces a new immutable, time-stamped Report v2 Record bound to Check Catalog v2 and its eight Launch Risk Domains. The Record captures confirmed scope, permission decisions, execution disclosure, Check results, Verification Gaps, policy output, provenance references, limitations, and any current whole-release Assessment. A Markdown Report View is derived only from that Record; it is not a second source of truth. Historical Report v1 packages remain readable but are never emitted by a new run.
