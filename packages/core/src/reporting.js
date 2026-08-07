@@ -8,6 +8,7 @@ import {
 } from "@launchrally/contracts";
 
 import { LOCAL_SAFE_SCAN_POLICY } from "./local-safe-scan.js";
+import { MANIFEST_RELATIVE_PATH } from "./manifest.js";
 import { evaluateLaunchPolicy } from "./policy-engine.js";
 
 export const REPORT_GENERATOR_VERSION = "report-generator/v1";
@@ -35,7 +36,7 @@ export function createVerificationContext({ repository_digests = {}, audit_brief
   return {
     digest_version: "verification-scope-digests/v1",
     repository_digests: repositoryDigests,
-    manifest_digest: repository_digests[".launchrally/launch-manifest.json"] ?? null,
+    manifest_digest: repository_digests[MANIFEST_RELATIVE_PATH] ?? null,
     target_digest: digest({
       intended_environment: audit_brief.intended_environment.value,
       production_targets: audit_brief.production_targets.values,

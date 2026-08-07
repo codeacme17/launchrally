@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/provider-guidance/v2",
+  "title": "LaunchRally Provider Guidance v2",
+  "type": "object",
+  "required": ["contract", "schema_version", "status", "operation", "source_report_id"],
+  "properties": {
+    "contract": { "const": "launchrally.dev/cli/v2" },
+    "schema_version": { "const": "launchrally.dev/provider-guidance/v2" },
+    "status": { "enum": ["needs_input", "needs_confirmation", "completed"] },
+    "operation": { "const": "providers" },
+    "source_report_id": { "type": "string", "minLength": 1 },
+    "outcome": { "enum": ["manifest_intent_recorded", "selection_declined", "cancelled", "no_confirmed_constraint_mismatch", "no_credible_options"] },
+    "trigger": { "$ref": "#/$defs/trigger" },
+    "constraints": { "$ref": "#/$defs/constraints" },
+    "information_boundary": { "$ref": "#/$defs/informationBoundary" },
+    "shortlist": { "$ref": "#/$defs/shortlist" },
+    "guidance": { "$ref": "#/$defs/guidance" },
+    "selection": { "$ref": "#/$defs/selection" },
+    "classification": { "$ref": "#/$defs/classification" },
+    "preview": { "$ref": "#/$defs/preview" },
+    "effects": { "$ref": "#/$defs/effects" },
+    "manifest_intent_changed": { "type": "boolean" },
+    "request": { "$ref": "#/$defs/request" },
+    "interaction": { "$ref": "#/$defs/interaction" },
+    "next": { "$ref": "#/$defs/next" },
+    "message": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false,
+  "oneOf": [
+    { "$ref": "#/$defs/constraintInputResult" },
+    { "$ref": "#/$defs/selectionInputResult" },
+    { "$ref": "#/$defs/constraintConfirmationResult" },
+    { "$ref": "#/$defs/selectionConfirmationResult" },
+    { "$ref": "#/$defs/manifestRecordedResult" },
+    { "$ref": "#/$defs/selectionDeclinedResult" },
+    { "$ref": "#/$defs/cancelledResult" },
+    { "$ref": "#/$defs/noMismatchResult" },
+    { "$ref": "#/$defs/noOptionsResult" }
+  ],
+  "$defs": {
+    "constraintInputResult": {
+      "type": "object",
+      "required": ["status", "trigger", "information_boundary", "request", "interaction"],
+      "properties": {
+        "status": { "const": "needs_input" },
+        "information_boundary": { "$ref": "#/$defs/hiddenInformationBoundary" },
+        "request": { "$ref": "#/$defs/constraintRequest" }
+      }
+    },
+    "selectionInputResult": {
+      "type": "object",
+      "required": ["status", "trigger", "constraints", "information_boundary", "shortlist", "guidance", "request", "interaction"],
+      "properties": {
+        "status": { "const": "needs_input" },
+        "constraints": { "$ref": "#/$defs/confirmedConstraintState" },
+        "information_boundary": { "$ref": "#/$defs/disclosedInformationBoundary" },
+        "request": { "$ref": "#/$defs/selectionRequest" }
+      }
+    },
+    "constraintConfirmationResult": {
+      "type": "object",
+      "required": ["status", "trigger", "constraints", "information_boundary", "request", "interaction"],
+      "properties": {
+        "status": { "const": "needs_confirmation" },
+        "constraints": { "$ref": "#/$defs/unconfirmedConstraintState" },
+        "information_boundary": { "$ref": "#/$defs/hiddenInformationBoundary" },
+        "request": { "$ref": "#/$defs/constraintConfirmationRequest" }
+      }
+    },
+    "selectionConfirmationResult": {
+      "type": "object",
+      "required": ["status", "trigger", "constraints", "information_boundary", "selection", "classification", "preview", "effects", "request", "interaction"],
+      "properties": {
+        "status": { "const": "needs_confirmation" },
+        "constraints": { "$ref": "#/$defs/confirmedConstraintState" },
+        "information_boundary": { "$ref": "#/$defs/disclosedInformationBoundary" },
+        "classification": { "$ref": "#/$defs/selectedClassification" },
+        "effects": { "$ref": "#/$defs/previewEffects" },
+        "request": { "$ref": "#/$defs/manifestConfirmationRequest" }
+      }
+    },
+    "manifestRecordedResult": {
+      "type": "object",
+      "required": ["status", "outcome", "information_boundary", "selection", "classification", "effects", "next"],
+      "properties": {
+        "status": { "const": "completed" },
+        "outcome": { "const": "manifest_intent_recorded" },
+        "information_boundary": { "$ref": "#/$defs/disclosedInformationBoundary" },
+        "classification": { "$ref": "#/$defs/selectedClassification" },
+        "effects": { "$ref": "#/$defs/recordedEffects" }
+      }
+    },
+    "selectionDeclinedResult": {
+      "type": "object",
+      "required": ["status", "outcome", "information_boundary", "manifest_intent_changed", "classification", "message"],
+      "properties": {
+        "status": { "const": "completed" },
+        "outcome": { "const": "selection_declined" },
+        "information_boundary": { "$ref": "#/$defs/disclosedInformationBoundary" },
+        "classification": { "$ref": "#/$defs/declinedClassification" },
+        "manifest_intent_changed": { "const": false }
+      }
+    },
+    "cancelledResult": {
+      "type": "object",
+      "required": ["status", "outcome", "information_boundary", "manifest_intent_changed", "message"],
+      "properties": {
+        "status": { "const": "completed" },
+        "outcome": { "const": "cancelled" }
+      }
+    },
+    "noMismatchResult": {
+      "type": "object",
+      "required": ["status", "outcome", "trigger", "information_boundary", "manifest_intent_changed", "message"],
+      "properties": {
+        "status": { "const": "completed" },
+        "outcome": { "const": "no_confirmed_constraint_mismatch" },
+        "information_boundary": { "$ref": "#/$defs/hiddenInformationBoundary" },
+        "manifest_intent_changed": { "const": false }
+      }
+    },
+    "noOptionsResult": {
+      "type": "object",
+      "required": ["status", "outcome", "trigger", "constraints", "information_boundary", "manifest_intent_changed", "message"],
+      "properties": {
+        "status": { "const": "completed" },
+        "outcome": { "const": "no_credible_options" },
+        "constraints": { "$ref": "#/$defs/confirmedConstraintState" },
+        "information_boundary": { "$ref": "#/$defs/hiddenInformationBoundary" },
+        "manifest_intent_changed": { "const": false }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "required": ["kind", "source_report_id", "capability_id", "summary"],
+      "properties": {
+        "kind": { "enum": ["evidenced_capability_gap", "constraint_mismatch_candidate", "confirmed_constraint_mismatch"] },
+        "source_report_id": { "type": "string", "minLength": 1 },
+        "check_id": { "type": "string", "minLength": 1 },
+        "check_status": { "const": "failed" },
+        "current_provider_id": { "type": "string", "minLength": 1 },
+        "provider_role": { "type": "string", "minLength": 1 },
+        "capability_id": { "type": "string", "minLength": 1 },
+        "constraint_ids": { "type": "array", "items": { "enum": ["budget", "scale", "region", "existing_stack", "operational_ability", "lock_in_preference"] }, "minItems": 1, "uniqueItems": true },
+        "summary": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "constraints": {
+      "type": "object",
+      "required": ["budget", "scale", "region", "existing_stack", "operational_ability", "lock_in_preference", "confirmed"],
+      "properties": {
+        "budget": { "enum": ["free_tier_required", "cost_sensitive", "flexible", "enterprise"] },
+        "scale": { "enum": ["prototype", "small", "growing", "high_scale"] },
+        "region": { "enum": ["global", "north_america", "europe", "asia_pacific", "specific_or_residency"] },
+        "existing_stack": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "operational_ability": { "enum": ["minimal", "moderate", "specialist"] },
+        "lock_in_preference": { "enum": ["minimize", "balanced", "accept_provider_specific"] },
+        "confirmed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "informationBoundary": {
+      "type": "object",
+      "required": ["brands_disclosed"],
+      "properties": { "brands_disclosed": { "type": "boolean" } },
+      "additionalProperties": false
+    },
+    "hiddenInformationBoundary": {
+      "type": "object",
+      "required": ["brands_disclosed"],
+      "properties": { "brands_disclosed": { "const": false } }
+    },
+    "disclosedInformationBoundary": {
+      "type": "object",
+      "required": ["brands_disclosed"],
+      "properties": { "brands_disclosed": { "const": true } }
+    },
+    "confirmedConstraintState": {
+      "type": "object",
+      "required": ["confirmed"],
+      "properties": { "confirmed": { "const": true } }
+    },
+    "unconfirmedConstraintState": {
+      "type": "object",
+      "required": ["confirmed"],
+      "properties": { "confirmed": { "const": false } }
+    },
+    "shortlist": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["card", "reasons", "limits"],
+        "properties": {
+          "card": { "type": "object" },
+          "reasons": { "$ref": "#/$defs/nonEmptyStrings" },
+          "limits": { "$ref": "#/$defs/nonEmptyStrings" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "guidance": {
+      "type": "object",
+      "required": ["advisory", "universal_best_claimed", "live_pricing_guaranteed", "ordering", "information_freshness"],
+      "properties": {
+        "advisory": { "const": true },
+        "universal_best_claimed": { "const": false },
+        "live_pricing_guaranteed": { "const": false },
+        "ordering": { "const": "card_id" },
+        "information_freshness": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "selection": {
+      "type": "object",
+      "required": ["card_id", "provider_id", "provider_name", "provider_role"],
+      "properties": {
+        "card_id": { "type": "string", "minLength": 1 },
+        "provider_id": { "type": "string", "minLength": 1 },
+        "provider_name": { "type": "string", "minLength": 1 },
+        "provider_role": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "classification": {
+      "type": "object",
+      "required": ["manifest_intent", "machine_evidence", "verification_status", "passed"],
+      "properties": {
+        "manifest_intent": { "type": "boolean" },
+        "machine_evidence": { "const": false },
+        "verification_status": { "const": "unverified" },
+        "passed": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "selectedClassification": {
+      "type": "object",
+      "required": ["manifest_intent", "machine_evidence", "verification_status", "passed"],
+      "properties": {
+        "manifest_intent": { "const": true },
+        "machine_evidence": { "const": false },
+        "verification_status": { "const": "unverified" },
+        "passed": { "const": false }
+      }
+    },
+    "declinedClassification": {
+      "type": "object",
+      "required": ["manifest_intent", "machine_evidence", "verification_status", "passed"],
+      "properties": {
+        "manifest_intent": { "const": false },
+        "machine_evidence": { "const": false },
+        "verification_status": { "const": "unverified" },
+        "passed": { "const": false }
+      }
+    },
+    "preview": {
+      "type": "object",
+      "required": ["path", "before_digest", "after_digest", "before_roles", "after_roles"],
+      "properties": {
+        "path": { "const": ".launchrally/manifest.yaml" },
+        "before_digest": { "$ref": "#/$defs/digest" },
+        "after_digest": { "$ref": "#/$defs/digest" },
+        "before_roles": { "type": "object" },
+        "after_roles": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "effects": {
+      "type": "object",
+      "properties": {
+        "manifest_mutation": { "type": "string", "minLength": 1 },
+        "source_mutation": { "const": "none" },
+        "account_creation": { "const": "none" },
+        "tool_installation": { "const": "none" },
+        "login": { "const": "none" },
+        "provisioning": { "const": "none" },
+        "provider_mutation": { "const": "none" },
+        "production_mutation": { "const": "none" }
+      },
+      "additionalProperties": false
+    },
+    "previewEffects": {
+      "type": "object",
+      "required": ["provider_mutation", "production_mutation"],
+      "properties": {
+        "provider_mutation": { "const": "none" },
+        "production_mutation": { "const": "none" }
+      }
+    },
+    "recordedEffects": {
+      "type": "object",
+      "required": ["manifest_mutation", "source_mutation", "account_creation", "tool_installation", "login", "provisioning", "provider_mutation", "production_mutation"],
+      "properties": {
+        "manifest_mutation": { "const": "confirmed_local_intent_only" },
+        "source_mutation": { "const": "none" },
+        "account_creation": { "const": "none" },
+        "tool_installation": { "const": "none" },
+        "login": { "const": "none" },
+        "provisioning": { "const": "none" },
+        "provider_mutation": { "const": "none" },
+        "production_mutation": { "const": "none" }
+      }
+    },
+    "request": {
+      "oneOf": [
+        { "$ref": "#/$defs/constraintRequest" },
+        { "$ref": "#/$defs/selectionRequest" },
+        { "$ref": "#/$defs/constraintConfirmationRequest" },
+        { "$ref": "#/$defs/manifestConfirmationRequest" }
+      ]
+    },
+    "constraintRequest": {
+      "type": "object",
+      "required": ["kind", "fields", "validation_errors"],
+      "properties": {
+        "kind": { "const": "provider_constraints" },
+        "fields": { "type": "array", "items": { "type": "object" }, "minItems": 6, "maxItems": 6 },
+        "validation_errors": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": false
+    },
+    "selectionRequest": {
+      "type": "object",
+      "required": ["kind", "prompt", "options"],
+      "properties": {
+        "kind": { "const": "provider_selection" },
+        "prompt": { "type": "string", "minLength": 1 },
+        "options": { "type": "array", "items": { "type": "object" }, "minItems": 1 }
+      },
+      "additionalProperties": false
+    },
+    "constraintConfirmationRequest": {
+      "type": "object",
+      "required": ["kind", "prompt", "choices"],
+      "properties": {
+        "kind": { "const": "constraint_confirmation" },
+        "prompt": { "type": "string", "minLength": 1 },
+        "choices": { "type": "array", "items": { "enum": ["confirm", "revise", "cancel"] }, "minItems": 3, "maxItems": 3, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+    "manifestConfirmationRequest": {
+      "type": "object",
+      "required": ["kind", "prompt", "choices"],
+      "properties": {
+        "kind": { "const": "manifest_intent_confirmation" },
+        "prompt": { "type": "string", "minLength": 1 },
+        "choices": { "type": "array", "items": { "enum": ["confirm", "decline"] }, "minItems": 2, "maxItems": 2, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+    "interaction": {
+      "type": "object",
+      "required": ["schema_version", "interaction_id", "step", "resume_token"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/provider-guidance-interaction/v1" },
+        "interaction_id": { "type": "string", "minLength": 1 },
+        "step": { "enum": ["constraints", "constraint_confirmation", "selection", "selection_confirmation"] },
+        "resume_token": { "type": "string", "minLength": 20 }
+      },
+      "additionalProperties": false
+    },
+    "next": {
+      "type": "object",
+      "required": ["required", "operation", "message"],
+      "properties": {
+        "required": { "const": true },
+        "operation": { "const": "verify" },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "nonEmptyStrings": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    }
+  },
+  "x-launchrally-contract-major": 2,
+  "x-launchrally-status": "provider-guidance"
+}

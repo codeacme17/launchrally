@@ -1,6 +1,6 @@
 # CLI interaction contract
 
-Invoke Agent Mode with `--json`. Read `contract`, `status`, and `operation` before interpreting any payload. When `interaction` is present, read `interaction.schema_version` before its state payload and require the exact supported schema for that operation. Stop on an unknown contract, operation, status, or schema version. Never parse or branch on Human Mode terminal prose.
+Invoke Agent Mode with `--json`. Require `contract: "launchrally.dev/cli/v2"`, then read `status` and `operation` before interpreting any payload. When `interaction` is present, read `interaction.schema_version` before its state payload and require the exact supported schema for that operation. Stop on an unknown contract, operation, status, or schema version. Never parse or branch on Human Mode terminal prose.
 
 ## State router
 
@@ -11,7 +11,7 @@ Use this router for every operation. Operation-specific sections below constrain
 | `needs_input` | Present only typed fields from the structured request, collect the user's answers, and resume with those answers. Never fill a material release fact silently. |
 | `needs_confirmation` | Present the exact structured preview and only offer the response values declared by that operation. Never infer confirmation. |
 | `needs_permission` | Present every structured permission separately and resume with an explicit decision for each permission ID. Never reuse earlier permission for a fresh-read boundary. |
-| `needs_selection` | Present only the CLI's versioned options and rankings, then resume with the user's exact selection. Never invent or rerank an option. |
+| `needs_refresh` | Present the typed reason, then run the exact `request.operation` and `request.scope` against the source Report. Use the refreshed full Report for the blocked operation. |
 | `completed` | Validate the operation's versioned result shape and explain it without changing its Checks, Evidence, policy, Report, or Assessment. |
 | `unavailable` | Stop the operation and present the structured prerequisite or reason. Do not synthesize the missing input. |
 | `execution_error` | Stop and present the structured error. Do not reinterpret it as a Check failure or reconstruct interaction state. |
@@ -24,8 +24,8 @@ Audit interaction uses `launchrally.dev/audit-interaction/v1`. For `needs_input`
 
 Initialization interaction uses `launchrally.dev/init-interaction/v1`. Read the exact `preview.changes`, preserve `interaction.resume_token`, and return only `confirm` or `decline`. Never infer approval from a completed Audit.
 
-Planning uses `launchrally.dev/launch-plan/v1`. Supply a saved complete current Audit with `--report`. Read `items` in rank order and keep `verification_gaps` separate. Confirm `read_only` and every `effects` value before presenting the Plan. Pass `--handoff` only after an explicit user request for host-Agent local remediation; the handoff grants no Provider, deployment, or production write permission and always returns to Verify.
+Planning uses `launchrally.dev/launch-plan/v2`. Supply a saved complete current Audit with `--report`. Read `items` in rank order and keep `verification_gaps` separate. Confirm `read_only` and every `effects` value before presenting the Plan. Pass `--handoff` only after an explicit user request for host-Agent local remediation; the handoff grants no Provider, deployment, or production write permission and always returns to Verify.
 
-Provider guidance uses `launchrally.dev/provider-guidance-interaction/v1`, versioned Cards, and `launchrally.dev/provider-guidance/v1`. Start from the CLI's supported Failed Check or current Provider-role path. Preserve the constraint-first states and do not disclose recommendation brands before `constraint_confirmation` receives `confirm`. A shortlist uses Card-ID ordering, not a best-Provider rank. Pass `--select` only for an offered Card, present the exact Manifest intent preview, and require a second `confirm` or `decline`. A completed selection has `machine_evidence: false`, `verification_status: unverified`, and `passed: false`; follow its required `verify` next step.
+`providers` is a supporting advisory operation. It uses `launchrally.dev/provider-guidance-interaction/v1`, versioned Cards, and `launchrally.dev/provider-guidance/v2`. Start from the CLI's supported Failed Check or current Provider-role path. Preserve the constraint-first states and do not disclose recommendation brands before `constraint_confirmation` receives `confirm`. A shortlist uses Card-ID ordering, not a best-Provider rank. Pass `--select` only for an offered Card, present the exact Manifest intent preview, and require a second `confirm` or `decline`. A completed selection has `machine_evidence: false`, `verification_status: unverified`, and `passed: false`; follow its required `verify` next step.
 
-Verification uses `launchrally.dev/verify-interaction/v1` and completes as `launchrally.dev/verification-result/v1`. Present `verification_scope`, each fresh permission, `assessment_scope`, `manifest_drift`, `history`, and `comparison` without reinterpretation. A full result includes a new Report and Evidence Index. A targeted result includes `targeted_result`, carries no Report, and has a null whole-release Assessment.
+Verification uses `launchrally.dev/verify-interaction/v1` and completes as `launchrally.dev/verification-result/v2`. Present `verification_scope`, each fresh permission, `assessment_scope`, `manifest_drift`, `history`, and `comparison` without reinterpretation. A full result includes a new Report v2 and Evidence Index. A targeted result includes `targeted_result`, carries no Report, and has a null whole-release Assessment. Historical Report v1 packages remain readable inputs; new runs produce Report v2.

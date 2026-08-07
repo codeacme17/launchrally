@@ -2,7 +2,7 @@
 
 Save the complete current Agent Mode Audit JSON and invoke `rally plan --report <path> --json`. Planning is unavailable without a complete current Report and never requires prior initialization.
 
-Treat the versioned `launchrally.dev/launch-plan/v1` result as canonical. Preserve the Report Action Queue order. Each `items` entry explains the confirmed Finding, its declared-release impact, investigation inputs and Evidence targets, remediation guidance, and the exact Evidence kinds and freshness behavior to recollect. The disclosed priority basis is severity, dependency-unblocking value, then core-journey impact.
+Treat the versioned `launchrally.dev/launch-plan/v2` result as canonical. Preserve the Report Action Queue order. Each `items` entry explains the confirmed Finding, its declared-release impact, investigation inputs and Evidence targets, remediation guidance, and the exact Evidence kinds and freshness behavior to recollect. The disclosed priority basis is severity, dependency-unblocking value, then core-journey impact.
 
 Keep `verification_gaps` separate from confirmed Finding work. A Gap has `confirmed_fix: false` and is classified as investigation or permission work. Never convert it into a remediation item or infer that missing Evidence proves a defect.
 
@@ -14,7 +14,7 @@ Provider options use a separate, bounded CLI workflow. Start only from a support
 
 On `needs_input`, answer all six typed constraints: budget, scale, region, existing stack, operational ability, and lock-in preference. On `needs_confirmation`, present the normalized constraint set and pass `confirm`, `revise`, or `cancel` exactly. Provider brands remain hidden until this confirmation.
 
-Treat the resulting `launchrally.dev/provider-guidance/v1` shortlist as advisory and unranked. State the capability first. For every option, preserve the Card's reasons, limits, compatibility, operations, lock-in, cost-model caveats, official sources, review date, and explicit Unknowns. Never claim a universal best Provider or guaranteed live pricing.
+Treat the resulting `launchrally.dev/provider-guidance/v2` shortlist as advisory and unranked. State the capability first. For every option, preserve the Card's reasons, limits, compatibility, operations, lock-in, cost-model caveats, official sources, review date, and explicit Unknowns. Never claim a universal best Provider or guaranteed live pricing.
 
 Pass `--select <card-id>` only after the builder chooses. Selection requires an initialized Launch Manifest and returns an exact local intent preview. Pass the second `--confirm confirm` only after the builder approves that preview; use `decline` otherwise. Confirmation changes only local Manifest Provider intent. It performs no account creation, tool installation, login, provisioning, deployment, or Provider write.
 

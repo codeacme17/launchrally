@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/manifest/v2",
+  "title": "LaunchRally Manifest v2",
+  "type": "object",
+  "required": ["schema_version", "project", "release", "execution", "support", "providers"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/manifest/v2" },
+    "project": {
+      "type": "object",
+      "required": ["name", "type", "package_manager"],
+      "properties": {
+        "name": { "$ref": "#/$defs/intentState" },
+        "type": { "$ref": "#/$defs/intentState" },
+        "package_manager": { "$ref": "#/$defs/intentState" }
+      },
+      "additionalProperties": false
+    },
+    "release": {
+      "type": "object",
+      "required": ["intended_environment", "production_targets", "core_journeys"],
+      "properties": {
+        "intended_environment": { "$ref": "#/$defs/intentState" },
+        "production_targets": { "$ref": "#/$defs/intentState" },
+        "core_journeys": { "$ref": "#/$defs/intentState" }
+      },
+      "additionalProperties": false
+    },
+    "execution": {
+      "type": "object",
+      "required": ["source_report_id", "assessment", "public_verification"],
+      "properties": {
+        "source_report_id": { "$ref": "#/$defs/intentState" },
+        "assessment": { "$ref": "#/$defs/intentState" },
+        "public_verification": { "$ref": "#/$defs/intentState" }
+      },
+      "additionalProperties": false
+    },
+    "support": {
+      "type": "object",
+      "required": ["layers"],
+      "properties": {
+        "layers": { "$ref": "#/$defs/intentState" }
+      },
+      "additionalProperties": false
+    },
+    "providers": {
+      "type": "object",
+      "required": ["roles"],
+      "properties": {
+        "roles": { "$ref": "#/$defs/intentState" },
+        "decision": { "$ref": "#/$defs/providerDecision" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "intentState": {
+      "oneOf": [
+        { "$ref": "#/$defs/declaredState" },
+        { "$ref": "#/$defs/unknownState" },
+        { "$ref": "#/$defs/notApplicableState" }
+      ]
+    },
+    "declaredState": {
+      "type": "object",
+      "required": ["state", "value"],
+      "properties": {
+        "state": { "const": "declared" },
+        "value": {}
+      },
+      "additionalProperties": false
+    },
+    "unknownState": {
+      "type": "object",
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unknown" },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "notApplicableState": {
+      "type": "object",
+      "required": ["state", "reason", "evidence"],
+      "properties": {
+        "state": { "const": "not_applicable" },
+        "reason": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/intentEvidence" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "intentEvidence": {
+      "type": "object",
+      "required": ["source_report_id", "field"],
+      "properties": {
+        "source_report_id": { "type": "string", "minLength": 1 },
+        "field": { "type": "string", "pattern": "^[a-z][a-z0-9_.]*$" }
+      },
+      "additionalProperties": false
+    },
+    "providerDecision": {
+      "type": "object",
+      "required": ["schema_version", "source_report_id", "card_id", "card_version", "capability_id", "provider", "role", "confirmed"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/provider-intent-decision/v1" },
+        "source_report_id": { "type": "string", "minLength": 1 },
+        "card_id": { "type": "string", "pattern": "^[a-z0-9.-]+$" },
+        "card_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "capability_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+        "provider": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+        "role": { "type": "string", "minLength": 1 },
+        "confirmed": { "const": true }
+      },
+      "additionalProperties": false
+    }
+  },
+  "x-launchrally-contract-major": 2,
+  "x-launchrally-status": "current"
+}

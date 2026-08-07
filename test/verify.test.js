@@ -63,7 +63,7 @@ function declared(value) {
 async function writeManifest(directory, source) {
   const intent = source.report.scope.release_intent;
   const manifest = {
-    schema_version: "launchrally.dev/manifest/v1",
+    schema_version: "launchrally.dev/manifest/v2",
     project: {
       name: declared(source.report.scope.project.name),
       type: declared(source.report.scope.project.type),
@@ -84,7 +84,7 @@ async function writeManifest(directory, source) {
   };
   await mkdir(path.join(directory, ".launchrally"));
   await writeFile(
-    path.join(directory, ".launchrally", "launch-manifest.json"),
+    path.join(directory, ".launchrally", "manifest.yaml"),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
   return manifest;
@@ -102,7 +102,7 @@ test("full Verify discloses fresh Evidence permissions without mutating history 
     scope: "full",
   });
 
-  assert.equal(result.contract, "launchrally.dev/cli/v0");
+  assert.equal(result.contract, "launchrally.dev/cli/v2");
   assert.equal(result.status, "needs_permission");
   assert.equal(result.operation, "verify");
   assert.deepEqual(result.verification_scope, {
@@ -185,7 +185,7 @@ test("full Verify recollects Evidence and creates a distinct immutable comparabl
 
   assert.equal(result.status, "completed");
   assert.equal(result.operation, "verify");
-  assert.equal(result.schema_version, "launchrally.dev/verification-result/v1");
+  assert.equal(result.schema_version, "launchrally.dev/verification-result/v2");
   assert.equal(result.verification_scope.whole_release, true);
   assert.equal(result.assessment_scope, "whole_release");
   assert.equal(result.assessment, result.report.assessment);
@@ -286,7 +286,7 @@ test("targeted Manifest Drift makes the limited result non-current", async () =>
   const manifest = await writeManifest(directory, source);
   manifest.project.name.value = "different-project";
   await writeFile(
-    path.join(directory, ".launchrally", "launch-manifest.json"),
+    path.join(directory, ".launchrally", "manifest.yaml"),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
 
@@ -413,7 +413,7 @@ test("Manifest intent conflicts are explicit drift and prevent a current Launch 
   const manifest = await writeManifest(directory, source);
   manifest.release.production_targets.value = ["https://other.example.com/"];
   await writeFile(
-    path.join(directory, ".launchrally", "launch-manifest.json"),
+    path.join(directory, ".launchrally", "manifest.yaml"),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
   const permission = await runVerify(directory, "0.1.0", {
@@ -458,9 +458,13 @@ test("not-applicable Manifest intent cannot silently remove historical scope or 
   manifest.providers.roles = {
     state: "not_applicable",
     reason: "Provider was removed from current intent.",
+    evidence: [{
+      source_report_id: source.report.report_id,
+      field: "scope.release_intent.provider_roles",
+    }],
   };
   await writeFile(
-    path.join(directory, ".launchrally", "launch-manifest.json"),
+    path.join(directory, ".launchrally", "manifest.yaml"),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
   const permission = await runVerify(directory, "0.1.0", {
@@ -500,7 +504,7 @@ test("Verify fails closed when Manifest intent changes after the permission prev
   });
   manifest.release.production_targets.value = ["https://changed.example.com/"];
   await writeFile(
-    path.join(directory, ".launchrally", "launch-manifest.json"),
+    path.join(directory, ".launchrally", "manifest.yaml"),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
 
@@ -519,7 +523,7 @@ test("Verify rejects a malformed supported-major Manifest before planning reads"
   const manifest = await writeManifest(directory, source);
   delete manifest.release.core_journeys;
   await writeFile(
-    path.join(directory, ".launchrally", "launch-manifest.json"),
+    path.join(directory, ".launchrally", "manifest.yaml"),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
 

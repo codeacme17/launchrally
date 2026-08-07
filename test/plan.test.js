@@ -64,8 +64,8 @@ test("a complete current Report becomes a prioritized explanatory read-only Laun
 
   const result = runPlan(audit);
 
-  assert.equal(result.contract, "launchrally.dev/cli/v0");
-  assert.equal(result.schema_version, "launchrally.dev/launch-plan/v1");
+  assert.equal(result.contract, "launchrally.dev/cli/v2");
+  assert.equal(result.schema_version, "launchrally.dev/launch-plan/v2");
   assert.equal(result.status, "completed");
   assert.equal(result.operation, "plan");
   assert.equal(result.source_report_id, audit.report.report_id);
@@ -159,7 +159,7 @@ test("planning fails closed without a complete current Report", async () => {
   });
 
   assert.deepEqual(runPlan(), {
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
     status: "unavailable",
     operation: "plan",
     reason: "complete_report_required",
@@ -173,12 +173,17 @@ test("planning fails closed without a complete current Report", async () => {
   assert.equal(incomplete.status, "execution_error");
   assert.equal(incomplete.error, "invalid_report_package");
   assert.deepEqual(runPlan(nonCurrent), {
-    contract: "launchrally.dev/cli/v0",
-    status: "unavailable",
+    contract: "launchrally.dev/cli/v2",
+    status: "needs_refresh",
     operation: "plan",
     reason: "current_report_required",
     source_report_id: nonCurrent.report.report_id,
-    message: "The saved Report is non-current; run a new Audit before planning remediation.",
+    request: {
+      type: "refresh",
+      operation: "verify",
+      scope: "full",
+    },
+    message: "The saved Report is non-current; run full Verify before planning remediation.",
   });
 });
 
@@ -190,7 +195,7 @@ test("planning rejects inconsistent Action Queue and Check relationships", async
   const result = runPlan(audit);
 
   assert.deepEqual(result, {
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
     status: "execution_error",
     operation: "plan",
     error: "invalid_report_relationships",
@@ -247,7 +252,7 @@ test("planning requires confirmed release intent before describing release impac
   const result = runPlan(audit);
 
   assert.deepEqual(result, {
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
     status: "unavailable",
     operation: "plan",
     reason: "confirmed_release_required",

@@ -3,7 +3,7 @@
   "cli": {
     "package": "@launchrally/cli",
     "version": "0.1.0",
-    "contract": "launchrally.dev/cli/v0"
+    "contract": "launchrally.dev/cli/v2"
   },
   "invocations": [
     {
@@ -65,7 +65,7 @@
       "expect": {
         "operation": "plan",
         "status": "completed",
-        "schema_version": "launchrally.dev/launch-plan/v1"
+        "schema_version": "launchrally.dev/launch-plan/v2"
       }
     },
     {
@@ -78,7 +78,7 @@
       "expect": {
         "operation": "plan",
         "status": "completed",
-        "schema_version": "launchrally.dev/launch-plan/v1"
+        "schema_version": "launchrally.dev/launch-plan/v2"
       }
     },
     {
@@ -96,7 +96,7 @@
       "expect": {
         "operation": "verify",
         "status": "completed",
-        "schema_version": "launchrally.dev/verification-result/v1"
+        "schema_version": "launchrally.dev/verification-result/v2"
       }
     }
   ],

@@ -99,7 +99,7 @@ test("Agent Mode asks only for unknown release intent in a versioned state", asy
   const fixture = await createInteractionFixture();
   const result = await runAudit(fixture);
 
-  assert.equal(result.contract, "launchrally.dev/cli/v0");
+  assert.equal(result.contract, "launchrally.dev/cli/v2");
   assert.equal(result.status, "needs_input");
   assert.equal(result.operation, "audit");
   assert.equal(result.interaction.schema_version, "launchrally.dev/audit-interaction/v1");
@@ -830,7 +830,7 @@ test("Agent Mode reports malformed interaction input as a structured execution e
     ),
     (error) => {
       assert.deepEqual(JSON.parse(error.stdout), {
-        contract: "launchrally.dev/cli/v0",
+        contract: "launchrally.dev/cli/v2",
         status: "execution_error",
         operation: "audit",
         error: "invalid_option_json",

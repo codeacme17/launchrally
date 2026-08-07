@@ -6,9 +6,11 @@ Use this flow when the user wants to complete Audit, optional Init, Read-only Pl
 
 The required executable is exactly `@launchrally/cli@0.1.0`. Prefer a project-pinned executable. If it is absent, disclose the package, version, registry source, and proposed `npm exec --package=@launchrally/cli@0.1.0 -- rally` command, then preserve the package manager's download confirmation.
 
-Before Audit or any other journey command, invoke the selected executable as `rally --version --json`. Continue only when the structured response has `contract: "launchrally.dev/cli/v0"`, `operation: "version"`, `status: "completed"`, and `cli_version: "0.1.0"`. Stop and explain a missing executable, invalid structured response, or version mismatch. Do not silently install, upgrade, downgrade, or substitute another CLI.
+Before Audit or any other journey command, invoke the selected executable as `rally --version --json`. Continue only when the structured response has `contract: "launchrally.dev/cli/v2"`, `operation: "version"`, `status: "completed"`, and `cli_version: "0.1.0"`. Stop and explain a missing executable, invalid structured response, or version mismatch. Do not silently install, upgrade, downgrade, or substitute another CLI.
 
 For every command below, use `--json`, read only the versioned structured interaction, and follow the state router in [cli-contract.md](cli-contract.md). The native adapters ship the exact invocation order and expected structured states in [reference-journey.json](reference-journey.json); treat its arguments as the machine-readable companion to this explanation. Never parse terminal prose.
+
+When the CLI returns `needs_refresh`, run its typed full Verify request and replace the blocked operation's input with the refreshed Report before continuing.
 
 ## 1. Audit
 

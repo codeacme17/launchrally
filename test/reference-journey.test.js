@@ -54,7 +54,7 @@ const directJourney = {
   cli: {
     package: "@launchrally/cli",
     version: "0.1.0",
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
   },
   invocations: [
     ["version", ["--version", "--json"], ["version", "completed"]],
@@ -389,12 +389,12 @@ test("native adapters ship the canonical Reference Journey for the exact CLI ver
     new RegExp(`@launchrally/cli@${cliPackage.version.replaceAll(".", "\\.")}`, "u"),
   );
   assert.match(canonicalJourney, /--version --json/u);
-  assert.match(canonicalJourney, /contract: "launchrally\.dev\/cli\/v0"/u);
+  assert.match(canonicalJourney, /contract: "launchrally\.dev\/cli\/v2"/u);
   assert.match(canonicalJourney, /cli_version/u);
   assert.deepEqual(journeyContract.cli, {
     package: "@launchrally/cli",
     version: cliPackage.version,
-    contract: "launchrally.dev/cli/v0",
+    contract: "launchrally.dev/cli/v2",
   });
   assert.deepEqual(
     journeyContract.invocations.map(({ id }) => id),
@@ -472,7 +472,7 @@ test("the canonical Skill routes every structured CLI interaction state without 
     "needs_input",
     "needs_confirmation",
     "needs_permission",
-    "needs_selection",
+    "needs_refresh",
     "completed",
     "unavailable",
     "execution_error",
@@ -482,6 +482,28 @@ test("the canonical Skill routes every structured CLI interaction state without 
   assert.match(contract, /interaction\.schema_version/u);
   assert.match(contract, /Preserve.*resume_token.*verbatim/su);
   assert.match(contract, /Never parse or branch on.*terminal prose/su);
+  assert.match(
+    contract,
+    /`needs_refresh`.*typed reason.*request\.operation.*request\.scope/su,
+  );
+  assert.match(contract, /`providers` is a supporting advisory operation/u);
+
+  for (const adapter of adapters) {
+    const adapterContract = await readFile(
+      path.join(
+        root,
+        "adapters",
+        adapter.host,
+        "launchrally",
+        "skills",
+        "launchrally",
+        "references",
+        "cli-contract.md",
+      ),
+      "utf8",
+    );
+    assert.equal(adapterContract, contract, `${adapter.host} CLI contract parity`);
+  }
 });
 
 test("each native package contract drives the same offline CLI Reference Journey", async () => {
@@ -524,7 +546,7 @@ test("each native package contract drives the same offline CLI Reference Journey
         outcome: "initialized",
         changed_paths: [
           ".launchrally/.gitignore",
-          ".launchrally/launch-manifest.json",
+          ".launchrally/manifest.yaml",
         ],
       });
       assert.deepEqual(result.semantics, direct.semantics);

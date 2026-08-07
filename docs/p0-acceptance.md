@@ -23,10 +23,10 @@ available.
 
 | ID | Requirement | Executable evidence | Tracking | Status |
 | --- | --- | --- | --- | --- |
-| P0-CONTRACT-01 | Canonical deterministic `.launchrally/manifest.yaml` and previewed v1 migration | Contract and migration fixtures | #35 | Open |
-| P0-CONTRACT-02 | Manifest v2 contains Project, Release, Execution, Support, and Providers with uniform intent states | Schema and CLI interaction tests | #35 | Open |
-| P0-CONTRACT-03 | Check Catalog v2 uses the eight approved Launch Risk Domains | Catalog contract tests | #35 | Open |
-| P0-CONTRACT-04 | CLI Interaction Contract v2 exposes typed `needs_refresh` and advisory `providers` behavior | Direct CLI and Skill parity tests | #35 | Open |
+| P0-CONTRACT-01 | Canonical deterministic `.launchrally/manifest.yaml` and previewed v1 migration | Contract and migration fixtures | #35 | Complete |
+| P0-CONTRACT-02 | Manifest v2 contains Project, Release, Execution, Support, and Providers with uniform intent states | Schema and CLI interaction tests | #35 | Complete |
+| P0-CONTRACT-03 | Check Catalog v2 uses the eight approved Launch Risk Domains | Catalog contract tests | #35 | Complete |
+| P0-CONTRACT-04 | CLI Interaction Contract v2 exposes typed `needs_refresh` and advisory `providers` behavior | Direct CLI and Skill parity tests | #35 | Complete |
 | P0-EVIDENCE-01 | Passed and Failed outcomes satisfy distinct Evidence Requirements | Policy invariant tests | #36 | Open |
 | P0-EVIDENCE-02 | Negative findings require complete provenance-bearing local observations | Safe-scan and insufficient-scope tests | #36 | Open |
 | P0-ASSESS-01 | Gating Unverified is Inconclusive; non-gating Unverified is Ready with Warnings | Assessment precedence fixtures | #36 | Open |

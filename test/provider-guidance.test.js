@@ -149,7 +149,7 @@ async function writeInitializedManifest(directory, audit) {
   const intent = audit.report.scope.release_intent;
   const declared = (value) => ({ state: "declared", value });
   const manifest = {
-    schema_version: "launchrally.dev/manifest/v1",
+    schema_version: "launchrally.dev/manifest/v2",
     project: {
       name: declared(audit.report.scope.project.name),
       type: declared(audit.report.scope.project.type),
@@ -172,18 +172,26 @@ async function writeInitializedManifest(directory, audit) {
       layers: {
         state: "not_applicable",
         reason: "No support layers were declared for this release.",
+        evidence: [{
+          source_report_id: audit.report.report_id,
+          field: "scope.release_intent.support_layers",
+        }],
       },
     },
     providers: {
       roles: {
         state: "not_applicable",
         reason: "No Provider roles were declared for this release.",
+        evidence: [{
+          source_report_id: audit.report.report_id,
+          field: "scope.release_intent.provider_roles",
+        }],
       },
     },
   };
   await mkdir(path.join(directory, ".launchrally"));
   await writeFile(
-    path.join(directory, ".launchrally", "launch-manifest.json"),
+    path.join(directory, ".launchrally", "manifest.yaml"),
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
   return manifest;
@@ -194,7 +202,7 @@ test("Provider guidance starts from an evidenced capability gap without disclosi
   const audit = await completeAudit(directory);
   const result = await startGuidance(directory, audit);
 
-  assert.equal(result.contract, "launchrally.dev/cli/v0");
+  assert.equal(result.contract, "launchrally.dev/cli/v2");
   assert.equal(result.status, "needs_input");
   assert.equal(result.operation, "providers");
   assert.deepEqual(result.trigger, {
@@ -302,7 +310,7 @@ test("confirmed constraints produce a small explainable shortlist from versioned
 
   assert.equal(result.status, "needs_input");
   assert.equal(result.operation, "providers");
-  assert.equal(result.schema_version, "launchrally.dev/provider-guidance/v1");
+  assert.equal(result.schema_version, "launchrally.dev/provider-guidance/v2");
   assert.equal(result.constraints.confirmed, true);
   assert.equal(result.information_boundary.brands_disclosed, true);
   assert.equal(assertValidProviderGuidance(result), true);
@@ -340,8 +348,8 @@ test("confirmed constraints produce a small explainable shortlist from versioned
   assert.equal(result.interaction.step, "selection");
   assert.throws(
     () => assertValidProviderGuidance({
-      contract: "launchrally.dev/cli/v0",
-      schema_version: "launchrally.dev/provider-guidance/v1",
+      contract: "launchrally.dev/cli/v2",
+      schema_version: "launchrally.dev/provider-guidance/v2",
       status: "completed",
       operation: "providers",
       source_report_id: audit.report.report_id,
@@ -366,9 +374,9 @@ test("confirmed constraints produce a small explainable shortlist from versioned
 test("a selected Provider becomes confirmed Manifest intent but not Machine Evidence or Passed", async () => {
   const directory = await fixture();
   const audit = await completeAudit(directory);
-  await writeInitializedManifest(directory, audit);
+  const initializedManifest = await writeInitializedManifest(directory, audit);
   const shortlist = await confirmedShortlist(directory, audit);
-  const manifestPath = path.join(directory, ".launchrally", "launch-manifest.json");
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
   const before = await readFile(manifestPath, "utf8");
 
   const preview = await runCli([
@@ -395,7 +403,7 @@ test("a selected Provider becomes confirmed Manifest intent but not Machine Evid
     verification_status: "unverified",
     passed: false,
   });
-  assert.equal(preview.preview.path, ".launchrally/launch-manifest.json");
+  assert.equal(preview.preview.path, ".launchrally/manifest.yaml");
   assert.deepEqual(preview.preview.after_roles, {
     state: "declared",
     value: [{ provider: "vercel", role: "deployment" }],
@@ -437,21 +445,15 @@ test("a selected Provider becomes confirmed Manifest intent but not Machine Evid
     () => assertValidProviderGuidance({ ...structuredClone(completed), effects: {} }),
     (error) => error.code === "invalid_provider_guidance",
   );
-  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  assert.deepEqual(manifest.providers.roles, {
-    state: "declared",
-    value: [{ provider: "vercel", role: "deployment" }],
-  });
-  assert.deepEqual(manifest.providers.decision, {
-    schema_version: "launchrally.dev/provider-intent-decision/v1",
-    source_report_id: audit.report.report_id,
-    card_id: "managed-web-delivery.vercel",
-    card_version: "1.0.0",
-    capability_id: "managed_web_delivery",
-    provider: "vercel",
-    role: "deployment",
-    confirmed: true,
-  });
+  const recordedManifest = await readFile(manifestPath, "utf8");
+  assert.match(recordedManifest, /roles:\n\s+state: "declared"\n\s+value:\n/u);
+  assert.match(recordedManifest, /provider: "vercel"\n\s+role: "deployment"/u);
+  assert.match(
+    recordedManifest,
+    /decision:\n\s+schema_version: "launchrally\.dev\/provider-intent-decision\/v1"/u,
+  );
+  assert.match(recordedManifest, /card_id: "managed-web-delivery\.vercel"/u);
+  assert.match(recordedManifest, /confirmed: true/u);
 
   const verifyPermission = await runVerify(directory, "0.1.0", {
     report_package: audit,
@@ -476,8 +478,22 @@ test("a selected Provider becomes confirmed Manifest intent but not Machine Evid
     "unverified",
   );
 
-  manifest.providers.decision.card_id = "managed-web-delivery.nonexistent";
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const tamperedManifest = structuredClone(initializedManifest);
+  tamperedManifest.providers.roles = {
+    state: "declared",
+    value: [{ provider: "vercel", role: "deployment" }],
+  };
+  tamperedManifest.providers.decision = {
+    schema_version: "launchrally.dev/provider-intent-decision/v1",
+    source_report_id: audit.report.report_id,
+    card_id: "managed-web-delivery.nonexistent",
+    card_version: "1.0.0",
+    capability_id: "managed_web_delivery",
+    provider: "vercel",
+    role: "deployment",
+    confirmed: true,
+  };
+  await writeFile(manifestPath, `${JSON.stringify(tamperedManifest, null, 2)}\n`);
   const tamperedPermission = await runVerify(directory, "0.1.0", {
     report_package: audit,
     scope: "full",
@@ -561,7 +577,7 @@ test("Human Mode keeps capability and constraints ahead of an advisory Provider 
     "web.public.availability",
   ], { encoding: "utf8" });
 
-  assert.match(initial.stdout, /LaunchRally Provider Guidance/u);
+  assert.match(initial.stdout, /LaunchRally Advisory Provider Guidance/u);
   assert.match(initial.stdout, /Capability: managed_web_delivery/u);
   assert.match(initial.stdout, /Confirm the available Provider budget/u);
   assert.doesNotMatch(initial.stdout, /Cloudflare|Vercel/u);
@@ -710,7 +726,7 @@ test("selection decline and stale previews fail closed without overwriting the M
   const directory = await fixture();
   const audit = await completeAudit(directory);
   await writeInitializedManifest(directory, audit);
-  const manifestPath = path.join(directory, ".launchrally", "launch-manifest.json");
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
   const before = await readFile(manifestPath, "utf8");
   const shortlist = await confirmedShortlist(directory, audit);
   const preview = await runCli([
@@ -783,7 +799,7 @@ test("a non-cooperating Manifest write during confirmation is preserved", async 
     "managed-web-delivery.vercel",
     "--json",
   ]);
-  const manifestPath = path.join(directory, ".launchrally", "launch-manifest.json");
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
   const before = await readFile(manifestPath, "utf8");
   const externallyChanged = `${before.trimEnd()}\n\n`;
   const outcome = await runProviderGuidance(
@@ -840,8 +856,8 @@ test("a stale crashed Manifest transaction is recovered automatically", async ()
     { mode: 0o600 },
   );
   await rename(
-    path.join(directory, ".launchrally", "launch-manifest.json"),
-    path.join(transactionPath, "previous.json"),
+    path.join(directory, ".launchrally", "manifest.yaml"),
+    path.join(transactionPath, "previous.yaml"),
   );
 
   const completed = await runCli([
@@ -884,7 +900,7 @@ test("hard constraints bound the offered Cards and unoffered selections are reje
     shortlist.shortlist.map(({ card }) => card.card_id),
     ["managed-web-delivery.cloudflare-workers", "managed-web-delivery.vercel"],
   );
-  const manifestPath = path.join(directory, ".launchrally", "launch-manifest.json");
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
   const before = await readFile(manifestPath, "utf8");
   const rejected = await runCliOutcome([
     "providers",
