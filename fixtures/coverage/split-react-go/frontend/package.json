@@ -1,0 +1,7 @@
+{
+  "name": "coverage-react-frontend",
+  "private": true,
+  "scripts": {
+    "build": "vite build"
+  }
+}

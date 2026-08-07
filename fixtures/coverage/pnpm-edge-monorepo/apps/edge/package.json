@@ -1,0 +1,7 @@
+{
+  "name": "coverage-monorepo-edge",
+  "private": true,
+  "scripts": {
+    "build": "tsc"
+  }
+}

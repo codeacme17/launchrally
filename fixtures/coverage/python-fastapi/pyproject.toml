@@ -1,0 +1,7 @@
+[project]
+name = "coverage-python-fastapi"
+version = "0.1.0"
+dependencies = ["fastapi"]
+
+[project.scripts]
+serve = "app.main:serve"

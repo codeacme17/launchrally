@@ -1,0 +1,2 @@
+framework = "homegrown-web-runtime"
+entrypoint = "src/main.js"

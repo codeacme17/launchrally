@@ -1,0 +1,7 @@
+{
+  "name": "coverage-pnpm-edge-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "pnpm --recursive build"
+  }
+}

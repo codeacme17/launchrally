@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -19,6 +20,7 @@ const volatileKeys = new Set([
   "generated_at",
   "collected_at",
   "evaluated_at",
+  "duration_ms",
   "digest",
   "content_digest",
   "manifest_digest",
@@ -247,6 +249,8 @@ async function executeReferenceJourney(
     initialize = true,
     remediationRequested = true,
     verifyAfterRemediation = true,
+    publicPermission = "denied",
+    productionTarget = "https://example.com",
   } = {},
 ) {
   const directory = await createFixture(label);
@@ -255,12 +259,12 @@ async function executeReferenceJourney(
     repository_root: directory,
     answers_json: JSON.stringify({
       intended_environment: "production",
-      production_targets: ["https://example.com"],
+      production_targets: [productionTarget],
       core_journeys: [{ method: "GET", path: "/", purpose: "homepage loads" }],
       provider_roles: [],
       support_layers: [],
     }),
-    permissions_json: JSON.stringify({ public_verification: "denied" }),
+    permissions_json: JSON.stringify({ public_verification: publicPermission }),
   };
   const operations = [];
   const invoke = async (id) => {
@@ -540,5 +544,43 @@ test("each native package contract drives the same offline CLI Reference Journey
     }
   } finally {
     await rm(network.directory, { recursive: true, force: true });
+  }
+});
+
+test("direct and Skill journeys preserve semantics with complete public-read permission", async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    requests.push({ method: request.method, url: request.url });
+    response.writeHead(request.url === "/health" ? 204 : 200);
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const target = `http://127.0.0.1:${server.address().port}/`;
+    const direct = await executeReferenceJourney(
+      "direct-complete-permission",
+      directJourney,
+      process.env,
+      { publicPermission: "approved", productionTarget: target },
+    );
+    assert.equal(
+      direct.semantics.audit.report.scope.public_verification.decision,
+      "approved",
+    );
+
+    for (const adapter of adapters) {
+      const adapterJourney = await loadAdapterJourney(adapter);
+      const result = await executeReferenceJourney(
+        `${adapter.host}-complete-permission`,
+        adapterJourney,
+        process.env,
+        { publicPermission: "approved", productionTarget: target },
+      );
+      assert.deepEqual(result.semantics, direct.semantics, adapter.host);
+    }
+    assert.ok(requests.length > 0);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
 });

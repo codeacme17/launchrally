@@ -1,0 +1,8 @@
+{
+  "name": "coverage-split-react-go",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --workspace=frontend"
+  },
+  "workspaces": ["frontend"]
+}
