@@ -8,10 +8,16 @@ import {
 } from "@launchrally/contracts";
 
 import { LOCAL_SAFE_SCAN_POLICY } from "./local-safe-scan.js";
+import { assertSafeEvidenceArtifact } from "./evidence-artifact.js";
 import { MANIFEST_RELATIVE_PATH } from "./manifest.js";
 import { evaluateLaunchPolicy } from "./policy-engine.js";
 
 export const REPORT_GENERATOR_VERSION = "report-generator/v1";
+
+function timeSortableReportId(createdAt) {
+  const timestamp = createdAt.toISOString().replace(/[-:.]/gu, "");
+  return `report_${timestamp}_${randomUUID()}`;
+}
 
 function canonicalValue(value) {
   if (Array.isArray(value)) return value.map(canonicalValue);
@@ -121,6 +127,7 @@ function createEvidenceRegistry({ reportId, createdAt, id, repositoryDigests }) 
     if (evidence.kind === "file") {
       normalizedArtifact.content_digest = repositoryDigests[evidence.path] ?? null;
     }
+    assertSafeEvidenceArtifact(normalizedArtifact);
     const artifactDigest = digest(normalizedArtifact);
     if (!byDigest.has(artifactDigest)) {
       byDigest.set(artifactDigest, {
@@ -335,8 +342,9 @@ export function createReportPackage({
   assertSupportedReportVersion(REPORT_SCHEMA);
   const now = dependencies.now ?? (() => new Date());
   const id = dependencies.id ?? randomUUID;
-  const createdAt = now().toISOString();
-  const reportId = id();
+  const createdDate = now();
+  const createdAt = createdDate.toISOString();
+  const reportId = dependencies.id ? id() : timeSortableReportId(createdDate);
   const evidenceRegistry = createEvidenceRegistry({
     reportId,
     createdAt,

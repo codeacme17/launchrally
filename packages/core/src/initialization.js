@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, rm, rmdir, writeFile } from "node:fs/promises";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -23,6 +23,14 @@ import {
   serializeManifest,
 } from "./manifest.js";
 import { createNeedsRefreshResult } from "./interaction-result.js";
+import { acquireOwnedLock } from "./exclusive-lock.js";
+import {
+  createHistoryFiles,
+  committedLocalHistoryStatus,
+  isImmutableHistoryPath,
+  isLocalHistoryPath,
+  persistLocalHistory,
+} from "./local-history.js";
 import { evaluateReportCurrentness } from "./report-currentness.js";
 
 export const CLI_DEPENDENCY = "@launchrally/cli";
@@ -39,6 +47,10 @@ const APPROVED_PATHS = new Set([
 const execFileAsync = promisify(execFile);
 const RECOVERY_RELATIVE_PATH = ".launchrally/.init-transaction/recovery.json";
 
+function isApprovedPath(relativePath) {
+  return APPROVED_PATHS.has(relativePath) || isLocalHistoryPath(relativePath);
+}
+
 function digest(content) {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
@@ -47,10 +59,12 @@ async function storeState(state) {
   const previewDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-init-preview-"));
   const directoryToken = path.basename(previewDirectory).slice("launchrally-init-preview-".length);
   const fileToken = randomBytes(32).toString("base64url");
-  const token = `lrinit_${directoryToken}_${fileToken}`;
+  const content = `${JSON.stringify(state)}\n`;
+  const stateDigest = createHash("sha256").update(content).digest("base64url");
+  const token = `lrinit_${directoryToken}_${fileToken}_${stateDigest}`;
   await writeFile(
     path.join(previewDirectory, `${fileToken}.json`),
-    `${JSON.stringify(state)}\n`,
+    content,
     { encoding: "utf8", flag: "wx", mode: 0o600 },
   );
   return token;
@@ -58,7 +72,9 @@ async function storeState(state) {
 
 async function loadState(token) {
   if (typeof token !== "string") return null;
-  const match = token.match(/^lrinit_([A-Za-z0-9]{6})_([A-Za-z0-9_-]{43})$/u);
+  const match = token.match(
+    /^lrinit_([A-Za-z0-9]{6})_([A-Za-z0-9_-]{43})_([A-Za-z0-9_-]{43})$/u,
+  );
   if (!match) return null;
   const statePath = path.join(
     os.tmpdir(),
@@ -66,7 +82,9 @@ async function loadState(token) {
     `${match[2]}.json`,
   );
   try {
-    const state = JSON.parse(await readFile(statePath, "utf8"));
+    const content = await readFile(statePath, "utf8");
+    if (createHash("sha256").update(content).digest("base64url") !== match[3]) return null;
+    const state = JSON.parse(content);
     return state?.schema_version === INIT_INTERACTION_SCHEMA ? { state, statePath } : null;
   } catch {
     return null;
@@ -225,7 +243,7 @@ async function readOptional(filePath) {
 }
 
 async function assertSafeRelativePath(root, relativePath) {
-  if (!APPROVED_PATHS.has(relativePath) && relativePath !== RECOVERY_RELATIVE_PATH) {
+  if (!isApprovedPath(relativePath) && relativePath !== RECOVERY_RELATIVE_PATH) {
     const error = new Error("Initialization path is not approved.");
     error.code = "unsafe_project_path";
     throw error;
@@ -452,6 +470,110 @@ async function previewIsCurrent(root, changes) {
   return true;
 }
 
+async function preexistingHistoryIsCurrent(root, state) {
+  for (const entry of state.history_preexisting) {
+    await assertSafeRelativePath(root, entry.path);
+    const content = await readOptional(path.join(root, entry.path));
+    if (content === null || digest(content) !== entry.digest) return false;
+  }
+  const historyPlan = createHistoryFiles(state.report_package, { include_cache: false });
+  const reportWasPreexisting = historyPlan.files
+    .filter(({ path: historyPath }) => historyPath.includes("/reports/"))
+    .every((file) => state.history_preexisting.some((entry) => entry.path === file.path));
+  if (!reportWasPreexisting) return true;
+  return await committedLocalHistoryStatus(
+    root,
+    state.report_package.report.report_id,
+    historyPlan.record_digest,
+  ) === "valid";
+}
+
+function previewChangeIsValid(change) {
+  if (!change || typeof change !== "object" || Array.isArray(change)) return false;
+  const expectedOperation = change.after === null
+    ? "delete"
+    : change.before === null ? "create" : "update";
+  return JSON.stringify(Object.keys(change).sort()) === JSON.stringify([
+    "after",
+    "after_digest",
+    "before",
+    "before_digest",
+    "diff",
+    "operation",
+    "path",
+  ])
+    && isApprovedPath(change.path)
+    && (change.before === null || typeof change.before === "string")
+    && (change.after === null || typeof change.after === "string")
+    && change.before_digest === (change.before === null ? null : digest(change.before))
+    && change.after_digest === (change.after === null ? null : digest(change.after))
+    && change.operation === expectedOperation
+    && change.diff === exactDiff(change.path, change.before, change.after);
+}
+
+function storedPreviewIsBound(state) {
+  try {
+    if (
+      JSON.stringify(Object.keys(state).sort()) !== JSON.stringify([
+        "changes",
+        "history_preexisting",
+        "manifest",
+        "mode",
+        "report_package",
+        "root",
+        "schema_version",
+        "source_report_id",
+      ])
+      || !state.report_package
+      || state.source_report_id !== state.report_package.report?.report_id
+      || !Array.isArray(state.changes)
+      || !Array.isArray(state.history_preexisting)
+      || !["initialization", "migration", "update"].includes(state.mode)
+    ) return false;
+    if (
+      state.changes.some((change) => !previewChangeIsValid(change))
+      || new Set(state.changes.map(({ path: relative }) => relative)).size !== state.changes.length
+    ) return false;
+    const expectedApplyChanges = state.changes.filter(
+      (change) => !isLocalHistoryPath(change.path),
+    );
+    const expectedHistoryFiles = createHistoryFiles(
+      state.report_package,
+      { include_cache: false },
+    ).files;
+    const expectedHistoryByPath = new Map(expectedHistoryFiles.map((file) => [file.path, file]));
+    const historyChanges = state.changes.filter((change) => isLocalHistoryPath(change.path));
+    for (const change of historyChanges) {
+      const file = expectedHistoryByPath.get(change.path);
+      if (
+        !file
+        || change.after !== file.content
+        || change.after_digest !== digest(file.content)
+      ) return false;
+    }
+    if (state.history_preexisting.some((candidate) => {
+      const file = expectedHistoryByPath.get(candidate.path);
+      return JSON.stringify(Object.keys(candidate).sort()) !== JSON.stringify(["digest", "path"])
+        || !file
+        || candidate.digest !== digest(file.content);
+    })) return false;
+    const boundHistoryPaths = [
+      ...historyChanges.map(({ path: relative }) => relative),
+      ...state.history_preexisting.map(({ path: relative }) => relative),
+    ];
+    if (
+      new Set(boundHistoryPaths).size !== expectedHistoryFiles.length
+      || expectedHistoryFiles.some((file) => !boundHistoryPaths.includes(file.path))
+    ) return false;
+    const manifestChange = expectedApplyChanges.find(
+      (change) => change.path === MANIFEST_RELATIVE_PATH,
+    );
+    return !manifestChange || manifestChange.after === serializeManifest(state.manifest);
+  } catch {
+    return false;
+  }
+}
+
 function fileOperationAdapter(fileOperations = {}) {
   return {
     mkdir,
@@ -506,7 +628,33 @@ async function rollbackChanges(root, changes, operations, guardCurrent = false) 
   }
 }
 
-async function applyChanges(root, changes, fileOperations = {}) {
+async function cleanupEmptyChangeDirectories(root, changes) {
+  const launchrallyRoot = path.join(root, ".launchrally");
+  const directories = [...new Set(changes
+    .filter((change) => change.before === null && change.path.startsWith(".launchrally/"))
+    .map((change) => path.dirname(path.join(root, change.path))))]
+    .sort((left, right) => right.length - left.length);
+  for (const directory of directories) {
+    let current = directory;
+    while (current.startsWith(`${launchrallyRoot}${path.sep}`)) {
+      try {
+        await rmdir(current);
+      } catch (error) {
+        if (!["ENOENT", "ENOTEMPTY"].includes(error?.code)) throw error;
+        break;
+      }
+      current = path.dirname(current);
+    }
+  }
+}
+
+async function applyChanges(
+  root,
+  changes,
+  fileOperations = {},
+  deferCleanup = false,
+  journalContext = null,
+) {
   const operations = fileOperationAdapter(fileOperations);
   const manifestPath = MANIFEST_RELATIVE_PATH;
   const ordered = [
@@ -525,6 +673,8 @@ async function applyChanges(root, changes, fileOperations = {}) {
         schema_version: INIT_INTERACTION_SCHEMA,
         root,
         changes,
+        phase: "applying",
+        history: journalContext,
       })}\n`,
       { encoding: "utf8", mode: 0o600 },
     );
@@ -538,15 +688,48 @@ async function applyChanges(root, changes, fileOperations = {}) {
         await operations.write_file(target, change.after);
       }
     }
-    await removeRecoveryJournal(root);
+    if (!deferCleanup) await removeRecoveryJournal(root);
     return { applied: true, reverted: false };
   } catch {
-    const rollback = await rollbackChanges(root, attempted, operations);
+    const rollback = await rollbackChanges(root, attempted, operations, true);
     if (rollback.reverted) {
+      await cleanupEmptyChangeDirectories(root, attempted);
       await removeRecoveryJournal(root);
       return { applied: false, reverted: true };
     }
-    return { applied: false, reverted: false };
+    return { applied: false, reverted: false, conflict: rollback.conflict };
+  }
+}
+
+async function markInitializationPhase(root, phase) {
+  const recoveryPath = path.join(root, RECOVERY_RELATIVE_PATH);
+  const journal = JSON.parse(await readFile(recoveryPath, "utf8"));
+  const temporary = `${recoveryPath}.tmp-${randomBytes(16).toString("hex")}`;
+  try {
+    await writeFile(
+      temporary,
+      `${JSON.stringify({ ...journal, phase })}\n`,
+      { encoding: "utf8", flag: "wx", mode: 0o600 },
+    );
+    await rename(temporary, recoveryPath);
+  } finally {
+    await rm(temporary, { force: true });
+  }
+}
+
+async function markInitializationHistoryCommitted(root) {
+  return markInitializationPhase(root, "history_committed");
+}
+
+async function initializationHistoryIsCommitted(root, history) {
+  try {
+    return await committedLocalHistoryStatus(
+      root,
+      history.report_id,
+      history.record_digest,
+    );
+  } catch {
+    return "invalid";
   }
 }
 
@@ -567,12 +750,80 @@ async function recoverPendingInitialization(root) {
     return false;
   }
   if (
-    journal?.schema_version !== INIT_INTERACTION_SCHEMA
+    !journal
+    || JSON.stringify(Object.keys(journal).sort()) !== JSON.stringify([
+      "changes",
+      "history",
+      "phase",
+      "root",
+      "schema_version",
+    ])
+    || journal?.schema_version !== INIT_INTERACTION_SCHEMA
     || journal.root !== root
     || !Array.isArray(journal.changes)
-    || journal.changes.some((change) => !APPROVED_PATHS.has(change.path))
+    || journal.changes.some((change) => !previewChangeIsValid(change))
+    || new Set(journal.changes.map(({ path: relative }) => relative)).size
+      !== journal.changes.length
+    || !["applying", "history_committing", "history_committed"].includes(journal.phase)
+    || !journal.history
+    || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(journal.history.report_id)
+    || !/^sha256:[a-f0-9]{64}$/u.test(journal.history.record_digest)
+    || typeof journal.history.source_report_id !== "string"
+    || !["initialization", "migration", "update"].includes(journal.history.mode)
+    || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u
+      .test(journal.history.commit_token)
+    || typeof journal.history.report_preexisting !== "boolean"
+    || !Array.isArray(journal.history.history_preexisting)
+    || JSON.stringify(Object.keys(journal.history).sort()) !== JSON.stringify([
+      "commit_token",
+      "history_preexisting",
+      "mode",
+      "record_digest",
+      "report_id",
+      "report_preexisting",
+      "source_report_id",
+    ])
+    || journal.history.history_preexisting.some((candidate) =>
+      JSON.stringify(Object.keys(candidate ?? {}).sort()) !== JSON.stringify(["digest", "path"])
+      || !isLocalHistoryPath(candidate.path)
+      || !/^sha256:[a-f0-9]{64}$/u.test(candidate.digest))
+    || new Set(journal.history.history_preexisting.map(({ path: historyPath }) => historyPath)).size
+      !== journal.history.history_preexisting.length
   ) {
     return false;
+  }
+  const reportHistoryPaths = [
+    "evidence-index.json",
+    "record.json",
+    "record.sha256",
+    "view.md",
+  ].map((name) => `.launchrally/reports/${journal.history.report_id}/${name}`);
+  if (
+    journal.history.report_preexisting !== reportHistoryPaths.every((historyPath) =>
+      journal.history.history_preexisting.some(({ path: recordedPath }) =>
+        recordedPath === historyPath))
+  ) return false;
+  const historyState = await initializationHistoryIsCommitted(root, journal.history);
+  if (
+    journal.phase === "history_committed" && historyState !== "valid"
+    || journal.phase === "history_committing" && historyState === "invalid"
+  ) return false;
+  if (
+    ["history_committing", "history_committed"].includes(journal.phase)
+    && historyState === "valid"
+  ) {
+    for (const change of journal.changes) {
+      const current = await readOptional(path.join(root, change.path));
+      if ((current === null ? null : digest(current)) !== change.after_digest) return "conflict";
+    }
+    await removeRecoveryJournal(root);
+    return {
+      action: "finalized",
+      source_report_id: journal.history.source_report_id,
+      mode: journal.history.mode,
+      history_commit: journal.history.report_preexisting ? "reused" : "created",
+      changes_applied: journal.changes.map((change) => change.path),
+    };
   }
   const rollback = await rollbackChanges(
     root,
@@ -582,8 +833,9 @@ async function recoverPendingInitialization(root) {
   );
   if (rollback.conflict) return "conflict";
   if (!rollback.reverted) return false;
+  await cleanupEmptyChangeDirectories(root, journal.changes);
   await removeRecoveryJournal(root);
-  return true;
+  return { action: "rolled_back" };
 }
 
 function unavailable() {
@@ -607,16 +859,28 @@ function initializationError(error, message, extra = {}) {
   };
 }
 
-export async function runInit(cwd, version, options = {}, dependencies = {}) {
+async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
   const root = path.resolve(cwd);
   const recovered = await recoverPendingInitialization(root);
-  if (recovered === true) {
+  if (recovered?.action === "rolled_back") {
     return {
       contract: CLI_INTERACTION_CONTRACT,
       status: "completed",
       operation: "init",
       outcome: "initialization_recovered",
       changes_applied: [],
+    };
+  }
+  if (recovered?.action === "finalized") {
+    return {
+      contract: CLI_INTERACTION_CONTRACT,
+      status: "completed",
+      operation: "init",
+      outcome: recovered.mode === "migration" ? "migrated" : "initialized",
+      recovery: "committed_history_finalized",
+      history_commit: recovered.history_commit,
+      source_report_id: recovered.source_report_id,
+      changes_applied: recovered.changes_applied,
     };
   }
   if (recovered === false) {
@@ -644,7 +908,7 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
   }
   if (!options.report_package && !options.resume_token) return unavailable();
   if (options.resume_token) {
-    const stored = await loadState(options.resume_token);
+    const stored = await (dependencies.load_state ?? loadState)(options.resume_token);
     if (!stored) {
       return {
         contract: CLI_INTERACTION_CONTRACT,
@@ -667,7 +931,8 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
     }
     if (
       !Array.isArray(state.changes)
-      || state.changes.some((change) => !APPROVED_PATHS.has(change.path))
+      || state.changes.some((change) => !isApprovedPath(change.path))
+      || !storedPreviewIsBound(state)
     ) {
       await discardState(statePath);
       return {
@@ -681,6 +946,9 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
     try {
       await assertSafeRelativePath(root, RECOVERY_RELATIVE_PATH);
       await assertSafeChangePaths(root, state.changes);
+      for (const entry of state.history_preexisting) {
+        await assertSafeRelativePath(root, entry.path);
+      }
     } catch (error) {
       await discardState(statePath);
       if (error?.code === "unsafe_project_path") {
@@ -710,7 +978,10 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
         message: "The initialization confirmation decision is invalid.",
       };
     }
-    if (!await previewIsCurrent(state.root, state.changes)) {
+    if (
+      !await previewIsCurrent(state.root, state.changes)
+      || !await preexistingHistoryIsCurrent(state.root, state)
+    ) {
       await discardState(statePath);
       return {
         contract: CLI_INTERACTION_CONTRACT,
@@ -720,10 +991,30 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
         message: "A previewed file changed before confirmation; no initialization changes were applied.",
       };
     }
+    const appliedChanges = state.changes.filter(
+      (change) => !isLocalHistoryPath(change.path),
+    );
+    const historyPlan = createHistoryFiles(
+      state.report_package,
+      { include_cache: false },
+    );
+    const journalContext = {
+      report_id: state.report_package.report.report_id,
+      record_digest: historyPlan.record_digest,
+      source_report_id: state.source_report_id,
+      mode: state.mode,
+      commit_token: randomUUID(),
+      history_preexisting: state.history_preexisting,
+      report_preexisting: historyPlan.files
+        .filter(({ path: relative }) => relative.includes("/reports/"))
+        .every((file) => state.history_preexisting.some((item) => item.path === file.path)),
+    };
     const applied = await applyChanges(
       state.root,
-      state.changes,
+      appliedChanges,
       dependencies.file_operations,
+      true,
+      journalContext,
     );
     await discardState(statePath);
     if (!applied.applied) {
@@ -746,6 +1037,62 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
           recoverable: true,
           changes_applied: [],
         };
+    }
+    let historyCommitted = false;
+    try {
+      await (dependencies.mark_history_committing
+        ?? ((target) => markInitializationPhase(target, "history_committing")))(state.root);
+      await (dependencies.persist_history ?? persistLocalHistory)(
+        state.root,
+        state.report_package,
+        {
+          include_cache: false,
+          ...(dependencies.history_file_operations
+            ? { file_operations: dependencies.history_file_operations }
+            : {}),
+        },
+      );
+      historyCommitted = true;
+      await (dependencies.mark_history_committed ?? markInitializationHistoryCommitted)(
+        state.root,
+      );
+      await removeRecoveryJournal(state.root);
+    } catch (error) {
+      if (historyCommitted) {
+        return initializationError(
+          "initialization_recovery_required",
+          "Immutable history was committed, but initialization journal cleanup failed; rerun init to recover safely.",
+          { recoverable: true, changes_applied: [] },
+        );
+      }
+      const rollback = await rollbackChanges(
+        state.root,
+        appliedChanges,
+        fileOperationAdapter(dependencies.file_operations),
+        true,
+      );
+      if (rollback.reverted) {
+        try {
+          await cleanupEmptyChangeDirectories(state.root, appliedChanges);
+          await removeRecoveryJournal(state.root);
+        } catch {
+          return initializationError(
+            "initialization_recovery_required",
+            "History persistence failed and rollback journal cleanup must be recovered by rerunning init.",
+            { recoverable: true, changes_applied: [] },
+          );
+        }
+        return initializationError(
+          error?.code ?? "history_persistence_failed",
+          "Initialization could not commit immutable local history and all project changes were reverted.",
+          { recoverable: true, changes_applied: [] },
+        );
+      }
+      return initializationError(
+        "initialization_recovery_required",
+        "History persistence and automatic rollback both failed; rerun init to recover.",
+        { recoverable: true, changes_applied: [] },
+      );
     }
     return {
       contract: CLI_INTERACTION_CONTRACT,
@@ -782,10 +1129,37 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       "The saved Audit JSON is incomplete or invalid; nothing was changed.",
     );
   }
-  if (path.resolve(source.report.scope.project_root) !== root) {
+  let sourceHistoryPlan;
+  try {
+    sourceHistoryPlan = createHistoryFiles(source, { include_cache: false });
+  } catch (error) {
     return initializationError(
-      "report_scope_mismatch",
-      "The saved Report belongs to a different repository root; nothing was changed.",
+      error?.code ?? "invalid_report_package",
+      "The saved Audit history is inconsistent or unsafe; nothing was changed.",
+    );
+  }
+  let existingHistoryState;
+  try {
+    for (const file of sourceHistoryPlan.files) {
+      await assertSafeRelativePath(root, file.path);
+    }
+    existingHistoryState = await committedLocalHistoryStatus(
+      root,
+      source.report.report_id,
+      sourceHistoryPlan.record_digest,
+    );
+  } catch (error) {
+    return initializationError(
+      error?.code ?? "history_preflight_failed",
+      "Existing local history could not be validated; nothing was changed.",
+      { recoverable: true },
+    );
+  }
+  if (existingHistoryState === "invalid") {
+    return initializationError(
+      "history_collision",
+      "Existing Report history is partial, tampered, or missing referenced Evidence; nothing was changed.",
+      { recoverable: true },
     );
   }
   try {
@@ -961,7 +1335,7 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
   const plannedContents = new Map(dependencyChanges.map((change) => [change.path, change.content]));
   plannedContents.set(
     ".launchrally/.gitignore",
-    "/reports/\n/evidence/\n/.init-transaction/\n",
+    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n/.init-transaction/\n",
   );
   plannedContents.set(
     MANIFEST_RELATIVE_PATH,
@@ -970,11 +1344,24 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
   if (legacyManifestContent !== null) {
     plannedContents.set(LEGACY_MANIFEST_RELATIVE_PATH, null);
   }
+  for (const historyFile of sourceHistoryPlan.files) {
+    plannedContents.set(historyFile.path, historyFile.content);
+  }
   const previewedChanges = await Promise.all(
     [...plannedContents.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([relativePath, content]) => previewChange(root, relativePath, content)),
   );
+  if (previewedChanges.some((change) =>
+    isImmutableHistoryPath(change.path)
+    && change.before !== null
+    && change.before !== change.after)) {
+    return initializationError(
+      "history_collision",
+      "Existing immutable Report or Evidence history differs from the supplied Audit; nothing was changed.",
+      { recoverable: true },
+    );
+  }
   const changes = previewedChanges.filter((change) => change.before !== change.after);
   if (changes.length === 0) {
     return {
@@ -993,6 +1380,10 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
     mode,
     manifest,
     changes,
+    history_preexisting: previewedChanges
+      .filter((change) => isLocalHistoryPath(change.path) && change.before === change.after)
+      .map((change) => ({ path: change.path, digest: change.after_digest })),
+    report_package: structuredClone(source),
   };
   return {
     contract: CLI_INTERACTION_CONTRACT,
@@ -1004,7 +1395,7 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
     preview: { changes },
     interaction: {
       schema_version: INIT_INTERACTION_SCHEMA,
-      resume_token: await storeState(state),
+      resume_token: await (dependencies.store_state ?? storeState)(state),
     },
     request: {
       type: "confirmation",
@@ -1012,4 +1403,40 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       choices: ["confirm", "decline"],
     },
   };
+}
+
+export async function runInit(cwd, version, options = {}, dependencies = {}) {
+  const root = path.resolve(cwd);
+  let lockScope;
+  try {
+    lockScope = await realpath(root);
+  } catch (error) {
+    return initializationError(
+      error?.code ?? "invalid_repository_scope",
+      "The explicit initialization repository root is unavailable.",
+    );
+  }
+  const lockKey = createHash("sha256").update(lockScope).digest("hex");
+  const temporaryRoot = await realpath(os.tmpdir());
+  let release;
+  try {
+    release = await acquireOwnedLock(
+      path.join(temporaryRoot, `launchrally-init-${lockKey}`),
+      "init",
+      dependencies.init_lock_operations,
+    );
+  } catch (error) {
+    return initializationError(
+      error?.code === "owned_lock_busy" ? "initialization_busy" : "invalid_initialization_lock",
+      error?.code === "owned_lock_busy"
+        ? "Another initialization or recovery operation is active for this repository."
+        : "The initialization ownership lock is invalid and was preserved.",
+      { recoverable: true },
+    );
+  }
+  try {
+    return await runInitLocked(cwd, version, options, dependencies);
+  } finally {
+    await release();
+  }
 }

@@ -20,6 +20,7 @@ import {
 import { describeWebBaselineCatalog, executeWebBaseline } from "./check-catalog.js";
 import { MANIFEST_RELATIVE_PATH, parseManifest } from "./manifest.js";
 import { scanRepository } from "./local-safe-scan.js";
+import { persistLocalHistory } from "./local-history.js";
 import { createProviderAdapterPlan, executeProviderAdapters } from "./provider-adapters.js";
 import { matchesProviderDecisionCard } from "./provider-decision-cards.js";
 import { createPublicVerificationPlan, collectPublicEvidence } from "./public-verification.js";
@@ -30,13 +31,14 @@ const VERIFY_LIMITATIONS = Object.freeze([
   "Historical Reports and Evidence remain immutable and are compared by identity and Check result.",
 ]);
 
-function executionError(error, message) {
+function executionError(error, message, extra = {}) {
   return {
     contract: CLI_INTERACTION_CONTRACT,
     status: "execution_error",
     operation: "verify",
     error,
     message,
+    ...extra,
   };
 }
 
@@ -855,7 +857,7 @@ async function resumeVerify(cwd, options, dependencies) {
     ...(dependencies.now ? { now: dependencies.now } : {}),
     ...(dependencies.id ? { id: dependencies.id } : {}),
   });
-  return deepFreeze({
+  const completed = {
     contract: CLI_INTERACTION_CONTRACT,
     schema_version: VERIFICATION_RESULT_SCHEMA,
     status: "completed",
@@ -878,7 +880,24 @@ async function resumeVerify(cwd, options, dependencies) {
     },
     comparison: compareReports(state.source, reportPackage),
     ...reportPackage,
-  });
+  };
+  try {
+    await (dependencies.persist_history ?? persistLocalHistory)(cwd, reportPackage, {
+      ...(dependencies.history_file_operations
+        ? { file_operations: dependencies.history_file_operations }
+        : {}),
+    });
+  } catch (error) {
+    return executionError(
+      error?.code ?? "history_persistence_failed",
+      "Verify produced a Report but could not commit immutable local history; retry Verify recovery.",
+      {
+        recoverable: true,
+        generated_report_id: reportPackage.report.report_id,
+      },
+    );
+  }
+  return deepFreeze(completed);
 }
 
 export async function runVerify(cwd, version, options = {}, dependencies = {}) {

@@ -10,11 +10,20 @@ import { assertValidLaunchPlan } from "../packages/contracts/src/index.js";
 import {
   evaluateReportCurrentness,
   runAudit,
-  runPlan,
+  runPlan as runPlanCore,
 } from "../packages/core/src/index.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
+
+function runPlan(reportPackage, options = {}) {
+  return runPlanCore(reportPackage, {
+    ...(reportPackage?.report?.scope?.project_root
+      ? { cwd: reportPackage.report.scope.project_root }
+      : {}),
+    ...options,
+  });
+}
 
 const ANSWERS = Object.freeze({
   intended_environment: "production",
@@ -486,7 +495,7 @@ test("Agent Mode returns the structured Plan without changing the project", asyn
   ]);
   const result = JSON.parse(processResult.stdout);
 
-  assert.deepEqual(result, runPlan(audit));
+  assert.deepEqual(result, runPlan(audit, { cwd: directory }));
   assert.deepEqual(result.effects, {
     source_mutation: "none",
     deployment_mutation: "none",
@@ -495,6 +504,21 @@ test("Agent Mode returns the structured Plan without changing the project", asyn
   });
   assert.deepEqual(await readdir(directory), beforeEntries);
   assert.equal(await readFile(path.join(directory, "package.json"), "utf8"), beforePackage);
+});
+
+test("Plan currentness uses the explicit repository cwd rather than a Report-supplied path", async () => {
+  const directory = await fixture();
+  const unrelated = await fixture();
+  await writeFile(path.join(unrelated, "package.json"), "{\"name\":\"unrelated\"}\n");
+  const audit = structuredClone(await completeAudit(directory));
+  audit.report.scope.project_root = unrelated;
+  audit.report.scope.project.root = unrelated;
+
+  const result = runPlan(audit, { cwd: directory });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.source_report_id, audit.report.report_id);
+  assert.equal(runPlanCore(audit).status, "needs_refresh");
 });
 
 test("Human Mode explains Findings, investigation locations, Evidence, and Gaps separately", async () => {
@@ -507,6 +531,8 @@ test("Human Mode explains Findings, investigation locations, Evidence, and Gaps 
   const processResult = await execFileAsync(process.execPath, [
     cli,
     "plan",
+    "--cwd",
+    directory,
     "--report",
     reportPath,
   ]);
@@ -536,6 +562,8 @@ test("the explicit CLI handoff assigns work to the host Agent and returns to Ver
   const processResult = await execFileAsync(process.execPath, [
     cli,
     "plan",
+    "--cwd",
+    directory,
     "--report",
     reportPath,
     "--handoff",

@@ -74,7 +74,14 @@ test("every completed Audit returns one frozen Record, derived Markdown View, an
   const { report, report_view: view, evidence_index: index } = result;
 
   assert.equal(report.schema_version, REPORT_SCHEMA);
-  assert.ok(report.report_id);
+  assert.match(
+    report.report_id,
+    /^report_\d{8}T\d{9}Z_[a-f0-9-]{36}$/u,
+  );
+  assert.equal(
+    report.report_id.slice(7, 26),
+    report.created_at.replace(/[-:.]/gu, ""),
+  );
   assert.ok(!Number.isNaN(Date.parse(report.created_at)));
   assert.equal(report.provenance.generator_version, "report-generator/v1");
   assert.deepEqual(report.policy, {

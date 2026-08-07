@@ -221,7 +221,7 @@ export function runPlan(reportPackage, options = {}) {
     };
   }
   const currentness = evaluateReportCurrentness(reportPackage, {
-    cwd: report.scope.project_root,
+    cwd: options.cwd ?? process.cwd(),
     ...(options.now ? { now: options.now } : {}),
   });
   if (!currentness.current) {
