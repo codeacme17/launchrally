@@ -86,7 +86,7 @@ function assertPassedEvidenceContracts(result, representativeId) {
   for (const check of result.report.results.checks.filter(
     ({ status }) => status === "passed",
   )) {
-    const requirement = declarations.get(check.check_id).evidence_requirement;
+    const requirement = declarations.get(check.check_id).pass_evidence_requirement;
     const qualifyingEvidence = check.evidence
       .map(({ digest }) => evidenceByDigest.get(digest))
       .filter((evidence) =>

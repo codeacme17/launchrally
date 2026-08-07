@@ -103,6 +103,13 @@ export async function scanRepository(selectedRoot) {
   const errors = [];
   const exclusions = emptyExclusions();
   const contentDigests = {};
+  const rootLockfileCoverage = { complete: true, uncovered: [] };
+
+  function uncoverRootLockfile(relativePath, reason) {
+    if (relativePath.includes("/") || !LOCKFILES.has(relativePath)) return;
+    rootLockfileCoverage.complete = false;
+    rootLockfileCoverage.uncovered.push({ path: relativePath, reason });
+  }
 
   function exclude(reason) {
     exclusions[reason] += 1;
@@ -207,6 +214,7 @@ export async function scanRepository(selectedRoot) {
       const absolutePath = path.join(canonicalDirectory, entry.name);
 
       if (entry.isSymbolicLink()) {
+        uncoverRootLockfile(relativePath, "symlink");
         exclude("symlinks");
         continue;
       }
@@ -248,6 +256,7 @@ export async function scanRepository(selectedRoot) {
 
       const environmentFile = isEnvironmentFile(entry.name);
       if (!environmentFile && isIgnored(relativePath, rules)) {
+        uncoverRootLockfile(relativePath, "ignored");
         exclude("ignored");
         continue;
       }
@@ -256,10 +265,12 @@ export async function scanRepository(selectedRoot) {
       try {
         stat = await lstat(absolutePath);
       } catch {
+        uncoverRootLockfile(relativePath, "unreadable");
         recordError("unreadable", relativePath);
         continue;
       }
       if (stat.size > MAX_SUPPORTED_FILE_BYTES) {
+        uncoverRootLockfile(relativePath, "large");
         exclude("large");
         continue;
       }
@@ -272,7 +283,16 @@ export async function scanRepository(selectedRoot) {
       }
 
       if (packageManager && entry.name === "bun.lockb") {
-        await readSafeFile(absolutePath, relativePath, undefined, { allow_binary: true });
+        const content = await readSafeFile(
+          absolutePath,
+          relativePath,
+          undefined,
+          { allow_binary: true },
+        );
+        if (content === null) {
+          uncoverRootLockfile(relativePath, "not_collected");
+          continue;
+        }
         facts.push({
           kind: "lockfile",
           package_manager: packageManager,
@@ -282,7 +302,10 @@ export async function scanRepository(selectedRoot) {
       }
 
       const content = await readSafeFile(absolutePath, relativePath, stat);
-      if (content === null) continue;
+      if (content === null) {
+        uncoverRootLockfile(relativePath, "not_collected");
+        continue;
+      }
 
       if (packageManager) {
         facts.push({
@@ -308,5 +331,8 @@ export async function scanRepository(selectedRoot) {
     exclusions,
     errors,
     content_digests: contentDigests,
+    coverage: {
+      root_lockfiles: rootLockfileCoverage,
+    },
   };
 }

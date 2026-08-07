@@ -1,5 +1,13 @@
 export const POLICY_ENGINE_VERSION = "launch-policy-engine/v1";
 
+const MACHINE_EVIDENCE_KINDS = new Set([
+  "file",
+  "local_observation",
+  "project_fact",
+  "public_observation",
+  "machine_evidence",
+]);
+
 function releaseGate(declaration, scopeConfirmed) {
   const severity = declaration.severity_policy.severity;
   if (severity === "critical") return true;
@@ -34,22 +42,37 @@ function remediationOrder(left, right) {
     || left.check_id.localeCompare(right.check_id);
 }
 
-function enforceEvidenceRequirement(check, declaration, evidenceByDigest) {
-  if (check.status !== "passed" || !declaration.evidence_requirement) return check;
-  const requirement = declaration.evidence_requirement;
-  const qualifyingEvidence = check.evidence
+function evidenceRequirement(check, declaration) {
+  return check.status === "passed"
+    ? declaration.pass_evidence_requirement ?? declaration.evidence_requirement
+    : check.status === "failed"
+      ? declaration.failure_evidence_requirement
+      : null;
+}
+
+function qualifyingEvidence(check, requirement, evidenceByDigest) {
+  if (!requirement) return [];
+  return check.evidence
     .map((reference) => evidenceByDigest.get(reference.digest))
     .filter((evidence) =>
       evidence
       && requirement.accepted_kinds.includes(evidence.evidence_kind)
       && (!requirement.provenance_required || Boolean(evidence.source)),
     );
-  if (qualifyingEvidence.length >= requirement.minimum_items) return check;
+}
+
+function enforceEvidenceRequirement(check, declaration, evidenceByDigest) {
+  if (!["passed", "failed"].includes(check.status)) return check;
+  const requirement = evidenceRequirement(check, declaration);
+  if (
+    requirement
+    && qualifyingEvidence(check, requirement, evidenceByDigest).length >= requirement.minimum_items
+  ) return check;
   return {
     ...check,
     status: "unverified",
     reason_code: "insufficient_evidence",
-    summary: "The declared Evidence Requirement is not satisfied, so this Check cannot be Passed.",
+    summary: `The declared ${check.status} Evidence Requirement is not satisfied, so this Check remains Unverified.`,
   };
 }
 
@@ -146,11 +169,26 @@ export function evaluateLaunchPolicy({
   );
   const findings = checks.map((check) => {
     const declared = declarations.get(check.check_id);
-    const evidenceChecked = enforceEvidenceRequirement(check, declared, evidenceByDigest);
+    let evidenceChecked = enforceEvidenceRequirement(check, declared, evidenceByDigest);
+    const gating = releaseGate(declared, scope.confirmed);
+    const failureRequirement = evidenceRequirement(check, declared);
+    if (
+      evidenceChecked.status === "failed"
+      && gating
+      && !qualifyingEvidence(check, failureRequirement, evidenceByDigest).some((evidence) =>
+        MACHINE_EVIDENCE_KINDS.has(evidence.evidence_kind))
+    ) {
+      evidenceChecked = {
+        ...evidenceChecked,
+        status: "unverified",
+        reason_code: "insufficient_machine_evidence",
+        summary: "A gating failure requires qualifying Machine Evidence, so this Check remains Unverified.",
+      };
+    }
     return {
       ...structuredClone(evidenceChecked),
       severity: declared.severity_policy.severity,
-      gating: releaseGate(declared, scope.confirmed),
+      gating,
     };
   });
   const actionQueue = findings
@@ -184,6 +222,9 @@ export function evaluateLaunchPolicy({
   const gatingFailure = findings.some(
     (finding) => finding.status === "failed" && finding.gating,
   );
+  const gatingUnverified = findings.some(
+    (finding) => finding.status === "unverified" && finding.gating,
+  );
   const derivedCurrentness = currentness({
     findings,
     declarations,
@@ -204,9 +245,9 @@ export function evaluateLaunchPolicy({
       ? null
       : gatingFailure
         ? "no_go"
-        : verificationGaps.length > 0
+        : gatingUnverified
           ? "inconclusive"
-          : actionQueue.length > 0
+          : actionQueue.length > 0 || verificationGaps.length > 0
             ? "ready_with_warnings"
             : "launch_ready",
     findings,

@@ -23,6 +23,7 @@ import {
   serializeManifest,
 } from "./manifest.js";
 import { createNeedsRefreshResult } from "./interaction-result.js";
+import { evaluateReportCurrentness } from "./report-currentness.js";
 
 export const CLI_DEPENDENCY = "@launchrally/cli";
 const APPROVED_PATHS = new Set([
@@ -787,13 +788,6 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       "The saved Report belongs to a different repository root; nothing was changed.",
     );
   }
-  if (!source.report.policy.current) {
-    return createNeedsRefreshResult(
-      "init",
-      source.report.report_id,
-      "Initialization requires a current Report; run full Verify first.",
-    );
-  }
   try {
     await assertSafeRelativePath(root, MANIFEST_RELATIVE_PATH);
     await assertSafeRelativePath(root, LEGACY_MANIFEST_RELATIVE_PATH);
@@ -870,6 +864,18 @@ export async function runInit(cwd, version, options = {}, dependencies = {}) {
       error?.code === "legacy_manifest_evidence_mismatch"
         ? "The legacy Manifest cannot be evidenced by the supplied Report; nothing was changed."
         : "The Launch Manifest is invalid and was not changed.",
+    );
+  }
+  const currentness = evaluateReportCurrentness(source, {
+    cwd: root,
+    allow_legacy_manifest: legacyManifest !== null,
+    ...(dependencies.now ? { now: dependencies.now } : {}),
+  });
+  if (!currentness.current) {
+    return createNeedsRefreshResult(
+      "init",
+      source.report.report_id,
+      "Initialization requires a current Report; run full Verify first.",
     );
   }
   const packageJson = await readFile(path.join(root, "package.json"), "utf8");

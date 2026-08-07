@@ -7,6 +7,7 @@ import {
 } from "@launchrally/contracts";
 
 import { createNeedsRefreshResult } from "./interaction-result.js";
+import { evaluateReportCurrentness } from "./report-currentness.js";
 
 function titleCase(value) {
   return `${value[0].toUpperCase()}${value.slice(1)}`;
@@ -31,6 +32,7 @@ function planItem(report, action, index) {
   const declaration = report.catalog.checks.find(
     (candidate) => candidate.check_id === action.check_id,
   );
+  const evidenceRequirement = declaration.failure_evidence_requirement;
   return {
     rank: index + 1,
     check_id: action.check_id,
@@ -55,9 +57,9 @@ function planItem(report, action, index) {
     },
     remediation: action.action,
     evidence_to_recollect: {
-      ...structuredClone(declaration.evidence_requirement),
+      ...structuredClone(evidenceRequirement),
       freshness: structuredClone(declaration.freshness_behavior),
-      instruction: `Recollect ${declaration.evidence_requirement.accepted_kinds.join(
+      instruction: `Recollect ${evidenceRequirement.accepted_kinds.join(
         ", ",
       )} Evidence for ${action.check_id}, then run Verify.`,
     },
@@ -218,7 +220,11 @@ export function runPlan(reportPackage, options = {}) {
       message: "The saved Report has inconsistent Finding, Action Queue, or Verification Gap relationships.",
     };
   }
-  if (!report.policy.current) {
+  const currentness = evaluateReportCurrentness(reportPackage, {
+    cwd: report.scope.project_root,
+    ...(options.now ? { now: options.now } : {}),
+  });
+  if (!currentness.current) {
     return createNeedsRefreshResult(
       "plan",
       report.report_id,

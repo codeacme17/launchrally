@@ -80,7 +80,10 @@ async function runCliOutcome(arguments_) {
 }
 
 async function startGuidance(directory, audit) {
-  const reportPath = path.join(directory, "audit.json");
+  const reportPath = path.join(
+    await mkdtemp(path.join(os.tmpdir(), "launchrally-provider-report-")),
+    "audit.json",
+  );
   await writeFile(reportPath, `${JSON.stringify(audit)}\n`);
   return runCli([
     "providers",
@@ -116,7 +119,10 @@ async function submitConstraints(directory, token, overrides = {}) {
 }
 
 async function startMismatchGuidance(directory, audit) {
-  const reportPath = path.join(directory, "mismatch-audit.json");
+  const reportPath = path.join(
+    await mkdtemp(path.join(os.tmpdir(), "launchrally-provider-report-")),
+    "mismatch-audit.json",
+  );
   await writeFile(reportPath, `${JSON.stringify(audit)}\n`);
   return runCli([
     "providers",
@@ -563,7 +569,10 @@ test("confirmed constraints can trigger alternatives for an existing Provider mi
 test("Human Mode keeps capability and constraints ahead of an advisory Provider shortlist", async () => {
   const directory = await fixture();
   const audit = await completeAudit(directory);
-  const reportPath = path.join(directory, "human-audit.json");
+  const reportPath = path.join(
+    await mkdtemp(path.join(os.tmpdir(), "launchrally-provider-report-")),
+    "human-audit.json",
+  );
   await writeFile(reportPath, `${JSON.stringify(audit)}\n`);
 
   const initial = await execFileAsync(process.execPath, [
@@ -610,7 +619,10 @@ test("Human Mode keeps capability and constraints ahead of an advisory Provider 
 test("generic requests and non-mismatching Provider intent never produce recommendations", async () => {
   const directory = await fixture();
   const audit = await completeAudit(directory);
-  const reportPath = path.join(directory, "generic-audit.json");
+  const reportPath = path.join(
+    await mkdtemp(path.join(os.tmpdir(), "launchrally-provider-report-")),
+    "generic-audit.json",
+  );
   await writeFile(reportPath, `${JSON.stringify(audit)}\n`);
 
   for (const triggerArguments of [

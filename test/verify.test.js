@@ -121,6 +121,28 @@ test("full Verify discloses fresh Evidence permissions without mutating history 
   assert.deepEqual(manifest, manifestBefore);
 });
 
+test("full Verify accepts structurally valid non-current history so it can refresh it", async () => {
+  const directory = await fixture();
+  const source = structuredClone(await completeAudit(directory));
+  source.report.policy.current = false;
+  source.report.policy.currentness = {
+    status: "non_current",
+    evaluated_at: source.report.created_at,
+    reasons: [{ reason_code: "content_changed", change: "package_manifest_changed" }],
+  };
+  source.report.assessment = null;
+  delete source.report.verification_context;
+  await writeManifest(directory, source);
+
+  const result = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+
+  assert.equal(result.status, "needs_permission");
+  assert.equal(result.operation, "verify");
+});
+
 function successfulPublicEvidence(plan, collectedAt) {
   const outcomes = {
     dns: "resolved",

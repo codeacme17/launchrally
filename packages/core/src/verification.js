@@ -256,6 +256,7 @@ async function createSnapshot(cwd) {
       policy_version: scan.policy_version,
       exclusions: scan.exclusions,
       errors: scan.errors,
+      coverage: scan.coverage,
     },
   };
   Object.defineProperty(project, "content_digests", {
@@ -652,7 +653,12 @@ function createTargetedResult({
   const localEvidence = checks.flatMap((check) => [
     ...check.applicability.evidence,
     ...check.evidence,
-  ]).filter(({ kind }) => ["file", "project_fact", "release_intent"].includes(kind));
+  ]).filter(({ kind }) => [
+    "file",
+    "local_observation",
+    "project_fact",
+    "release_intent",
+  ].includes(kind));
   const evidence = [...new Map([
     ...localEvidence,
     ...publicEvidence.map((item) => structuredClone(item)),
