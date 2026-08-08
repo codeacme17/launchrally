@@ -8,6 +8,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 import { renderReportMarkdown, runAudit, runInit, runVerify } from "../packages/core/src/index.js";
+import { isOfflineResolutionMiss } from "../packages/core/src/initialization.js";
 import { createHistoryFiles, persistLocalHistory } from "../packages/core/src/local-history.js";
 import { prepareExactToolchainChanges as prepareNpmChanges } from "./helpers/exact-toolchain.js";
 
@@ -1716,6 +1717,16 @@ test("the CLI keeps init unavailable when no complete Report is supplied", async
       return true;
     },
   );
+});
+
+test("stale offline npm metadata still requires an explicit registry permission", () => {
+  const error = new Error("Command failed: npm install --offline @launchrally/cli@0.1.0");
+  error.stderr = [
+    "npm error code ETARGET",
+    "npm error notarget No matching version found for @launchrally/cli@0.1.0.",
+  ].join("\n");
+
+  assert.equal(isOfflineResolutionMiss(error), true);
 });
 
 test("the CLI exposes and honors the isolated toolchain registry permission", async () => {

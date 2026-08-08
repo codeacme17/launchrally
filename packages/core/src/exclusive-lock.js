@@ -140,6 +140,7 @@ export async function acquireOwnedLock(root, name, overrides = {}) {
         `${name}-${current.value.token}.lock`,
       );
       let currentOwnerRecord;
+      let reconstructedOwner = false;
       try {
         currentOwnerRecord = await lockRecord(currentOwner);
       } catch (error) {
@@ -155,6 +156,7 @@ export async function acquireOwnedLock(root, name, overrides = {}) {
         }
         try {
           await ops.link(canonical, currentOwner);
+          reconstructedOwner = true;
           currentOwnerRecord = await lockRecord(currentOwner);
         } catch (linkError) {
           if (!["EEXIST", "ENOENT"].includes(linkError?.code)) throw linkError;
@@ -165,6 +167,18 @@ export async function acquireOwnedLock(root, name, overrides = {}) {
         currentOwnerRecord.content !== current.content
         || !sameFile(currentOwnerRecord.stat, current.stat)
       ) {
+        if (reconstructedOwner) {
+          try {
+            const reconstructed = await lockRecord(currentOwner);
+            if (
+              reconstructed.content === currentOwnerRecord.content
+              && sameFile(reconstructed.stat, currentOwnerRecord.stat)
+            ) await ops.remove(currentOwner, { force: false });
+          } catch (error) {
+            if (error?.code !== "ENOENT") throw error;
+          }
+          continue;
+        }
         const invalid = new Error("The lock owner does not match and was preserved.");
         invalid.code = "invalid_owned_lock";
         throw invalid;
@@ -189,7 +203,11 @@ export async function acquireOwnedLock(root, name, overrides = {}) {
         throw error;
       }
       if (claimed.content === current.content && sameFile(claimed.stat, current.stat)) {
-        await ops.remove(canonical, { force: false });
+        try {
+          await ops.remove(canonical, { force: false });
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
       }
     }
     const busy = new Error("The lock could not be acquired safely.");
