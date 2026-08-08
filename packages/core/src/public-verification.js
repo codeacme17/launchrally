@@ -4,10 +4,7 @@ import https from "node:https";
 import { isIP } from "node:net";
 import tls from "node:tls";
 
-import {
-  environmentHostLabel,
-  environmentTargetLabel,
-} from "./environment-terminology.js";
+import { environmentTargetLabel } from "./environment-terminology.js";
 
 const COLLECTOR_VERSION = "public-verification/v1";
 const PROBE_TIMEOUT_MS = 5000;
@@ -43,7 +40,7 @@ export function createPublicVerificationPlan(answers) {
       kind: "dns",
       target,
       method: "DNS_LOOKUP",
-      purpose: `Resolve the ${environmentHostLabel(environment)}.`,
+      purpose: `Resolve the ${environmentTargetLabel(environment)} host.`,
     }));
     if (url.protocol === "https:") {
       probes.push(probe({

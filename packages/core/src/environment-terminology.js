@@ -9,7 +9,3 @@ function scopedLabel(intendedEnvironment, noun, { capitalize = false, plural = f
 export function environmentTargetLabel(intendedEnvironment, options) {
   return scopedLabel(intendedEnvironment, "target", options);
 }
-
-export function environmentHostLabel(intendedEnvironment, options) {
-  return scopedLabel(intendedEnvironment, "host", options);
-}

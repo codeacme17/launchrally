@@ -370,7 +370,7 @@ test("Agent Mode discloses every read-only public probe before approval", async 
         port: 443,
         path: "/",
         method: "DNS_LOOKUP",
-        purpose: "Resolve the production host.",
+        purpose: "Resolve the production target host.",
         timeout_ms: 5000,
       },
       {
@@ -455,7 +455,7 @@ test("Agent Mode probe purposes use the confirmed intended environment", async (
   assert.equal(result.status, "needs_confirmation");
   assert.equal(
     result.audit_brief.public_verification.probes.find((probe) => probe.kind === "dns").purpose,
-    "Resolve the staging host.",
+    "Resolve the staging target host.",
   );
   assert.equal(
     result.audit_brief.public_verification.probes.find((probe) => probe.kind === "tls").purpose,
@@ -484,7 +484,7 @@ test("public probe purposes support custom and unknown environment labels", () =
   const unknown = createPublicVerificationPlan(answers);
   assert.equal(
     unknown.probes.find((probe) => probe.kind === "dns").purpose,
-    "Resolve the confirmed host.",
+    "Resolve the confirmed target host.",
   );
   assert.equal(
     unknown.probes.find((probe) => probe.kind === "tls").purpose,

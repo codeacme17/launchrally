@@ -492,6 +492,41 @@ test("the Plain adapter labels targets with the intended staging environment", a
   assert.doesNotMatch(rendered, /Production targets/u);
 });
 
+test("the Plain adapter labels custom and unknown target summaries", async () => {
+  for (const [environment, expected] of [
+    ["QA East", /QA East targets:\s+  - https:\/\/example\.com\//u],
+    [null, /Confirmed targets:\s+  - https:\/\/example\.com\//u],
+  ]) {
+    const input = ttyStream();
+    const output = ttyStream();
+    let rendered = "";
+    output.on("data", (chunk) => {
+      rendered += chunk.toString();
+    });
+    const prompt = createPlainPromptAdapter({ input, output });
+
+    setTimeout(() => input.write("3\n"), 10);
+    await prompt.respond({
+      status: "needs_confirmation",
+      operation: "audit",
+      audit_brief: {
+        intended_environment: { value: environment },
+        production_targets: { values: ["https://example.com/"] },
+        core_journeys: { values: [] },
+        provider_roles: { values: [] },
+        support_layers: { values: [] },
+        planned_checks: [],
+      },
+      authorization_plan: [],
+      request: { prompt: "Confirm this Audit Brief." },
+    });
+    await prompt.close();
+
+    assert.match(rendered, expected);
+    assert.doesNotMatch(rendered, /Production targets/u);
+  }
+});
+
 test("the Clack adapter accepts injected TTY streams and keeps permission meaning in text", async () => {
   const input = ttyStream();
   const output = ttyStream();

@@ -166,6 +166,22 @@ test("target messages are contract-neutral and Check results use the intended en
   );
   assert.equal(transport.action, "Use HTTPS for every staging target.");
   assert.doesNotMatch(JSON.stringify(transport), /production target/u);
+
+  for (const [environment, expected] of [
+    ["QA East", "QA East targets must use HTTPS: http://staging.example.com/."],
+    [null, "Confirmed targets must use HTTPS: http://staging.example.com/."],
+  ]) {
+    const result = execute(project(), auditBrief({
+      intended_environment: { value: environment, confirmed: true },
+      production_targets: { values: ["http://staging.example.com/"], confirmed: true },
+    }));
+    assert.equal(
+      result.checks.find(
+        (check) => check.check_id === "web.public.transport-security",
+      ).summary,
+      expected,
+    );
+  }
 });
 
 test("Not Applicable requires a reason and applicability evidence", () => {
