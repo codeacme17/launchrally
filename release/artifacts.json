@@ -63,6 +63,8 @@
         "src/provider-adapters.js",
         "src/provider-decision-cards.js",
         "src/provider-guidance.js",
+        "src/public-journey.js",
+        "src/public-target.js",
         "src/public-verification.js",
         "src/report-currentness.js",
         "src/reporting.js",
@@ -77,6 +79,10 @@
       ],
       "files": [
         "LICENSE",
+        "bin/clack-node20-loader.js",
+        "bin/clack-node20-util.js",
+        "bin/human-audit.js",
+        "bin/prompt-adapters.js",
         "bin/rally.js",
         "package.json"
       ]

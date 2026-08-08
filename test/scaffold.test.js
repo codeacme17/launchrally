@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
 
+import { renderHumanAuditCompletion } from "../packages/cli/bin/human-audit.js";
+
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(root, "packages", "cli", "bin", "rally.js");
@@ -99,9 +101,10 @@ async function runCliAudit(fixture, { json = false, env, publicDecision = "denie
       "--permissions",
       JSON.stringify({ public_verification: publicDecision }),
     ],
-    json,
+    true,
   );
-  return completed.stdout;
+  if (json) return completed.stdout;
+  return renderHumanAuditCompletion(JSON.parse(completed.stdout), { cwd: fixture });
 }
 
 test("audit returns a local Initial Readiness Snapshot and Web baseline result", async () => {
@@ -194,15 +197,15 @@ test("audit returns a local Initial Readiness Snapshot and Web baseline result",
   await assert.rejects(access(path.join(fixture, ".launchrally")));
 });
 
-test("audit renders the Snapshot, Check, gap, and limitation for a person", async () => {
+test("audit renders a concise assessment, Findings, Gaps, and next command for a person", async () => {
   const fixture = await createWebFixture("terminal-web", { withLockfile: true });
   const stdout = await runCliAudit(fixture);
 
   assert.match(
     stdout,
-    /LaunchRally Audit Report[\s\S]*Assessment: Inconclusive[\s\S]*Initial Readiness Snapshot[\s\S]*Project: terminal-web \(web\)[\s\S]*PASS \[P0\] web\.baseline\.lockfile[\s\S]*UNVERIFIED \[P0\] web\.public\.availability[\s\S]*Limitations/,
+    /LaunchRally Audit[\s\S]*Assessment: Inconclusive[\s\S]*Failed Findings:[\s\S]*Verification Gaps:[\s\S]*web\.public\.availability[\s\S]*Next command: rally init .*--report <saved-report-path>/,
   );
-  assert.match(stdout, /Save this complete Audit JSON, then run rally init --report/u);
+  assert.doesNotMatch(stdout, /Initial Readiness Snapshot|# LaunchRally Audit Report/u);
 });
 
 test("audit reports a failed Web baseline Check when the lockfile is missing", async () => {
@@ -253,14 +256,15 @@ test("audit recognizes the binary Bun lockfile without reading its contents", as
   assert.doesNotMatch(JSON.stringify(result), new RegExp(SECRET_SENTINEL));
 });
 
-test("audit renders obvious blockers and remediation actions for a person", async () => {
+test("audit renders failed Findings without dumping the Action Queue", async () => {
   const fixture = await createWebFixture("actionable-web");
   const stdout = await runCliAudit(fixture);
 
   assert.match(
     stdout,
-    /Obvious Blockers\n\n- None[\s\S]*Action Queue\n\n- \[P0\] web\.baseline\.lockfile — Commit the package manager lockfile/,
+    /Failed Findings:[\s\S]*\[P0\] web\.baseline\.lockfile — No dependency lockfile was found/,
   );
+  assert.doesNotMatch(stdout, /Action Queue/u);
 });
 
 test("audit distinguishes an invalid package manifest from a missing one", async () => {
@@ -288,7 +292,7 @@ test("audit distinguishes an invalid package manifest from a missing one", async
   assert.doesNotMatch(terminalOutput, new RegExp(SECRET_SENTINEL));
   assert.match(
     terminalOutput,
-    /Obvious Blockers\n\n- package\.json exists but could not be read as a valid package manifest\./,
+    /Failed Findings:[\s\S]*web\.baseline\.package-manifest — The root package manifest is invalid\./,
   );
 });
 

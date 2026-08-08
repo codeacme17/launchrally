@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
 import { hasClaudeInstalledPlugin } from "../scripts/native-plugin-state.mjs";
+import { assertNoConsumerInstallScripts } from "../scripts/release-artifact-policy.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
@@ -185,6 +186,45 @@ test("release validation rejects lifecycle scripts in a public artifact", async 
   );
 });
 
+test("release artifact policy rejects consumer dependencies with install lifecycle scripts", () => {
+  assert.doesNotThrow(() => assertNoConsumerInstallScripts({
+    packages: {
+      "": { name: "consumer" },
+      "node_modules/safe-runtime": { version: "1.0.0" },
+    },
+  }));
+  assert.throws(
+    () => assertNoConsumerInstallScripts({
+      packages: {
+        "": { name: "consumer" },
+        "node_modules/unsafe-runtime": { version: "1.0.0", hasInstallScript: true },
+      },
+    }),
+    /consumer_install_lifecycle_script: node_modules\/unsafe-runtime/u,
+  );
+});
+
+test("release validation rejects drift from the exact Human Mode UI dependency", async () => {
+  const fixture = await createReleaseFixture();
+  const packagePath = path.join(fixture, "packages/cli/package.json");
+  const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
+  packageJson.dependencies["@clack/prompts"] = "^1.7.0";
+  await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["scripts/validate-release.mjs", "--root", fixture, "--json"],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /release_ui_dependency_drift/u);
+      assert.match(error.stderr, /@clack\/prompts declares \^1\.7\.0; expected 1\.7\.0/u);
+      return true;
+    },
+  );
+});
+
 test("npm release packages are public, provenance-enabled, and file-allowlisted", async () => {
   for (const artifact of releaseManifest.packages) {
     const relative = `${artifact.path}/package.json`;
@@ -202,6 +242,23 @@ test("npm release packages are public, provenance-enabled, and file-allowlisted"
       }
     }
   }
+  const cliPackage = JSON.parse(await readFile(
+    path.join(root, "packages/cli/package.json"),
+    "utf8",
+  ));
+  assert.equal(cliPackage.engines.node, ">=20.12.0");
+  assert.equal(cliPackage.dependencies["@clack/prompts"], "1.7.0");
+});
+
+test("CI and release verification exercise the exact CLI Node runtime floor", async () => {
+  const [ci, release, installGuide] = await Promise.all([
+    readFile(path.join(root, ".github/workflows/ci.yml"), "utf8"),
+    readFile(path.join(root, ".github/workflows/release.yml"), "utf8"),
+    readFile(path.join(root, "docs/getting-started/install.md"), "utf8"),
+  ]);
+  assert.match(ci, /node: \[20\.12\.0, 22, 24\]/u);
+  assert.match(release, /node: \[20\.12\.0, 22, 24\]/u);
+  assert.match(installGuide, /Node\.js 20\.12\.0 or newer/u);
 });
 
 test("the default first Audit is exact, confirmation-preserving, and non-global", async () => {

@@ -7,10 +7,18 @@ export function exactToolchainPackage(version = "0.1.0") {
     private: true,
     version: "0.0.0",
     devDependencies: { "@launchrally/cli": version },
+    overrides: {
+      "@clack/core": "1.4.3",
+      "fast-string-truncated-width": "3.0.3",
+      "fast-string-width": "3.0.2",
+      "fast-wrap-ansi": "0.2.2",
+      sisteransi: "1.0.5",
+    },
   };
 }
 
 export function exactToolchainLock(version = "0.1.0") {
+  const integrity = "sha512-QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQ==";
   return {
     name: "launchrally-toolchain",
     version: "0.0.0",
@@ -29,11 +37,12 @@ export function exactToolchainLock(version = "0.1.0") {
         dev: true,
         license: "Apache-2.0",
         dependencies: {
+          "@clack/prompts": "1.7.0",
           "@launchrally/contracts": version,
           "@launchrally/core": version,
         },
         bin: { rally: "bin/rally.js" },
-        engines: { node: ">=20" },
+        engines: { node: ">=20.12.0" },
       },
       "node_modules/@launchrally/contracts": {
         version,
@@ -49,6 +58,59 @@ export function exactToolchainLock(version = "0.1.0") {
         dev: true,
         license: "Apache-2.0",
         dependencies: { "@launchrally/contracts": version },
+      },
+      "node_modules/@clack/core": {
+        version: "1.4.3",
+        resolved: "https://registry.npmjs.org/@clack/core/-/core-1.4.3.tgz",
+        integrity,
+        dev: true,
+        license: "MIT",
+        dependencies: { "fast-wrap-ansi": "^0.2.0", sisteransi: "^1.0.5" },
+        engines: { node: ">= 20.12.0" },
+      },
+      "node_modules/@clack/prompts": {
+        version: "1.7.0",
+        resolved: "https://registry.npmjs.org/@clack/prompts/-/prompts-1.7.0.tgz",
+        integrity,
+        dev: true,
+        license: "MIT",
+        dependencies: {
+          "@clack/core": "1.4.3",
+          "fast-string-width": "^3.0.2",
+          "fast-wrap-ansi": "^0.2.0",
+          sisteransi: "^1.0.5",
+        },
+        engines: { node: ">= 20.12.0" },
+      },
+      "node_modules/fast-string-truncated-width": {
+        version: "3.0.3",
+        resolved: "https://registry.npmjs.org/fast-string-truncated-width/-/fast-string-truncated-width-3.0.3.tgz",
+        integrity,
+        dev: true,
+        license: "MIT",
+      },
+      "node_modules/fast-string-width": {
+        version: "3.0.2",
+        resolved: "https://registry.npmjs.org/fast-string-width/-/fast-string-width-3.0.2.tgz",
+        integrity,
+        dev: true,
+        license: "MIT",
+        dependencies: { "fast-string-truncated-width": "^3.0.2" },
+      },
+      "node_modules/fast-wrap-ansi": {
+        version: "0.2.2",
+        resolved: "https://registry.npmjs.org/fast-wrap-ansi/-/fast-wrap-ansi-0.2.2.tgz",
+        integrity,
+        dev: true,
+        license: "MIT",
+        dependencies: { "fast-string-width": "^3.0.2" },
+      },
+      "node_modules/sisteransi": {
+        version: "1.0.5",
+        resolved: "https://registry.npmjs.org/sisteransi/-/sisteransi-1.0.5.tgz",
+        integrity,
+        dev: true,
+        license: "MIT",
       },
     },
   };

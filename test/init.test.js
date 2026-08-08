@@ -11,6 +11,7 @@ import { renderReportMarkdown, runAudit, runInit, runVerify } from "../packages/
 import { isOfflineResolutionMiss } from "../packages/core/src/initialization.js";
 import { createHistoryFiles, persistLocalHistory } from "../packages/core/src/local-history.js";
 import { prepareExactToolchainChanges as prepareNpmChanges } from "./helpers/exact-toolchain.js";
+import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
@@ -186,6 +187,46 @@ test("Init canonicalizes an existing toolchain without retaining lifecycle scrip
     JSON.parse(lockChange.after).packages["node_modules/@launchrally/cli"].resolved,
     "https://registry.npmjs.org/@launchrally/cli/-/cli-0.1.0.tgz",
   );
+});
+
+test("Init pins the transitive UI closure before npm resolves caret ranges", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const overrides = {
+    "@clack/core": "1.4.3",
+    "fast-string-truncated-width": "3.0.3",
+    "fast-string-width": "3.0.2",
+    "fast-wrap-ansi": "0.2.2",
+    sisteransi: "1.0.5",
+  };
+
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    {
+      prepare_dependency_changes: async (request) => {
+        const changes = await prepareNpmChanges(request);
+        if (!JSON.parse(request.package_json).overrides) {
+          const lockChange = changes.find(
+            ({ path: changedPath }) => changedPath.endsWith("package-lock.json"),
+          );
+          const lockfile = JSON.parse(lockChange.content);
+          const entry = lockfile.packages["node_modules/fast-string-width"];
+          entry.version = "3.0.4";
+          entry.resolved = "https://registry.npmjs.org/fast-string-width/-/fast-string-width-3.0.4.tgz";
+          lockChange.content = `${JSON.stringify(lockfile, null, 2)}\n`;
+        }
+        return changes;
+      },
+    },
+  );
+
+  assert.equal(preview.status, "needs_confirmation");
+  const packageChange = preview.preview.changes.find(
+    ({ path: changedPath }) => changedPath === ".launchrally/toolchain/package.json",
+  );
+  assert.deepEqual(JSON.parse(packageChange.after).overrides, overrides);
 });
 
 test("Init rejects truncated integrity metadata from the exact-toolchain fast path", async () => {
@@ -713,6 +754,29 @@ test("a forged preview token cannot substitute different confirmed contents", as
   assert.doesNotMatch(await readFile(path.join(directory, "package.json"), "utf8"), /forged/u);
 });
 
+test("Init accepts a portable token when mkdtemp preserves its placeholder", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  const portableToken = await simulateExtendedMkdtempSuffix(
+    preview.interaction.resume_token,
+    "init",
+  );
+
+  const result = await runInit(directory, "0.1.0", {
+    resume_token: portableToken,
+    confirmation: "decline",
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.outcome, "initialization_declined");
+});
+
 test("the opaque Init token detects preview-record corruption before applying changes", async () => {
   const directory = await fixture();
   const audit = await completeAudit(directory);
@@ -723,7 +787,7 @@ test("the opaque Init token detects preview-record corruption before applying ch
     { prepare_dependency_changes: prepareNpmChanges },
   );
   const match = preview.interaction.resume_token.match(
-    /^lrinit_([A-Za-z0-9]{6})_([A-Za-z0-9_-]{43})_/u,
+    /^lrinit_([A-Za-z0-9]{6}|[A-Za-z0-9]{12})_([A-Za-z0-9_-]{43})_/u,
   );
   const statePath = path.join(
     os.tmpdir(),

@@ -8,6 +8,8 @@ import {
 
 import { describeWebBaselineCatalog } from "./check-catalog.js";
 import { createProviderAdapterPlan } from "./provider-adapters.js";
+import { parsePublicJourneyInput } from "./public-journey.js";
+import { parsePublicTargetInput } from "./public-target.js";
 import { createPublicVerificationPlan } from "./public-verification.js";
 
 const PROVIDER_SIGNALS = Object.freeze([
@@ -48,6 +50,66 @@ function supportCandidates(project) {
     ...(variableNames.some((name) => name.startsWith("POSTHOG_")) ? ["analytics"] : []),
     ...(variableNames.some((name) => name.startsWith("SENTRY_")) ? ["monitoring"] : []),
   ];
+}
+
+function routeFromFile(filePath) {
+  const normalized = String(filePath).replaceAll("\\", "/");
+  const sourceExtension = "(?:[cm]?[jt]sx?|svelte)";
+  let segments;
+
+  const appRoute = normalized.match(
+    new RegExp(`(?:^|/)app/(.*?/)?page\\.${sourceExtension}$`, "u"),
+  );
+  if (appRoute) segments = (appRoute[1] ?? "").split("/").filter(Boolean);
+
+  const pagesRoute = normalized.match(
+    new RegExp(`(?:^|/)pages/(.+)\\.${sourceExtension}$`, "u"),
+  );
+  if (!segments && pagesRoute && !pagesRoute[1].startsWith("api/")) {
+    segments = pagesRoute[1].split("/");
+  }
+
+  const svelteRoute = normalized.match(
+    new RegExp(`(?:^|/)src/routes/(.*?/)?\\+page\\.${sourceExtension}$`, "u"),
+  );
+  if (!segments && svelteRoute) segments = (svelteRoute[1] ?? "").split("/").filter(Boolean);
+
+  const remixRoute = normalized.match(
+    new RegExp(`(?:^|/)app/routes/(.+)\\.${sourceExtension}$`, "u"),
+  );
+  if (!segments && remixRoute) segments = remixRoute[1].split(".");
+
+  if (!segments && /(?:^|\/)index\.html$/u.test(normalized)) segments = [];
+  if (!segments) return null;
+
+  const publicSegments = segments
+    .filter((segment) => !/^\(.+\)$/u.test(segment) && !segment.startsWith("@"));
+  if (publicSegments.some((segment, index) =>
+    segment.startsWith("(")
+      || segment.startsWith("[")
+      || segment.includes("$")
+      || (segment.startsWith("_")
+        && !(segment === "_index" && index === publicSegments.length - 1)),
+  )) return null;
+  if (["index", "_index"].includes(publicSegments.at(-1))) publicSegments.pop();
+  return `/${publicSegments.join("/")}`;
+}
+
+function routePurpose(route) {
+  if (route === "/") return "homepage loads";
+  const name = route.split("/").filter(Boolean).at(-1).replaceAll(/[-_]/gu, " ");
+  return `${name} page loads`;
+}
+
+function journeyCandidates(project) {
+  const files = [
+    ...project.facts.map((fact) => fact.provenance?.path),
+    ...(project.detected_files ?? []),
+  ].filter(Boolean);
+  const routes = [...new Set(files.map(routeFromFile).filter(Boolean))]
+    .sort((left, right) => left === "/" ? -1 : right === "/" ? 1 : left.localeCompare(right))
+    .slice(0, 12);
+  return routes.map((route) => `GET ${route} — ${routePurpose(route)}`);
 }
 
 function encodeResumeState(state) {
@@ -95,63 +157,45 @@ function normalizeAnswers(answers) {
     errors.push({ field_id: "production_targets", code: "required" });
   } else {
     for (const target of answers.production_targets) {
-      try {
-        const url = new URL(target);
-        if (!["http:", "https:"].includes(url.protocol)) throw new Error();
-        if (url.username || url.password || url.search || url.hash) {
-          errors.push({ field_id: "production_targets", code: "unsafe_public_target" });
-          break;
-        }
-        productionTargets.push(url.toString());
-      } catch {
-        errors.push({ field_id: "production_targets", code: "invalid_url" });
+      const parsed = parsePublicTargetInput(target);
+      if (parsed.error) {
+        errors.push({ field_id: "production_targets", code: parsed.error });
         break;
       }
+      productionTargets.push(parsed.value);
     }
   }
 
   const coreJourneys = [];
-  if (Array.isArray(answers?.core_journeys)) {
-    for (const journey of answers.core_journeys) {
-      if (typeof journey === "string" && journey.trim()) {
-        coreJourneys.push(journey.trim());
+  if (!Array.isArray(answers?.core_journeys)) {
+    errors.push({ field_id: "core_journeys", code: "required" });
+  } else {
+    for (const suppliedJourney of answers.core_journeys) {
+      const parsed = parsePublicJourneyInput(suppliedJourney);
+      if (parsed.error) {
+        errors.push({ field_id: "core_journeys", code: parsed.error });
+        break;
+      }
+      if (typeof parsed.value === "string") {
+        coreJourneys.push(parsed.value);
         continue;
       }
-      const purpose = typeof journey?.purpose === "string" ? journey.purpose.trim() : "";
-      const journeyPath = typeof journey?.path === "string" ? journey.path.trim() : "";
-      const method = typeof journey?.method === "string" ? journey.method.toUpperCase() : "";
       let staysOnConfirmedOrigins = true;
       try {
         staysOnConfirmedOrigins = productionTargets.every((target) => {
           const origin = new URL(target).origin;
-          return new URL(journeyPath, origin).origin === origin;
+          return new URL(parsed.value.path, origin).origin === origin;
         });
       } catch {
         staysOnConfirmedOrigins = false;
       }
-      if (
-        !purpose
-        || !journeyPath.startsWith("/")
-        || journeyPath.startsWith("//")
-        || journeyPath.includes("\\")
-        || journeyPath.includes("?")
-        || journeyPath.includes("#")
-        || method !== "GET"
-        || !staysOnConfirmedOrigins
-      ) {
+      if (!staysOnConfirmedOrigins) {
         errors.push({ field_id: "core_journeys", code: "invalid_public_journey" });
         break;
       }
-      coreJourneys.push({ purpose, path: journeyPath, method: "GET" });
+      coreJourneys.push(parsed.value);
     }
   }
-  if (
-    coreJourneys.length === 0
-    && !errors.some((error) => error.field_id === "core_journeys")
-  ) {
-    errors.push({ field_id: "core_journeys", code: "required" });
-  }
-
   const providerRoles = [];
   if (!Array.isArray(answers?.provider_roles)) {
     errors.push({ field_id: "provider_roles", code: "required" });
@@ -245,7 +289,7 @@ function createAuditBrief(snapshot, answers = null, confirmed = false) {
     },
     core_journeys: {
       values: answers?.core_journeys ?? [],
-      candidates: [],
+      candidates: journeyCandidates(snapshot.project),
       confirmed,
     },
     provider_roles: {
@@ -284,7 +328,7 @@ function inputFields(auditBrief) {
       field_id: "core_journeys",
       value_type: "journey_array",
       prompt: "Which GET paths and user journeys must work for this release?",
-      candidates: [],
+      candidates: auditBrief.core_journeys.candidates,
       current_value: auditBrief.core_journeys.values,
     },
     {

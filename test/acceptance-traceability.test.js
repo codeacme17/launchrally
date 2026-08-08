@@ -117,14 +117,14 @@ test("CI runs contract and clean journey gates on every required Node and OS tar
   assert.match(scripts["test:release-contracts"], /test\/release\.test\.js/u);
   assert.match(scripts["test:release-contracts"], /--test-name-pattern/u);
 
-  assert.match(ci, /contracts:[\s\S]*runs-on: ubuntu-latest[\s\S]*node: \[20, 22, 24\]/u);
+  assert.match(ci, /contracts:[\s\S]*runs-on: ubuntu-latest[\s\S]*node: \[20\.12\.0, 22, 24\]/u);
   assert.match(
     ci,
     /journeys:[\s\S]*os: \[ubuntu-latest, macos-latest, windows-latest\][\s\S]*node-version: 22/u,
   );
   assert.match(
     release,
-    /contracts:[\s\S]*node: \[20, 22, 24\][\s\S]*journeys:[\s\S]*os: \[ubuntu-latest, macos-latest, windows-latest\]/u,
+    /contracts:[\s\S]*node: \[20\.12\.0, 22, 24\][\s\S]*journeys:[\s\S]*os: \[ubuntu-latest, macos-latest, windows-latest\]/u,
   );
   assert.match(release, /publish:[\s\S]*needs: \[contracts, journeys\]/u);
   for (const command of [
