@@ -19,6 +19,127 @@ function ttyStream() {
   return stream;
 }
 
+test("the Plain adapter explains and validates required input before continuing", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\n"), 10);
+  setTimeout(() => input.write("https://app.example.com\n"), 30);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "production_targets",
+        value_type: "url_array",
+        prompt: "Which public production URLs are in scope?",
+        candidates: [],
+        current_value: [],
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: { production_targets: ["https://app.example.com"] },
+  });
+  assert.match(rendered, /Which public production URLs are in scope\? \(Required\)/u);
+  assert.match(rendered, /Example: https:\/\/app\.example\.com/u);
+  assert.match(rendered, /This field is required\./u);
+});
+
+test("the Plain adapter uses numbered choices for selectable input", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("1\n"), 10);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "intended_environment",
+        value_type: "string",
+        prompt: "Which environment is this Audit preparing for?",
+        candidates: [],
+        current_value: null,
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, { answers: { intended_environment: "production" } });
+  assert.match(rendered, /Which environment is this Audit preparing for\? \(Required\)/u);
+  assert.match(rendered, /1\. Production[\s\S]*2\. Staging[\s\S]*3\. Preview/u);
+  assert.match(rendered, /4\. Other — enter a custom value/u);
+});
+
+test("the Plain adapter uses numbered multi-select for Provider roles", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("1,2\n"), 10);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [{ provider: "vercel", role: "deployment" }] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "provider_roles",
+        value_type: "provider_role_array",
+        prompt: "Which Providers and roles belong to this release?",
+        candidates: [{ provider: "vercel", role: "deployment" }],
+        current_value: [],
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      provider_roles: [
+        { provider: "cloudflare", role: "deployment" },
+        { provider: "netlify", role: "deployment" },
+      ],
+    },
+  });
+  assert.match(rendered, /Vercel — deployment \(detected\)/u);
+  assert.match(rendered, /1\. Cloudflare — deployment/u);
+  assert.match(rendered, /Select numbers separated by commas, or press Enter for none:/u);
+});
+
 test("the Plain adapter uses numbered choices and default-deny confirmations without ANSI", async () => {
   const input = ttyStream();
   const output = ttyStream();
@@ -101,6 +222,126 @@ test("the Clack adapter accepts injected TTY streams and keeps permission meanin
   assert.match(semanticOutput, /Public verification/u);
   assert.match(semanticOutput, /Targets: https:\/\/example\.com\//u);
   assert.match(semanticOutput, /Approve this permission\?/u);
+});
+
+test("the Clack adapter uses a select prompt for the environment", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\r"), 20);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "intended_environment",
+        value_type: "string",
+        prompt: "Which environment is this Audit preparing for?",
+        candidates: [],
+        current_value: null,
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, { answers: { intended_environment: "production" } });
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /Which environment is this Audit preparing for\? \(Required\)/u);
+  assert.match(semanticOutput, /Production[\s\S]*Staging[\s\S]*Preview/u);
+  assert.match(semanticOutput, /Other — enter a custom value/u);
+});
+
+test("the Clack adapter shows examples and validates required text input in place", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\r"), 20);
+  setTimeout(() => input.write("https://app.example.com\r"), 60);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "production_targets",
+        value_type: "url_array",
+        prompt: "Which public production URLs are in scope?",
+        candidates: [],
+        current_value: [],
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: { production_targets: ["https://app.example.com"] },
+  });
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /Which public production URLs are in scope\? \(Required\)/u);
+  assert.match(semanticOutput, /Example: https:\/\/app\.example\.com/u);
+  assert.match(semanticOutput, /This field is required\./u);
+});
+
+test("the Clack adapter uses a multi-select prompt for Provider roles", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write(" "), 20);
+  setTimeout(() => input.write("\r"), 40);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [{ provider: "vercel", role: "deployment" }] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "provider_roles",
+        value_type: "provider_role_array",
+        prompt: "Which Providers and roles belong to this release?",
+        candidates: [{ provider: "vercel", role: "deployment" }],
+        current_value: [],
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: { provider_roles: [{ provider: "cloudflare", role: "deployment" }] },
+  });
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /Vercel — deployment \(detected\)/u);
+  assert.match(semanticOutput, /Sentry — observability/u);
+  assert.match(semanticOutput, /Space: select/u);
 });
 
 test("the Plain adapter turns process SIGINT into a recoverable prompt cancellation", async () => {

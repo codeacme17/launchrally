@@ -124,6 +124,15 @@ test("Agent Mode asks only for unknown release intent in a versioned state", asy
       "support_layers",
     ],
   );
+  for (const field of result.request.fields) {
+    assert.deepEqual(Object.keys(field), [
+      "field_id",
+      "value_type",
+      "prompt",
+      "candidates",
+      "current_value",
+    ]);
+  }
   assert.deepEqual(result.audit_brief.provider_roles.candidates, [
     { provider: "sentry", role: "observability" },
     { provider: "vercel", role: "deployment" },
