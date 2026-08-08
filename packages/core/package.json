@@ -1,10 +1,24 @@
 {
   "name": "@launchrally/core",
   "version": "0.1.0",
-  "private": true,
+  "description": "Deterministic LaunchRally audit and verification core",
+  "license": "Apache-2.0",
   "type": "module",
   "exports": "./src/index.js",
+  "files": [
+    "provider-decision-cards/",
+    "src/"
+  ],
   "dependencies": {
     "@launchrally/contracts": "0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codeacme17/launchrally.git",
+    "directory": "packages/core"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   }
 }

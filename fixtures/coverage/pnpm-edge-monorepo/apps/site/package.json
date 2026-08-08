@@ -1,0 +1,7 @@
+{
+  "name": "coverage-monorepo-site",
+  "private": true,
+  "scripts": {
+    "build": "vite build"
+  }
+}

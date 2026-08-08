@@ -1,120 +1,159 @@
-import { access, readFile } from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 
 import {
   CLI_INTERACTION_CONTRACT,
-  REPORT_SCHEMA,
 } from "@launchrally/contracts";
 
-const LOCKFILES = [
-  ["pnpm-lock.yaml", "pnpm"],
-  ["package-lock.json", "npm"],
-  ["yarn.lock", "yarn"],
-  ["bun.lock", "bun"],
-  ["bun.lockb", "bun"],
-];
+import {
+  scanRepository,
+} from "./local-safe-scan.js";
+import {
+  advanceAuditInteraction,
+  createInitialAuditInteraction,
+} from "./audit-interaction.js";
+import { executeWebBaseline } from "./check-catalog.js";
+import { collectPublicEvidence } from "./public-verification.js";
+import { executeProviderAdapters } from "./provider-adapters.js";
+import { createReportPackage } from "./reporting.js";
 
-async function exists(filePath) {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readPackageJson(cwd) {
-  const packagePath = path.join(cwd, "package.json");
-  if (!(await exists(packagePath))) return null;
-
-  try {
-    return JSON.parse(await readFile(packagePath, "utf8"));
-  } catch {
-    return null;
-  }
-}
+const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
+  "Local Checks use only normalized, secret-safe repository facts.",
+  "Provider Adapter evidence is limited to explicitly disclosed, allowlisted metadata fields.",
+]);
 
 export async function discoverProject(cwd) {
-  const packageJson = await readPackageJson(cwd);
-  let packageManager = "unknown";
-  const detectedFiles = [];
+  const scan = await scanRepository(cwd);
+  const packageFact = scan.facts.find(
+    (fact) => fact.kind === "package_manifest" && fact.provenance.path === "package.json",
+  );
+  const lockfileFacts = scan.facts.filter(
+    (fact) => fact.kind === "lockfile" && !fact.provenance.path.includes("/"),
+  );
+  const packageManifestStatus = packageFact?.status ?? "missing";
 
-  if (packageJson) detectedFiles.push("package.json");
-
-  for (const [lockfile, manager] of LOCKFILES) {
-    if (await exists(path.join(cwd, lockfile))) {
-      detectedFiles.push(lockfile);
-      if (packageManager === "unknown") packageManager = manager;
-    }
-  }
-
-  return {
-    root: path.resolve(cwd),
-    name: packageJson?.name ?? path.basename(path.resolve(cwd)),
-    package_manager: packageManager,
-    scripts: packageJson?.scripts ?? {},
-    detected_files: detectedFiles,
+  const project = {
+    root: scan.root,
+    name: packageFact?.name ?? path.basename(scan.root),
+    type: packageManifestStatus === "valid" ? "web" : "unknown",
+    package_manifest: { path: "package.json", status: packageManifestStatus },
+    package_manager: lockfileFacts[0]?.package_manager ?? "unknown",
+    script_names: packageFact?.script_names ?? [],
+    detected_files: [
+      ...(packageFact ? ["package.json"] : []),
+      ...lockfileFacts.map((fact) => fact.provenance.path),
+    ],
+    facts: scan.facts,
+    safe_scan: {
+      policy_version: scan.policy_version,
+      exclusions: scan.exclusions,
+      errors: scan.errors,
+      coverage: scan.coverage,
+    },
   };
+  Object.defineProperty(project, "content_digests", {
+    value: scan.content_digests,
+    enumerable: false,
+  });
+  return project;
 }
 
 export async function createInitialSnapshot(cwd) {
+  const project = await discoverProject(cwd);
+
   return {
     contract: CLI_INTERACTION_CONTRACT,
     status: "completed",
     kind: "initial_readiness_snapshot",
-    project: await discoverProject(cwd),
-    obvious_blockers: [],
+    project,
+    obvious_blockers: {
+      valid: [],
+      invalid: ["package.json exists but could not be read as a valid package manifest."],
+      missing: ["No package.json was found, so a conventional Web repository could not be identified."],
+    }[project.package_manifest.status],
+    limitations: [...LOCAL_AUDIT_LIMITATIONS],
     next: {
-      type: "implementation_required",
-      message: "The Phase 0 Check Catalog is not implemented in this scaffold.",
+      type: "none",
+      required: false,
+      message: "No input or approval is required for this local-only Audit.",
     },
   };
 }
 
-export async function runTemplateAudit(cwd, version) {
+export async function runAudit(cwd, version, interactionOptions = {}) {
   const snapshot = await createInitialSnapshot(cwd);
+  if (!interactionOptions.resume_token) {
+    return createInitialAuditInteraction(snapshot);
+  }
+  const interactionResult = advanceAuditInteraction(snapshot, interactionOptions);
+  if (interactionResult.status !== "completed") return interactionResult;
+  const publicPermission = interactionResult.authorization_plan.find(
+    (permission) => permission.permission_id === "public_verification",
+  );
+  const publicEvidence = publicPermission?.decision === "approved"
+    ? await collectPublicEvidence(interactionResult.audit_brief.public_verification)
+    : [];
+  const providerResult = await executeProviderAdapters({
+    cwd,
+    plan: interactionResult.audit_brief.provider_adapters,
+    authorization_plan: interactionResult.authorization_plan,
+  });
+  const baseline = executeWebBaseline({
+    project: snapshot.project,
+    audit_brief: interactionResult.audit_brief,
+    authorization_plan: interactionResult.authorization_plan,
+    public_evidence: publicEvidence,
+    provider_result: providerResult,
+  });
+  baseline.catalog.versions.active_adapters = providerResult.active_adapter_versions;
+  const reportPackage = createReportPackage({
+    cli_version: version,
+    snapshot,
+    audit_brief: interactionResult.audit_brief,
+    authorization_plan: interactionResult.authorization_plan,
+    interaction: interactionResult.interaction,
+    baseline,
+    public_evidence: publicEvidence,
+    provider_result: providerResult,
+    limitations: LOCAL_AUDIT_LIMITATIONS,
+    content_changes: interactionOptions.content_changes ?? [],
+    repository_digests: snapshot.project.content_digests,
+  });
 
   return {
     contract: CLI_INTERACTION_CONTRACT,
     status: "completed",
     operation: "audit",
+    outcome: interactionResult.outcome,
     snapshot,
-    report: {
-      schema_version: REPORT_SCHEMA,
-      report_id: randomUUID(),
-      assessment: "inconclusive",
-      provenance: {
-        cli_version: version,
-        check_catalog_version: null,
-      },
-      scope: {
-        project_root: snapshot.project.root,
-      },
-      results: {
-        action_queue: [],
-        verification_gaps: [
-          {
-            check_id: "template.check-catalog",
-            status: "unverified",
-            reason: "No Checks are implemented in the initial scaffold.",
-          },
-        ],
-        coverage_summary: [],
-      },
-      limitations: [
-        "Template scaffold only: no production readiness Checks were executed.",
-        "No Provider, public-network, or production state was accessed.",
-      ],
+    audit_brief: interactionResult.audit_brief,
+    authorization_plan: interactionResult.authorization_plan,
+    interaction: interactionResult.interaction,
+    ...reportPackage,
+    next: {
+      type: "init",
+      required: false,
+      report_id: reportPackage.report.report_id,
+      message: "Save this complete Audit JSON, then run rally init --report <path> to preview adoption.",
     },
   };
 }
 
-export function createNotImplementedResult(operation) {
-  return {
-    contract: CLI_INTERACTION_CONTRACT,
-    status: "not_implemented",
-    operation,
-    message: `The ${operation} workflow is reserved by the Phase 0 contract but is not implemented in this scaffold.`,
-  };
-}
+export {
+  createProviderAdapterPlan,
+  executeProviderAdapters,
+  PROVIDER_ADAPTER_CONTRACT,
+} from "./provider-adapters.js";
+export {
+  createReportPackage,
+  renderReportMarkdown,
+  REPORT_GENERATOR_VERSION,
+} from "./reporting.js";
+export {
+  evaluateLaunchPolicy,
+  POLICY_ENGINE_VERSION,
+} from "./policy-engine.js";
+export { evaluateReportCurrentness } from "./report-currentness.js";
+export { runInit } from "./initialization.js";
+export { runPlan } from "./planning.js";
+export { runProviderGuidance } from "./provider-guidance.js";
+export { runVerify } from "./verification.js";

@@ -1,0 +1,119 @@
+{
+  "schema_version": "launchrally.dev/p0-release/v1",
+  "phase": "p0",
+  "product_status": "incomplete",
+  "release_status": "release_candidate",
+  "validation_mode": "telemetry_free",
+  "license": "Apache-2.0",
+  "feedback_channels": [
+    "discussions",
+    "issues",
+    "security"
+  ],
+  "acceptance_requirement_ids": [
+    "P0-CONTRACT-01",
+    "P0-CONTRACT-02",
+    "P0-CONTRACT-03",
+    "P0-CONTRACT-04",
+    "P0-EVIDENCE-01",
+    "P0-EVIDENCE-02",
+    "P0-ASSESS-01",
+    "P0-ASSESS-02",
+    "P0-CURRENT-01",
+    "P0-CURRENT-02",
+    "P0-HISTORY-01",
+    "P0-HISTORY-02",
+    "P0-TOOLCHAIN-01",
+    "P0-PERMISSION-01",
+    "P0-COVERAGE-01",
+    "P0-COVERAGE-02",
+    "P0-QUALITY-01",
+    "P0-PLATFORM-01",
+    "P0-RELEASE-01",
+    "P0-RELEASE-02",
+    "P0-VALIDATE-01",
+    "P0-VALIDATE-02"
+  ],
+  "required_documents": [
+    {
+      "path": "README.md",
+      "includes": [
+        "Status: Pre-release development",
+        "github.com/codeacme17/launchrally/issues",
+        "github.com/codeacme17/launchrally/discussions",
+        "SECURITY.md",
+        "CONTRIBUTING.md"
+      ]
+    },
+    {
+      "path": "docs/quickstart.md",
+      "includes": [
+        "Direct CLI Quickstart",
+        "Skill Quickstart",
+        "@launchrally/cli@0.1.0",
+        "secret-free"
+      ]
+    },
+    {
+      "path": "docs/data-model.md",
+      "includes": [
+        "Launch Manifest",
+        "Report Record",
+        "Evidence Index"
+      ]
+    },
+    {
+      "path": "docs/privacy.md",
+      "includes": [
+        "no LaunchRally account",
+        "no default telemetry",
+        "no mandatory Report upload",
+        "no user-level analytics",
+        "no LaunchRally private service"
+      ]
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "includes": [
+        "GitHub Discussions",
+        "GitHub Issues",
+        "Apache-2.0"
+      ]
+    },
+    {
+      "path": "SECURITY.md",
+      "includes": [
+        "private vulnerability reporting",
+        "security/advisories/new"
+      ]
+    },
+    {
+      "path": "docs/phase-0-validation.md",
+      "includes": [
+        "P0 is not Product Complete",
+        "no public Experimental release exists",
+        "P0 Product Complete",
+        "Experimental release",
+        "Telemetry-Free Validation",
+        "P0 Validated",
+        "No hard download quota"
+      ]
+    },
+    {
+      "path": ".github/ISSUE_TEMPLATE/config.yml",
+      "includes": [
+        "github.com/codeacme17/launchrally/issues",
+        "github.com/codeacme17/launchrally/discussions",
+        "security/advisories/new"
+      ]
+    }
+  ],
+  "validation_log": "docs/phase-0-validation-log.json",
+  "quality_floor": [
+    "reference_journey",
+    "coverage_acceptance_matrix",
+    "prd_traceability",
+    "release_packaging",
+    "p0_release_contract"
+  ]
+}

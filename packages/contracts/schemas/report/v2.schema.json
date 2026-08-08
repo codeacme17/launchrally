@@ -1,0 +1,515 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/report/v2",
+  "title": "LaunchRally Report Record v2",
+  "type": "object",
+  "required": ["schema_version", "report_id", "created_at", "assessment", "provenance", "policy", "scope", "permissions", "execution", "catalog", "results", "limitations"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/report/v2" },
+    "report_id": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "format": "date-time" },
+    "assessment": {
+      "type": ["string", "null"],
+      "enum": ["launch_ready", "ready_with_warnings", "no_go", "inconclusive", null]
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["generator_version", "cli_version", "check_catalog_version", "baseline_version", "active_profile_versions", "active_adapter_versions", "scan_policy_version"],
+      "properties": {
+        "generator_version": { "const": "report-generator/v1" },
+        "cli_version": { "type": "string", "minLength": 1 },
+        "check_catalog_version": { "const": "web-baseline-check-catalog/v2" },
+        "baseline_version": { "type": "string", "minLength": 1 },
+        "active_profile_versions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "active_adapter_versions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "scan_policy_version": { "const": "local_safe_scan/v1" }
+      },
+      "additionalProperties": false
+    },
+    "policy": {
+      "type": "object",
+      "required": ["engine_version", "current", "currentness"],
+      "properties": {
+        "engine_version": { "const": "launch-policy-engine/v1" },
+        "current": { "type": "boolean" },
+        "currentness": {
+          "type": "object",
+          "required": ["status", "evaluated_at", "reasons"],
+          "properties": {
+            "status": { "enum": ["current", "non_current"] },
+            "evaluated_at": { "type": "string", "format": "date-time" },
+            "reasons": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/currentnessReason" }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "verification_context": {
+      "type": "object",
+      "required": ["digest_version", "repository_digests", "manifest_digest", "target_digest"],
+      "properties": {
+        "digest_version": { "const": "verification-scope-digests/v1" },
+        "repository_digests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "digest"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "manifest_digest": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$" },
+        "target_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "catalog": { "$ref": "#/$defs/catalog" },
+    "scope": {
+      "type": "object",
+      "required": ["project_root", "project_type", "project", "release_intent", "access", "public_verification", "provider_verification", "excluded"],
+      "properties": {
+        "project_root": { "type": "string", "minLength": 1 },
+        "project_type": { "type": "string", "minLength": 1 },
+        "project": {
+          "type": "object",
+          "required": ["name", "root", "type", "package_manager", "obvious_blockers"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "root": { "type": "string", "minLength": 1 },
+            "type": { "type": "string", "minLength": 1 },
+            "package_manager": { "type": "string", "minLength": 1 },
+            "obvious_blockers": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          },
+          "additionalProperties": false
+        },
+        "release_intent": {
+          "type": "object",
+          "required": ["intended_environment", "production_targets", "core_journeys", "provider_roles", "support_layers", "confirmed"],
+          "properties": {
+            "intended_environment": { "type": ["string", "null"] },
+            "production_targets": { "type": "array", "items": { "type": "string", "format": "uri" }, "uniqueItems": true },
+            "core_journeys": { "type": "array" },
+            "provider_roles": { "type": "array" },
+            "support_layers": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+            "confirmed": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "access": { "enum": ["local_read_only", "local_and_public_read_only", "local_and_provider_read_only", "local_public_and_provider_read_only"] },
+        "public_verification": {
+          "type": "object",
+          "required": ["decision", "targets"],
+          "properties": {
+            "decision": { "enum": ["approved", "denied", "pending"] },
+            "targets": { "type": "array", "items": { "type": "string", "format": "uri" }, "uniqueItems": true }
+          },
+          "additionalProperties": false
+        },
+        "provider_verification": {
+          "type": "object",
+          "required": ["contract_version", "requests"],
+          "properties": {
+            "contract_version": { "const": "provider-adapter-contract/v1" },
+            "requests": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["provider", "adapter_version", "target", "requested_fields", "decision"],
+                "properties": {
+                  "provider": { "type": "string", "minLength": 1 },
+                  "adapter_version": { "type": ["string", "null"] },
+                  "target": { "type": "string", "minLength": 1 },
+                  "requested_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+                  "decision": { "enum": ["approved", "denied", "pending"] }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "excluded": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["permission_id", "boundary", "decision", "scope"],
+        "properties": {
+          "permission_id": { "type": "string", "minLength": 1 },
+          "boundary": { "enum": ["local_scan", "public_network", "provider_read"] },
+          "decision": { "enum": ["granted", "approved", "denied", "pending"] },
+          "basis": { "type": "string", "minLength": 1 },
+          "scope": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": ["disclosure_version", "interaction", "planned_checks", "public_verification", "provider_adapters", "evidence_index"],
+      "properties": {
+        "disclosure_version": { "const": "audit-execution-disclosure/v1" },
+        "interaction": { "type": ["object", "null"] },
+        "planned_checks": { "type": "array" },
+        "public_verification": { "type": "object" },
+        "provider_adapters": { "type": "object" },
+        "evidence_index": {
+          "type": "object",
+          "required": ["schema_version", "index_id", "entry_count"],
+          "properties": {
+            "schema_version": { "const": "launchrally.dev/evidence-index/v1" },
+            "index_id": { "type": "string", "minLength": 1 },
+            "entry_count": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "results": {
+      "type": "object",
+      "required": ["checks", "public_evidence_refs", "provider_evidence_refs", "action_queue", "verification_gaps", "domain_coverage", "coverage_summary"],
+      "properties": {
+        "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } },
+        "public_evidence_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidenceReference" }
+        },
+        "provider_evidence_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidenceReference" }
+        },
+        "action_queue": { "type": "array", "items": { "$ref": "#/$defs/action" } },
+        "verification_gaps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/verificationGap" }
+        },
+        "domain_coverage": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/domainCoverage" },
+          "minItems": 8,
+          "maxItems": 8
+        },
+        "coverage_summary": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/coverageSummary" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "limitations": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": false,
+  "x-launchrally-contract-major": 2,
+  "$defs": {
+    "priority": { "enum": ["p0", "p1", "p2"] },
+    "severity": { "enum": ["critical", "major", "moderate"] },
+    "riskDomain": {
+      "enum": ["build_integrity", "configuration", "deployment", "availability", "security_and_privacy", "data_and_integrations", "observability_and_operations", "user_experience"]
+    },
+    "evidence": { "$ref": "#/$defs/evidenceReference" },
+    "evidenceReference": {
+      "type": "object",
+      "required": ["digest", "source", "target", "collected_at", "freshness_class", "redaction_state"],
+      "properties": {
+        "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "source": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "collected_at": { "type": "string", "format": "date-time" },
+        "freshness_class": { "enum": ["audit_time", "repository_snapshot", "confirmed_scope"] },
+        "redaction_state": { "enum": ["normalized", "allowlisted", "metadata_only"] }
+      },
+      "additionalProperties": false
+    },
+    "publicObservation": {
+      "type": "object",
+      "required": ["kind", "probe_id", "probe_kind", "target", "host", "port", "path", "method", "purpose", "status", "outcome", "collected_at", "duration_ms", "details", "provenance"],
+      "properties": {
+        "kind": { "const": "public_observation" },
+        "probe_id": { "type": "string", "minLength": 1 },
+        "probe_kind": { "enum": ["dns", "tls", "http", "health", "journey"] },
+        "target": { "type": "string", "format": "uri" },
+        "host": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "path": { "type": "string", "pattern": "^/" },
+        "method": { "enum": ["DNS_LOOKUP", "TLS_HANDSHAKE", "GET"] },
+        "purpose": { "type": "string", "minLength": 1 },
+        "verification_mode": { "enum": ["description_only", "executable_path"] },
+        "status": { "enum": ["passed", "failed", "unverified"] },
+        "outcome": { "enum": ["resolved", "secure", "reachable", "healthy", "completed", "journey_definition_incomplete", "redirect_not_followed", "target_mismatch", "http_status_failure", "dns_failure", "certificate_failure", "unreachable", "timeout", "execution_failure"] },
+        "collected_at": { "type": "string", "format": "date-time" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "details": { "type": "object" },
+        "provenance": {
+          "type": "object",
+          "required": ["collector", "exact_target", "collected_at"],
+          "properties": {
+            "collector": { "const": "public-verification/v1" },
+            "exact_target": { "type": "string", "format": "uri" },
+            "collected_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "providerMachineEvidence": {
+      "type": "object",
+      "required": ["kind", "provider", "adapter_version", "target", "requested_fields", "facts", "collected_at", "provenance"],
+      "properties": {
+        "kind": { "const": "machine_evidence" },
+        "provider": { "enum": ["cloudflare", "vercel"] },
+        "adapter_version": { "enum": ["cloudflare-read/v1", "vercel-read/v1"] },
+        "target": { "type": "string", "minLength": 1 },
+        "requested_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "facts": { "type": "object" },
+        "collected_at": { "type": "string", "format": "date-time" },
+        "provenance": {
+          "type": "object",
+          "required": ["collector", "provider", "adapter_version", "exact_target", "executable", "arguments", "collected_at"],
+          "properties": {
+            "collector": { "const": "provider-adapter-contract/v1" },
+            "provider": { "enum": ["cloudflare", "vercel"] },
+            "adapter_version": { "enum": ["cloudflare-read/v1", "vercel-read/v1"] },
+            "exact_target": { "type": "string", "minLength": 1 },
+            "executable": { "enum": ["wrangler", "vercel"] },
+            "arguments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+            "collected_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "check": {
+      "type": "object",
+      "required": ["check_id", "check_version", "risk_domain", "priority", "severity", "release_gate", "gating", "applicability", "status", "summary", "evidence"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "check_version": { "type": "integer", "minimum": 1 },
+        "risk_domain": { "$ref": "#/$defs/riskDomain" },
+        "priority": { "$ref": "#/$defs/priority" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "release_gate": { "enum": ["always", "policy", "never"] },
+        "gating": { "type": "boolean" },
+        "applicability": { "$ref": "#/$defs/applicabilityResult" },
+        "status": { "enum": ["passed", "failed", "unverified", "not_applicable"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } }
+      },
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "required": ["check_id", "priority", "severity", "gating", "dependency_unblocking", "core_journey_impact", "action"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "priority": { "$ref": "#/$defs/priority" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "gating": { "type": "boolean" },
+        "dependency_unblocking": { "type": "boolean" },
+        "core_journey_impact": { "enum": ["direct", "indirect", "none"] },
+        "action": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "verificationGap": {
+      "type": "object",
+      "required": ["check_id", "risk_domain", "priority", "severity", "gating", "status", "reason_code", "reason"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "risk_domain": { "$ref": "#/$defs/riskDomain" },
+        "priority": { "$ref": "#/$defs/priority" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "gating": { "type": "boolean" },
+        "status": { "const": "unverified" },
+        "reason_code": { "enum": ["permission_denied", "missing_required_input", "insufficient_evidence", "insufficient_machine_evidence", "conflicting_evidence", "applicability_unresolved", "uncovered_scope", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence", "partial_provider_evidence", "missing_provider_tool", "missing_provider_login", "unsupported_provider", "adapter_error"] },
+        "reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "coverageSummary": {
+      "type": "object",
+      "required": ["priority", "applicable_checks", "executed_checks", "passed_checks", "failed_checks", "unverified_checks", "not_applicable_checks", "verification_gaps", "coverage"],
+      "properties": {
+        "priority": { "$ref": "#/$defs/priority" },
+        "applicable_checks": { "type": "integer", "minimum": 0 },
+        "executed_checks": { "type": "integer", "minimum": 0 },
+        "passed_checks": { "type": "integer", "minimum": 0 },
+        "failed_checks": { "type": "integer", "minimum": 0 },
+        "unverified_checks": { "type": "integer", "minimum": 0 },
+        "not_applicable_checks": { "type": "integer", "minimum": 0 },
+        "verification_gaps": { "type": "integer", "minimum": 0 },
+        "coverage": { "enum": ["complete", "partial", "none"] }
+      },
+      "additionalProperties": false
+    },
+    "applicabilityResult": {
+      "type": "object",
+      "required": ["status", "reason", "evidence"],
+      "properties": {
+        "status": { "enum": ["applicable", "not_applicable", "unverified"] },
+        "reason": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } }
+      },
+      "additionalProperties": false
+    },
+    "catalog": {
+      "type": "object",
+      "required": ["versions", "risk_domains", "checks"],
+      "properties": {
+        "versions": {
+          "type": "object",
+          "required": ["check_catalog", "baseline", "active_profiles", "active_adapters"],
+          "properties": {
+            "check_catalog": { "const": "web-baseline-check-catalog/v2" },
+            "baseline": { "type": "string", "minLength": 1 },
+            "active_profiles": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+            "active_adapters": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+          },
+          "additionalProperties": false
+        },
+        "risk_domains": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/riskDomain" },
+          "minItems": 8,
+          "maxItems": 8,
+          "uniqueItems": true
+        },
+        "checks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/checkDeclaration" },
+          "minItems": 8
+        }
+      },
+      "additionalProperties": false
+    },
+    "checkDeclaration": {
+      "type": "object",
+      "required": ["check_id", "check_version", "risk_domain", "permission_id", "applicability", "required_inputs", "pass_evidence_requirement", "failure_evidence_requirement", "verification_rules", "severity_policy", "release_gate_policy", "freshness_behavior", "remediation_order_policy"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "check_version": { "type": "integer", "minimum": 1 },
+        "risk_domain": { "$ref": "#/$defs/riskDomain" },
+        "permission_id": { "type": "string", "minLength": 1 },
+        "applicability": { "$ref": "#/$defs/applicabilityDeclaration" },
+        "required_inputs": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "pass_evidence_requirement": { "$ref": "#/$defs/evidenceRequirement" },
+        "failure_evidence_requirement": { "$ref": "#/$defs/evidenceRequirement" },
+        "verification_rules": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "severity_policy": { "$ref": "#/$defs/severityPolicy" },
+        "release_gate_policy": { "$ref": "#/$defs/releaseGatePolicy" },
+        "freshness_behavior": { "$ref": "#/$defs/freshnessBehavior" },
+        "remediation_order_policy": { "$ref": "#/$defs/remediationOrderPolicy" }
+      },
+      "additionalProperties": false
+    },
+    "applicabilityDeclaration": {
+      "type": "object",
+      "required": ["rule", "required_evidence"],
+      "properties": {
+        "rule": { "type": "string", "minLength": 1 },
+        "required_evidence": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+      },
+      "additionalProperties": false
+    },
+    "evidenceRequirement": {
+      "type": "object",
+      "required": ["accepted_kinds", "minimum_items", "provenance_required"],
+      "properties": {
+        "accepted_kinds": { "type": "array", "items": { "enum": ["file", "local_observation", "project_fact", "release_intent", "public_observation", "machine_evidence"] }, "minItems": 1, "uniqueItems": true },
+        "minimum_items": { "type": "integer", "minimum": 1 },
+        "provenance_required": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "severityPolicy": {
+      "type": "object",
+      "required": ["severity", "rationale"],
+      "properties": {
+        "severity": { "$ref": "#/$defs/severity" },
+        "rationale": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "releaseGatePolicy": {
+      "type": "object",
+      "required": ["gate", "unverified_blocks_launch_ready"],
+      "properties": {
+        "gate": { "enum": ["always", "policy", "never"] },
+        "unverified_blocks_launch_ready": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "freshnessBehavior": {
+      "type": "object",
+      "required": ["mode", "invalidated_by"],
+      "properties": {
+        "mode": { "enum": ["content_bound", "release_intent_bound", "live_state"] },
+        "max_age_seconds": { "type": "integer", "minimum": 1 },
+        "invalidated_by": { "type": "array", "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" }, "minItems": 1 }
+      },
+      "additionalProperties": false
+    },
+    "remediationOrderPolicy": {
+      "type": "object",
+      "required": ["dependency_unblocking", "core_journey_impact"],
+      "properties": {
+        "dependency_unblocking": { "type": "boolean" },
+        "core_journey_impact": { "enum": ["direct", "indirect", "none"] }
+      },
+      "additionalProperties": false
+    },
+    "currentnessReason": {
+      "type": "object",
+      "required": ["reason_code"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "reason_code": { "enum": ["content_changed", "live_evidence_stale", "manifest_drift"] },
+        "field": { "type": "string", "minLength": 1 },
+        "change": { "type": "string", "minLength": 1 },
+        "evidence_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "collected_at": { "type": "string", "format": "date-time" },
+        "max_age_seconds": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "domainCoverage": {
+      "type": "object",
+      "required": ["risk_domain", "check_ids", "statuses"],
+      "properties": {
+        "risk_domain": { "$ref": "#/$defs/riskDomain" },
+        "check_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+        "statuses": { "type": "array", "items": { "enum": ["passed", "failed", "unverified", "not_applicable"] }, "minItems": 1, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    }
+  },
+  "x-launchrally-status": "initial-audit"
+}

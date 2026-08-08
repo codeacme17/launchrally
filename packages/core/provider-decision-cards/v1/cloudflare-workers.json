@@ -1,0 +1,148 @@
+{
+  "schema_version": "launchrally.dev/provider-decision-card/v1",
+  "card_id": "managed-web-delivery.cloudflare-workers",
+  "card_version": "1.0.0",
+  "provider": {
+    "id": "cloudflare",
+    "name": "Cloudflare Workers"
+  },
+  "capability_scope": {
+    "id": "managed_web_delivery",
+    "provider_role": "deployment",
+    "summary": "Managed static and dynamic Web delivery on Cloudflare's global network.",
+    "includes": [
+      "Static asset delivery",
+      "Request-driven serverless compute",
+      "Framework-oriented Web deployment paths"
+    ],
+    "excludes": [
+      "A guarantee that every Node.js package or runtime API is compatible",
+      "Long-running general-purpose server or virtual-machine operation",
+      "Application migration, account setup, or deployment execution"
+    ]
+  },
+  "fit_contexts": [
+    "Teams wanting globally distributed request handling with managed infrastructure",
+    "Static, edge, or serverless Web applications whose dependencies fit the Workers runtime",
+    "Teams comfortable validating framework and Node.js compatibility before migration"
+  ],
+  "non_fit_contexts": [
+    "Applications requiring unrestricted operating-system or long-running process control",
+    "Stacks depending on unsupported runtime APIs or native modules without an adaptation path",
+    "Teams requiring a provider-neutral runtime with minimal migration work"
+  ],
+  "compatibility": {
+    "stack_signals": [
+      "astro",
+      "cloudflare_workers_runtime",
+      "hono",
+      "javascript",
+      "next.js",
+      "node.js",
+      "react",
+      "remix",
+      "sveltekit",
+      "typescript",
+      "vite",
+      "vue"
+    ],
+    "incompatible_stack_signals": [
+      "long_running_server",
+      "unrestricted_os_access"
+    ],
+    "region_signals": [
+      "global",
+      "north_america",
+      "europe",
+      "asia_pacific"
+    ],
+    "deployment_shapes": [
+      "edge_serverless",
+      "full_stack_web",
+      "static_web"
+    ],
+    "notes": [
+      "Cloudflare publishes framework guides, but framework support does not prove project-specific compatibility.",
+      "Workers runtime limits and Node.js compatibility behavior must be checked against the application's actual dependencies."
+    ]
+  },
+  "constraints": {
+    "budgets": [
+      "free_tier_required",
+      "cost_sensitive",
+      "flexible",
+      "enterprise"
+    ],
+    "scales": [
+      "prototype",
+      "small",
+      "growing",
+      "high_scale"
+    ],
+    "minimum_operational_ability": "minimal",
+    "lock_in_level": "moderate"
+  },
+  "operations": {
+    "model": "managed",
+    "builder_responsibilities": [
+      "Configure builds, routes, bindings, secrets, and compatibility settings",
+      "Monitor application behavior, limits, and usage",
+      "Own incident response and application rollback decisions"
+    ],
+    "considerations": [
+      "Wrangler configuration and compatibility dates become operational inputs.",
+      "Resource ceilings and fail-open or fail-closed behavior need deliberate review."
+    ]
+  },
+  "lock_in": {
+    "level": "moderate",
+    "considerations": [
+      "Workers runtime APIs, bindings, routing, and Cloudflare services can become application dependencies."
+    ],
+    "exit_considerations": [
+      "Keep business logic behind portable interfaces where practical.",
+      "Plan replacements for bindings and platform-specific runtime behavior before migration."
+    ]
+  },
+  "cost_model": {
+    "basis": [
+      "Requests",
+      "CPU time",
+      "Selected storage, messaging, and platform services"
+    ],
+    "caveats": [
+      "Included usage, limits, and rates vary by plan and can change after this Card's review date.",
+      "Actual cost depends on traffic shape, CPU work, caching, and attached services; calculate it from current official pricing."
+    ],
+    "live_pricing_guaranteed": false
+  },
+  "official_sources": [
+    {
+      "title": "Cloudflare Workers overview",
+      "url": "https://developers.cloudflare.com/workers/",
+      "kind": "capabilities"
+    },
+    {
+      "title": "Cloudflare Pages framework guides",
+      "url": "https://developers.cloudflare.com/pages/framework-guides/",
+      "kind": "compatibility"
+    },
+    {
+      "title": "Cloudflare Workers pricing",
+      "url": "https://developers.cloudflare.com/workers/platform/pricing/",
+      "kind": "pricing"
+    },
+    {
+      "title": "Cloudflare Workers limits",
+      "url": "https://developers.cloudflare.com/workers/platform/limits/",
+      "kind": "limits"
+    }
+  ],
+  "review_date": "2026-08-07",
+  "unknowns": [
+    "The application's project-specific runtime and dependency compatibility has not been tested.",
+    "The required region, jurisdiction, and data-residency fit has not been verified.",
+    "The actual bill for the confirmed traffic and workload profile is unknown.",
+    "Current account, plan, quota, and contractual availability is unknown."
+  ]
+}

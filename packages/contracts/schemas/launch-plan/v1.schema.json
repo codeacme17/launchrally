@@ -1,0 +1,214 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/launch-plan/v1",
+  "title": "LaunchRally Read-only Launch Plan v1",
+  "type": "object",
+  "required": ["contract", "schema_version", "status", "operation", "source_report_id", "read_only", "effects", "assessment", "determinism", "items", "verification_gaps", "next"],
+  "properties": {
+    "contract": { "const": "launchrally.dev/cli/v0" },
+    "schema_version": { "const": "launchrally.dev/launch-plan/v1" },
+    "status": { "const": "completed" },
+    "operation": { "const": "plan" },
+    "source_report_id": { "type": "string", "minLength": 1 },
+    "read_only": { "const": true },
+    "effects": { "$ref": "#/$defs/effects" },
+    "assessment": {
+      "type": ["string", "null"],
+      "enum": ["launch_ready", "ready_with_warnings", "no_go", "inconclusive", null]
+    },
+    "determinism": { "$ref": "#/$defs/determinism" },
+    "items": { "type": "array", "items": { "$ref": "#/$defs/planItem" } },
+    "verification_gaps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/verificationGapWork" }
+    },
+    "handoff": { "$ref": "#/$defs/handoff" },
+    "next": { "$ref": "#/$defs/next" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "priority": { "enum": ["p0", "p1", "p2"] },
+    "severity": { "enum": ["critical", "major", "moderate"] },
+    "riskDomain": {
+      "enum": ["build_integrity", "configuration", "deployment", "availability", "security_and_privacy", "data_and_integrations", "observability_and_operations", "user_experience"]
+    },
+    "effects": {
+      "type": "object",
+      "required": ["source_mutation", "deployment_mutation", "provider_mutation", "production_mutation"],
+      "properties": {
+        "source_mutation": { "const": "none" },
+        "deployment_mutation": { "const": "none" },
+        "provider_mutation": { "const": "none" },
+        "production_mutation": { "const": "none" }
+      },
+      "additionalProperties": false
+    },
+    "determinism": {
+      "type": "object",
+      "required": ["source", "ordering", "generated_timestamps"],
+      "properties": {
+        "source": { "const": "report_action_queue" },
+        "ordering": {
+          "type": "array",
+          "items": { "enum": ["severity", "dependency_unblocking", "core_journey_impact"] },
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true
+        },
+        "generated_timestamps": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "priorityBasis": {
+      "type": "object",
+      "required": ["severity", "dependency_unblocking", "core_journey_impact"],
+      "properties": {
+        "severity": { "$ref": "#/$defs/severity" },
+        "dependency_unblocking": { "type": "boolean" },
+        "core_journey_impact": { "enum": ["direct", "indirect", "none"] }
+      },
+      "additionalProperties": false
+    },
+    "investigation": {
+      "type": "object",
+      "required": ["risk_domain", "required_inputs", "evidence_targets", "verification_rules"],
+      "properties": {
+        "risk_domain": { "$ref": "#/$defs/riskDomain" },
+        "required_inputs": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+        "evidence_targets": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "verification_rules": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "freshness": {
+      "type": "object",
+      "required": ["mode", "invalidated_by"],
+      "properties": {
+        "mode": { "enum": ["content_bound", "release_intent_bound", "live_state"] },
+        "max_age_seconds": { "type": "integer", "minimum": 1 },
+        "invalidated_by": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidenceToRecollect": {
+      "type": "object",
+      "required": ["accepted_kinds", "minimum_items", "provenance_required", "freshness", "instruction"],
+      "properties": {
+        "accepted_kinds": {
+          "type": "array",
+          "items": { "enum": ["file", "project_fact", "release_intent", "public_observation", "machine_evidence"] },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "minimum_items": { "type": "integer", "minimum": 1 },
+        "provenance_required": { "const": true },
+        "freshness": { "$ref": "#/$defs/freshness" },
+        "instruction": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "planItem": {
+      "type": "object",
+      "required": ["rank", "check_id", "priority", "severity", "gating", "priority_basis", "problem", "release_impact", "investigation", "remediation", "evidence_to_recollect"],
+      "properties": {
+        "rank": { "type": "integer", "minimum": 1 },
+        "check_id": { "type": "string", "minLength": 1 },
+        "priority": { "$ref": "#/$defs/priority" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "gating": { "type": "boolean" },
+        "priority_basis": { "$ref": "#/$defs/priorityBasis" },
+        "problem": { "type": "string", "minLength": 1 },
+        "release_impact": { "type": "string", "minLength": 1 },
+        "investigation": { "$ref": "#/$defs/investigation" },
+        "remediation": { "type": "string", "minLength": 1 },
+        "evidence_to_recollect": { "$ref": "#/$defs/evidenceToRecollect" }
+      },
+      "additionalProperties": false
+    },
+    "verificationGapWork": {
+      "type": "object",
+      "required": ["check_id", "risk_domain", "priority", "severity", "gating", "status", "reason_code", "reason", "confirmed_fix", "work_type", "next_action"],
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "risk_domain": { "$ref": "#/$defs/riskDomain" },
+        "priority": { "$ref": "#/$defs/priority" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "gating": { "type": "boolean" },
+        "status": { "const": "unverified" },
+        "reason_code": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "confirmed_fix": { "const": false },
+        "work_type": { "enum": ["investigation", "permission_request"] },
+        "next_action": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "authority": {
+      "type": "object",
+      "required": ["launchrally_mutation", "provider_write_permission", "deployment_write_permission", "production_write_permission"],
+      "properties": {
+        "launchrally_mutation": { "const": false },
+        "provider_write_permission": { "const": "not_granted" },
+        "deployment_write_permission": { "const": "not_granted" },
+        "production_write_permission": { "const": "not_granted" }
+      },
+      "additionalProperties": false
+    },
+    "returnToVerify": {
+      "type": "object",
+      "required": ["required", "operation", "message"],
+      "properties": {
+        "required": { "const": true },
+        "operation": { "const": "verify" },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "handoff": {
+      "type": "object",
+      "required": ["requested", "owner", "scope", "instructions", "authority", "return_to_verify"],
+      "properties": {
+        "requested": { "const": true },
+        "owner": { "const": "host_agent" },
+        "scope": { "const": "local_code_remediation" },
+        "instructions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 3
+        },
+        "authority": { "$ref": "#/$defs/authority" },
+        "return_to_verify": { "$ref": "#/$defs/returnToVerify" }
+      },
+      "additionalProperties": false
+    },
+    "next": {
+      "type": "object",
+      "required": ["required", "message"],
+      "properties": {
+        "type": { "const": "remediation_handoff" },
+        "required": { "type": "boolean" },
+        "operation": { "const": "verify" },
+        "message": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "x-launchrally-contract-major": 1,
+  "x-launchrally-status": "planning"
+}

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/cli/v2",
+  "title": "LaunchRally CLI Interaction Contract v2",
+  "type": "object",
+  "required": ["contract", "status", "operation"],
+  "properties": {
+    "contract": { "const": "launchrally.dev/cli/v2" },
+    "status": {
+      "enum": [
+        "completed",
+        "needs_input",
+        "needs_confirmation",
+        "needs_permission",
+        "needs_refresh",
+        "unavailable",
+        "execution_error"
+      ]
+    },
+    "operation": {
+      "enum": ["audit", "init", "plan", "providers", "verify", "help", "version"]
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "status": {
+          "enum": [
+            "completed",
+            "needs_input",
+            "needs_confirmation",
+            "needs_permission",
+            "unavailable",
+            "execution_error"
+          ]
+        }
+      }
+    },
+    {
+      "required": ["status", "reason", "source_report_id", "request"],
+      "properties": {
+        "status": { "const": "needs_refresh" },
+        "reason": { "type": "string", "minLength": 1 },
+        "source_report_id": { "type": "string", "minLength": 1 },
+        "request": {
+          "type": "object",
+          "required": ["type", "operation", "scope"],
+          "properties": {
+            "type": { "const": "refresh" },
+            "operation": { "const": "verify" },
+            "scope": { "const": "full" }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,130 @@
+{
+  "schema_version": "launchrally.dev/release-artifacts/v1",
+  "packages": [
+    {
+      "name": "@launchrally/contracts",
+      "path": "packages/contracts",
+      "package_files": [
+        "schemas/",
+        "src/"
+      ],
+      "files": [
+        "LICENSE",
+        "package.json",
+        "schemas/cli/v2.schema.json",
+        "schemas/audit-brief/v1.schema.json",
+        "schemas/audit-interaction/v1.schema.json",
+        "schemas/evidence-index/v1.schema.json",
+        "schemas/init-interaction/v1.schema.json",
+        "schemas/launch-plan/v1.schema.json",
+        "schemas/launch-plan/v2.schema.json",
+        "schemas/manifest/v1.schema.json",
+        "schemas/manifest/v2.schema.json",
+        "schemas/provider-decision-card/v1.schema.json",
+        "schemas/provider-guidance-interaction/v1.schema.json",
+        "schemas/provider-guidance/v1.schema.json",
+        "schemas/provider-guidance/v2.schema.json",
+        "schemas/report-view/v1.schema.json",
+        "schemas/report-view/v2.schema.json",
+        "schemas/report/v1.schema.json",
+        "schemas/report/v2.schema.json",
+        "schemas/verification-result/v1.schema.json",
+        "schemas/verification-result/v2.schema.json",
+        "schemas/verify-interaction/v1.schema.json",
+        "src/index.js"
+      ]
+    },
+    {
+      "name": "@launchrally/core",
+      "path": "packages/core",
+      "package_files": [
+        "provider-decision-cards/",
+        "src/"
+      ],
+      "files": [
+        "LICENSE",
+        "package.json",
+        "provider-decision-cards/v1/cloudflare-workers.json",
+        "provider-decision-cards/v1/vercel.json",
+        "src/audit-interaction.js",
+        "src/check-catalog.js",
+        "src/evidence-artifact.js",
+        "src/exclusive-lock.js",
+        "src/fact-extractors.js",
+        "src/gitignore.js",
+        "src/index.js",
+        "src/initialization.js",
+        "src/interaction-result.js",
+        "src/local-history.js",
+        "src/local-safe-scan.js",
+        "src/manifest.js",
+        "src/planning.js",
+        "src/policy-engine.js",
+        "src/provider-adapters.js",
+        "src/provider-decision-cards.js",
+        "src/provider-guidance.js",
+        "src/public-verification.js",
+        "src/report-currentness.js",
+        "src/reporting.js",
+        "src/verification.js"
+      ]
+    },
+    {
+      "name": "@launchrally/cli",
+      "path": "packages/cli",
+      "package_files": [
+        "bin/"
+      ],
+      "files": [
+        "LICENSE",
+        "bin/rally.js",
+        "package.json"
+      ]
+    },
+    {
+      "name": "@launchrally/codex-plugin",
+      "path": "adapters/codex/launchrally",
+      "package_files": [
+        ".codex-plugin/",
+        "skills/"
+      ],
+      "files": [
+        "LICENSE",
+        ".codex-plugin/plugin.json",
+        "package.json",
+        "skills/launchrally/agents/openai.yaml",
+        "skills/launchrally/references/audit.md",
+        "skills/launchrally/references/cli-contract.md",
+        "skills/launchrally/references/init.md",
+        "skills/launchrally/references/permissions.md",
+        "skills/launchrally/references/plan.md",
+        "skills/launchrally/references/reference-journey.json",
+        "skills/launchrally/references/reference-journey.md",
+        "skills/launchrally/references/verify.md",
+        "skills/launchrally/SKILL.md"
+      ]
+    },
+    {
+      "name": "@launchrally/claude-plugin",
+      "path": "adapters/claude/launchrally",
+      "package_files": [
+        ".claude-plugin/",
+        "skills/"
+      ],
+      "files": [
+        "LICENSE",
+        ".claude-plugin/plugin.json",
+        "package.json",
+        "skills/launchrally/references/audit.md",
+        "skills/launchrally/references/cli-contract.md",
+        "skills/launchrally/references/init.md",
+        "skills/launchrally/references/permissions.md",
+        "skills/launchrally/references/plan.md",
+        "skills/launchrally/references/reference-journey.json",
+        "skills/launchrally/references/reference-journey.md",
+        "skills/launchrally/references/verify.md",
+        "skills/launchrally/SKILL.md"
+      ]
+    }
+  ]
+}

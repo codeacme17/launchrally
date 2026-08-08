@@ -1,0 +1,181 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/audit-brief/v1",
+  "title": "LaunchRally Audit Brief v1",
+  "type": "object",
+  "required": ["schema_version", "project", "intended_environment", "production_targets", "core_journeys", "provider_roles", "support_layers", "public_verification", "provider_adapters", "planned_checks"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/audit-brief/v1" },
+    "project": {
+      "type": "object",
+      "required": ["name", "type", "package_manager", "source", "confirmed"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "package_manager": { "type": "string", "minLength": 1 },
+        "source": { "const": "discovered" },
+        "confirmed": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "intended_environment": {
+      "type": "object",
+      "required": ["value", "candidates", "confirmed"],
+      "properties": {
+        "value": { "type": ["string", "null"] },
+        "candidates": { "type": "array", "items": { "type": "string" } },
+        "confirmed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "production_targets": { "$ref": "#/$defs/stringSelection" },
+    "core_journeys": { "$ref": "#/$defs/journeySelection" },
+    "provider_roles": {
+      "type": "object",
+      "required": ["values", "candidates", "confirmed"],
+      "properties": {
+        "values": { "type": "array", "items": { "$ref": "#/$defs/providerRole" } },
+        "candidates": { "type": "array", "items": { "$ref": "#/$defs/providerRole" } },
+        "confirmed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "support_layers": { "$ref": "#/$defs/stringSelection" },
+    "public_verification": {
+      "type": "object",
+      "required": ["collector_version", "targets", "probes"],
+      "properties": {
+        "collector_version": { "const": "public-verification/v1" },
+        "targets": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" },
+          "uniqueItems": true
+        },
+        "probes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/publicProbe" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "provider_adapters": {
+      "type": "object",
+      "required": ["contract_version", "requests"],
+      "properties": {
+        "contract_version": { "const": "provider-adapter-contract/v1" },
+        "requests": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/providerAdapterRequest" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "planned_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["check_id", "permission_id"],
+        "properties": {
+          "check_id": { "type": "string", "minLength": 1 },
+          "permission_id": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "stringSelection": {
+      "type": "object",
+      "required": ["values", "candidates", "confirmed"],
+      "properties": {
+        "values": { "type": "array", "items": { "type": "string" } },
+        "candidates": { "type": "array", "items": { "type": "string" } },
+        "confirmed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "journeySelection": {
+      "type": "object",
+      "required": ["values", "candidates", "confirmed"],
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "string", "minLength": 1 },
+              { "$ref": "#/$defs/publicJourney" }
+            ]
+          }
+        },
+        "candidates": { "type": "array", "items": { "type": "string" } },
+        "confirmed": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "publicJourney": {
+      "type": "object",
+      "required": ["purpose", "path", "method"],
+      "properties": {
+        "purpose": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "pattern": "^/(?!/)" },
+        "method": { "const": "GET" }
+      },
+      "additionalProperties": false
+    },
+    "providerRole": {
+      "type": "object",
+      "required": ["provider", "role"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "providerAdapterRequest": {
+      "type": "object",
+      "required": ["provider", "permission_id", "roles", "adapter_version", "operation", "target", "requested_fields", "command"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1 },
+        "permission_id": { "type": "string", "pattern": "^provider_read:" },
+        "roles": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "adapter_version": { "type": ["string", "null"] },
+        "operation": { "const": "read_only" },
+        "target": { "type": "string", "minLength": 1 },
+        "requested_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
+        "command": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["executable", "arguments"],
+              "properties": {
+                "executable": { "enum": ["wrangler", "vercel"] },
+                "arguments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "publicProbe": {
+      "type": "object",
+      "required": ["probe_id", "kind", "target", "host", "port", "path", "method", "purpose", "timeout_ms"],
+      "properties": {
+        "probe_id": { "type": "string", "minLength": 1 },
+        "kind": { "enum": ["dns", "tls", "http", "health", "journey"] },
+        "target": { "type": "string", "format": "uri" },
+        "host": { "type": "string", "minLength": 1 },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "path": { "type": "string", "pattern": "^/" },
+        "method": { "enum": ["DNS_LOOKUP", "TLS_HANDSHAKE", "GET"] },
+        "purpose": { "type": "string", "minLength": 1 },
+        "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 },
+        "verification_mode": { "enum": ["description_only", "executable_path"] }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "schema_version": "launchrally.dev/reference-journey/v1",
+  "cli": {
+    "package": "@launchrally/cli",
+    "version": "0.1.0",
+    "contract": "launchrally.dev/cli/v2"
+  },
+  "invocations": [
+    {
+      "id": "version",
+      "arguments": ["--version", "--json"],
+      "expect": { "operation": "version", "status": "completed" }
+    },
+    {
+      "id": "audit_input",
+      "arguments": ["audit", "--json", "--cwd", "{repository_root}"],
+      "expect": {
+        "operation": "audit",
+        "status": "needs_input",
+        "interaction_schema": "launchrally.dev/audit-interaction/v1"
+      }
+    },
+    {
+      "id": "audit_confirmation",
+      "arguments": ["audit", "--json", "--cwd", "{repository_root}", "--resume", "{audit_resume}", "--answers", "{answers_json}"],
+      "expect": {
+        "operation": "audit",
+        "status": "needs_confirmation",
+        "interaction_schema": "launchrally.dev/audit-interaction/v1"
+      }
+    },
+    {
+      "id": "audit_permission",
+      "arguments": ["audit", "--json", "--cwd", "{repository_root}", "--resume", "{audit_resume}", "--confirm", "confirm"],
+      "expect": {
+        "operation": "audit",
+        "status": "needs_permission",
+        "interaction_schema": "launchrally.dev/audit-interaction/v1"
+      }
+    },
+    {
+      "id": "audit_completed",
+      "arguments": ["audit", "--json", "--cwd", "{repository_root}", "--resume", "{audit_resume}", "--permissions", "{permissions_json}"],
+      "expect": { "operation": "audit", "status": "completed" }
+    },
+    {
+      "id": "init_preview",
+      "guard": { "kind": "optional", "intent": "initialize_project" },
+      "arguments": ["init", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      "expect": {
+        "operation": "init",
+        "status": ["needs_confirmation", "needs_permission"],
+        "interaction_schema": "launchrally.dev/init-interaction/v1"
+      }
+    },
+    {
+      "id": "init_registry_permission",
+      "guard": { "kind": "when_registry_permission_requested", "intent": "resolve_toolchain" },
+      "arguments": ["init", "--json", "--cwd", "{repository_root}", "--resume", "{init_registry_resume}", "--permissions", "{init_registry_permissions_json}"],
+      "expect": {
+        "operation": "init",
+        "status": "needs_confirmation",
+        "interaction_schema": "launchrally.dev/init-interaction/v1"
+      }
+    },
+    {
+      "id": "init_completed",
+      "guard": { "kind": "optional", "intent": "initialize_project" },
+      "arguments": ["init", "--json", "--cwd", "{repository_root}", "--resume", "{init_resume}", "--confirm", "confirm"],
+      "expect": { "operation": "init", "status": "completed" }
+    },
+    {
+      "id": "plan_refresh",
+      "guard": { "kind": "when_source_non_current", "intent": "refresh_report" },
+      "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      "expect": { "operation": "plan", "status": "needs_refresh" }
+    },
+    {
+      "id": "refresh_permission",
+      "guard": { "kind": "when_source_non_current", "intent": "refresh_report" },
+      "arguments": ["verify", "--json", "--cwd", "{repository_root}", "--report", "{report_path}", "--scope", "full"],
+      "expect": {
+        "operation": "verify",
+        "status": "needs_permission",
+        "interaction_schema": "launchrally.dev/verify-interaction/v1"
+      }
+    },
+    {
+      "id": "refresh_completed",
+      "guard": { "kind": "when_source_non_current", "intent": "refresh_report" },
+      "arguments": ["verify", "--json", "--cwd", "{repository_root}", "--resume", "{refresh_resume}", "--permissions", "{permissions_json}"],
+      "expect": {
+        "operation": "verify",
+        "status": "completed",
+        "schema_version": "launchrally.dev/verification-result/v2"
+      }
+    },
+    {
+      "id": "plan",
+      "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      "expect": {
+        "operation": "plan",
+        "status": "completed",
+        "schema_version": "launchrally.dev/launch-plan/v2"
+      }
+    },
+    {
+      "id": "handoff",
+      "guard": {
+        "kind": "requires_explicit_user_request",
+        "intent": "local_remediation"
+      },
+      "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}", "--handoff"],
+      "expect": {
+        "operation": "plan",
+        "status": "completed",
+        "schema_version": "launchrally.dev/launch-plan/v2"
+      }
+    },
+    {
+      "id": "verify_permission",
+      "arguments": ["verify", "--json", "--cwd", "{repository_root}", "--report", "{report_path}", "--scope", "full"],
+      "expect": {
+        "operation": "verify",
+        "status": "needs_permission",
+        "interaction_schema": "launchrally.dev/verify-interaction/v1"
+      }
+    },
+    {
+      "id": "verify_completed",
+      "arguments": ["verify", "--json", "--cwd", "{repository_root}", "--resume", "{verify_resume}", "--permissions", "{permissions_json}"],
+      "expect": {
+        "operation": "verify",
+        "status": "completed",
+        "schema_version": "launchrally.dev/verification-result/v2"
+      }
+    }
+  ],
+  "account_required": false,
+  "private_service_required": false
+}

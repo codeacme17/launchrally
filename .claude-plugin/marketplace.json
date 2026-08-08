@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "launchrally",
+  "description": "Versioned LaunchRally Plugin releases for Claude Code.",
+  "owner": {
+    "name": "codeacme17",
+    "url": "https://github.com/codeacme17"
+  },
+  "plugins": [
+    {
+      "name": "launchrally",
+      "source": {
+        "source": "npm",
+        "package": "@launchrally/claude-plugin",
+        "version": "0.1.0"
+      },
+      "description": "Audit and verify production launch readiness from an existing repository.",
+      "category": "development",
+      "homepage": "https://github.com/codeacme17/launchrally"
+    }
+  ]
+}

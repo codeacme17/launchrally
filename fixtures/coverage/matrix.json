@@ -1,0 +1,59 @@
+{
+  "schema_version": "launchrally.dev/coverage-acceptance-matrix/v1",
+  "fixtures_are_support_allowlist": false,
+  "fixtures": [
+    {
+      "id": "astro-hosted-web",
+      "path": "typescript-astro",
+      "ecosystem": "typescript_meta_framework",
+      "topology": "single_app",
+      "deployment_shape": "hosted_web",
+      "production_target": "https://astro.example.com",
+      "deep_support_profile_expected": false,
+      "provider_adapter_expected": false
+    },
+    {
+      "id": "fastapi-container",
+      "path": "python-fastapi",
+      "ecosystem": "python_server_framework",
+      "topology": "single_app",
+      "deployment_shape": "container_paas",
+      "production_target": "https://python-api.example.com",
+      "deep_support_profile_expected": false,
+      "provider_adapter_expected": false
+    },
+    {
+      "id": "react-go-split",
+      "path": "split-react-go",
+      "ecosystem": "split_frontend_backend",
+      "topology": "split_frontend_backend",
+      "deployment_shape": "hosted_web",
+      "production_target": "https://split-app.example.com",
+      "deep_support_profile_expected": false,
+      "provider_adapter_expected": false
+    },
+    {
+      "id": "pnpm-edge-monorepo",
+      "path": "pnpm-edge-monorepo",
+      "ecosystem": "monorepo_multi_app",
+      "topology": "multi_app",
+      "deployment_shape": "edge_serverless",
+      "production_target": "https://edge-suite.example.com",
+      "deep_support_profile_expected": false,
+      "provider_adapter_expected": false
+    },
+    {
+      "id": "custom-self-hosted",
+      "path": "custom-self-hosted",
+      "ecosystem": "custom_without_profile",
+      "topology": "single_app",
+      "deployment_shape": "self_hosted_custom",
+      "production_target": "https://custom-stack.example.com",
+      "provider_roles": [
+        { "provider": "custom-deployer", "role": "deployment" }
+      ],
+      "deep_support_profile_expected": false,
+      "provider_adapter_expected": false
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: git diff --exit-code
+      - run: npm run test:contracts
+      - run: npm run validate:acceptance
+
+  journeys:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: git diff --exit-code
+      - run: npm run test:journeys
+      - run: npm run test:artifacts
+
+  publish:
+    needs: [contracts, journeys]
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Pin npm Trusted Publishing client
+        run: npm install --global npm@11.17.0
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Verify generated Plugin bundles are committed
+        run: git diff --exit-code
+      - run: npm test
+      - run: npm run validate:acceptance -- --require-publish-ready
+      - run: npm run validate:p0
+      - run: npm run validate:release -- --tag "$GITHUB_REF_NAME"
+      - run: npm run validate:release-ref -- --tag "$GITHUB_REF_NAME"
+      - run: npm run test:artifacts
+      - name: Publish public packages with provenance
+        run: node scripts/publish-release.mjs
+
+  public-smoke:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Pin npm attestation verification client
+        run: npm install --global npm@11.17.0
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Verify exact public CLI and Plugin journeys
+        run: npm run test:public-release -- --json
+
+  prerelease:
+    needs: public-smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Create Experimental GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease --generate-notes --title "LaunchRally $GITHUB_REF_NAME (Experimental)"
