@@ -4,10 +4,10 @@ LaunchRally uses four deliberately separate states:
 
 - **P0 Product Complete** means the P0 scope, documentation, license, clean Reference Journey, Coverage Acceptance Matrix, release packaging, and Quality Floor are delivered. It describes product construction, not field validation.
 - **Experimental release** means those artifacts are public for cautious real-world use. Contracts may change, and users should review every permission and preview.
-- **Telemetry-Free Validation** is the current learning period. Aggregate trends, voluntary feedback categories, represented framework and deployment contexts, recurring P1 requests, and resulting decisions are recorded without default telemetry or mandatory uploads.
+- **Telemetry-Free Validation** is a later learning period. Aggregate trends, voluntary feedback categories, represented framework and deployment contexts, recurring P1 requests, and resulting decisions are recorded without default telemetry or mandatory uploads.
 - **P0 Validated** is a future product decision supported by the published Validation Log. It is not implied by publication, passing CI, package downloads, or elapsed time.
 
-The current release is P0 Product Complete and Experimental. Telemetry-Free Validation is in progress; LaunchRally is not yet P0 Validated.
+P0 is not Product Complete and no public Experimental release exists. Release-blocking acceptance requirements remain open, so Telemetry-Free Validation has not started and LaunchRally is not P0 Validated.
 
 ## Decision method
 

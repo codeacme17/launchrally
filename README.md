@@ -2,7 +2,7 @@
 
 LaunchRally is a local-first, open-source launch readiness audit and verification tool for repository-owning AI builders.
 
-> **Status: Experimental.** The P0 delivery and quality floor is Product Complete, but real-world Telemetry-Free Validation is still in progress. LaunchRally is not yet P0 Validated, and its contracts may change before P1.
+> **Status: Pre-release development.** P0 is not Product Complete and no public Experimental release exists. The contracts and release gates are still being completed and may change before P1.
 
 Use the [Quickstart](docs/quickstart.md), understand the [Manifest, Report, and Evidence model](docs/data-model.md), and review the [permission and privacy boundaries](docs/privacy.md). Questions and voluntary field reports belong in [GitHub Discussions](https://github.com/codeacme17/launchrally/discussions); actionable defects belong in [GitHub Issues](https://github.com/codeacme17/launchrally/issues). See [SECURITY.md](SECURITY.md) for private vulnerability reports and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
 
@@ -10,11 +10,19 @@ This repository contains the Phase 0 Audit, post-Report initialization, read-onl
 
 ## First Audit
 
+Until publication, run the CLI from a source checkout:
+
+```bash
+node packages/cli/bin/rally.js audit --json --cwd .
+```
+
+Once an Experimental release is published, the exact-version package path will be:
+
 ```bash
 npm exec --package=@launchrally/cli@0.1.0 -- rally audit --json --cwd .
 ```
 
-This exact-version path requires no global installation and makes no project change. When npm needs to download the package, review and accept its normal package-manager confirmation; LaunchRally never bypasses that prompt. After a completed Audit, optional `rally init` previews an isolated exact npm toolchain under `.launchrally/toolchain` without changing application dependencies or their lockfiles.
+Neither path requires global installation or makes a project change. After publication, when npm needs to download the package, review and accept its normal package-manager confirmation; LaunchRally never bypasses that prompt. After a completed Audit, optional `rally init` previews an isolated exact npm toolchain under `.launchrally/toolchain` without changing application dependencies or their lockfiles.
 
 For Codex and Claude Plugin installation, controlled updates, uninstallation, and artifact verification, see the [Install and release guide](docs/install.md).
 

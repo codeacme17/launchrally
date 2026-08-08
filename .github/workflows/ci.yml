@@ -9,18 +9,54 @@ permissions:
   contents: read
 
 jobs:
-  validate:
+  contracts:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: git diff --exit-code
+      - run: npm run test:contracts
+      - run: npm run validate:acceptance
+
+  journeys:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: git diff --exit-code
+      - run: npm run test:journeys
+      - run: npm run test:artifacts
+
+  quality-floor:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: 22
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run build
       - run: git diff --exit-code
       - run: npm test
+      - run: npm run validate:acceptance
       - run: npm run validate:p0
       - run: npm run validate:release
-      - run: npm run test:artifacts

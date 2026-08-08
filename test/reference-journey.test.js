@@ -187,10 +187,9 @@ async function json(relativePath) {
 
 async function createRegistryNpmStub(version = "0.1.0") {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-stub-"));
-  const executable = path.join(directory, "npm");
   const lockfile = JSON.stringify(exactToolchainLock()).replaceAll("0.1.0", version);
-  await writeFile(executable, [
-    "#!/usr/bin/env node",
+  const script = path.join(directory, "npm-stub.cjs");
+  await writeFile(script, [
     'const fs = require("node:fs");',
     'const path = require("node:path");',
     'if (process.argv.includes("--offline")) {',
@@ -199,7 +198,16 @@ async function createRegistryNpmStub(version = "0.1.0") {
     "}",
     `fs.writeFileSync(path.join(process.cwd(), "package-lock.json"), ${JSON.stringify(`${lockfile}\n`)});`,
   ].join("\n"));
-  await chmod(executable, 0o755);
+  if (process.platform === "win32") {
+    await writeFile(
+      path.join(directory, "npm.cmd"),
+      `@echo off\r\n"${process.execPath}" "%~dp0npm-stub.cjs" %*\r\n`,
+    );
+  } else {
+    const executable = path.join(directory, "npm");
+    await writeFile(executable, `#!/usr/bin/env node\n${await readFile(script, "utf8")}`);
+    await chmod(executable, 0o755);
+  }
   return directory;
 }
 

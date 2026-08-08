@@ -428,7 +428,7 @@ async function defaultPrepareDependencyChanges({
     try {
       await writeFile(path.join(staging, "package.json"), packageJson, "utf8");
       await writeFile(path.join(staging, "package-lock.json"), lockfile.content, "utf8");
-      await execFileAsync("npm", [
+      const npmArguments = [
         "install",
         "--package-lock-only",
         "--ignore-scripts",
@@ -440,7 +440,14 @@ async function defaultPrepareDependencyChanges({
           ? ["--offline"]
           : ["--registry=https://registry.npmjs.org"]),
         `${dependency}@${version}`,
-      ], {
+      ];
+      const npmCommand = process.platform === "win32"
+        ? {
+          command: process.env.ComSpec ?? "cmd.exe",
+          arguments: ["/d", "/s", "/c", "npm", ...npmArguments],
+        }
+        : { command: "npm", arguments: npmArguments };
+      await execFileAsync(npmCommand.command, npmCommand.arguments, {
         cwd: staging,
         encoding: "utf8",
         timeout: 120_000,

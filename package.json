@@ -17,11 +17,16 @@
     "sync:skills": "node scripts/sync-skills.mjs",
     "check:skills": "node scripts/sync-skills.mjs --check",
     "validate:p0": "node scripts/validate-p0.mjs",
+    "validate:acceptance": "node scripts/validate-acceptance.mjs",
     "validate:release": "node scripts/validate-release.mjs",
+    "test:contract-core": "node --test --test-concurrency=1 test/acceptance-traceability.test.js test/audit-interaction.test.js test/check-catalog.test.js test/contract-v2.test.js test/init.test.js test/p0-release.test.js test/plan.test.js test/policy-engine.test.js test/provider-adapters.test.js test/provider-guidance.test.js test/reporting.test.js test/scaffold.test.js test/verify.test.js",
+    "test:release-contracts": "node --test --test-name-pattern=\"^(?:release validation|npm release packages|the default first Audit|Codex and Claude marketplaces|native Plugin validators|release docs|release CI)\" test/release.test.js",
+    "test:contracts": "npm run test:contract-core && npm run test:release-contracts",
+    "test:journeys": "node --test test/coverage-acceptance.test.js test/reference-journey.test.js",
     "test:artifacts": "node scripts/test-release-artifacts.mjs",
     "rally": "node packages/cli/bin/rally.js",
     "test": "npm run check:skills && node --test",
-    "validate": "npm test"
+    "validate": "npm test && npm run validate:acceptance"
   },
   "repository": {
     "type": "git",
