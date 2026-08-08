@@ -16,6 +16,13 @@ import {
 
 const execFileAsync = promisify(execFile);
 
+function isRepositoryRelativePath(value) {
+  return typeof value === "string"
+    && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(value)
+    && path.posix.normalize(value) === value
+    && !value.split("/").includes("..");
+}
+
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootOption = process.argv.indexOf("--root");
 const root = rootOption === -1
@@ -113,8 +120,8 @@ for (const field of [
 const completionDocuments = await Promise.all([
   "CONTRIBUTING.md",
   "README.md",
-  "docs/p0-acceptance.md",
-  "docs/phase-0-validation.md",
+  "docs/maintainers/p0-acceptance.md",
+  "docs/maintainers/phase-0-validation.md",
 ].map(async (relativePath) => ({
   content: await readFile(path.join(root, relativePath), "utf8"),
   relativePath,
@@ -156,9 +163,18 @@ if (baselineRefOption !== -1) {
   }
   let baselineContent;
   try {
+    const { stdout: baselineContractContent } = await execFileAsync(
+      "git",
+      ["show", `${baselineRef}:release/p0.json`],
+      { cwd: root, encoding: "utf8" },
+    );
+    const baselineContract = JSON.parse(baselineContractContent);
+    if (!isRepositoryRelativePath(baselineContract.validation_log)) {
+      throw new Error("invalid baseline Validation Log path");
+    }
     ({ stdout: baselineContent } = await execFileAsync(
       "git",
-      ["show", `${baselineRef}:${contract.validation_log}`],
+      ["show", `${baselineRef}:${baselineContract.validation_log}`],
       { cwd: root, encoding: "utf8" },
     ));
   } catch {

@@ -78,4 +78,4 @@ Release validation rejects version drift, dependency ranges, lifecycle install h
 
 Publishing is performed only by the repository's release workflow on a matching `v0.1.0` tag. npm Trusted Publishing supplies short-lived OIDC credentials and provenance; no long-lived npm token is used.
 
-Maintainers use the [Experimental release runbook](release-runbook.md) for the external control checks, protected promotion and tag, public smoke evidence, and partial-publication recovery.
+Maintainers use the [Experimental release runbook](../maintainers/release-runbook.md) for the external control checks, protected promotion and tag, public smoke evidence, and partial-publication recovery.
