@@ -2,6 +2,10 @@ import {
   createProviderAdapterPlan,
   providerRiskDomain,
 } from "./provider-adapters.js";
+import {
+  normalizeSupportLayers,
+  supportLayerIsSelected,
+} from "./support-layers.js";
 
 const CHECK_CATALOG_VERSION = "web-baseline-check-catalog/v2";
 const BASELINE_VERSION = "web-application-baseline/v1";
@@ -422,7 +426,7 @@ const CHECKS = Object.freeze([
       risk_domain: "observability_and_operations",
       permission_id: "local_safe_scan",
       required_inputs: ["audit_brief.support_layers.values", "audit_brief.provider_roles.values"],
-      pass_evidence_requirement: RELEASE_INTENT_EVIDENCE,
+      pass_evidence_requirement: MACHINE_EVIDENCE,
       verification_rules: [
         "Mark Not Applicable only when confirmed release intent selects no monitoring or observability support.",
         "Selected support remains Unverified until configuration and signal evidence is available.",
@@ -441,7 +445,12 @@ const CHECKS = Object.freeze([
       },
     }),
     applicability(project, brief) {
-      const selected = brief.support_layers.values.includes("monitoring")
+      if (normalizeSupportLayers(brief.support_layers.values) === null) {
+        return unresolvedApplicability(
+          "Declared support-layer intent contains a value that cannot be classified.",
+        );
+      }
+      const selected = supportLayerIsSelected(brief.support_layers.values, "observability")
         || brief.provider_roles.values.some(({ role }) => role === "observability")
         || environmentNames(project).some((name) => name.startsWith("SENTRY_"));
       if (!selected) {

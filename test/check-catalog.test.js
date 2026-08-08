@@ -170,6 +170,18 @@ test("Not Applicable requires a reason and applicability evidence", () => {
   }
 });
 
+test("observability declarations cannot satisfy the pass-evidence contract", () => {
+  const result = execute();
+  const declaration = result.catalog.checks.find(
+    (check) => check.check_id === "web.baseline.observability",
+  );
+
+  assert.deepEqual(
+    declaration.pass_evidence_requirement.accepted_kinds,
+    ["machine_evidence"],
+  );
+});
+
 test("a complete negative lockfile finding carries provenance-bearing local observation Evidence", () => {
   const value = project({
     facts: project().facts.filter((fact) => fact.kind !== "lockfile"),
@@ -221,12 +233,13 @@ test("an uncovered root lockfile candidate stays Unverified instead of becoming 
   assert.deepEqual(lockfile.evidence, []);
 });
 
-test("current Provider Machine Evidence resolves the catalog-declared Provider Check", () => {
+test("normalized support intent preserves current Provider Machine Evidence evaluation", () => {
   const brief = auditBrief({
     provider_roles: {
-      values: [{ provider: "vercel", role: "deployment" }],
+      values: [{ provider: "vercel", role: "observability" }],
       confirmed: true,
     },
+    support_layers: { values: ["Sentry observability"], confirmed: true },
   });
   const machineEvidence = {
     kind: "machine_evidence",

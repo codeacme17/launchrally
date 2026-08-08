@@ -16,17 +16,19 @@ const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(root, "packages", "cli", "bin", "rally.js");
 
-async function createInteractionFixture() {
+async function createInteractionFixture({ providerSignals = true } = {}) {
   const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-interaction-"));
   await writeFile(
     path.join(fixture, "package.json"),
     JSON.stringify({ name: "interaction-web", scripts: { build: "vite build" } }),
   );
   await writeFile(path.join(fixture, "package-lock.json"), '{"lockfileVersion":3}');
-  await writeFile(
-    path.join(fixture, ".env"),
-    "VERCEL_ORG_ID=private-value\nSENTRY_DSN=private-value\n",
-  );
+  if (providerSignals) {
+    await writeFile(
+      path.join(fixture, ".env"),
+      "VERCEL_ORG_ID=private-value\nSENTRY_DSN=private-value\n",
+    );
+  }
   return fixture;
 }
 
@@ -137,7 +139,7 @@ test("Agent Mode asks only for unknown release intent in a versioned state", asy
     { provider: "sentry", role: "observability" },
     { provider: "vercel", role: "deployment" },
   ]);
-  assert.deepEqual(result.audit_brief.support_layers.candidates, ["monitoring"]);
+  assert.deepEqual(result.audit_brief.support_layers.candidates, ["observability"]);
   assert.ok(result.interaction.resume_token.length > 20);
   assert.doesNotMatch(JSON.stringify(result), /private-value/);
 });
@@ -223,6 +225,86 @@ test("an explicit empty Journey scope can proceed to confirmation", async () => 
   assert.equal(result.status, "needs_confirmation");
   assert.deepEqual(result.audit_brief.core_journeys.values, []);
   assert.equal(result.audit_brief.core_journeys.confirmed, false);
+});
+
+test("Agent Mode normalizes declared observability aliases before confirmation", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      provider_roles: [],
+      support_layers: ["  Sentry   observability  ", "Sentry", "monitoring", "observability"],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.deepEqual(result.audit_brief.support_layers.values, ["observability"]);
+});
+
+test("Agent Mode rejects unknown support layers with revision guidance", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      support_layers: ["unknown incident service"],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_input");
+  assert.deepEqual(result.request.validation_errors, [
+    {
+      field_id: "support_layers",
+      code: "unsupported_support_layer",
+      supported_categories: ["analytics", "observability"],
+      guidance: "Choose a supported category or revise the support-layer selection.",
+    },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result), /unknown incident service/u);
+});
+
+test("Agent Mode classifies known support provider names", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      provider_roles: [],
+      support_layers: ["PostHog", "PostHog analytics"],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.deepEqual(result.audit_brief.support_layers.values, ["analytics"]);
+});
+
+test("declared observability intent is applicable but unverified without qualifying evidence", async () => {
+  const fixture = await createInteractionFixture({ providerSignals: false });
+  const result = await completeAudit(
+    fixture,
+    {
+      ...CONFIRMED_ANSWERS,
+      provider_roles: [],
+      support_layers: ["Sentry observability"],
+    },
+    "denied",
+  );
+
+  const check = result.report.results.checks.find(
+    (candidate) => candidate.check_id === "web.baseline.observability",
+  );
+  assert.equal(check.applicability.status, "applicable");
+  assert.equal(check.status, "unverified");
 });
 
 test("Agent Mode requires an explicit Journey array even though an empty array means Skip", async () => {
@@ -901,7 +983,7 @@ test("Human Mode previews the full plan before permission without exposing a res
   assert.deepEqual(response, { confirmation: "confirm" });
   assert.match(
     confirmationOutput,
-    /Audit Brief[\s\S]*Environment: production[\s\S]*https:\/\/example\.com\/[\s\S]*visitor can sign up[\s\S]*sentry:observability[\s\S]*monitoring[\s\S]*Planned Checks:[\s\S]*web\.public\.availability \[public_verification\][\s\S]*provider\.sentry\.metadata \[provider_read:sentry\][\s\S]*Confirm this Audit Brief/,
+    /Audit Brief[\s\S]*Environment: production[\s\S]*https:\/\/example\.com\/[\s\S]*visitor can sign up[\s\S]*sentry:observability[\s\S]*observability[\s\S]*Planned Checks:[\s\S]*web\.public\.availability \[public_verification\][\s\S]*provider\.sentry\.metadata \[provider_read:sentry\][\s\S]*Confirm this Audit Brief/,
   );
   assert.doesNotMatch(confirmationOutput, /resume token/iu);
 });

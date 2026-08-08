@@ -88,6 +88,16 @@ test("the Human Audit driver retries Core validation and denies each permission 
   assert.equal(outcome.result.status, "completed");
   assert.equal(outcome.result.outcome, "audit_completed");
   assert.deepEqual(
+    outcome.result.report.scope.release_intent.support_layers,
+    ["observability"],
+  );
+  assert.equal(
+    outcome.result.report.results.checks.find(
+      (check) => check.check_id === "web.baseline.observability",
+    ).status,
+    "unverified",
+  );
+  assert.deepEqual(
     outcome.result.authorization_plan.map(({ permission_id, decision }) => ({
       permission_id,
       decision,
@@ -117,6 +127,59 @@ test("the Human Audit driver retries Core validation and denies each permission 
   assert.match(summary, /Next command: rally init .*--report <saved-report-path>/u);
   assert.doesNotMatch(summary, /No input or approval is required for this local-only Audit/u);
   assert.doesNotMatch(summary, /# LaunchRally Audit Report/u);
+});
+
+test("the Human Audit driver revises unknown support layers and preserves explicit absence", async () => {
+  const fixture = await createFixture();
+  const answerQueue = [
+    { ...VALID_ANSWERS, support_layers: ["unknown incident service"] },
+    { ...VALID_ANSWERS, provider_roles: [], support_layers: [] },
+  ];
+  const validationErrors = [];
+  const prompt = {
+    async start() {},
+    async respond(result) {
+      if (result.status === "needs_input") {
+        validationErrors.push(...result.request.validation_errors);
+        return { answers: answerQueue.shift() };
+      }
+      if (result.status === "needs_confirmation") return { confirmation: "confirm" };
+      if (result.status === "needs_permission") {
+        return {
+          permission_decisions: Object.fromEntries(
+            result.request.permissions.map(({ permission_id: permissionId }) => [
+              permissionId,
+              "denied",
+            ]),
+          ),
+        };
+      }
+      return {};
+    },
+    async close() {},
+  };
+
+  const outcome = await runHumanAudit({
+    cwd: fixture,
+    version: "0.1.0",
+    prompt,
+    runAudit,
+  });
+
+  assert.deepEqual(validationErrors, [
+    {
+      field_id: "support_layers",
+      code: "unsupported_support_layer",
+      supported_categories: ["analytics", "observability"],
+      guidance: "Choose a supported category or revise the support-layer selection.",
+    },
+  ]);
+  const check = outcome.result.report.results.checks.find(
+    (candidate) => candidate.check_id === "web.baseline.observability",
+  );
+  assert.equal(check.status, "not_applicable");
+  assert.equal(check.applicability.status, "not_applicable");
+  assert.ok(check.applicability.evidence.length > 0);
 });
 
 test("the Human Audit driver supports revision and cancellation without granting permission", async () => {

@@ -285,7 +285,7 @@ test("read-time currentness rejects tampered references and stored non-current E
   }
 });
 
-test("read-time currentness rederives gating before accepting failure Evidence", async () => {
+test("read-time currentness uses current declarations and rederives gating", async () => {
   const directory = await fixture();
   const audit = structuredClone(await completeAudit(directory));
   const finding = audit.report.results.checks.find(
@@ -306,7 +306,10 @@ test("read-time currentness rederives gating before accepting failure Evidence",
 
   assert.equal(currentness.current, false);
   assert.ok(currentness.currentness.reasons.some(
-    (reason) => reason.reason_code === "insufficient_machine_evidence",
+    (reason) => reason.reason_code === "insufficient_evidence",
+  ));
+  assert.ok(currentness.currentness.reasons.some(
+    (reason) => reason.reason_code === "gating_policy_mismatch",
   ));
 });
 

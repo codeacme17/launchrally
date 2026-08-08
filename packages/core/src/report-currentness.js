@@ -25,6 +25,10 @@ import {
   PROVIDER_ADAPTER_CONTRACT,
   createProviderAdapterPlan,
 } from "./provider-adapters.js";
+import {
+  normalizeSupportLayers,
+  supportLayerIsSelected,
+} from "./support-layers.js";
 
 const MAX_SUPPORTED_FILE_BYTES = 256 * 1024;
 const DEPENDENCY_DIRECTORIES = new Set(["node_modules", "vendor"]);
@@ -120,6 +124,14 @@ function sameValues(left, right) {
   return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
 }
 
+function sameSupportLayers(left, right) {
+  const normalizedLeft = normalizeSupportLayers(left);
+  const normalizedRight = normalizeSupportLayers(right);
+  return normalizedLeft !== null
+    && normalizedRight !== null
+    && sameValues(normalizedLeft, normalizedRight);
+}
+
 function manifestValue(state) {
   if (state?.state === "declared") return state.value;
   if (state?.state === "not_applicable") return [];
@@ -140,7 +152,7 @@ function manifestMatchesReport(manifest, report) {
     && manifestValue(manifest.release?.intended_environment) === intent.intended_environment
     && sameValues(manifestValue(manifest.release?.production_targets) ?? [], intent.production_targets)
     && sameValues(manifestValue(manifest.release?.core_journeys) ?? [], intent.core_journeys)
-    && sameValues(manifestValue(manifest.support?.layers) ?? [], intent.support_layers)
+    && sameSupportLayers(manifestValue(manifest.support?.layers) ?? [], intent.support_layers)
     && sameValues(manifestValue(manifest.providers?.roles) ?? [], intent.provider_roles);
 }
 
@@ -213,7 +225,8 @@ function notApplicableEvidenceIsCurrent(check, report, evidenceByDigest) {
       && entries.some(({ normalized_artifact: artifact }) => artifact.kind === "file");
   }
   if (check.check_id === "web.baseline.observability") {
-    return !intent.support_layers.includes("monitoring")
+    return normalizeSupportLayers(intent.support_layers) !== null
+      && !supportLayerIsSelected(intent.support_layers, "observability")
       && !intent.provider_roles.some(({ role }) => role === "observability")
       && entries.some(({ normalized_artifact: artifact }) =>
         artifact.kind === "release_intent"
@@ -353,10 +366,16 @@ export function evaluateReportCurrentness(reportPackage, options = {}) {
       add({ reason_code: "evidence_digest_mismatch", evidence_digest: entry.digest });
     }
   }
-  const declarations = new Map(report.catalog.checks.map((item) => [item.check_id, item]));
+  const storedDeclarations = new Map(
+    report.catalog.checks.map((item) => [item.check_id, item]),
+  );
+  const currentDeclarations = new Map(
+    currentCatalog.checks.map((item) => [item.check_id, item]),
+  );
   const evaluatedTime = Date.parse(evaluatedAt);
   for (const check of report.results.checks) {
-    const declaration = declarations.get(check.check_id);
+    const declaration = currentDeclarations.get(check.check_id)
+      ?? storedDeclarations.get(check.check_id);
     const freshness = declaration?.freshness_behavior;
     const expectedGating = releaseGate(declaration, report.scope.release_intent.confirmed);
     if (check.gating !== expectedGating) {
