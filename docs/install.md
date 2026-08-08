@@ -1,6 +1,6 @@
 # Install and release guide
 
-LaunchRally `0.1.0` is the planned first release across the CLI, canonical Skill, Codex Plugin, and Claude Plugin. It is not published yet. Package and Plugin metadata, the bundled Skill contract, native marketplace manifests, and internal dependencies are validated against that SemVer before publication. The package and Plugin installation commands below apply only after the public Experimental release exists; use the source-checkout verification path until then.
+LaunchRally `0.1.0` is the approved first Release Candidate across the CLI, canonical Skill, Codex Plugin, and Claude Plugin. It is not published yet. Package and Plugin metadata, the bundled Skill contract, native marketplace manifests, and internal dependencies are validated against that SemVer before publication. The package and Plugin installation commands below apply only after the public Experimental release exists; use the source-checkout verification path until then.
 
 ## Planned exact-version Audit
 
@@ -77,3 +77,5 @@ npm test
 Release validation rejects version drift, dependency ranges, lifecycle install hooks, stale Skill copies, and unexpected tarball files. Artifact testing packs all public workspaces, installs them together with scripts disabled in a clean offline project, smoke-tests the CLI, runs Claude's strict Plugin validator, and exercises Codex marketplace install and removal in an isolated user scope.
 
 Publishing is performed only by the repository's release workflow on a matching `v0.1.0` tag. npm Trusted Publishing supplies short-lived OIDC credentials and provenance; no long-lived npm token is used.
+
+Maintainers use the [Experimental release runbook](release-runbook.md) for the external control checks, protected promotion and tag, public smoke evidence, and partial-publication recovery.

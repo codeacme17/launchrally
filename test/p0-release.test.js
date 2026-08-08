@@ -36,7 +36,7 @@ test("the P0 release contract declares truthful pre-release telemetry-free statu
     status: "completed",
     phase: "p0",
     product_status: "incomplete",
-    release_status: "not_published",
+    release_status: "release_candidate",
     validation_mode: "telemetry_free",
     license: "Apache-2.0",
     feedback_channels: ["discussions", "issues", "security"],

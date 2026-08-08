@@ -3,6 +3,7 @@ import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/pro
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -67,24 +68,55 @@ async function packArtifacts(temporaryRoot, release) {
   return { cacheDirectory, tarballs };
 }
 
-async function smokeCli(temporaryRoot, cacheDirectory, tarballs, version) {
+async function smokeCli(temporaryRoot, installArguments, version, publicPackages = []) {
   const cleanProject = path.join(temporaryRoot, "clean-install");
   await mkdir(cleanProject, { recursive: true });
   await writeFile(
     path.join(cleanProject, "package.json"),
     '{"name":"launchrally-release-smoke","private":true}\n',
   );
-  await runNpm([
-    "install",
-    "--ignore-scripts",
-    "--no-audit",
-    "--no-fund",
-    "--offline",
-    "--save-exact",
-    "--cache",
-    cacheDirectory,
-    ...tarballs,
-  ], { cwd: cleanProject });
+  await runNpm(installArguments, { cwd: cleanProject });
+
+  if (publicPackages.length > 0) {
+    const { stdout } = await runNpm([
+      "audit",
+      "signatures",
+      "--json",
+      "--include-attestations",
+      "--cache",
+      path.join(temporaryRoot, "npm-signature-cache"),
+    ], { cwd: cleanProject });
+    const signatureAudit = JSON.parse(stdout);
+    for (const artifact of publicPackages) {
+      const verified = signatureAudit.verified?.find(({ name, version: auditedVersion }) => (
+        name === artifact.name && auditedVersion === version
+      ));
+      if (
+        verified?.attestations?.provenance === undefined
+        || !verified.attestationBundles?.some(({ predicateType }) => (
+          typeof predicateType === "string" && predicateType.startsWith("https://slsa.dev/provenance/")
+        ))
+      ) {
+        throw new Error(
+          `public_provenance_missing: ${artifact.name}@${version} has no verified provenance attestation`,
+        );
+      }
+    }
+  }
+
+  for (const artifact of publicPackages) {
+    const installed = await json(path.join(
+      cleanProject,
+      "node_modules",
+      ...artifact.name.split("/"),
+      "package.json",
+    ));
+    if (installed.name !== artifact.name || installed.version !== version) {
+      throw new Error(
+        `public_artifact_version_drift: ${artifact.name} installed as ${installed.name}@${installed.version}`,
+      );
+    }
+  }
 
   const rally = path.join(
     cleanProject,
@@ -317,7 +349,7 @@ async function runNative(name, arguments_, options) {
   return run(native.command, [...native.prefix, ...arguments_], options);
 }
 
-async function validateNativePlugins(temporaryRoot, cleanProject) {
+async function validatePackedNativePlugins(temporaryRoot, cleanProject) {
   const claudePlugin = path.join(
     cleanProject,
     "node_modules",
@@ -372,42 +404,253 @@ async function validateNativePlugins(temporaryRoot, cleanProject) {
   };
 }
 
+async function validatePublicNativePlugins(temporaryRoot, cleanProject, version) {
+  const claudeConfig = path.join(temporaryRoot, "claude-user-scope");
+  await mkdir(claudeConfig, { recursive: true });
+  const claudeEnvironment = { ...process.env, CLAUDE_CONFIG_DIR: claudeConfig };
+  await runNative("claude", [
+    "plugin", "marketplace", "add", "codeacme17/launchrally", "--scope", "user",
+  ], { cwd: cleanProject, env: claudeEnvironment });
+  const claudeAvailable = JSON.parse((await runNative("claude", [
+    "plugin", "list", "--available", "--json",
+  ], { cwd: cleanProject, env: claudeEnvironment })).stdout);
+  const claudeEntry = claudeAvailable.available?.find(({ pluginId }) => (
+    pluginId === "launchrally@launchrally"
+  ));
+  if (
+    claudeEntry?.source?.package !== "@launchrally/claude-plugin"
+    || claudeEntry.source.version !== version
+  ) {
+    throw new Error(
+      `public_claude_marketplace_drift: expected @launchrally/claude-plugin@${version}`,
+    );
+  }
+  await runNative("claude", [
+    "plugin", "install", "launchrally@launchrally", "--scope", "user",
+  ], { cwd: cleanProject, env: claudeEnvironment });
+  const claudeInstalled = JSON.parse((await runNative("claude", [
+    "plugin", "list", "--available", "--json",
+  ], { cwd: cleanProject, env: claudeEnvironment })).stdout);
+  if (!claudeInstalled.installed?.some(({ pluginId }) => (
+    pluginId === "launchrally@launchrally"
+  ))) {
+    throw new Error("public_claude_install_failed: launchrally@launchrally is not installed");
+  }
+  await runNative("claude", [
+    "plugin",
+    "validate",
+    "--strict",
+    path.join(cleanProject, "node_modules", "@launchrally", "claude-plugin"),
+  ], { cwd: cleanProject, env: claudeEnvironment });
+  await runNative("claude", [
+    "plugin", "uninstall", "launchrally@launchrally", "--scope", "user",
+  ], { cwd: cleanProject, env: claudeEnvironment });
+  await runNative("claude", [
+    "plugin", "marketplace", "remove", "launchrally", "--scope", "user",
+  ], { cwd: cleanProject, env: claudeEnvironment });
+
+  const codexHome = path.join(temporaryRoot, "codex-user-scope");
+  await mkdir(codexHome, { recursive: true });
+  const codexEnvironment = { ...process.env, CODEX_HOME: codexHome };
+  await runNative("codex", [
+    "plugin", "marketplace", "add", "codeacme17/launchrally", "--ref", `v${version}`, "--json",
+  ], { cwd: cleanProject, env: codexEnvironment });
+  await runNative("codex", [
+    "plugin", "add", "launchrally@launchrally", "--json",
+  ], { cwd: cleanProject, env: codexEnvironment });
+  const codexInstalled = JSON.parse((await runNative("codex", [
+    "plugin", "list", "--json",
+  ], { cwd: cleanProject, env: codexEnvironment })).stdout);
+  if (!codexInstalled.installed?.some(({ pluginId, version: installedVersion }) => (
+    pluginId === "launchrally@launchrally" && installedVersion === version
+  ))) {
+    throw new Error("public_codex_install_failed: launchrally@launchrally is not installed");
+  }
+  await runNative("codex", [
+    "plugin", "remove", "launchrally@launchrally", "--json",
+  ], { cwd: cleanProject, env: codexEnvironment });
+  await runNative("codex", [
+    "plugin", "marketplace", "remove", "launchrally", "--json",
+  ], { cwd: cleanProject, env: codexEnvironment });
+
+  return {
+    claude: "public_marketplace_installed_and_removed",
+    codex: "tagged_public_marketplace_installed_and_removed",
+  };
+}
+
+function publicReleasePlan(release, version) {
+  const exactPackages = release.packages.map(({ name }) => `${name}@${version}`);
+  return {
+    status: "planned",
+    source: "public_registry",
+    version,
+    exact_packages: exactPackages,
+    install: {
+      command: "npm",
+      arguments: [
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--save-exact",
+        ...exactPackages,
+      ],
+    },
+    registry_verification: release.packages.map(({ name }) => ({
+      package: name,
+      dist_tag: "experimental",
+      expected_version: version,
+    })),
+    provenance_verification: {
+      command: "npm",
+      arguments: ["audit", "signatures", "--json", "--include-attestations"],
+    },
+    cli_smoke: true,
+    native_plugins: {
+      claude: {
+        marketplace: "codeacme17/launchrally",
+        plugin: "launchrally@launchrally",
+        scope: "user",
+      },
+      codex: {
+        marketplace: "codeacme17/launchrally",
+        plugin: "launchrally@launchrally",
+        ref: `v${version}`,
+      },
+    },
+  };
+}
+
+async function waitForPublicRelease(release, version) {
+  const attempts = 18;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    let unavailable = null;
+    for (const { name } of release.packages) {
+      try {
+        const { stdout } = await runNpm([
+          "view",
+          `${name}@experimental`,
+          "version",
+          "--json",
+        ], { cwd: root });
+        const publishedVersion = JSON.parse(stdout);
+        if (publishedVersion !== version) {
+          throw new Error(
+            `public_dist_tag_drift: ${name}@experimental resolves to ${publishedVersion}; expected ${version}`,
+          );
+        }
+      } catch (error) {
+        if (/public_dist_tag_drift/u.test(error.message)) throw error;
+        const detail = `${error.stderr ?? ""}\n${error.message ?? ""}`;
+        if (!/\bE404\b|404 Not Found|No match found/u.test(detail)) {
+          throw new Error(`public_registry_verification_failed: ${name}: ${detail.trim()}`);
+        }
+        unavailable = name;
+        break;
+      }
+    }
+    if (unavailable === null) return;
+    if (attempt === attempts) {
+      throw new Error(
+        `public_registry_propagation_timeout: ${unavailable}@${version} was not public after ${attempts} attempts`,
+      );
+    }
+    process.stderr.write(
+      `Waiting for ${unavailable}@${version} to reach the public registry (${attempt}/${attempts}).\n`,
+    );
+    await delay(10_000);
+  }
+}
+
 async function main() {
   const release = await json(path.join(root, "release", "artifacts.json"));
   const rootPackage = await json(path.join(root, "package.json"));
+  const publicRelease = process.argv.includes("--public");
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "launchrally-artifacts-"));
   try {
-    const { cacheDirectory, tarballs } = await packArtifacts(temporaryRoot, release);
+    let installArguments;
+    if (publicRelease) {
+      await waitForPublicRelease(release, rootPackage.version);
+      installArguments = publicReleasePlan(release, rootPackage.version).install.arguments;
+      installArguments.splice(
+        installArguments.indexOf("--save-exact") + 1,
+        0,
+        "--cache",
+        path.join(temporaryRoot, "npm-install-cache"),
+      );
+    } else {
+      const { cacheDirectory, tarballs } = await packArtifacts(temporaryRoot, release);
+      installArguments = [
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--offline",
+        "--save-exact",
+        "--cache",
+        cacheDirectory,
+        ...tarballs,
+      ];
+    }
     const cliSmoke = await smokeCli(
       temporaryRoot,
-      cacheDirectory,
-      tarballs,
+      installArguments,
       rootPackage.version,
+      publicRelease ? release.packages : [],
     );
     const nativePlugins = process.argv.includes("--skip-native")
       ? "skipped"
-      : await validateNativePlugins(temporaryRoot, cliSmoke.cleanProject);
-    return {
+      : publicRelease
+        ? await validatePublicNativePlugins(
+          temporaryRoot,
+          cliSmoke.cleanProject,
+          rootPackage.version,
+        )
+        : await validatePackedNativePlugins(temporaryRoot, cliSmoke.cleanProject);
+    const result = {
       status: "completed",
       version: rootPackage.version,
-      artifacts: release.packages.map((artifact) => artifact.name).sort(),
-      artifact_files_verified: true,
       cli_smoke: cliSmoke.result,
       native_plugins: nativePlugins,
     };
+    return publicRelease
+      ? {
+        ...result,
+        source: "public_registry",
+        exact_packages: publicReleasePlan(release, rootPackage.version).exact_packages,
+      }
+      : {
+        ...result,
+        artifacts: release.packages.map((artifact) => artifact.name).sort(),
+        artifact_files_verified: true,
+      };
   } finally {
     await rm(temporaryRoot, { recursive: true, force: true });
   }
 }
 
-try {
-  const result = await main();
+if (process.argv.includes("--public") && process.argv.includes("--dry-run")) {
+  const release = await json(path.join(root, "release", "artifacts.json"));
+  const rootPackage = await json(path.join(root, "package.json"));
+  const plan = publicReleasePlan(release, rootPackage.version);
   process.stdout.write(
     process.argv.includes("--json")
-      ? `${JSON.stringify(result)}\n`
-      : `Verified ${result.artifacts.length} release artifacts for ${result.version}.\n`,
+      ? `${JSON.stringify(plan)}\n`
+      : `${plan.install.command} ${plan.install.arguments.join(" ")}\n`,
   );
-} catch (error) {
-  process.stderr.write(`${error.message}\n`);
-  process.exitCode = 1;
+} else {
+  try {
+    const result = await main();
+    process.stdout.write(
+      process.argv.includes("--json")
+        ? `${JSON.stringify(result)}\n`
+        : process.argv.includes("--public")
+          ? `Verified ${result.exact_packages.length} public release artifacts for ${result.version}.\n`
+          : `Verified ${result.artifacts.length} release artifacts for ${result.version}.\n`,
+    );
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  }
 }

@@ -20,6 +20,12 @@ const requiredReleaseGates = [
   "secret_safety",
   "traceability",
 ];
+const postPublicationRequirementIds = new Set([
+  "P0-RELEASE-01",
+  "P0-RELEASE-02",
+  "P0-VALIDATE-01",
+  "P0-VALIDATE-02",
+]);
 
 function fail(code, detail) {
   throw new Error(`${code}: ${detail}`);
@@ -217,6 +223,18 @@ async function validate() {
       blockers.unshift(`release_status=${matrix.release_status}`);
     }
     if (blockers.length > 0) fail("acceptance_release_blocked", blockers.join(", "));
+  }
+  if (process.argv.includes("--require-publish-ready")) {
+    const blockers = [...requirements.values()]
+      .filter(({ id, status }) => status !== "complete" && !postPublicationRequirementIds.has(id))
+      .map(({ id }) => id);
+    if (matrix.release_status !== "release_candidate") {
+      blockers.unshift(`release_status=${matrix.release_status}`);
+    }
+    if (matrix.product_status !== "incomplete") {
+      blockers.unshift(`product_status=${matrix.product_status}`);
+    }
+    if (blockers.length > 0) fail("acceptance_publish_blocked", blockers.join(", "));
   }
   return {
     status: "completed",

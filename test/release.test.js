@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -72,6 +73,7 @@ test("release validation fails when a Plugin version drifts", async () => {
       return true;
     },
   );
+
 });
 
 test("release validation fails when a bundled Skill command drifts", async () => {
@@ -95,6 +97,7 @@ test("release validation fails when a bundled Skill command drifts", async () =>
       return true;
     },
   );
+
 });
 
 test("release validation synchronizes CRLF Skill checkouts", async () => {
@@ -215,6 +218,56 @@ test("release validation rejects internal dependency ranges", async () => {
       return true;
     },
   );
+});
+
+test("release validation plans exact public CLI and Plugin smoke inputs", async () => {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["scripts/test-release-artifacts.mjs", "--public", "--dry-run", "--json"],
+    { cwd: root },
+  );
+  const plan = JSON.parse(stdout);
+  const exactPackages = releaseManifest.packages.map(({ name }) => `${name}@0.1.0`);
+
+  assert.deepEqual(plan, {
+    status: "planned",
+    source: "public_registry",
+    version: "0.1.0",
+    exact_packages: exactPackages,
+    install: {
+      command: "npm",
+      arguments: [
+        "install",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--save-exact",
+        ...exactPackages,
+      ],
+    },
+    registry_verification: releaseManifest.packages.map(({ name }) => ({
+      package: name,
+      dist_tag: "experimental",
+      expected_version: "0.1.0",
+    })),
+    provenance_verification: {
+      command: "npm",
+      arguments: ["audit", "signatures", "--json", "--include-attestations"],
+    },
+    cli_smoke: true,
+    native_plugins: {
+      claude: {
+        marketplace: "codeacme17/launchrally",
+        plugin: "launchrally@launchrally",
+        scope: "user",
+      },
+      codex: {
+        marketplace: "codeacme17/launchrally",
+        plugin: "launchrally@launchrally",
+        ref: "v0.1.0",
+      },
+    },
+  });
 });
 
 test("public tarballs install together and smoke-test the CLI in a clean project", async () => {
@@ -355,6 +408,23 @@ test("release docs cover user-scope Plugin install, update, and uninstall", asyn
   assert.doesNotMatch(guide, /(?:copy|cp)[^\n]*skills?\//iu);
 });
 
+test("release docs define the guarded Experimental publication runbook", async () => {
+  const runbook = await readFile(path.join(root, "docs/release-runbook.md"), "utf8");
+  for (const packageName of releaseManifest.packages.map(({ name }) => name)) {
+    assert.match(runbook, new RegExp(packageName.replace("/", "\\/"), "u"));
+  }
+  assert.match(runbook, /npm trust list/iu);
+  assert.match(runbook, /codeacme17\/launchrally/u);
+  assert.match(runbook, /release\.yml/u);
+  assert.match(runbook, /environment `npm`/iu);
+  assert.match(runbook, /allowed action `npm publish`/iu);
+  assert.match(runbook, /selected tag pattern\s+`v\*\.\*\.\*`/iu);
+  assert.match(runbook, /annotated tag/iu);
+  assert.match(runbook, /new coherent version/iu);
+  assert.match(runbook, /GitHub prerelease[\s\S]*public smoke/iu);
+  assert.match(runbook, /package must already exist/iu);
+});
+
 test("release CI verifies clean artifacts before OIDC provenance publishing", async () => {
   const release = await readFile(
     path.join(root, ".github/workflows/release.yml"),
@@ -371,8 +441,12 @@ test("release CI verifies clean artifacts before OIDC provenance publishing", as
   assert.match(release, /npm run build/u);
   assert.match(release, /npm test/u);
   assert.match(release, /npm run validate:release -- --tag/u);
+  assert.match(release, /npm run validate:release-ref -- --tag/u);
   assert.match(release, /npm run test:artifacts/u);
   assert.match(release, /node scripts\/publish-release\.mjs/u);
+  assert.match(release, /public-smoke:[\s\S]*npm run test:public-release/u);
+  assert.match(release, /prerelease:[\s\S]*gh release create[^\n]*--prerelease/u);
+  assert.match(release, /prerelease:[\s\S]*needs: public-smoke/u);
   assert.doesNotMatch(release, /NPM_TOKEN|NODE_AUTH_TOKEN|secrets\./u);
   assert.match(ci, /npm run validate:release/u);
   assert.match(ci, /npm run test:artifacts/u);
@@ -398,9 +472,130 @@ test("release CI verifies clean artifacts before OIDC provenance publishing", as
         "--provenance",
         "--access",
         "public",
+        "--tag",
+        "experimental",
       ],
     })),
   );
+});
+
+test("release validation requires an annotated tag on the approved main commit", async () => {
+  const repository = await mkdtemp(path.join(os.tmpdir(), "launchrally-release-ref-"));
+  await execFileAsync("git", ["init", "--quiet", "--initial-branch=main"], { cwd: repository });
+  await writeFile(path.join(repository, "release.txt"), "candidate\n");
+  await execFileAsync("git", ["add", "release.txt"], { cwd: repository });
+  await execFileAsync("git", [
+    "-c", "user.name=LaunchRally Tests",
+    "-c", "user.email=tests@launchrally.dev",
+    "commit", "--quiet", "-m", "candidate",
+  ], { cwd: repository });
+  await execFileAsync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], {
+    cwd: repository,
+  });
+  await execFileAsync("git", [
+    "-c", "user.name=LaunchRally Tests",
+    "-c", "user.email=tests@launchrally.dev",
+    "tag", "--annotate", "v0.1.0", "--message", "LaunchRally 0.1.0",
+  ], { cwd: repository });
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.1.0", "--json"],
+    { cwd: root },
+  );
+  assert.equal(JSON.parse(stdout).tag_type, "annotated");
+
+  await execFileAsync("git", ["tag", "--delete", "v0.1.0"], { cwd: repository });
+  await execFileAsync("git", ["tag", "v0.1.0"], { cwd: repository });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.1.0"],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /release_tag_not_annotated/u);
+      return true;
+    },
+  );
+
+  await execFileAsync("git", ["tag", "--delete", "v0.1.0"], { cwd: repository });
+  await execFileAsync("git", [
+    "-c", "user.name=LaunchRally Tests",
+    "-c", "user.email=tests@launchrally.dev",
+    "tag", "--annotate", "v0.1.0", "--message", "LaunchRally 0.1.0",
+  ], { cwd: repository });
+  await writeFile(path.join(repository, "release.txt"), "different main\n");
+  await execFileAsync("git", ["add", "release.txt"], { cwd: repository });
+  await execFileAsync("git", [
+    "-c", "user.name=LaunchRally Tests",
+    "-c", "user.email=tests@launchrally.dev",
+    "commit", "--quiet", "-m", "different main",
+  ], { cwd: repository });
+  await execFileAsync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], {
+    cwd: repository,
+  });
+  await execFileAsync("git", ["checkout", "--quiet", "v0.1.0"], { cwd: repository });
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.1.0"],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /release_tag_not_on_main/u);
+      return true;
+    },
+  );
+});
+
+test("release validation fixes partial publication forward with one coherent version", async () => {
+  const stubDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-publish-"));
+  const stubPath = path.join(stubDirectory, "npm");
+  const logPath = path.join(stubDirectory, "calls.jsonl");
+  await writeFile(stubPath, `#!/usr/bin/env node
+const fs = require("node:fs");
+const args = process.argv.slice(2);
+fs.appendFileSync(process.env.NPM_STUB_LOG, JSON.stringify(args) + "\\n");
+if (args[0] === "view") {
+  process.stderr.write("npm error code E404\\n");
+  process.exit(1);
+}
+if (args[0] === "publish" && args[2] === "@launchrally/core") {
+  process.stderr.write("simulated publish failure\\n");
+  process.exit(1);
+}
+`);
+  await chmod(stubPath, 0o755);
+
+  await assert.rejects(
+    execFileAsync(process.execPath, ["scripts/publish-release.mjs"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        NPM_STUB_LOG: logPath,
+        PATH: `${stubDirectory}${path.delimiter}${process.env.PATH}`,
+      },
+    }),
+    (error) => {
+      assert.match(error.stderr, /partial_publication/u);
+      assert.match(error.stderr, /@launchrally\/contracts@0\.1\.0/u);
+      assert.match(error.stderr, /new coherent version/iu);
+      return true;
+    },
+  );
+
+  const calls = (await readFile(logPath, "utf8")).trim().split("\n").map(JSON.parse);
+  assert.deepEqual(calls.slice(0, 5), releaseManifest.packages.map(({ name }) => [
+    "view",
+    `${name}@0.1.0`,
+    "version",
+    "--json",
+  ]));
+  assert.deepEqual(calls.slice(5).map((arguments_) => arguments_.slice(0, 3)), [
+    ["publish", "--workspace", "@launchrally/contracts"],
+    ["publish", "--workspace", "@launchrally/core"],
+  ]);
 });
 
 test("release validation rejects a tag that does not match package SemVer", async () => {
