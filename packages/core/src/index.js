@@ -155,5 +155,6 @@ export {
 export { evaluateReportCurrentness } from "./report-currentness.js";
 export { runInit } from "./initialization.js";
 export { runPlan } from "./planning.js";
+export { parsePublicJourneyInput } from "./public-journey.js";
 export { runProviderGuidance } from "./provider-guidance.js";
 export { runVerify } from "./verification.js";

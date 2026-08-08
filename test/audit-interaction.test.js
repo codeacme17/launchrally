@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import os from "node:os";
@@ -142,6 +142,31 @@ test("Agent Mode asks only for unknown release intent in a versioned state", asy
   assert.doesNotMatch(JSON.stringify(result), /private-value/);
 });
 
+test("Core offers only safely detected static routes as Journey candidates", async () => {
+  const fixture = await createInteractionFixture();
+  for (const relativePath of [
+    "app/page.tsx",
+    "app/dashboard/page.tsx",
+    "app/users/[id]/page.tsx",
+    "src/routes/pricing/+page.svelte",
+    "app/routes/docs._index.tsx",
+  ]) {
+    const absolutePath = path.join(fixture, relativePath);
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, "export default function Page() {}\n");
+  }
+
+  const result = await runAudit(fixture);
+  const field = result.request.fields.find(({ field_id }) => field_id === "core_journeys");
+  assert.deepEqual(field.candidates, [
+    "GET / — homepage loads",
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+    "GET /pricing — pricing page loads",
+  ]);
+  assert.doesNotMatch(JSON.stringify(field.candidates), /\[id\]/u);
+});
+
 test("Agent Mode previews the complete unconfirmed plan before permission", async () => {
   const fixture = await createInteractionFixture();
   const result = await reachConfirmation(fixture);
@@ -181,6 +206,63 @@ test("Agent Mode previews the complete unconfirmed plan before permission", asyn
     prompt: "Confirm this Audit Brief and complete Check plan before permissions are requested.",
     choices: ["confirm", "revise", "cancel"],
   });
+});
+
+test("an explicit empty Journey scope can proceed to confirmation", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({ ...CONFIRMED_ANSWERS, core_journeys: [] }),
+  ]);
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.deepEqual(result.audit_brief.core_journeys.values, []);
+  assert.equal(result.audit_brief.core_journeys.confirmed, false);
+});
+
+test("Agent Mode requires an explicit Journey array even though an empty array means Skip", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const { core_journeys: _journeys, ...answersWithoutJourneys } = CONFIRMED_ANSWERS;
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify(answersWithoutJourneys),
+  ]);
+
+  assert.equal(result.status, "needs_input");
+  assert.deepEqual(result.request.validation_errors, [
+    { field_id: "core_journeys", code: "required" },
+  ]);
+});
+
+test("skipping public Journeys completes with an unresolved Verification Gap", async () => {
+  const fixture = await createInteractionFixture();
+  const result = await completeAudit(
+    fixture,
+    {
+      ...CONFIRMED_ANSWERS,
+      core_journeys: [],
+      provider_roles: [],
+      support_layers: [],
+    },
+    "denied",
+  );
+
+  assert.equal(result.status, "completed");
+  const journeyCheck = result.report.results.checks.find(
+    (check) => check.check_id === "web.public.core-journeys",
+  );
+  assert.equal(journeyCheck.status, "unverified");
+  assert.match(journeyCheck.summary, /Confirmed core journeys are required/u);
+  assert.ok(result.report.results.verification_gaps.some((gap) =>
+    gap.check_id === "web.public.core-journeys"
+      && gap.reason_code === "applicability_unresolved",
+  ));
 });
 
 test("Agent Mode discloses every read-only public probe before approval", async () => {
@@ -884,6 +966,25 @@ test("public journeys reject mutating methods and sensitive paths", async () => 
     { field_id: "core_journeys", code: "invalid_public_journey" },
   ]);
   assert.doesNotMatch(JSON.stringify(result), /token=secret/u);
+});
+
+test("public Journey strings cannot disguise a mutating method as a description", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      core_journeys: ["POST /admin — destructive action"],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_input");
+  assert.deepEqual(result.request.validation_errors, [
+    { field_id: "core_journeys", code: "invalid_public_journey" },
+  ]);
 });
 
 test("public journey paths cannot resolve outside confirmed target origins", async () => {

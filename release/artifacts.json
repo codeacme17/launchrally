@@ -63,6 +63,7 @@
         "src/provider-adapters.js",
         "src/provider-decision-cards.js",
         "src/provider-guidance.js",
+        "src/public-journey.js",
         "src/public-verification.js",
         "src/report-currentness.js",
         "src/reporting.js",
