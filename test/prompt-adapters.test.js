@@ -495,6 +495,7 @@ test("the Plain adapter labels targets with the intended staging environment", a
 test("the Plain adapter labels custom and unknown target summaries", async () => {
   for (const [environment, expected] of [
     ["QA East", /QA East targets:\s+  - https:\/\/example\.com\//u],
+    ["QA\u001bEast\u007f", /QA East targets:\s+  - https:\/\/example\.com\//u],
     [null, /Confirmed targets:\s+  - https:\/\/example\.com\//u],
   ]) {
     const input = ttyStream();
@@ -523,6 +524,7 @@ test("the Plain adapter labels custom and unknown target summaries", async () =>
     await prompt.close();
 
     assert.match(rendered, expected);
+    assert.doesNotMatch(rendered, /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u);
     assert.doesNotMatch(rendered, /Production targets/u);
   }
 });

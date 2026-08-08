@@ -171,9 +171,13 @@ test("derived Report Views label compatibility targets with the reviewed environ
   assert.deepEqual(staging.report.scope.release_intent.production_targets, ["https://example.com/"]);
 
   const custom = await complete(directory, {
-    answers: { ...ANSWERS, intended_environment: "QA East" },
+    answers: { ...ANSWERS, intended_environment: "QA\u001bEast\u007f" },
   });
   assert.match(custom.report_view.content, /QA East target: https:\/\/example\.com\//u);
+  assert.doesNotMatch(
+    custom.report_view.content,
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u,
+  );
 
   const unknownRecord = structuredClone(staging.report);
   unknownRecord.scope.release_intent.intended_environment = null;

@@ -7,6 +7,7 @@ import {
   environmentTargetLabel,
   parsePublicJourneyInput,
   parsePublicTargetInput,
+  reviewedEnvironmentLabel,
   SUPPORT_LAYER_CATEGORIES,
 } from "@launchrally/core";
 
@@ -153,7 +154,9 @@ function auditBriefText(result) {
   const brief = result.audit_brief;
   const lines = [
     "Audit Brief",
-    `Environment: ${brief.intended_environment.value ?? "not yet confirmed"}`,
+    `Environment: ${reviewedEnvironmentLabel(
+      brief.intended_environment.value,
+    ) || "not yet confirmed"}`,
     `${environmentTargetLabel(brief.intended_environment.value, { capitalize: true, plural: true })}:`,
     list(brief.production_targets.values),
     "Core journeys:",

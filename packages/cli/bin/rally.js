@@ -7,6 +7,7 @@ import process from "node:process";
 import { CLI_INTERACTION_CONTRACT } from "@launchrally/contracts";
 import {
   environmentTargetLabel,
+  reviewedEnvironmentLabel,
   runAudit,
   runInit,
   runPlan,
@@ -107,7 +108,7 @@ function renderHumanInteraction(value) {
   } else {
     lines.push(
       "Complete plan preview",
-      `Environment: ${brief.intended_environment.value}`,
+      `Environment: ${reviewedEnvironmentLabel(brief.intended_environment.value)}`,
       ...brief.production_targets.values.map((target) =>
         `${environmentTargetLabel(brief.intended_environment.value, { capitalize: true })}: ${target}`,
       ),
