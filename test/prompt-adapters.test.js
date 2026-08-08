@@ -29,7 +29,8 @@ test("the Plain adapter explains and validates required input before continuing"
   const prompt = createPlainPromptAdapter({ input, output });
 
   setTimeout(() => input.write("\n"), 10);
-  setTimeout(() => input.write("https://app.example.com\n"), 30);
+  setTimeout(() => input.write("ht\n"), 30);
+  setTimeout(() => input.write("https://app.example.com\n"), 50);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -57,6 +58,7 @@ test("the Plain adapter explains and validates required input before continuing"
   assert.match(rendered, /Which public production URLs are in scope\? \(Required\)/u);
   assert.match(rendered, /Example: https:\/\/app\.example\.com/u);
   assert.match(rendered, /This field is required\./u);
+  assert.match(rendered, /Enter a valid public http or https URL/u);
 });
 
 test("the Plain adapter uses numbered choices for selectable input", async () => {
@@ -627,6 +629,42 @@ test("the Clack adapter shows examples and validates required text input in plac
   assert.match(semanticOutput, /Which public production URLs are in scope\? \(Required\)/u);
   assert.match(semanticOutput, /Example: https:\/\/app\.example\.com/u);
   assert.match(semanticOutput, /This field is required\./u);
+});
+
+test("the Clack adapter keeps an invalid production URL in the current question", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("ht\r"), 20);
+  setTimeout(() => input.write("\u0003"), 80);
+  await assert.rejects(prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "production_targets",
+        value_type: "url_array",
+        prompt: "Which public production URLs are in scope?",
+        candidates: [],
+        current_value: [],
+      }],
+    },
+  }), PromptCancelledError);
+  await prompt.close();
+
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /Enter a valid public http or https URL/u);
 });
 
 test("the Clack adapter uses a multi-select prompt for Provider roles", async () => {

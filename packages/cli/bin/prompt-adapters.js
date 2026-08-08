@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline/promises";
 import process from "node:process";
 
-import { parsePublicJourneyInput } from "@launchrally/core";
+import { parsePublicJourneyInput, parsePublicTargetInput } from "@launchrally/core";
 
 import { PromptCancelledError } from "./human-audit.js";
 
@@ -222,8 +222,18 @@ function fieldInputError(field, value) {
   const input = String(value ?? "").trim();
   if (isBackRequest(field, input)) return undefined;
   if (field.required && !input) return "This field is required.";
-  if (field.value_type !== "journey_array" || !input) return undefined;
+  if (!input) return undefined;
   const entries = input.split(",").map((entry) => entry.trim()).filter(Boolean);
+  if (field.value_type === "url_array") {
+    const error = entries.map((entry) => parsePublicTargetInput(entry).error).find(Boolean);
+    if (error === "unsafe_public_target") {
+      return "Use a public URL without credentials, query parameters, or fragments.";
+    }
+    if (error) {
+      return "Enter a valid public http or https URL, for example: https://app.example.com.";
+    }
+  }
+  if (field.value_type !== "journey_array") return undefined;
   const safe = entries.every((entry) =>
     !parsePublicJourneyInput(entry, { allowDescription: false }).error,
   );

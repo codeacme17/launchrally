@@ -9,6 +9,7 @@ import {
 import { describeWebBaselineCatalog } from "./check-catalog.js";
 import { createProviderAdapterPlan } from "./provider-adapters.js";
 import { parsePublicJourneyInput } from "./public-journey.js";
+import { parsePublicTargetInput } from "./public-target.js";
 import { createPublicVerificationPlan } from "./public-verification.js";
 
 const PROVIDER_SIGNALS = Object.freeze([
@@ -155,18 +156,12 @@ function normalizeAnswers(answers) {
     errors.push({ field_id: "production_targets", code: "required" });
   } else {
     for (const target of answers.production_targets) {
-      try {
-        const url = new URL(target);
-        if (!["http:", "https:"].includes(url.protocol)) throw new Error();
-        if (url.username || url.password || url.search || url.hash) {
-          errors.push({ field_id: "production_targets", code: "unsafe_public_target" });
-          break;
-        }
-        productionTargets.push(url.toString());
-      } catch {
-        errors.push({ field_id: "production_targets", code: "invalid_url" });
+      const parsed = parsePublicTargetInput(target);
+      if (parsed.error) {
+        errors.push({ field_id: "production_targets", code: parsed.error });
         break;
       }
+      productionTargets.push(parsed.value);
     }
   }
 
