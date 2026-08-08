@@ -3,7 +3,11 @@ import { createInterface } from "node:readline/promises";
 import process from "node:process";
 import { styleText } from "node:util";
 
-import { parsePublicJourneyInput, parsePublicTargetInput } from "@launchrally/core";
+import {
+  parsePublicJourneyInput,
+  parsePublicTargetInput,
+  SUPPORT_LAYER_CATEGORIES,
+} from "@launchrally/core";
 
 import { PromptCancelledError } from "./human-audit.js";
 
@@ -91,11 +95,11 @@ const FIELD_PRESENTATION = Object.freeze({
   }),
   support_layers: Object.freeze({
     required: false,
-    example: "monitoring, analytics",
-    options: Object.freeze([
-      Object.freeze({ label: "Analytics", value: "analytics" }),
-      Object.freeze({ label: "Monitoring", value: "monitoring" }),
-    ]),
+    example: "observability, analytics",
+    options: Object.freeze(SUPPORT_LAYER_CATEGORIES.map((value) => Object.freeze({
+      label: `${value[0].toUpperCase()}${value.slice(1)}`,
+      value,
+    }))),
     allow_custom: true,
   }),
 });
@@ -174,7 +178,9 @@ function inputStateText(result) {
     ...brief.support_layers.candidates.map((layer) => `Support layer: ${layer}`),
   ];
   const errors = result.request.validation_errors.map(
-    (error) => `  - ${error.field_id}: ${error.code}`,
+    (error) => `  - ${error.field_id}: ${error.code}${
+      error.guidance ? ` — ${error.guidance}` : ""
+    }`,
   );
   return [
     "Needs input",

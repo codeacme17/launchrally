@@ -11,6 +11,10 @@ import { createProviderAdapterPlan } from "./provider-adapters.js";
 import { parsePublicJourneyInput } from "./public-journey.js";
 import { parsePublicTargetInput } from "./public-target.js";
 import { createPublicVerificationPlan } from "./public-verification.js";
+import {
+  normalizeSupportLayer,
+  SUPPORT_LAYER_CATEGORIES,
+} from "./support-layers.js";
 
 const PROVIDER_SIGNALS = Object.freeze([
   { prefix: "CLOUDFLARE_", provider: "cloudflare", role: "deployment" },
@@ -48,7 +52,7 @@ function supportCandidates(project) {
   const variableNames = environmentVariableNames(project);
   return [
     ...(variableNames.some((name) => name.startsWith("POSTHOG_")) ? ["analytics"] : []),
-    ...(variableNames.some((name) => name.startsWith("SENTRY_")) ? ["monitoring"] : []),
+    ...(variableNames.some((name) => name.startsWith("SENTRY_")) ? ["observability"] : []),
   ];
 }
 
@@ -211,10 +215,24 @@ function normalizeAnswers(answers) {
     }
   }
 
-  const supportLayers = Array.isArray(answers?.support_layers)
-    ? answers.support_layers.filter((layer) => typeof layer === "string" && layer.trim()).map((layer) => layer.trim().toLowerCase())
-    : null;
-  if (supportLayers === null) {
+  const supportLayers = [];
+  const hasSupportLayers = Array.isArray(answers?.support_layers);
+  if (hasSupportLayers) {
+    for (const layer of answers.support_layers) {
+      const normalized = normalizeSupportLayer(layer);
+      if (!normalized) {
+        errors.push({
+          field_id: "support_layers",
+          code: "unsupported_support_layer",
+          supported_categories: SUPPORT_LAYER_CATEGORIES,
+          guidance: "Choose a supported category or revise the support-layer selection.",
+        });
+        break;
+      }
+      supportLayers.push(normalized);
+    }
+  }
+  if (!hasSupportLayers) {
     errors.push({ field_id: "support_layers", code: "required" });
   }
 
@@ -235,7 +253,7 @@ function normalizeAnswers(answers) {
       ])).values()].sort((left, right) =>
         `${left.provider}:${left.role}`.localeCompare(`${right.provider}:${right.role}`),
       ),
-      support_layers: [...new Set(supportLayers ?? [])].sort(),
+      support_layers: [...new Set(supportLayers)].sort(),
     },
   };
 }

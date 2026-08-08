@@ -11,7 +11,11 @@ import {
   assertValidReportPackage,
   assertValidVerificationResult,
 } from "../packages/contracts/src/index.js";
-import { runAudit, runVerify } from "../packages/core/src/index.js";
+import {
+  evaluateReportCurrentness,
+  runAudit,
+  runVerify,
+} from "../packages/core/src/index.js";
 import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
@@ -143,6 +147,76 @@ test("Verify accepts a portable token when mkdtemp preserves its placeholder", a
 
   assert.equal(result.status, "completed");
   assert.equal(result.operation, "verify");
+});
+
+test("Report currentness rejects not-applicable observability that contradicts aliased intent", async () => {
+  const directory = await fixture();
+  const source = structuredClone(await completeAudit(directory));
+  source.report.scope.release_intent.support_layers = ["Sentry"];
+
+  const result = evaluateReportCurrentness(source, {
+    cwd: directory,
+    now: () => new Date(source.report.created_at),
+  });
+
+  assert.ok(result.currentness.reasons.some((reason) =>
+    reason.check_id === "web.baseline.observability"
+      && reason.reason_code === "applicability_evidence_invalid",
+  ));
+});
+
+test("Report currentness rejects observability passes backed only by declared intent", async () => {
+  const directory = await fixture();
+  const source = structuredClone(await completeAudit(directory, {
+    ...ANSWERS,
+    support_layers: ["Sentry"],
+  }));
+  const check = source.report.results.checks.find(
+    (candidate) => candidate.check_id === "web.baseline.observability",
+  );
+  check.status = "passed";
+  check.evidence = structuredClone(check.applicability.evidence);
+
+  const result = evaluateReportCurrentness(source, {
+    cwd: directory,
+    now: () => new Date(source.report.created_at),
+  });
+
+  assert.ok(result.currentness.reasons.some((reason) =>
+    reason.check_id === "web.baseline.observability"
+      && reason.reason_code === "insufficient_evidence",
+  ));
+});
+
+test("Verify normalizes equivalent support-layer aliases without reporting Manifest drift", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory, {
+    ...ANSWERS,
+    support_layers: ["observability"],
+  });
+  const manifest = await writeManifest(directory, source);
+  manifest.support.layers.value = ["monitoring"];
+  await writeFile(
+    path.join(directory, ".launchrally", "manifest.yaml"),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(
+    result.manifest_drift.some(({ field }) => field === "support.layers"),
+    false,
+  );
+  assert.deepEqual(
+    result.report.scope.release_intent.support_layers,
+    ["observability"],
+  );
 });
 
 test("full Verify accepts structurally valid non-current history so it can refresh it", async () => {

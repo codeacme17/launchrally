@@ -68,6 +68,7 @@
         "src/public-verification.js",
         "src/report-currentness.js",
         "src/reporting.js",
+        "src/support-layers.js",
         "src/verification.js"
       ]
     },

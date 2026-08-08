@@ -98,6 +98,50 @@ test("the Plain adapter uses numbered choices for selectable input", async () =>
   assert.match(rendered, /4\. Other — enter a custom value/u);
 });
 
+test("the Plain adapter presents canonical support categories with revision guidance", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("2\n"), 10);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [{
+        field_id: "support_layers",
+        code: "unsupported_support_layer",
+        supported_categories: ["analytics", "observability"],
+        guidance: "Choose a supported category or revise the support-layer selection.",
+      }],
+      fields: [{
+        field_id: "support_layers",
+        value_type: "string_array",
+        prompt: "Which support layers should the Audit include?",
+        candidates: [],
+        current_value: [],
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, { answers: { support_layers: ["observability"] } });
+  assert.match(
+    rendered,
+    /support_layers: unsupported_support_layer — Choose a supported category or revise the support-layer selection\./u,
+  );
+  assert.match(rendered, /1\. Analytics[\s\S]*2\. Observability/u);
+});
+
 test("the Plain adapter does not offer backward navigation", async () => {
   const input = ttyStream();
   const output = ttyStream();
