@@ -11,7 +11,11 @@ import { isDeepStrictEqual } from "node:util";
 import { describeWebBaselineCatalog } from "./check-catalog.js";
 import { classifyContentFile, isEnvironmentFile } from "./fact-extractors.js";
 import { isIgnored, parseIgnoreFile } from "./gitignore.js";
-import { LOCAL_SAFE_SCAN_POLICY, SUPPORTED_LOCKFILES } from "./local-safe-scan.js";
+import {
+  LOCAL_SAFE_SCAN_POLICY,
+  SUPPORTED_LOCKFILES,
+  isToolingMetadataDirectory,
+} from "./local-safe-scan.js";
 import {
   LEGACY_MANIFEST_RELATIVE_PATH,
   MANIFEST_RELATIVE_PATH,
@@ -88,7 +92,8 @@ function repositoryDigests(root) {
       if (entry.name === ".gitignore" || entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
         if (
-          DEPENDENCY_DIRECTORIES.has(entry.name)
+          isToolingMetadataDirectory(relativePath)
+          || DEPENDENCY_DIRECTORIES.has(entry.name)
           || BUILD_DIRECTORIES.has(entry.name)
           || ALWAYS_IGNORED_DIRECTORIES.has(entry.name)
           || isIgnored(relativePath, rules)
