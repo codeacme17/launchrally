@@ -6,6 +6,7 @@ import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { hasClaudeInstalledPlugin } from "./native-plugin-state.mjs";
 
 import { writeExactToolchain } from "../test/helpers/exact-toolchain.js";
 
@@ -431,9 +432,11 @@ async function validatePublicNativePlugins(temporaryRoot, cleanProject, version)
   const claudeInstalled = JSON.parse((await runNative("claude", [
     "plugin", "list", "--available", "--json",
   ], { cwd: cleanProject, env: claudeEnvironment })).stdout);
-  if (!claudeInstalled.installed?.some(({ pluginId }) => (
-    pluginId === "launchrally@launchrally"
-  ))) {
+  if (!hasClaudeInstalledPlugin(
+    claudeInstalled,
+    "launchrally@launchrally",
+    version,
+  )) {
     throw new Error("public_claude_install_failed: launchrally@launchrally is not installed");
   }
   await runNative("claude", [

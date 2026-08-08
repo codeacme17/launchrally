@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
+import { hasClaudeInstalledPlugin } from "../scripts/native-plugin-state.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
@@ -14,6 +15,30 @@ const releaseManifest = JSON.parse(await readFile(
   path.join(root, "release/artifacts.json"),
   "utf8",
 ));
+
+test("Claude public smoke recognizes the installed-list schema", () => {
+  const installed = {
+    installed: [{
+      id: "launchrally@launchrally",
+      version: "0.1.0",
+      scope: "user",
+      enabled: true,
+    }],
+    available: [],
+  };
+
+  assert.equal(
+    hasClaudeInstalledPlugin(installed, "launchrally@launchrally", "0.1.0"),
+    true,
+  );
+  assert.equal(
+    hasClaudeInstalledPlugin(installed, "launchrally@launchrally", "0.1.1"),
+    false,
+  );
+  assert.equal(hasClaudeInstalledPlugin({
+    installed: [{ pluginId: "launchrally@launchrally", version: "0.1.0" }],
+  }, "launchrally@launchrally", "0.1.0"), false);
+});
 
 async function createReleaseFixture() {
   return copyRepositoryFixture(root, "launchrally-release-", [
