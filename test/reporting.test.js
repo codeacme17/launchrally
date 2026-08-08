@@ -35,16 +35,16 @@ async function fixture() {
   return directory;
 }
 
-async function reachConfirmation(directory) {
+async function reachConfirmation(directory, answers = ANSWERS) {
   const initial = await runAudit(directory, "0.1.0");
   return runAudit(directory, "0.1.0", {
     resume_token: initial.interaction.resume_token,
-    answers: ANSWERS,
+    answers,
   });
 }
 
-async function complete(directory, finalOptions = {}) {
-  const confirmation = await reachConfirmation(directory);
+async function complete(directory, { answers = ANSWERS, ...finalOptions } = {}) {
+  const confirmation = await reachConfirmation(directory, answers);
   const permission = await runAudit(directory, "0.1.0", {
     resume_token: confirmation.interaction.resume_token,
     confirmation: "confirm",
@@ -118,6 +118,7 @@ test("every completed Audit returns one frozen Record, derived Markdown View, an
   assert.match(view.content, /^# LaunchRally Audit Report/mu);
   assert.match(view.content, new RegExp(`Report Record: ${report.report_id}`, "u"));
   assert.match(view.content, /Assessment: Inconclusive/u);
+  assert.match(view.content, /Production target: https:\/\/example\.com\//u);
 
   const indexedDigests = new Set(index.entries.map((entry) => entry.digest));
   const references = evidenceReferences(report);
@@ -158,6 +159,31 @@ test("repeated Audits create new Records and Indexes without mutating earlier re
   assert.ok(!Number.isNaN(Date.parse(first.report.created_at)));
   assert.ok(!Number.isNaN(Date.parse(second.report.created_at)));
   assert.equal(JSON.stringify(first), firstSnapshot);
+});
+
+test("derived Report Views label compatibility targets with the reviewed environment", async () => {
+  const directory = await fixture();
+  const staging = await complete(directory, {
+    answers: { ...ANSWERS, intended_environment: "staging" },
+  });
+  assert.match(staging.report_view.content, /Staging target: https:\/\/example\.com\//u);
+  assert.doesNotMatch(staging.report_view.content, /Production target/u);
+  assert.deepEqual(staging.report.scope.release_intent.production_targets, ["https://example.com/"]);
+
+  const custom = await complete(directory, {
+    answers: { ...ANSWERS, intended_environment: "QA\u001bEast\u007f" },
+  });
+  assert.match(custom.report_view.content, /QA East target: https:\/\/example\.com\//u);
+  assert.doesNotMatch(
+    custom.report_view.content,
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u,
+  );
+
+  const unknownRecord = structuredClone(staging.report);
+  unknownRecord.scope.release_intent.intended_environment = null;
+  const unknownView = renderReportMarkdown(unknownRecord);
+  assert.match(unknownView, /Confirmed target: https:\/\/example\.com\//u);
+  assert.doesNotMatch(unknownView, /Production target/u);
 });
 
 test("an unconfirmed scope still produces a useful local Record with execution gaps", async () => {

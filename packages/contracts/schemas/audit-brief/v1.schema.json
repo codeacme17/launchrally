@@ -28,7 +28,10 @@
       },
       "additionalProperties": false
     },
-    "production_targets": { "$ref": "#/$defs/stringSelection" },
+    "production_targets": {
+      "description": "Compatibility field containing the confirmed public targets for the intended environment.",
+      "$ref": "#/$defs/stringSelection"
+    },
     "core_journeys": { "$ref": "#/$defs/journeySelection" },
     "provider_roles": {
       "type": "object",

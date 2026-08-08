@@ -1654,7 +1654,7 @@ test("unconfirmed Report intent remains reasoned Unknown rather than inferred or
     },
     production_targets: {
       state: "unknown",
-      reason: "The first Report did not confirm production targets.",
+      reason: "The first Report did not confirm targets for the intended environment.",
     },
     core_journeys: {
       state: "unknown",

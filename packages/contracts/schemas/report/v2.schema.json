@@ -102,7 +102,12 @@
           "required": ["intended_environment", "production_targets", "core_journeys", "provider_roles", "support_layers", "confirmed"],
           "properties": {
             "intended_environment": { "type": ["string", "null"] },
-            "production_targets": { "type": "array", "items": { "type": "string", "format": "uri" }, "uniqueItems": true },
+            "production_targets": {
+              "description": "Compatibility field containing the confirmed public targets for the intended environment.",
+              "type": "array",
+              "items": { "type": "string", "format": "uri" },
+              "uniqueItems": true
+            },
             "core_journeys": { "type": "array" },
             "provider_roles": { "type": "array" },
             "support_layers": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },

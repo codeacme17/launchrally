@@ -4,8 +4,10 @@ import process from "node:process";
 import { styleText } from "node:util";
 
 import {
+  environmentTargetLabel,
   parsePublicJourneyInput,
   parsePublicTargetInput,
+  reviewedEnvironmentLabel,
   SUPPORT_LAYER_CATEGORIES,
 } from "@launchrally/core";
 
@@ -152,8 +154,10 @@ function auditBriefText(result) {
   const brief = result.audit_brief;
   const lines = [
     "Audit Brief",
-    `Environment: ${brief.intended_environment.value ?? "not yet confirmed"}`,
-    "Production targets:",
+    `Environment: ${reviewedEnvironmentLabel(
+      brief.intended_environment.value,
+    ) || "not yet confirmed"}`,
+    `${environmentTargetLabel(brief.intended_environment.value, { capitalize: true, plural: true })}:`,
     list(brief.production_targets.values),
     "Core journeys:",
     list(brief.core_journeys.values, journeyLabel),

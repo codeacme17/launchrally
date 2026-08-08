@@ -153,6 +153,10 @@ export {
   POLICY_ENGINE_VERSION,
 } from "./policy-engine.js";
 export { evaluateReportCurrentness } from "./report-currentness.js";
+export {
+  environmentTargetLabel,
+  reviewedEnvironmentLabel,
+} from "./environment-terminology.js";
 export { runInit } from "./initialization.js";
 export { runPlan } from "./planning.js";
 export { parsePublicJourneyInput } from "./public-journey.js";

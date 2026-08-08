@@ -49,6 +49,7 @@
         "src/audit-interaction.js",
         "src/check-catalog.js",
         "src/evidence-artifact.js",
+        "src/environment-terminology.js",
         "src/exclusive-lock.js",
         "src/fact-extractors.js",
         "src/gitignore.js",
