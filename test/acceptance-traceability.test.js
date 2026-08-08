@@ -35,9 +35,9 @@ test("the committed P0 matrix maps every normative requirement to executable evi
   assert.deepEqual(JSON.parse(stdout), {
     status: "completed",
     schema_version: "launchrally.dev/p0-acceptance/v1",
-    product_status: "incomplete",
-    release_status: "release_candidate",
-    requirements: { complete: 18, open: 4, total: 22 },
+    product_status: "complete",
+    release_status: "experimental",
+    requirements: { complete: 22, open: 0, total: 22 },
     release_gates: 10,
   });
 });
@@ -141,48 +141,120 @@ test("CI runs contract and clean journey gates on every required Node and OS tar
   assert.match(release, /prerelease:[\s\S]*needs: public-smoke[\s\S]*gh release create/u);
 });
 
-test("release readiness fails closed while any normative requirement remains open", async () => {
+test("release readiness fails closed if a completed normative requirement reopens", async () => {
+  const fixture = await createAcceptanceFixture();
+  const matrixPath = path.join(fixture, "release/p0-acceptance.json");
+  const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
+  matrix.requirements.find(({ id }) => id === "P0-VALIDATE-02").status = "open";
+  await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
+  const acceptancePath = path.join(fixture, "docs/p0-acceptance.md");
+  const acceptance = await readFile(acceptancePath, "utf8");
+  await writeFile(
+    acceptancePath,
+    acceptance.replace(
+      "| P0-VALIDATE-02 | P0 Validated requires a documented qualitative decision while the Quality Floor remains satisfied | Maintainer validation record | #41 | Complete |",
+      "| P0-VALIDATE-02 | P0 Validated requires a documented qualitative decision while the Quality Floor remains satisfied | Maintainer validation record | #41 | Open |",
+    ),
+  );
+
   await assert.rejects(
     execFileAsync(
       process.execPath,
-      ["scripts/validate-acceptance.mjs", "--require-release-ready", "--json"],
+      [
+        "scripts/validate-acceptance.mjs",
+        "--root",
+        fixture,
+        "--require-release-ready",
+        "--json",
+      ],
       { cwd: root },
     ),
     (error) => {
       assert.match(error.stderr, /acceptance_release_blocked/u);
-      assert.match(error.stderr, /P0-RELEASE-01/u);
       assert.match(error.stderr, /P0-VALIDATE-02/u);
       return true;
     },
   );
 });
 
-test("release readiness accepts the future complete release-candidate transition", async () => {
-  const fixture = await createAcceptanceFixture();
-  const matrixPath = path.join(fixture, "release/p0-acceptance.json");
-  const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
-  matrix.product_status = "complete";
-  matrix.release_status = "release_candidate";
-  for (const requirement of matrix.requirements) requirement.status = "complete";
-  await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
-  const acceptancePath = path.join(fixture, "docs/p0-acceptance.md");
-  const acceptance = await readFile(acceptancePath, "utf8");
-  await writeFile(acceptancePath, acceptance.replaceAll("| Open |", "| Complete |"));
-
+test("release readiness accepts the Product Complete Experimental state", async () => {
   const { stdout } = await execFileAsync(
-    process.execPath,
-    ["scripts/validate-acceptance.mjs", "--root", fixture, "--require-release-ready", "--json"],
+    "npm",
+    ["--silent", "run", "validate:acceptance", "--", "--require-release-ready", "--json"],
     { cwd: root },
   );
   assert.equal(JSON.parse(stdout).product_status, "complete");
-  assert.equal(JSON.parse(stdout).release_status, "release_candidate");
+  assert.equal(JSON.parse(stdout).release_status, "experimental");
+});
+
+test("acceptance status follows a Quality Floor suspension", async () => {
+  const fixture = await createAcceptanceFixture();
+  const matrixPath = path.join(fixture, "release/p0-acceptance.json");
+  const contractPath = path.join(fixture, "release/p0.json");
+  const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  matrix.product_status = "suspended";
+  contract.product_status = "suspended";
+  await Promise.all([
+    writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
+    writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
+  ]);
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["scripts/validate-acceptance.mjs", "--root", fixture, "--json"],
+    { cwd: root },
+  );
+  assert.equal(JSON.parse(stdout).product_status, "suspended");
+
+  contract.product_status = "complete";
+  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["scripts/validate-acceptance.mjs", "--root", fixture, "--json"],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /acceptance_status_drift/u);
+      return true;
+    },
+  );
 });
 
 test("publication readiness accepts only the approved pre-publication requirements as open", async () => {
   const fixture = await createAcceptanceFixture();
   const matrixPath = path.join(fixture, "release/p0-acceptance.json");
+  const contractPath = path.join(fixture, "release/p0.json");
   const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
-  await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  matrix.product_status = "incomplete";
+  matrix.release_status = "release_candidate";
+  contract.product_status = "incomplete";
+  contract.release_status = "release_candidate";
+  const postPublication = new Set([
+    "P0-RELEASE-01",
+    "P0-RELEASE-02",
+    "P0-VALIDATE-01",
+    "P0-VALIDATE-02",
+  ]);
+  for (const requirement of matrix.requirements) {
+    if (postPublication.has(requirement.id)) requirement.status = "open";
+  }
+  await Promise.all([
+    writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
+    writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
+  ]);
+  const acceptancePath = path.join(fixture, "docs/p0-acceptance.md");
+  const acceptance = await readFile(acceptancePath, "utf8");
+  await writeFile(
+    acceptancePath,
+    acceptance.split("\n").map((line) => (
+      [...postPublication].some((id) => line.startsWith(`| ${id} |`))
+        ? line.replace("| Complete |", "| Open |")
+        : line
+    )).join("\n"),
+  );
 
   const { stdout } = await execFileAsync(
     process.execPath,
@@ -193,11 +265,10 @@ test("publication readiness accepts only the approved pre-publication requiremen
 
   matrix.requirements.find(({ id }) => id === "P0-QUALITY-01").status = "open";
   await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
-  const acceptancePath = path.join(fixture, "docs/p0-acceptance.md");
-  const acceptance = await readFile(acceptancePath, "utf8");
+  const changedAcceptance = await readFile(acceptancePath, "utf8");
   await writeFile(
     acceptancePath,
-    acceptance.replace(
+    changedAcceptance.replace(
       "| P0-QUALITY-01 | PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates | CI validation | #39 | Complete |",
       "| P0-QUALITY-01 | PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates | CI validation | #39 | Open |",
     ),
@@ -217,7 +288,7 @@ test("publication readiness accepts only the approved pre-publication requiremen
   );
 });
 
-test("public status remains pre-release until an Experimental release exists", async () => {
+test("public status declares Experimental while P0 validation remains distinct", async () => {
   const [readme, quickstart, contributing, validation, release] = await Promise.all([
     "README.md",
     "docs/quickstart.md",
@@ -226,14 +297,15 @@ test("public status remains pre-release until an Experimental release exists", a
     "release/p0.json",
   ].map((relativePath) => readFile(path.join(root, relativePath), "utf8")));
 
-  assert.match(readme, /Status: Pre-release development/u);
-  assert.match(quickstart, /No public Experimental release exists/u);
-  assert.match(contributing, /pre-release development project/iu);
-  assert.match(validation, /P0 is not Product Complete/iu);
+  assert.match(readme, /Status: Experimental P0/u);
+  assert.match(quickstart, /public Experimental release/iu);
+  assert.match(contributing, /Experimental open-source project/iu);
+  assert.match(validation, /Telemetry-Free Validation is collecting/iu);
+  assert.match(validation, /not P0 Validated/iu);
   assert.deepEqual(
     (({ product_status, release_status }) => ({ product_status, release_status }))(
       JSON.parse(release),
     ),
-    { product_status: "incomplete", release_status: "release_candidate" },
+    { product_status: "complete", release_status: "experimental" },
   );
 });
