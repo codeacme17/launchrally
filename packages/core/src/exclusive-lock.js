@@ -189,22 +189,80 @@ export async function acquireOwnedLock(root, name, overrides = {}) {
         throw busy;
       }
 
+      const takeover = path.join(
+        owners,
+        `${name}-${current.value.token}.takeover.lock`,
+      );
       try {
-        await ops.remove(currentOwner, { force: false });
+        await ops.link(owner, takeover);
       } catch (error) {
-        if (error?.code === "ENOENT") continue;
-        throw error;
-      }
-      let claimed;
-      try {
-        claimed = await lockRecord(canonical);
-      } catch (error) {
-        if (error?.code === "ENOENT") continue;
-        throw error;
-      }
-      if (claimed.content === current.content && sameFile(claimed.stat, current.stat)) {
+        if (error?.code !== "EEXIST") throw error;
+        let claimant;
         try {
-          await ops.remove(canonical, { force: false });
+          claimant = await lockRecord(takeover);
+        } catch (claimError) {
+          if (claimError?.code === "ENOENT") continue;
+          const invalid = new Error("The stale-lock takeover claim is invalid and was preserved.");
+          invalid.code = "invalid_owned_lock";
+          throw invalid;
+        }
+        if (claimant.value.name !== name) {
+          const invalid = new Error("The stale-lock takeover claim has the wrong name.");
+          invalid.code = "invalid_owned_lock";
+          throw invalid;
+        }
+        if (processIsAlive(claimant.value.owner_pid)) {
+          const busy = new Error("Another owner is reclaiming the stale lock.");
+          busy.code = "owned_lock_busy";
+          throw busy;
+        }
+        const invalid = new Error("An abandoned stale-lock takeover claim was preserved.");
+        invalid.code = "invalid_owned_lock";
+        throw invalid;
+      }
+
+      try {
+        try {
+          const [claimed, claimedOwner] = await Promise.all([
+            lockRecord(canonical),
+            lockRecord(currentOwner),
+          ]);
+          if (
+            claimed.content !== current.content
+            || claimedOwner.content !== currentOwnerRecord.content
+            || !sameFile(claimed.stat, current.stat)
+            || !sameFile(claimedOwner.stat, currentOwnerRecord.stat)
+          ) continue;
+          await ops.remove(currentOwner, { force: false });
+        } catch (error) {
+          if (error?.code === "ENOENT") continue;
+          throw error;
+        }
+        let claimed;
+        try {
+          claimed = await lockRecord(canonical);
+        } catch (error) {
+          if (error?.code === "ENOENT") continue;
+          throw error;
+        }
+        if (claimed.content === current.content && sameFile(claimed.stat, current.stat)) {
+          try {
+            await ops.remove(canonical, { force: false });
+          } catch (error) {
+            if (error?.code !== "ENOENT") throw error;
+          }
+        }
+      } finally {
+        try {
+          const [claim, owned] = await Promise.all([
+            lockRecord(takeover),
+            lockRecord(owner),
+          ]);
+          if (
+            claim.content === content
+            && owned.content === content
+            && sameFile(claim.stat, owned.stat)
+          ) await ops.remove(takeover, { force: false });
         } catch (error) {
           if (error?.code !== "ENOENT") throw error;
         }
