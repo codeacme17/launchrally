@@ -77,6 +77,8 @@
       ],
       "files": [
         "LICENSE",
+        "bin/human-audit.js",
+        "bin/prompt-adapters.js",
         "bin/rally.js",
         "package.json"
       ]

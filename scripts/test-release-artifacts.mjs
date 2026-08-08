@@ -7,11 +7,20 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { hasClaudeInstalledPlugin } from "./native-plugin-state.mjs";
+import { assertNoConsumerInstallScripts } from "./release-artifact-policy.mjs";
 
 import { writeExactToolchain } from "../test/helpers/exact-toolchain.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
+const consumerRuntimePackages = Object.freeze({
+  "@clack/core": "1.4.3",
+  "@clack/prompts": "1.7.0",
+  "fast-string-truncated-width": "3.0.3",
+  "fast-string-width": "3.0.2",
+  "fast-wrap-ansi": "0.2.2",
+  sisteransi: "1.0.5",
+});
 
 async function json(filePath) {
   return JSON.parse(await readFile(filePath, "utf8"));
@@ -66,6 +75,26 @@ async function packArtifacts(temporaryRoot, release) {
     tarballs.push(path.join(packDirectory, packed.filename));
   }
 
+  for (const [packageName, version] of Object.entries(consumerRuntimePackages)) {
+    const packageDirectory = path.join(root, "node_modules", ...packageName.split("/"));
+    const { stdout } = await runNpm([
+      "pack",
+      "--json",
+      "--pack-destination",
+      packDirectory,
+      "--cache",
+      cacheDirectory,
+      packageDirectory,
+    ], { cwd: root });
+    const [packed] = JSON.parse(stdout);
+    if (packed.name !== packageName || packed.version !== version) {
+      throw new Error(
+        `consumer_runtime_dependency_drift: ${packageName} packed as ${packed.name}@${packed.version}; expected ${version}`,
+      );
+    }
+    tarballs.push(path.join(packDirectory, packed.filename));
+  }
+
   return { cacheDirectory, tarballs };
 }
 
@@ -77,6 +106,20 @@ async function smokeCli(temporaryRoot, installArguments, version, publicPackages
     '{"name":"launchrally-release-smoke","private":true}\n',
   );
   await runNpm(installArguments, { cwd: cleanProject });
+  assertNoConsumerInstallScripts(await json(path.join(cleanProject, "package-lock.json")));
+
+  const promptPackage = await json(path.join(
+    cleanProject,
+    "node_modules",
+    "@clack",
+    "prompts",
+    "package.json",
+  ));
+  if (promptPackage.name !== "@clack/prompts" || promptPackage.version !== "1.7.0") {
+    throw new Error(
+      `consumer_ui_dependency_drift: @clack/prompts installed as ${promptPackage.name}@${promptPackage.version}`,
+    );
+  }
 
   if (publicPackages.length > 0) {
     const { stdout } = await runNpm([

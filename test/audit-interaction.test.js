@@ -5,9 +5,12 @@ import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
+
+import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -787,37 +790,27 @@ test("resuming cannot change repository scope or an existing permission decision
   );
 });
 
-test("Human Mode explains unknowns and previews the full plan before permission", async () => {
+test("Human Mode previews the full plan before permission without exposing a resume token", async () => {
   const fixture = await createInteractionFixture();
-  const { stdout: initialOutput } = await execFileAsync(
-    process.execPath,
-    [cli, "audit", "--cwd", fixture],
-    { cwd: root },
-  );
-  assert.match(
-    initialOutput,
-    /Audit Brief[\s\S]*Project: interaction-web[\s\S]*Needs input[\s\S]*Which environment[\s\S]*Which public production URLs[\s\S]*Inferred candidates \(not confirmed\):[\s\S]*sentry \(observability\)[\s\S]*Resume token:/,
-  );
+  const confirmation = await reachConfirmation(fixture);
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let confirmationOutput = "";
+  output.on("data", (chunk) => {
+    confirmationOutput += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+  await prompt.start();
+  setTimeout(() => input.write("1\n"), 10);
+  const response = await prompt.respond(confirmation);
+  await prompt.close();
 
-  const initial = await runAudit(fixture);
-  const { stdout: confirmationOutput } = await execFileAsync(
-    process.execPath,
-    [
-      cli,
-      "audit",
-      "--cwd",
-      fixture,
-      "--resume",
-      initial.interaction.resume_token,
-      "--answers",
-      JSON.stringify(CONFIRMED_ANSWERS),
-    ],
-    { cwd: root },
-  );
+  assert.deepEqual(response, { confirmation: "confirm" });
   assert.match(
     confirmationOutput,
-    /Complete plan preview[\s\S]*Environment: production[\s\S]*Target: https:\/\/example\.com\/[\s\S]*Public probe plan:[\s\S]*DNS_LOOKUP example\.com:443\/[\s\S]*TLS_HANDSHAKE example\.com:443\/[\s\S]*GET example\.com:443\/health — Verify the conventional public health endpoint\.[\s\S]*Provider Adapter plan:[\s\S]*vercel: vercel-read\/v1[\s\S]*Target: authenticated_scope_projects[\s\S]*Fields: projects\[\]\.id[\s\S]*Command: vercel project ls --json[\s\S]*web\.public\.availability[\s\S]*provider\.sentry\.metadata[\s\S]*Permission preview[\s\S]*public_verification: PENDING[\s\S]*No public or Provider permission has been granted[\s\S]*Confirm this Audit Brief/,
+    /Audit Brief[\s\S]*Environment: production[\s\S]*https:\/\/example\.com\/[\s\S]*visitor can sign up[\s\S]*sentry:observability[\s\S]*monitoring[\s\S]*Planned Checks:[\s\S]*web\.public\.availability \[public_verification\][\s\S]*provider\.sentry\.metadata \[provider_read:sentry\][\s\S]*Confirm this Audit Brief/,
   );
+  assert.doesNotMatch(confirmationOutput, /resume token/iu);
 });
 
 test("Agent Mode reports malformed interaction input as a structured execution error", async () => {
