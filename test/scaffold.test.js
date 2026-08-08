@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { renderHumanAuditCompletion } from "../packages/cli/bin/human-audit.js";
+import { evaluateReportCurrentness } from "../packages/core/src/index.js";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -154,6 +155,7 @@ test("audit returns a local Initial Readiness Snapshot and Web baseline result",
         ignored: 0,
         dependencies: 0,
         build_outputs: 0,
+        tooling_metadata: 0,
         binary: 0,
         large: 0,
         unsupported: 0,
@@ -210,6 +212,11 @@ test("audit renders a concise assessment, Findings, Gaps, and next command for a
 
 test("audit reports a failed Web baseline Check when the lockfile is missing", async () => {
   const fixture = await createWebFixture("unlocked-web");
+  await mkdir(path.join(fixture, ".agents"));
+  await writeFile(
+    path.join(fixture, ".agents", "package-lock.json"),
+    '{"lockfileVersion":3}',
+  );
   const stdout = await runCliAudit(fixture, { json: true });
   const result = JSON.parse(stdout);
 
@@ -233,6 +240,11 @@ test("audit reports a failed Web baseline Check when the lockfile is missing", a
     },
   ]);
   assert.equal(result.report.assessment, "no_go");
+  assert.deepEqual(result.snapshot.project.safe_scan.coverage.root_lockfiles, {
+    complete: true,
+    uncovered: [],
+  });
+  assert.equal(result.snapshot.project.safe_scan.exclusions.tooling_metadata, 1);
 });
 
 test("audit recognizes the binary Bun lockfile without reading its contents", async () => {
@@ -410,6 +422,7 @@ test("audit excludes ignored, generated, binary, large, and unsupported content"
     ignored: 4,
     dependencies: 1,
     build_outputs: 1,
+    tooling_metadata: 0,
     binary: 1,
     large: 1,
     unsupported: 1,
@@ -418,6 +431,67 @@ test("audit excludes ignored, generated, binary, large, and unsupported content"
     outside_root: 0,
     unreadable: 0,
   });
+});
+
+test("audit excludes Agent tooling metadata without hiding release-relevant repository facts", async () => {
+  const fixture = await createWebFixture("tooling-metadata", { withLockfile: true });
+  await writeFile(path.join(fixture, ".env"), "APP_MODE=production\n");
+  await mkdir(path.join(fixture, ".github", "workflows"), { recursive: true });
+  await writeFile(
+    path.join(fixture, ".github", "workflows", "release.yml"),
+    "name: release\n",
+  );
+  await writeFile(path.join(fixture, "wrangler.toml"), "name = \"tooling-metadata\"\n");
+
+  for (const directory of [".agents", ".claude", ".codex"]) {
+    const metadataRoot = path.join(fixture, directory, "skills", "release-helper");
+    await mkdir(metadataRoot, { recursive: true });
+    await writeFile(
+      path.join(metadataRoot, "package.json"),
+      JSON.stringify({
+        name: `${directory}-release-helper`,
+        scripts: { deploy: "agent-owned-deploy" },
+      }),
+    );
+    await writeFile(path.join(metadataRoot, "bun.lock"), "lockfileVersion = 1\n");
+    await writeFile(
+      path.join(metadataRoot, ".env"),
+      "DATABASE_URL=agent-owned\nSENTRY_DSN=agent-owned\n",
+    );
+  }
+  await symlink(path.join(fixture, ".agents"), path.join(fixture, "agent-metadata-alias"));
+
+  const result = JSON.parse(await runCliAudit(fixture, { json: true }));
+  const factPaths = result.snapshot.project.facts.map((fact) => fact.provenance.path);
+  const digestPaths = result.report.verification_context.repository_digests.map(
+    (entry) => entry.path,
+  );
+  const applicability = Object.fromEntries(result.report.results.checks.map((check) => [
+    check.check_id,
+    check.applicability.status,
+  ]));
+
+  assert.equal(result.snapshot.project.type, "web");
+  assert.equal(result.snapshot.project.package_manager, "npm");
+  assert.deepEqual(result.snapshot.project.script_names, ["build"]);
+  assert.equal(applicability["web.baseline.data-state"], "not_applicable");
+  assert.equal(applicability["web.baseline.observability"], "not_applicable");
+  assert.ok(factPaths.includes("package.json"));
+  assert.ok(factPaths.includes("package-lock.json"));
+  assert.ok(factPaths.includes(".github/workflows/release.yml"));
+  assert.ok(factPaths.includes("wrangler.toml"));
+  assert.ok(digestPaths.includes(".github/workflows/release.yml"));
+  assert.ok(digestPaths.includes("wrangler.toml"));
+  assert.ok(!factPaths.some((factPath) => /^(?:\.agents|\.claude|\.codex)\//u.test(factPath)));
+  assert.ok(!digestPaths.some((digestPath) => /^(?:\.agents|\.claude|\.codex)\//u.test(digestPath)));
+  assert.equal(result.snapshot.project.safe_scan.exclusions.tooling_metadata, 3);
+  assert.equal(result.snapshot.project.safe_scan.exclusions.symlinks, 1);
+
+  await writeFile(
+    path.join(fixture, ".agents", "skills", "release-helper", "package.json"),
+    JSON.stringify({ name: "changed-agent-metadata", scripts: { build: "changed" } }),
+  );
+  assert.equal(evaluateReportCurrentness(result, { cwd: fixture }).current, true);
 });
 
 test("audit fails closed when repository ignore rules cannot be read safely", async () => {

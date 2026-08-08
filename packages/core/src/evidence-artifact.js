@@ -5,6 +5,7 @@ const EXCLUSION_KEYS = [
   "ignored",
   "dependencies",
   "build_outputs",
+  "tooling_metadata",
   "binary",
   "large",
   "unsupported",

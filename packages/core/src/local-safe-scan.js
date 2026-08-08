@@ -28,6 +28,7 @@ const BUILD_DIRECTORIES = new Set([
   "target",
 ]);
 const ALWAYS_IGNORED_DIRECTORIES = new Set([".git", ".hg", ".svn"]);
+const TOOLING_METADATA_DIRECTORIES = new Set([".agents", ".claude", ".codex"]);
 export const SUPPORTED_LOCKFILES = Object.freeze([
   ["pnpm-lock.yaml", "pnpm"],
   ["package-lock.json", "npm"],
@@ -42,6 +43,7 @@ function emptyExclusions() {
     ignored: 0,
     dependencies: 0,
     build_outputs: 0,
+    tooling_metadata: 0,
     binary: 0,
     large: 0,
     unsupported: 0,
@@ -50,6 +52,10 @@ function emptyExclusions() {
     outside_root: 0,
     unreadable: 0,
   };
+}
+
+export function isToolingMetadataDirectory(relativePath) {
+  return TOOLING_METADATA_DIRECTORIES.has(relativePath);
 }
 
 function isInside(root, candidate) {
@@ -220,6 +226,10 @@ export async function scanRepository(selectedRoot) {
       }
 
       if (entry.isDirectory()) {
+        if (isToolingMetadataDirectory(relativePath)) {
+          exclude("tooling_metadata");
+          continue;
+        }
         if (DEPENDENCY_DIRECTORIES.has(entry.name)) {
           exclude("dependencies");
           continue;
