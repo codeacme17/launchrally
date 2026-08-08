@@ -17,7 +17,7 @@ Sources are limited to voluntary Issues and Discussions, opt-in maintainer conve
 
 ## Updating the log
 
-Update `docs/phase-0-validation-log.json` only through a reviewed pull request. Preserve every existing entry exactly and append aggregate, non-identifying observations. Use the permitted voluntary GitHub feedback, opt-in maintainer summary, public aggregate package trend, and clean-environment sources. Record broad represented contexts, repeated value and defect patterns, recurring P1 needs, and resulting decisions. Never record usernames, repository names, URLs, credentials, Report contents, Evidence contents, or raw support messages.
+Update `docs/maintainers/phase-0-validation-log.json` only through a reviewed pull request. Preserve every existing entry exactly and append aggregate, non-identifying observations. Use the permitted voluntary GitHub feedback, opt-in maintainer summary, public aggregate package trend, and clean-environment sources. Record broad represented contexts, repeated value and defect patterns, recurring P1 needs, and resulting decisions. Never record usernames, repository names, URLs, credentials, Report contents, Evidence contents, or raw support messages.
 
 New entries use the reviewed per-field aggregate taxonomy enforced by `npm run validate:p0`; raw qualitative text does not belong in the log. Extend a field taxonomy in the same reviewed pull request when a genuinely new aggregate category is needed. Quality Floor regressions use stable non-identifying `qf-YYYY-MM-DD-NN` IDs so each open regression requires its own verified-fix record.
 

@@ -16,6 +16,6 @@ Audit and Plan are read-only. Before Init, Audit is output-only. Optional Init a
 
 ## Telemetry-Free Validation
 
-LaunchRally does not send usage events, repository identities, Reports, Evidence, or analytics to the project. Phase 0 learning uses voluntary GitHub feedback and aggregate public ecosystem signals recorded in the [Phase 0 Validation Log](phase-0-validation.md). Participation is optional and product use does not depend on it.
+LaunchRally does not send usage events, repository identities, Reports, Evidence, or analytics to the project. Phase 0 learning uses voluntary GitHub feedback and aggregate public ecosystem signals recorded in the [Phase 0 Validation Log](../maintainers/phase-0-validation.md). Participation is optional and product use does not depend on it.
 
 Initialization resolves its isolated `.launchrally/toolchain` from the local npm cache first. A cache miss does not contact npm automatically: the CLI discloses the exact package, version, `https://registry.npmjs.org` source, and lifecycle-script-disabled command and requires a separate `npm_registry_read` decision. Denial writes nothing and no application dependency file is read for toolchain planning or changed.

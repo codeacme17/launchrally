@@ -113,8 +113,8 @@ for (const field of [
 const completionDocuments = await Promise.all([
   "CONTRIBUTING.md",
   "README.md",
-  "docs/p0-acceptance.md",
-  "docs/phase-0-validation.md",
+  "docs/maintainers/p0-acceptance.md",
+  "docs/maintainers/phase-0-validation.md",
 ].map(async (relativePath) => ({
   content: await readFile(path.join(root, relativePath), "utf8"),
   relativePath,

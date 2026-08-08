@@ -401,9 +401,9 @@ test("release validation rejects a stale marketplace package pin", async () => {
 
 test("release docs cover user-scope Plugin install, update, and uninstall", async () => {
   const readme = await readFile(path.join(root, "README.md"), "utf8");
-  const guide = await readFile(path.join(root, "docs/install.md"), "utf8");
+  const guide = await readFile(path.join(root, "docs/getting-started/install.md"), "utf8");
 
-  assert.match(readme, /\[Install and release guide\]\(docs\/install\.md\)/u);
+  assert.match(readme, /\[Install and release guide\]\(docs\/getting-started\/install\.md\)/u);
   assert.match(
     guide,
     /codex plugin marketplace add codeacme17\/launchrally --ref v0\.1\.0/u,
@@ -434,7 +434,7 @@ test("release docs cover user-scope Plugin install, update, and uninstall", asyn
 });
 
 test("release docs define the guarded Experimental publication runbook", async () => {
-  const runbook = await readFile(path.join(root, "docs/release-runbook.md"), "utf8");
+  const runbook = await readFile(path.join(root, "docs/maintainers/release-runbook.md"), "utf8");
   for (const packageName of releaseManifest.packages.map(({ name }) => name)) {
     assert.match(runbook, new RegExp(packageName.replace("/", "\\/"), "u"));
   }

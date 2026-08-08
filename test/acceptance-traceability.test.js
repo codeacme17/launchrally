@@ -69,7 +69,7 @@ test("acceptance validation rejects tandem-deleted requirements and renamed test
   const missing = JSON.parse(await readFile(missingPath, "utf8"));
   missing.requirements = missing.requirements.filter(({ id }) => id !== "P0-CONTRACT-03");
   await writeFile(missingPath, `${JSON.stringify(missing, null, 2)}\n`);
-  const acceptancePath = path.join(missingFixture, "docs/p0-acceptance.md");
+  const acceptancePath = path.join(missingFixture, "docs/maintainers/p0-acceptance.md");
   const acceptance = await readFile(acceptancePath, "utf8");
   await writeFile(
     acceptancePath,
@@ -147,7 +147,7 @@ test("release readiness fails closed if a completed normative requirement reopen
   const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
   matrix.requirements.find(({ id }) => id === "P0-VALIDATE-02").status = "open";
   await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
-  const acceptancePath = path.join(fixture, "docs/p0-acceptance.md");
+  const acceptancePath = path.join(fixture, "docs/maintainers/p0-acceptance.md");
   const acceptance = await readFile(acceptancePath, "utf8");
   await writeFile(
     acceptancePath,
@@ -245,7 +245,7 @@ test("publication readiness accepts only the approved pre-publication requiremen
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
   ]);
-  const acceptancePath = path.join(fixture, "docs/p0-acceptance.md");
+  const acceptancePath = path.join(fixture, "docs/maintainers/p0-acceptance.md");
   const acceptance = await readFile(acceptancePath, "utf8");
   await writeFile(
     acceptancePath,
@@ -291,9 +291,9 @@ test("publication readiness accepts only the approved pre-publication requiremen
 test("public status declares Experimental while P0 validation remains distinct", async () => {
   const [readme, quickstart, contributing, validation, release] = await Promise.all([
     "README.md",
-    "docs/quickstart.md",
+    "docs/getting-started/quickstart.md",
     "CONTRIBUTING.md",
-    "docs/phase-0-validation.md",
+    "docs/maintainers/phase-0-validation.md",
     "release/p0.json",
   ].map((relativePath) => readFile(path.join(root, relativePath), "utf8")));
 

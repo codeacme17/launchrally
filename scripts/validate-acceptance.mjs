@@ -114,7 +114,7 @@ async function validate() {
     fail("acceptance_invalid_identity", "release/p0-acceptance.json");
   }
 
-  const markdown = await readFile(path.join(root, "docs/p0-acceptance.md"), "utf8");
+  const markdown = await readFile(path.join(root, "docs/maintainers/p0-acceptance.md"), "utf8");
   const documented = parseDocumentedRequirements(markdown);
   const requirements = new Map();
   for (const requirement of matrix.requirements) {

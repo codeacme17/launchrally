@@ -51,7 +51,7 @@
       ]
     },
     {
-      "path": "docs/quickstart.md",
+      "path": "docs/getting-started/quickstart.md",
       "includes": [
         "Direct CLI Quickstart",
         "Skill Quickstart",
@@ -60,7 +60,7 @@
       ]
     },
     {
-      "path": "docs/data-model.md",
+      "path": "docs/concepts/data-model.md",
       "includes": [
         "Launch Manifest",
         "Report Record",
@@ -68,7 +68,7 @@
       ]
     },
     {
-      "path": "docs/privacy.md",
+      "path": "docs/concepts/privacy.md",
       "includes": [
         "no LaunchRally account",
         "no default telemetry",
@@ -93,7 +93,7 @@
       ]
     },
     {
-      "path": "docs/phase-0-validation.md",
+      "path": "docs/maintainers/phase-0-validation.md",
       "includes": [
         "public Experimental release",
         "P0 Product Complete",
@@ -113,7 +113,7 @@
       ]
     }
   ],
-  "validation_log": "docs/phase-0-validation-log.json",
+  "validation_log": "docs/maintainers/phase-0-validation-log.json",
   "quality_floor": [
     "reference_journey",
     "coverage_acceptance_matrix",

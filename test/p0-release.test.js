@@ -59,15 +59,15 @@ test("the public release kit documents use, data, safety, feedback, and validati
   const [readme, quickstart, dataModel, privacy, contribution, security, validation] =
     await Promise.all([
       "README.md",
-      "docs/quickstart.md",
-      "docs/data-model.md",
-      "docs/privacy.md",
+      "docs/getting-started/quickstart.md",
+      "docs/concepts/data-model.md",
+      "docs/concepts/privacy.md",
       "CONTRIBUTING.md",
       "SECURITY.md",
-      "docs/phase-0-validation.md",
+      "docs/maintainers/phase-0-validation.md",
     ].map((relative) => readFile(path.join(root, relative), "utf8")));
   const log = JSON.parse(await readFile(
-    path.join(root, "docs/phase-0-validation-log.json"),
+    path.join(root, "docs/maintainers/phase-0-validation-log.json"),
     "utf8",
   ));
 
@@ -147,7 +147,7 @@ test("GitHub contribution entry points route feedback and security reports", asy
 
 test("P0 validation fails closed when a telemetry-free boundary disappears", async () => {
   const fixture = await createP0Fixture();
-  const privacyPath = path.join(fixture, "docs/privacy.md");
+  const privacyPath = path.join(fixture, "docs/concepts/privacy.md");
   const privacy = await readFile(privacyPath, "utf8");
   await writeFile(privacyPath, privacy.replace("no default telemetry", "optional analytics"));
 
@@ -159,7 +159,7 @@ test("P0 validation fails closed when a telemetry-free boundary disappears", asy
     ),
     (error) => {
       assert.match(error.stderr, /p0_release_incomplete/u);
-      assert.match(error.stderr, /docs\/privacy\.md.*no default telemetry/iu);
+      assert.match(error.stderr, /docs\/concepts\/privacy\.md.*no default telemetry/iu);
       return true;
     },
   );
@@ -237,7 +237,7 @@ test("clean CI and tagged releases enforce the P0 quality floor", async () => {
 
 test("the Phase 0 Validation Log rejects user-level analytics", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   log.entries[0].user_id = "builder-123";
   await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
@@ -258,7 +258,7 @@ test("the Phase 0 Validation Log rejects user-level analytics", async () => {
 
 test("P0 validation rejects edits to reviewed Validation Log history", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const baselinePath = path.join(fixture, "reviewed-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   await writeFile(baselinePath, `${JSON.stringify(log, null, 2)}\n`);
@@ -288,9 +288,9 @@ test("P0 validation rejects edits to reviewed Validation Log history", async () 
 
 test("P0 validation compares append-only history with the reviewed Git ref", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   await execFileAsync("git", ["init"], { cwd: fixture });
-  await execFileAsync("git", ["add", "docs/phase-0-validation-log.json"], { cwd: fixture });
+  await execFileAsync("git", ["add", "docs/maintainers/phase-0-validation-log.json"], { cwd: fixture });
   await execFileAsync("git", [
     "-c",
     "user.name=LaunchRally Test",
@@ -326,7 +326,7 @@ test("P0 validation compares append-only history with the reviewed Git ref", asy
 
 test("P0 validation rejects identifying values inside aggregate observations", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   log.entries[0].aggregate_adoption_trends.notes =
     "A report was submitted by builder@example.com.";
@@ -348,7 +348,7 @@ test("P0 validation rejects identifying values inside aggregate observations", a
 
 test("P0 validation rejects repository URLs inside aggregate observations", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   log.entries.at(-1).aggregate_adoption_trends.notes =
     "Observed in https://github.com/example/private-project.";
@@ -370,7 +370,7 @@ test("P0 validation rejects repository URLs inside aggregate observations", asyn
 
 test("P0 validation rejects raw support content under unreviewed fields", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   log.entries.at(-1).raw_support_message = "The builder pasted a private failure report.";
   await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
@@ -391,7 +391,7 @@ test("P0 validation rejects raw support content under unreviewed fields", async 
 
 test("new aggregate entries reject unclassified names and organizations", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   log.entries.at(-1).voluntary_feedback_categories.push("Jane Doe at Acme");
   await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
@@ -412,7 +412,7 @@ test("new aggregate entries reject unclassified names and organizations", async 
 
 test("P0 validation accepts only permitted telemetry-free signal sources", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   log.entries.at(-1).aggregate_adoption_trends.sources.push("mandatory_report_upload");
   await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
@@ -433,7 +433,7 @@ test("P0 validation accepts only permitted telemetry-free signal sources", async
 
 test("new Validation Log entries require every directional signal category", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   delete log.entries.at(-1).repeated_defect_patterns;
   await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
@@ -453,7 +453,7 @@ test("new Validation Log entries require every directional signal category", asy
 
 test("P0 validation rejects hard adoption quotas as validation criteria", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   log.entries[0].validation_decision = {
     status: "validated",
@@ -477,7 +477,7 @@ test("P0 validation rejects hard adoption quotas as validation criteria", async 
 
 test("P0 validation rejects numeric adoption thresholds hidden in prose", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   log.entries.at(-1).validation_decision.rationale =
     "P0 becomes validated after at least 100 downloads.";
@@ -498,7 +498,7 @@ test("P0 validation rejects numeric adoption thresholds hidden in prose", async 
 
 test("P0 validation rejects alternate quantitative validation criteria", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   log.entries.at(-1).validation_decision.rationale =
     "Validated when downloads reach 100.";
@@ -519,7 +519,7 @@ test("P0 validation rejects alternate quantitative validation criteria", async (
 
 test("P0 validation rejects numeric quota fields outside the aggregate schema", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   log.entries.at(-1).validation_decision.required_count = 100;
   await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
@@ -539,7 +539,7 @@ test("P0 validation rejects numeric quota fields outside the aggregate schema", 
 
 test("a Quality Floor regression suspends validation and P1 authority", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   Object.assign(log.entries.at(-1), {
     quality_floor: {
@@ -578,7 +578,7 @@ test("a Quality Floor regression suspends validation and P1 authority", async ()
 
 test("a Quality Floor regression retracts the Product Complete claim", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const contractPath = path.join(fixture, "release/p0.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
@@ -636,11 +636,11 @@ test("a Quality Floor regression retracts the Product Complete claim", async () 
       "P0 is Product Complete and publicly released",
       "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; the Experimental release remains public",
     ]],
-    ["docs/phase-0-validation.md", [
+    ["docs/maintainers/phase-0-validation.md", [
       "P0 is Product Complete and `0.1.0` is a public Experimental release.",
       "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.1.0` remains a public Experimental release.",
     ]],
-    ["docs/p0-acceptance.md", [
+    ["docs/maintainers/p0-acceptance.md", [
       "P0 is Product Complete and `0.1.0` is publicly available as an Experimental",
       "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.1.0` remains publicly available as an Experimental",
     ]],
@@ -661,7 +661,7 @@ test("a Quality Floor regression retracts the Product Complete claim", async () 
 
 test("a suspended Quality Floor requires a documented verified fix before restoration", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   const suspended = structuredClone(log.entries.at(-1));
   suspended.period = "2026-08-09-01";
@@ -696,7 +696,7 @@ test("a suspended Quality Floor requires a documented verified fix before restor
 
 test("every Quality Floor regression ID requires its own verified fix", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   const suspended = structuredClone(log.entries.at(-1));
   suspended.period = "2026-08-09-01";
@@ -746,7 +746,7 @@ test("every Quality Floor regression ID requires its own verified fix", async ()
 
 test("a resolved Quality Floor regression ID can never be reused", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   const suspended = structuredClone(log.entries.at(-1));
   suspended.period = "2026-08-09-01";
@@ -790,7 +790,7 @@ test("a resolved Quality Floor regression ID can never be reused", async () => {
 
 test("Quality Floor regression summaries must match their category", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const contractPath = path.join(fixture, "release/p0.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
@@ -840,7 +840,7 @@ test("Quality Floor regression summaries must match their category", async () =>
 
 test("Quality Floor regression summaries must match open and verified-fix status", async () => {
   const openFixture = await createP0Fixture();
-  const openLogPath = path.join(openFixture, "docs/phase-0-validation-log.json");
+  const openLogPath = path.join(openFixture, "docs/maintainers/phase-0-validation-log.json");
   const openContractPath = path.join(openFixture, "release/p0.json");
   const openLog = JSON.parse(await readFile(openLogPath, "utf8"));
   const openContract = JSON.parse(await readFile(openContractPath, "utf8"));
@@ -887,7 +887,7 @@ test("Quality Floor regression summaries must match open and verified-fix status
   );
 
   const fixedFixture = await createP0Fixture();
-  const fixedLogPath = path.join(fixedFixture, "docs/phase-0-validation-log.json");
+  const fixedLogPath = path.join(fixedFixture, "docs/maintainers/phase-0-validation-log.json");
   const fixedLog = JSON.parse(await readFile(fixedLogPath, "utf8"));
   const suspended = structuredClone(fixedLog.entries.at(-1));
   suspended.period = "2026-08-09-01";
@@ -928,7 +928,7 @@ test("Quality Floor regression summaries must match open and verified-fix status
 
 test("authority-expanding P1 implementation remains blocked before P0 Validated", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   Object.assign(log.entries.at(-1), {
     quality_floor: { status: "satisfied", regressions: [] },
@@ -959,7 +959,7 @@ test("authority-expanding P1 implementation remains blocked before P0 Validated"
 
 test("P0 Validated requires a documented qualitative decision basis", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   Object.assign(log.entries.at(-1), {
     quality_floor: { status: "satisfied", regressions: [] },
@@ -995,7 +995,7 @@ test("P0 Validated requires a documented qualitative decision basis", async () =
 
 test("a complete qualitative decision can advance the P0 release contract", async () => {
   const fixture = await createP0Fixture();
-  const logPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const contractPath = path.join(fixture, "release/p0.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   const contract = JSON.parse(await readFile(contractPath, "utf8"));

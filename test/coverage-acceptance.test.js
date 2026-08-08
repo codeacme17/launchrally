@@ -198,7 +198,7 @@ test("the acceptance matrix completes every representative without an ecosystem 
 test("public quickstarts and defaults present the matrix as representatives, not gates", async () => {
   const [readme, guide, agentMetadata, codexManifest] = await Promise.all([
     readFile(path.join(root, "README.md"), "utf8"),
-    readFile(path.join(root, "docs", "coverage-acceptance.md"), "utf8"),
+    readFile(path.join(root, "docs", "reference", "coverage-acceptance.md"), "utf8"),
     readFile(path.join(root, "skills", "launchrally", "agents", "openai.yaml"), "utf8"),
     readFile(
       path.join(root, "adapters", "codex", "launchrally", ".codex-plugin", "plugin.json"),
@@ -206,7 +206,7 @@ test("public quickstarts and defaults present the matrix as representatives, not
     ),
   ]);
 
-  assert.match(readme, /docs\/coverage-acceptance\.md/u);
+  assert.match(readme, /docs\/reference\/coverage-acceptance\.md/u);
   assert.match(guide, /representatives, not a support allowlist/iu);
   for (const fixturePath of [
     "typescript-astro",
