@@ -464,15 +464,19 @@ async function defaultPrepareDependencyChanges({
   try {
     return await prepare(true);
   } catch (error) {
-    const offlineCacheMiss = /(?:ENOTCACHED|cache mode is ['"]only-if-cached['"])/u.test(
-      `${error?.stderr ?? ""}\n${error?.message ?? ""}`,
-    );
+    const offlineCacheMiss = isOfflineResolutionMiss(error);
     if (!offlineCacheMiss) throw error;
     if (registryAllowed) return prepare(false);
     const permissionError = new Error("The exact CLI is not available in the offline npm cache.");
     permissionError.code = "registry_permission_required";
     throw permissionError;
   }
+}
+
+export function isOfflineResolutionMiss(error) {
+  return /(?:\bENOTCACHED\b|\bETARGET\b|\bE404\b|cache mode is ['"]only-if-cached['"]|No matching version found|No match found for version)/u.test(
+    `${error?.stderr ?? ""}\n${error?.message ?? ""}`,
+  );
 }
 
 async function previewChange(root, relativePath, after) {

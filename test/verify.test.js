@@ -854,6 +854,7 @@ test("synchronized stale-lock contenders cannot remove a replacement history own
   const owners = path.join(locks, "owners");
   const staleOwner = path.join(owners, `history-writer-${token}.lock`);
   const canonical = path.join(locks, "history-writer.lock");
+  const takeover = path.join(owners, `history-writer-${token}.takeover.lock`);
   await mkdir(owners, { recursive: true });
   await writeFile(staleOwner, `${JSON.stringify({
     schema_version: "launchrally.dev/owned-lock/v1",
@@ -862,16 +863,16 @@ test("synchronized stale-lock contenders cannot remove a replacement history own
     owner_pid: 2_147_483_647,
   })}\n`);
   await link(staleOwner, canonical);
-  let removers = 0;
-  let releaseRemovers;
-  const bothRemoving = new Promise((resolve) => { releaseRemovers = resolve; });
-  const remove = async (target, options) => {
-    if (target === staleOwner && options?.force === false) {
-      removers += 1;
-      if (removers === 2) releaseRemovers();
-      await bothRemoving;
+  let claimants = 0;
+  let releaseClaimants;
+  const bothClaiming = new Promise((resolve) => { releaseClaimants = resolve; });
+  const createLink = async (source, target) => {
+    if (target === takeover) {
+      claimants += 1;
+      if (claimants === 2) releaseClaimants();
+      await bothClaiming;
     }
-    return rm(target, options);
+    return link(source, target);
   };
 
   const results = await Promise.all(permissions.map((permission) => runVerify(
@@ -881,12 +882,17 @@ test("synchronized stale-lock contenders cannot remove a replacement history own
       resume_token: permission.interaction.resume_token,
       permission_decisions: { public_verification: "denied" },
     },
-    { history_file_operations: { remove } },
+    { history_file_operations: { link: createLink } },
   )));
 
   assert.ok(results.some(({ status }) => status === "completed"));
   assert.ok(results.every((result) =>
-    result.status === "completed" || result.error === "history_writer_busy"));
+    result.status === "completed" || result.error === "history_writer_busy"),
+  JSON.stringify(results.map((result) => ({
+    status: result.status,
+    error: result.error,
+    message: result.message,
+  }))));
   for (const result of results.filter(({ status }) => status === "completed")) {
     assert.deepEqual(
       JSON.parse(await readFile(path.join(
