@@ -12,6 +12,7 @@ import {
   assertValidVerificationResult,
 } from "../packages/contracts/src/index.js";
 import { runAudit, runVerify } from "../packages/core/src/index.js";
+import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
@@ -120,6 +121,28 @@ test("full Verify discloses fresh Evidence permissions without mutating history 
   assert.equal(result.history.source_evidence_index_id, source.evidence_index.index_id);
   assert.deepEqual(source, sourceBefore);
   assert.deepEqual(manifest, manifestBefore);
+});
+
+test("Verify accepts a portable token when mkdtemp preserves its placeholder", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const portableToken = await simulateExtendedMkdtempSuffix(
+    permission.interaction.resume_token,
+    "verify",
+  );
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: portableToken,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.operation, "verify");
 });
 
 test("full Verify accepts structurally valid non-current history so it can refresh it", async () => {

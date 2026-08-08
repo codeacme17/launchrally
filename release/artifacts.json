@@ -79,6 +79,8 @@
       ],
       "files": [
         "LICENSE",
+        "bin/clack-node20-loader.js",
+        "bin/clack-node20-util.js",
         "bin/human-audit.js",
         "bin/prompt-adapters.js",
         "bin/rally.js",

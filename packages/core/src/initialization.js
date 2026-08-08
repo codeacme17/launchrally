@@ -73,7 +73,7 @@ async function storeState(state) {
 async function loadState(token) {
   if (typeof token !== "string") return null;
   const match = token.match(
-    /^lrinit_([A-Za-z0-9]{6})_([A-Za-z0-9_-]{43})_([A-Za-z0-9_-]{43})$/u,
+    /^lrinit_([A-Za-z0-9]{6}|[A-Za-z0-9]{12})_([A-Za-z0-9_-]{43})_([A-Za-z0-9_-]{43})$/u,
   );
   if (!match) return null;
   const statePath = path.join(

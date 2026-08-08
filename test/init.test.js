@@ -11,6 +11,7 @@ import { renderReportMarkdown, runAudit, runInit, runVerify } from "../packages/
 import { isOfflineResolutionMiss } from "../packages/core/src/initialization.js";
 import { createHistoryFiles, persistLocalHistory } from "../packages/core/src/local-history.js";
 import { prepareExactToolchainChanges as prepareNpmChanges } from "./helpers/exact-toolchain.js";
+import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
@@ -713,6 +714,29 @@ test("a forged preview token cannot substitute different confirmed contents", as
   assert.doesNotMatch(await readFile(path.join(directory, "package.json"), "utf8"), /forged/u);
 });
 
+test("Init accepts a portable token when mkdtemp preserves its placeholder", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  const portableToken = await simulateExtendedMkdtempSuffix(
+    preview.interaction.resume_token,
+    "init",
+  );
+
+  const result = await runInit(directory, "0.1.0", {
+    resume_token: portableToken,
+    confirmation: "decline",
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.outcome, "initialization_declined");
+});
+
 test("the opaque Init token detects preview-record corruption before applying changes", async () => {
   const directory = await fixture();
   const audit = await completeAudit(directory);
@@ -723,7 +747,7 @@ test("the opaque Init token detects preview-record corruption before applying ch
     { prepare_dependency_changes: prepareNpmChanges },
   );
   const match = preview.interaction.resume_token.match(
-    /^lrinit_([A-Za-z0-9]{6})_([A-Za-z0-9_-]{43})_/u,
+    /^lrinit_([A-Za-z0-9]{6}|[A-Za-z0-9]{12})_([A-Za-z0-9_-]{43})_/u,
   );
   const statePath = path.join(
     os.tmpdir(),

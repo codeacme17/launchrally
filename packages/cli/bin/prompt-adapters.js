@@ -1,9 +1,34 @@
+import { register } from "node:module";
 import { createInterface } from "node:readline/promises";
 import process from "node:process";
+import { styleText } from "node:util";
 
 import { parsePublicJourneyInput, parsePublicTargetInput } from "@launchrally/core";
 
 import { PromptCancelledError } from "./human-audit.js";
+
+function styleTextSupportsArrays() {
+  try {
+    styleText(["strikethrough", "dim"], "");
+    return true;
+  } catch (error) {
+    if (error?.code !== "ERR_INVALID_ARG_VALUE") throw error;
+    return false;
+  }
+}
+
+let clackPromise;
+
+function loadClack() {
+  if (clackPromise) return clackPromise;
+  // Clack 1.7 composes styles with an array, added to Node in 20.13. Route only
+  // Clack's node:util import through a shim on the supported Node 20.12 floor.
+  if (!styleTextSupportsArrays()) {
+    register(new URL("./clack-node20-loader.js", import.meta.url));
+  }
+  clackPromise = import("@clack/prompts");
+  return clackPromise;
+}
 
 const FIELD_PRESENTATION = Object.freeze({
   intended_environment: Object.freeze({
@@ -480,7 +505,7 @@ function cancelled(value, clack, output) {
 }
 
 export async function createClackPromptAdapter({ input, output }) {
-  const clack = await import("@clack/prompts");
+  const clack = await loadClack();
   const common = { input, output, withGuide: false };
   const ask = async (message, field = {}) => cancelled(await clack.text({
     ...common,
