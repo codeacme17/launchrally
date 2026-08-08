@@ -290,7 +290,11 @@ test("P0 validation compares append-only history with the reviewed Git ref", asy
   const fixture = await createP0Fixture();
   const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   await execFileAsync("git", ["init"], { cwd: fixture });
-  await execFileAsync("git", ["add", "docs/maintainers/phase-0-validation-log.json"], { cwd: fixture });
+  await execFileAsync(
+    "git",
+    ["add", "release/p0.json", "docs/maintainers/phase-0-validation-log.json"],
+    { cwd: fixture },
+  );
   await execFileAsync("git", [
     "-c",
     "user.name=LaunchRally Test",
@@ -322,6 +326,52 @@ test("P0 validation compares append-only history with the reviewed Git ref", asy
       return true;
     },
   );
+});
+
+test("P0 validation follows the baseline contract when the Validation Log path moves", async () => {
+  const fixture = await createP0Fixture();
+  const contractPath = path.join(fixture, "release/p0.json");
+  const currentContract = JSON.parse(await readFile(contractPath, "utf8"));
+  const currentLogPath = path.join(fixture, currentContract.validation_log);
+  const legacyLogPath = path.join(fixture, "docs/phase-0-validation-log.json");
+  const baselineContract = {
+    ...currentContract,
+    validation_log: "docs/phase-0-validation-log.json",
+  };
+
+  await writeFile(contractPath, `${JSON.stringify(baselineContract, null, 2)}\n`);
+  await writeFile(legacyLogPath, await readFile(currentLogPath, "utf8"));
+  await execFileAsync("git", ["init"], { cwd: fixture });
+  await execFileAsync(
+    "git",
+    ["add", "release/p0.json", "docs/phase-0-validation-log.json"],
+    { cwd: fixture },
+  );
+  await execFileAsync("git", [
+    "-c",
+    "user.name=LaunchRally Test",
+    "-c",
+    "user.email=test@example.invalid",
+    "commit",
+    "-m",
+    "review validation log before path migration",
+  ], { cwd: fixture });
+  await writeFile(contractPath, `${JSON.stringify(currentContract, null, 2)}\n`);
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "scripts/validate-p0.mjs",
+      "--root",
+      fixture,
+      "--baseline-ref",
+      "HEAD",
+      "--json",
+    ],
+    { cwd: root },
+  );
+
+  assert.equal(JSON.parse(stdout).status, "completed");
 });
 
 test("P0 validation rejects identifying values inside aggregate observations", async () => {
