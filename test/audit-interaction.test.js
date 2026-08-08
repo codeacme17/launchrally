@@ -147,6 +147,7 @@ test("Core offers only safely detected static routes as Journey candidates", asy
   for (const relativePath of [
     "app/page.tsx",
     "app/dashboard/page.tsx",
+    "app/feed/(.)photo/page.tsx",
     "app/users/[id]/page.tsx",
     "src/routes/pricing/+page.svelte",
     "app/routes/docs._index.tsx",
@@ -165,6 +166,7 @@ test("Core offers only safely detected static routes as Journey candidates", asy
     "GET /pricing — pricing page loads",
   ]);
   assert.doesNotMatch(JSON.stringify(field.candidates), /\[id\]/u);
+  assert.doesNotMatch(JSON.stringify(field.candidates), /\(\.\)photo/u);
 });
 
 test("Agent Mode previews the complete unconfirmed plan before permission", async () => {

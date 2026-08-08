@@ -7,6 +7,13 @@ export function exactToolchainPackage(version = "0.1.0") {
     private: true,
     version: "0.0.0",
     devDependencies: { "@launchrally/cli": version },
+    overrides: {
+      "@clack/core": "1.4.3",
+      "fast-string-truncated-width": "3.0.3",
+      "fast-string-width": "3.0.2",
+      "fast-wrap-ansi": "0.2.2",
+      sisteransi: "1.0.5",
+    },
   };
 }
 

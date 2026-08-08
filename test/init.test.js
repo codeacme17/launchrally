@@ -189,6 +189,46 @@ test("Init canonicalizes an existing toolchain without retaining lifecycle scrip
   );
 });
 
+test("Init pins the transitive UI closure before npm resolves caret ranges", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const overrides = {
+    "@clack/core": "1.4.3",
+    "fast-string-truncated-width": "3.0.3",
+    "fast-string-width": "3.0.2",
+    "fast-wrap-ansi": "0.2.2",
+    sisteransi: "1.0.5",
+  };
+
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    {
+      prepare_dependency_changes: async (request) => {
+        const changes = await prepareNpmChanges(request);
+        if (!JSON.parse(request.package_json).overrides) {
+          const lockChange = changes.find(
+            ({ path: changedPath }) => changedPath.endsWith("package-lock.json"),
+          );
+          const lockfile = JSON.parse(lockChange.content);
+          const entry = lockfile.packages["node_modules/fast-string-width"];
+          entry.version = "3.0.4";
+          entry.resolved = "https://registry.npmjs.org/fast-string-width/-/fast-string-width-3.0.4.tgz";
+          lockChange.content = `${JSON.stringify(lockfile, null, 2)}\n`;
+        }
+        return changes;
+      },
+    },
+  );
+
+  assert.equal(preview.status, "needs_confirmation");
+  const packageChange = preview.preview.changes.find(
+    ({ path: changedPath }) => changedPath === ".launchrally/toolchain/package.json",
+  );
+  assert.deepEqual(JSON.parse(packageChange.after).overrides, overrides);
+});
+
 test("Init rejects truncated integrity metadata from the exact-toolchain fast path", async () => {
   const directory = await fixtureWithCliDependency();
   const lockPath = path.join(directory, ".launchrally", "toolchain", "package-lock.json");

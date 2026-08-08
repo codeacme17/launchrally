@@ -36,6 +36,13 @@ import { evaluateReportCurrentness } from "./report-currentness.js";
 export const CLI_DEPENDENCY = "@launchrally/cli";
 export const TOOLCHAIN_PACKAGE_PATH = ".launchrally/toolchain/package.json";
 export const TOOLCHAIN_LOCKFILE_PATH = ".launchrally/toolchain/package-lock.json";
+const TOOLCHAIN_OVERRIDES = Object.freeze({
+  "@clack/core": "1.4.3",
+  "fast-string-truncated-width": "3.0.3",
+  "fast-string-width": "3.0.2",
+  "fast-wrap-ansi": "0.2.2",
+  sisteransi: "1.0.5",
+});
 const APPROVED_PATHS = new Set([
   ".launchrally/.gitignore",
   TOOLCHAIN_LOCKFILE_PATH,
@@ -295,6 +302,7 @@ function toolchainPackageContent(version) {
     private: true,
     version: "0.0.0",
     devDependencies: { [CLI_DEPENDENCY]: version },
+    overrides: TOOLCHAIN_OVERRIDES,
   }, null, 2)}\n`;
 }
 
@@ -309,6 +317,7 @@ function alreadyExact({ packageJson, lockfile, dependency, version }) {
     JSON.stringify(Object.keys(parsedPackage).sort()) !== JSON.stringify([
       "devDependencies",
       "name",
+      "overrides",
       "private",
       "version",
     ])
@@ -316,6 +325,7 @@ function alreadyExact({ packageJson, lockfile, dependency, version }) {
     || parsedPackage.private !== true
     || parsedPackage.version !== "0.0.0"
     || JSON.stringify(parsedPackage.devDependencies) !== JSON.stringify({ [dependency]: version })
+    || JSON.stringify(parsedPackage.overrides) !== JSON.stringify(TOOLCHAIN_OVERRIDES)
   ) return false;
   try {
     const parsedLock = JSON.parse(lockfile);

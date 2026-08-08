@@ -85,7 +85,8 @@ function routeFromFile(filePath) {
   const publicSegments = segments
     .filter((segment) => !/^\(.+\)$/u.test(segment) && !segment.startsWith("@"));
   if (publicSegments.some((segment, index) =>
-    segment.startsWith("[")
+    segment.startsWith("(")
+      || segment.startsWith("[")
       || segment.includes("$")
       || (segment.startsWith("_")
         && !(segment === "_index" && index === publicSegments.length - 1)),
