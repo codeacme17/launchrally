@@ -98,7 +98,7 @@ test("the Plain adapter uses numbered choices for selectable input", async () =>
   assert.match(rendered, /4\. Other — enter a custom value/u);
 });
 
-test("the Plain adapter lets a user return to and revise the previous question", async () => {
+test("the Plain adapter does not offer backward navigation", async () => {
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -108,9 +108,7 @@ test("the Plain adapter lets a user return to and revise the previous question",
   const prompt = createPlainPromptAdapter({ input, output });
 
   setTimeout(() => input.write("1\n"), 10);
-  setTimeout(() => input.write("4\n"), 30);
-  setTimeout(() => input.write("2\n"), 50);
-  setTimeout(() => input.write("\n"), 70);
+  setTimeout(() => input.write("\n"), 30);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -140,60 +138,12 @@ test("the Plain adapter lets a user return to and revise the previous question",
 
   assert.deepEqual(response, {
     answers: {
-      intended_environment: "staging",
+      intended_environment: "production",
       support_layers: [],
     },
   });
-  assert.match(rendered, /4\. Back — change the previous answer/u);
-});
-
-test("the Plain adapter accepts :back from a text question", async () => {
-  const input = ttyStream();
-  const output = ttyStream();
-  let rendered = "";
-  output.on("data", (chunk) => {
-    rendered += chunk.toString();
-  });
-  const prompt = createPlainPromptAdapter({ input, output });
-
-  setTimeout(() => input.write("1\n"), 10);
-  setTimeout(() => input.write(":back\n"), 30);
-  setTimeout(() => input.write("2\n"), 50);
-  setTimeout(() => input.write("https://app.example.com\n"), 70);
-  const response = await prompt.respond({
-    status: "needs_input",
-    operation: "audit",
-    audit_brief: {
-      project: { name: "launchrally", type: "web" },
-      provider_roles: { candidates: [] },
-      support_layers: { candidates: [] },
-    },
-    request: {
-      validation_errors: [],
-      fields: [{
-        field_id: "intended_environment",
-        value_type: "string",
-        prompt: "Which environment is this Audit preparing for?",
-        candidates: [],
-        current_value: null,
-      }, {
-        field_id: "production_targets",
-        value_type: "url_array",
-        prompt: "Which public production URLs are in scope?",
-        candidates: [],
-        current_value: [],
-      }],
-    },
-  });
-  await prompt.close();
-
-  assert.deepEqual(response, {
-    answers: {
-      intended_environment: "staging",
-      production_targets: ["https://app.example.com"],
-    },
-  });
-  assert.match(rendered, /enter :back to change the previous answer/u);
+  assert.doesNotMatch(rendered, /Back — change the previous answer/u);
+  assert.doesNotMatch(rendered, /enter :back/u);
 });
 
 test("the Plain adapter uses numbered multi-select for Provider roles", async () => {
@@ -540,7 +490,7 @@ test("the Clack adapter uses a select prompt for the environment", async () => {
   assert.match(semanticOutput, /Other — enter a custom value/u);
 });
 
-test("the Clack adapter lets a user return to and revise the previous question", async () => {
+test("the Clack adapter does not offer backward navigation", async () => {
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -550,9 +500,7 @@ test("the Clack adapter lets a user return to and revise the previous question",
   const prompt = await createClackPromptAdapter({ input, output });
 
   setTimeout(() => input.write("\r"), 20);
-  setTimeout(() => input.write("\u001b[B\u001b[B\u001b[B \r"), 60);
-  setTimeout(() => input.write("\u001b[B\r"), 100);
-  setTimeout(() => input.write("\r"), 140);
+  setTimeout(() => input.write("\r"), 60);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -582,12 +530,13 @@ test("the Clack adapter lets a user return to and revise the previous question",
 
   assert.deepEqual(response, {
     answers: {
-      intended_environment: "staging",
+      intended_environment: "production",
       support_layers: [],
     },
   });
   const semanticOutput = stripVTControlCharacters(rendered);
-  assert.match(semanticOutput, /Back — change the previous answer/u);
+  assert.doesNotMatch(semanticOutput, /Back — change the previous answer/u);
+  assert.doesNotMatch(semanticOutput, /enter :back/u);
 });
 
 test("the Clack adapter shows examples and validates required text input in place", async () => {
