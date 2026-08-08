@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
@@ -7,6 +8,7 @@ import {
   createClackPromptAdapter,
   createPlainPromptAdapter,
 } from "../packages/cli/bin/prompt-adapters.js";
+import { PromptCancelledError } from "../packages/cli/bin/human-audit.js";
 
 function ttyStream() {
   const stream = new PassThrough();
@@ -99,4 +101,28 @@ test("the Clack adapter accepts injected TTY streams and keeps permission meanin
   assert.match(semanticOutput, /Public verification/u);
   assert.match(semanticOutput, /Targets: https:\/\/example\.com\//u);
   assert.match(semanticOutput, /Approve this permission\?/u);
+});
+
+test("the Plain adapter turns process SIGINT into a recoverable prompt cancellation", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const signals = new EventEmitter();
+  const prompt = createPlainPromptAdapter({ input, output, signals });
+  const permission = {
+    status: "needs_permission",
+    operation: "audit",
+    request: {
+      permissions: [{
+        permission_id: "public_verification",
+        boundary: "public_network",
+        scope: { targets: ["https://example.com/"] },
+      }],
+    },
+  };
+
+  setTimeout(() => signals.emit("SIGINT"), 10);
+  setTimeout(() => input.write("\n"), 30);
+  await assert.rejects(prompt.respond(permission), PromptCancelledError);
+  await prompt.close();
+  assert.equal(signals.listenerCount("SIGINT"), 0);
 });

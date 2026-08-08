@@ -203,7 +203,7 @@ test("audit renders a concise assessment, Findings, Gaps, and next command for a
 
   assert.match(
     stdout,
-    /LaunchRally Audit[\s\S]*Assessment: Inconclusive[\s\S]*Failed Findings:[\s\S]*Verification Gaps:[\s\S]*web\.public\.availability[\s\S]*Next command: rally audit .*--output <path>/,
+    /LaunchRally Audit[\s\S]*Assessment: Inconclusive[\s\S]*Failed Findings:[\s\S]*Verification Gaps:[\s\S]*web\.public\.availability[\s\S]*Next command: rally init .*--report <saved-report-path>/,
   );
   assert.doesNotMatch(stdout, /Initial Readiness Snapshot|# LaunchRally Audit Report/u);
 });

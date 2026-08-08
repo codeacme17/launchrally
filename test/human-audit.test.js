@@ -114,7 +114,7 @@ test("the Human Audit driver retries Core validation and denies each permission 
   assert.match(summary, /Assessment:/u);
   assert.match(summary, /Failed Findings:/u);
   assert.match(summary, /Verification Gaps:/u);
-  assert.match(summary, /Next command: rally audit .*--output <path>/u);
+  assert.match(summary, /Next command: rally init .*--report <saved-report-path>/u);
   assert.doesNotMatch(summary, /No input or approval is required for this local-only Audit/u);
   assert.doesNotMatch(summary, /# LaunchRally Audit Report/u);
 });
@@ -154,6 +154,10 @@ test("the Human Audit driver supports revision and cancellation without granting
     "needs_confirmation",
     "completed",
   ]);
+  const summary = renderHumanAuditCompletion(outcome.result, { cwd: fixture });
+  assert.equal(outcome.result.next.type, "init");
+  assert.match(summary, /Audit Brief was not confirmed/u);
+  assert.match(summary, /Next command: rally init --cwd/u);
   assert.deepEqual(await readdir(fixture), ["package-lock.json", "package.json"]);
 });
 

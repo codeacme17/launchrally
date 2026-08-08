@@ -1,4 +1,5 @@
 import { createInterface } from "node:readline/promises";
+import process from "node:process";
 
 import { PromptCancelledError } from "./human-audit.js";
 
@@ -122,10 +123,11 @@ async function collectAnswers(result, ask) {
   return answers;
 }
 
-export function createPlainPromptAdapter({ input, output }) {
+export function createPlainPromptAdapter({ input, output, signals = process }) {
   const controller = new AbortController();
   const readline = createInterface({ input, output, terminal: false });
-  input.on("SIGINT", () => controller.abort());
+  const handleInterrupt = () => controller.abort();
+  signals.on("SIGINT", handleInterrupt);
 
   const ask = async (message) => {
     try {
@@ -190,6 +192,7 @@ export function createPlainPromptAdapter({ input, output }) {
       return {};
     },
     async close() {
+      signals.off("SIGINT", handleInterrupt);
       readline.close();
     },
   };

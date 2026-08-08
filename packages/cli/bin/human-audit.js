@@ -27,13 +27,19 @@ export function renderHumanAuditCompletion(result, { cwd, outputPath } = {}) {
     return result.message ?? "LaunchRally Audit could not complete.";
   }
 
+  const scopeCancelled = result.outcome === "scope_not_confirmed";
   const failed = result.report.results.checks.filter((check) => check.status === "failed");
   const gaps = result.report.results.verification_gaps;
-  const nextCommand = outputPath
-    ? `rally init --cwd ${shellArgument(cwd)} --report ${shellArgument(outputPath)}`
-    : `rally audit --cwd ${shellArgument(cwd)} --output <path>`;
+  const nextCommand = result.next?.type === "init"
+    ? `rally init --cwd ${shellArgument(cwd)} --report ${
+      outputPath ? shellArgument(outputPath) : "<saved-report-path>"
+    }`
+    : result.next?.message ?? "No next command is required.";
   return [
     "LaunchRally Audit",
+    ...(scopeCancelled
+      ? ["Audit Brief was not confirmed. No public or Provider permission was granted."]
+      : []),
     `Assessment: ${titleCase(result.report.assessment)}`,
     "Failed Findings:",
     ...(failed.length > 0
