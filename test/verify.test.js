@@ -174,6 +174,14 @@ test("Report currentness rejects observability passes backed only by declared in
   const check = source.report.results.checks.find(
     (candidate) => candidate.check_id === "web.baseline.observability",
   );
+  const declaration = source.report.catalog.checks.find(
+    (candidate) => candidate.check_id === "web.baseline.observability",
+  );
+  declaration.pass_evidence_requirement = {
+    accepted_kinds: ["release_intent"],
+    minimum_items: 1,
+    provenance_required: true,
+  };
   check.status = "passed";
   check.evidence = structuredClone(check.applicability.evidence);
 

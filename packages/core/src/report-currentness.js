@@ -366,10 +366,16 @@ export function evaluateReportCurrentness(reportPackage, options = {}) {
       add({ reason_code: "evidence_digest_mismatch", evidence_digest: entry.digest });
     }
   }
-  const declarations = new Map(report.catalog.checks.map((item) => [item.check_id, item]));
+  const storedDeclarations = new Map(
+    report.catalog.checks.map((item) => [item.check_id, item]),
+  );
+  const currentDeclarations = new Map(
+    currentCatalog.checks.map((item) => [item.check_id, item]),
+  );
   const evaluatedTime = Date.parse(evaluatedAt);
   for (const check of report.results.checks) {
-    const declaration = declarations.get(check.check_id);
+    const declaration = currentDeclarations.get(check.check_id)
+      ?? storedDeclarations.get(check.check_id);
     const freshness = declaration?.freshness_behavior;
     const expectedGating = releaseGate(declaration, report.scope.release_intent.confirmed);
     if (check.gating !== expectedGating) {
