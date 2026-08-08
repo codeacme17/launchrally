@@ -16,9 +16,12 @@ const contract = JSON.parse(await readFile(
 if (
   contract.schema_version !== "launchrally.dev/p0-release/v1"
   || contract.phase !== "p0"
-  || contract.release_status !== "experimental"
+  || contract.product_status !== "incomplete"
+  || contract.release_status !== "not_published"
   || contract.validation_mode !== "telemetry_free"
   || contract.license !== "Apache-2.0"
+  || !Array.isArray(contract.acceptance_requirement_ids)
+  || contract.acceptance_requirement_ids.length === 0
 ) {
   throw new Error("p0_release_incomplete: release/p0.json has an invalid P0 identity");
 }
@@ -119,6 +122,7 @@ if (
 const result = {
   status: "completed",
   phase: contract.phase,
+  product_status: contract.product_status,
   release_status: contract.release_status,
   validation_mode: contract.validation_mode,
   license: contract.license,
@@ -129,5 +133,5 @@ const result = {
 process.stdout.write(
   process.argv.includes("--json")
     ? `${JSON.stringify(result)}\n`
-    : "P0 Experimental release contract is complete.\n",
+    : "P0 pre-release contract is complete.\n",
 );

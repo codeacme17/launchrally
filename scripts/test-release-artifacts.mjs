@@ -22,6 +22,12 @@ async function run(command, arguments_, options = {}) {
   });
 }
 
+async function runNpm(arguments_, options = {}) {
+  return process.platform === "win32"
+    ? run(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", "npm", ...arguments_], options)
+    : run("npm", arguments_, options);
+}
+
 function assertEqual(actual, expected, code, detail) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${code}: ${detail}`);
@@ -35,7 +41,7 @@ async function packArtifacts(temporaryRoot, release) {
   const tarballs = [];
 
   for (const artifact of release.packages) {
-    const { stdout } = await run("npm", [
+    const { stdout } = await runNpm([
       "pack",
       "--json",
       "--pack-destination",
@@ -68,7 +74,7 @@ async function smokeCli(temporaryRoot, cacheDirectory, tarballs, version) {
     path.join(cleanProject, "package.json"),
     '{"name":"launchrally-release-smoke","private":true}\n',
   );
-  await run("npm", [
+  await runNpm([
     "install",
     "--ignore-scripts",
     "--no-audit",
@@ -80,8 +86,20 @@ async function smokeCli(temporaryRoot, cacheDirectory, tarballs, version) {
     ...tarballs,
   ], { cwd: cleanProject });
 
-  const rally = path.join(cleanProject, "node_modules", ".bin", "rally");
-  const versionResult = JSON.parse((await run(rally, ["--version", "--json"], {
+  const rally = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "cli",
+    "bin",
+    "rally.js",
+  );
+  const invokeRally = (arguments_, options = {}) => run(
+    process.execPath,
+    [rally, ...arguments_],
+    options,
+  );
+  const versionResult = JSON.parse((await invokeRally(["--version", "--json"], {
     cwd: cleanProject,
   })).stdout);
   if (versionResult.cli_version !== version || versionResult.operation !== "version") {
@@ -98,8 +116,7 @@ async function smokeCli(temporaryRoot, cacheDirectory, tarballs, version) {
     path.join(auditProject, "package-lock.json"),
     '{"name":"first-audit","lockfileVersion":3,"packages":{"":{}}}\n',
   );
-  const audit = JSON.parse((await run(
-    rally,
+  const audit = JSON.parse((await invokeRally(
     ["audit", "--json", "--cwd", auditProject],
     { cwd: cleanProject },
   )).stdout);
@@ -122,8 +139,7 @@ async function smokeCli(temporaryRoot, cacheDirectory, tarballs, version) {
       repository,
       { recursive: true },
     );
-    const invoke = async (arguments_) => JSON.parse((await run(
-      rally,
+    const invoke = async (arguments_) => JSON.parse((await invokeRally(
       arguments_,
       { cwd: cleanProject, env: coverageEnvironment },
     )).stdout);
@@ -276,12 +292,23 @@ async function nativeCommand(name) {
       // Fall through to a host-provided executable for source checkouts without dev dependencies.
     }
   }
+  if (name === "codex") {
+    const local = path.join(root, "node_modules", "@openai", "codex", "bin", "codex.js");
+    try {
+      await access(local);
+      return { command: process.execPath, prefix: [local] };
+    } catch {
+      // Fall through to a host-provided executable for source checkouts without dev dependencies.
+    }
+  }
   const local = path.join(root, "node_modules", ".bin", name);
   try {
     await access(local);
     return { command: local, prefix: [] };
   } catch {
-    return { command: name, prefix: [] };
+    return process.platform === "win32"
+      ? { command: process.env.ComSpec ?? "cmd.exe", prefix: ["/d", "/s", "/c", name] }
+      : { command: name, prefix: [] };
   }
 }
 

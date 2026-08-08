@@ -1,10 +1,10 @@
 # Install and release guide
 
-LaunchRally `0.1.0` is one release across the CLI, canonical Skill, Codex Plugin, and Claude Plugin. Package and Plugin metadata, the bundled Skill contract, native marketplace manifests, and internal dependencies are validated against that SemVer before publication.
+LaunchRally `0.1.0` is the planned first release across the CLI, canonical Skill, Codex Plugin, and Claude Plugin. It is not published yet. Package and Plugin metadata, the bundled Skill contract, native marketplace manifests, and internal dependencies are validated against that SemVer before publication. The package and Plugin installation commands below apply only after the public Experimental release exists; use the source-checkout verification path until then.
 
-## First Audit without installation
+## Planned exact-version Audit
 
-Run the exact public CLI version without a global install:
+After publication, run the exact public CLI version without a global install:
 
 ```bash
 npm exec --package=@launchrally/cli@0.1.0 -- rally audit --json --cwd .

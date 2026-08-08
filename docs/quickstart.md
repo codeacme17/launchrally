@@ -1,10 +1,16 @@
 # Quickstart
 
-LaunchRally is Experimental. Run it against a repository you control and review every disclosed read or write boundary before confirming it.
+LaunchRally is in pre-release development. No public Experimental release exists. Run it against a repository you control and review every disclosed read or write boundary before confirming it.
 
 ## Direct CLI Quickstart
 
-Run the exact P0 CLI without a global installation:
+Before publication, run the CLI from a source checkout:
+
+```bash
+node packages/cli/bin/rally.js audit --json --cwd .
+```
+
+Once an Experimental release is published, run its exact P0 CLI without a global installation:
 
 ```bash
 npm exec --package=@launchrally/cli@0.1.0 -- rally audit --json --cwd .
@@ -12,7 +18,7 @@ npm exec --package=@launchrally/cli@0.1.0 -- rally audit --json --cwd .
 
 The first response is a versioned interaction, not a completed assessment. Supply only the requested typed answers, confirm the complete Check plan, and decide public and Provider read permissions separately. Keep the completed JSON unchanged if you later choose `init`, `plan`, or `verify`; the [data-model guide](data-model.md) explains those artifacts.
 
-Omit `--json` for the Human Mode rendering. It uses the same CLI contract and permission boundaries. The exact package-manager command preserves npm's download confirmation, makes no project change, and performs no global install.
+Omit `--json` for the Human Mode rendering. It uses the same CLI contract and permission boundaries. After publication, the exact package-manager command preserves npm's download confirmation, makes no project change, and performs no global install.
 
 ## Skill Quickstart
 

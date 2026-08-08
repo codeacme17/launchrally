@@ -8,6 +8,16 @@ must be represented here and in the linked GitHub issues.
 P0 is not Product Complete and no public Experimental release is currently
 available.
 
+The canonical requirement-ID registry is independently committed in
+`release/p0.json`; the machine-readable traceability source is
+`release/p0-acceptance.json`. It maps every normative row below to its
+versioned contracts, implementation paths, named tests, tracking issue,
+status, and mandatory release gates. CI runs
+`npm run validate:acceptance` so removed requirements, renamed tests, missing
+paths, stale status, and omitted safety gates fail closed. Tagged publication
+also passes `--require-release-ready`, which blocks while any requirement is
+Open or the product and release statuses are not release-ready.
+
 ## Status model
 
 1. P0 Release Candidate
@@ -39,8 +49,8 @@ available.
 | P0-PERMISSION-01 | Registry fallback is disclosed and separately approved; lifecycle scripts never execute | Network-denial and permission tests | #38 | Complete |
 | P0-COVERAGE-01 | Direct full journey passes for all five representative repositories | Coverage Acceptance Matrix | #38 | Complete |
 | P0-COVERAGE-02 | Skill full journey passes for JavaScript and non-JavaScript representatives under complete and partial permissions | Skill Reference Journey matrix | #38 | Complete |
-| P0-QUALITY-01 | PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates | CI validation | #39 | Open |
-| P0-PLATFORM-01 | Contract suites cover Node 20, 22, and 24; clean journeys cover Linux, macOS, and Windows on Node 22 | GitHub Actions matrix | #39 | Open |
+| P0-QUALITY-01 | PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates | CI validation | #39 | Complete |
+| P0-PLATFORM-01 | Contract suites cover Node 20, 22, and 24; clean journeys cover Linux, macOS, and Windows on Node 22 | GitHub Actions matrix | #39 | Complete |
 | P0-RELEASE-01 | Five exact public packages publish with provenance under the Experimental channel | Registry and provenance verification | #40 | Open |
 | P0-RELEASE-02 | Exact public CLI and both Plugin paths pass clean external smoke tests before GitHub prerelease creation | Post-publication workflow | #40 | Open |
 | P0-VALIDATE-01 | Validation Log remains aggregate, non-identifying, append-only, and reviewed | Validation contract tests | #41 | Open |

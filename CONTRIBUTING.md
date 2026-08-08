@@ -1,6 +1,6 @@
 # Contributing to LaunchRally
 
-LaunchRally is an Experimental Apache-2.0 project. By submitting a contribution, you agree that it is licensed under Apache-2.0 and that you have the right to submit it.
+LaunchRally is a pre-release development project under Apache-2.0. No public Experimental release exists yet. By submitting a contribution, you agree that it is licensed under Apache-2.0 and that you have the right to submit it.
 
 ## Choose a feedback path
 
@@ -20,6 +20,7 @@ Before opening a pull request:
 npm ci --ignore-scripts
 npm run build
 npm test
+npm run validate:acceptance
 npm run validate:p0
 npm run validate:release
 npm run test:artifacts

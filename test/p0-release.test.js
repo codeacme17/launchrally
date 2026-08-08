@@ -25,7 +25,7 @@ async function createP0Fixture() {
   ]);
 }
 
-test("the P0 release contract declares an Experimental telemetry-free release", async () => {
+test("the P0 release contract declares truthful pre-release telemetry-free status", async () => {
   const { stdout } = await execFileAsync(
     "npm",
     ["--silent", "run", "validate:p0", "--", "--json"],
@@ -35,13 +35,15 @@ test("the P0 release contract declares an Experimental telemetry-free release", 
   assert.deepEqual(JSON.parse(stdout), {
     status: "completed",
     phase: "p0",
-    release_status: "experimental",
+    product_status: "incomplete",
+    release_status: "not_published",
     validation_mode: "telemetry_free",
     license: "Apache-2.0",
     feedback_channels: ["discussions", "issues", "security"],
     quality_floor: [
       "reference_journey",
       "coverage_acceptance_matrix",
+      "prd_traceability",
       "release_packaging",
       "p0_release_contract",
     ],
@@ -64,7 +66,7 @@ test("the public release kit documents use, data, safety, feedback, and validati
     "utf8",
   ));
 
-  assert.match(readme, /Status: Experimental/iu);
+  assert.match(readme, /Status: Pre-release development/iu);
   assert.match(readme, /github\.com\/codeacme17\/launchrally\/issues/u);
   assert.match(readme, /github\.com\/codeacme17\/launchrally\/discussions/u);
   assert.match(readme, /SECURITY\.md/u);
@@ -101,6 +103,7 @@ test("the public release kit documents use, data, safety, feedback, and validati
   assert.match(security, /security\/advisories\/new/u);
 
   for (const stage of [
+    "P0 is not Product Complete",
     "P0 Product Complete",
     "Experimental release",
     "Telemetry-Free Validation",

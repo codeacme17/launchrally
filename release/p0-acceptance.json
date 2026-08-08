@@ -1,0 +1,217 @@
+{
+  "schema_version": "launchrally.dev/p0-acceptance/v1",
+  "product_status": "incomplete",
+  "release_status": "not_published",
+  "requirements": [
+    {
+      "id": "P0-CONTRACT-01",
+      "requirement": "Canonical deterministic `.launchrally/manifest.yaml` and previewed v1 migration",
+      "contracts": ["packages/contracts/schemas/manifest/v1.schema.json", "packages/contracts/schemas/manifest/v2.schema.json"],
+      "implementation": ["packages/core/src/manifest.js", "packages/core/src/initialization.js"],
+      "tests": [{"path": "test/contract-v2.test.js", "name": "init previews and confirms a fail-closed legacy JSON Manifest migration"}],
+      "tracking": "#35",
+      "status": "complete"
+    },
+    {
+      "id": "P0-CONTRACT-02",
+      "requirement": "Manifest v2 contains Project, Release, Execution, Support, and Providers with uniform intent states",
+      "contracts": ["packages/contracts/schemas/manifest/v2.schema.json"],
+      "implementation": ["packages/core/src/manifest.js"],
+      "tests": [{"path": "test/contract-v2.test.js", "name": "init previews the canonical deterministic Manifest v2 YAML"}],
+      "tracking": "#35",
+      "status": "complete"
+    },
+    {
+      "id": "P0-CONTRACT-03",
+      "requirement": "Check Catalog v2 uses the eight approved Launch Risk Domains",
+      "contracts": ["packages/contracts/schemas/report/v2.schema.json"],
+      "implementation": ["packages/core/src/check-catalog.js"],
+      "tests": [{"path": "test/check-catalog.test.js", "name": "the versioned Web Baseline catalog declares every required policy"}],
+      "tracking": "#35",
+      "status": "complete"
+    },
+    {
+      "id": "P0-CONTRACT-04",
+      "requirement": "CLI Interaction Contract v2 exposes typed `needs_refresh` and advisory `providers` behavior",
+      "contracts": ["packages/contracts/schemas/cli/v2.schema.json"],
+      "implementation": ["packages/cli/bin/rally.js", "packages/core/src/interaction-result.js"],
+      "tests": [{"path": "test/contract-v2.test.js", "name": "the direct CLI exposes the typed CLI Interaction Contract v2 needs_refresh result"}],
+      "tracking": "#35",
+      "status": "complete"
+    },
+    {
+      "id": "P0-EVIDENCE-01",
+      "requirement": "Passed and Failed outcomes satisfy distinct Evidence Requirements",
+      "contracts": ["packages/core/src/check-catalog.js"],
+      "implementation": ["packages/core/src/policy-engine.js"],
+      "tests": [{"path": "test/policy-engine.test.js", "name": "a Passed claim without required Evidence is downgraded and can never be Launch Ready"}],
+      "tracking": "#36",
+      "status": "complete"
+    },
+    {
+      "id": "P0-EVIDENCE-02",
+      "requirement": "Negative findings require complete provenance-bearing local observations",
+      "contracts": ["packages/contracts/schemas/evidence-index/v1.schema.json"],
+      "implementation": ["packages/core/src/local-safe-scan.js", "packages/core/src/check-catalog.js"],
+      "tests": [{"path": "test/check-catalog.test.js", "name": "a complete negative lockfile finding carries provenance-bearing local observation Evidence"}],
+      "tracking": "#36",
+      "status": "complete"
+    },
+    {
+      "id": "P0-ASSESS-01",
+      "requirement": "Gating Unverified is Inconclusive; non-gating Unverified is Ready with Warnings",
+      "contracts": ["packages/contracts/schemas/report/v2.schema.json"],
+      "implementation": ["packages/core/src/policy-engine.js"],
+      "tests": [{"path": "test/policy-engine.test.js", "name": "non-gating Unverified produces Ready with Warnings, not Inconclusive"}],
+      "tracking": "#36",
+      "status": "complete"
+    },
+    {
+      "id": "P0-ASSESS-02",
+      "requirement": "No-Go requires a gating failure supported by qualifying Machine Evidence",
+      "contracts": ["packages/core/src/check-catalog.js"],
+      "implementation": ["packages/core/src/policy-engine.js"],
+      "tests": [{"path": "test/policy-engine.test.js", "name": "a gating Failed claim backed only by release intent cannot produce No-Go"}],
+      "tracking": "#36",
+      "status": "complete"
+    },
+    {
+      "id": "P0-CURRENT-01",
+      "requirement": "Currentness is reevaluated from clock, Manifest, repository, catalog, support, and applicability evidence",
+      "contracts": ["docs/data-model.md"],
+      "implementation": ["packages/core/src/report-currentness.js"],
+      "tests": [{"path": "test/plan.test.js", "name": "read-time currentness advances the clock for live Evidence"}],
+      "tracking": "#36",
+      "status": "complete"
+    },
+    {
+      "id": "P0-CURRENT-02",
+      "requirement": "Init, Plan, and Providers require current Reports; Verify can refresh valid history",
+      "contracts": ["packages/contracts/schemas/cli/v2.schema.json"],
+      "implementation": ["packages/core/src/initialization.js", "packages/core/src/planning.js", "packages/core/src/provider-guidance.js", "packages/core/src/verification.js"],
+      "tests": [{"path": "test/verify.test.js", "name": "full Verify accepts structurally valid non-current history so it can refresh it"}],
+      "tracking": "#36",
+      "status": "complete"
+    },
+    {
+      "id": "P0-HISTORY-01",
+      "requirement": "Initialized full Audit and Verify persist atomic immutable local history",
+      "contracts": ["docs/data-model.md"],
+      "implementation": ["packages/core/src/local-history.js", "packages/core/src/initialization.js", "packages/core/src/verification.js"],
+      "tests": [{"path": "test/verify.test.js", "name": "completed full Verify atomically persists its new immutable Report history"}],
+      "tracking": "#37",
+      "status": "complete"
+    },
+    {
+      "id": "P0-HISTORY-02",
+      "requirement": "Historical Records remain immutable and Report/Evidence history is never automatically pruned",
+      "contracts": ["docs/data-model.md"],
+      "implementation": ["packages/core/src/local-history.js"],
+      "tests": [{"path": "test/verify.test.js", "name": "repeated full Verify retains every historical Report and Evidence object"}],
+      "tracking": "#37",
+      "status": "complete"
+    },
+    {
+      "id": "P0-TOOLCHAIN-01",
+      "requirement": "Every ecosystem uses an isolated exact LaunchRally npm toolchain without modifying application dependencies",
+      "contracts": ["docs/install.md"],
+      "implementation": ["packages/core/src/initialization.js"],
+      "tests": [{"path": "test/init.test.js", "name": "application package-manager files never control or receive the npm toolchain"}],
+      "tracking": "#38",
+      "status": "complete"
+    },
+    {
+      "id": "P0-PERMISSION-01",
+      "requirement": "Registry fallback is disclosed and separately approved; lifecycle scripts never execute",
+      "contracts": ["docs/privacy.md"],
+      "implementation": ["packages/core/src/initialization.js", "packages/cli/bin/rally.js"],
+      "tests": [{"path": "test/init.test.js", "name": "the CLI exposes and honors the isolated toolchain registry permission"}],
+      "tracking": "#38",
+      "status": "complete"
+    },
+    {
+      "id": "P0-COVERAGE-01",
+      "requirement": "Direct full journey passes for all five representative repositories",
+      "contracts": ["fixtures/coverage/matrix.json", "docs/coverage-acceptance.md"],
+      "implementation": ["packages/cli/bin/rally.js"],
+      "tests": [{"path": "test/reference-journey.test.js", "name": "the direct CLI completes the full Reference Journey for every coverage representative"}],
+      "tracking": "#38",
+      "status": "complete"
+    },
+    {
+      "id": "P0-COVERAGE-02",
+      "requirement": "Skill full journey passes for JavaScript and non-JavaScript representatives under complete and partial permissions",
+      "contracts": ["skills/launchrally/references/reference-journey.json"],
+      "implementation": ["skills/launchrally/SKILL.md", "adapters/codex/launchrally/skills/launchrally/SKILL.md", "adapters/claude/launchrally/skills/launchrally/SKILL.md"],
+      "tests": [{"path": "test/reference-journey.test.js", "name": "native Skills complete JavaScript and non-JavaScript journeys with complete and partial permissions"}],
+      "tracking": "#38",
+      "status": "complete"
+    },
+    {
+      "id": "P0-QUALITY-01",
+      "requirement": "PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates",
+      "contracts": ["release/p0-acceptance.json", "docs/p0-acceptance.md"],
+      "implementation": ["scripts/validate-acceptance.mjs", ".github/workflows/ci.yml", ".github/workflows/release.yml"],
+      "tests": [{"path": "test/acceptance-traceability.test.js", "name": "the committed P0 matrix maps every normative requirement to executable evidence"}],
+      "tracking": "#39",
+      "status": "complete"
+    },
+    {
+      "id": "P0-PLATFORM-01",
+      "requirement": "Contract suites cover Node 20, 22, and 24; clean journeys cover Linux, macOS, and Windows on Node 22",
+      "contracts": ["release/p0-acceptance.json"],
+      "implementation": [".github/workflows/ci.yml"],
+      "tests": [{"path": "test/acceptance-traceability.test.js", "name": "CI runs contract and clean journey gates on every required Node and OS target"}],
+      "tracking": "#39",
+      "status": "complete"
+    },
+    {
+      "id": "P0-RELEASE-01",
+      "requirement": "Five exact public packages publish with provenance under the Experimental channel",
+      "contracts": ["release/artifacts.json"],
+      "implementation": ["scripts/publish-release.mjs", ".github/workflows/release.yml"],
+      "tests": [{"path": "test/release.test.js", "name": "npm release packages are public, provenance-enabled, and file-allowlisted"}],
+      "tracking": "#40",
+      "status": "open"
+    },
+    {
+      "id": "P0-RELEASE-02",
+      "requirement": "Exact public CLI and both Plugin paths pass clean external smoke tests before GitHub prerelease creation",
+      "contracts": ["release/artifacts.json"],
+      "implementation": ["scripts/test-release-artifacts.mjs", ".github/workflows/release.yml"],
+      "tests": [{"path": "test/release.test.js", "name": "packed Plugin adapters pass their native host validation"}],
+      "tracking": "#40",
+      "status": "open"
+    },
+    {
+      "id": "P0-VALIDATE-01",
+      "requirement": "Validation Log remains aggregate, non-identifying, append-only, and reviewed",
+      "contracts": ["docs/phase-0-validation-log.json"],
+      "implementation": ["scripts/validate-p0.mjs"],
+      "tests": [{"path": "test/p0-release.test.js", "name": "the Phase 0 Validation Log rejects user-level analytics"}],
+      "tracking": "#41",
+      "status": "open"
+    },
+    {
+      "id": "P0-VALIDATE-02",
+      "requirement": "P0 Validated requires a documented qualitative decision while the Quality Floor remains satisfied",
+      "contracts": ["docs/phase-0-validation.md"],
+      "implementation": ["scripts/validate-p0.mjs"],
+      "tests": [{"path": "test/p0-release.test.js", "name": "the public release kit documents use, data, safety, feedback, and validation"}],
+      "tracking": "#41",
+      "status": "open"
+    }
+  ],
+  "release_gates": [
+    {"id": "traceability", "requirement_ids": ["P0-QUALITY-01"], "command": "validate:acceptance", "evidence": {"type": "script", "path": "scripts/validate-acceptance.mjs"}},
+    {"id": "migrations", "requirement_ids": ["P0-CONTRACT-01"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/contract-v2.test.js", "name": "init previews and confirms a fail-closed legacy JSON Manifest migration"}},
+    {"id": "secret_safety", "requirement_ids": ["P0-QUALITY-01"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/init.test.js", "name": "a complete Report produces an exact secret-free preview without repository writes"}},
+    {"id": "permission_boundaries", "requirement_ids": ["P0-PERMISSION-01", "P0-QUALITY-01"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/init.test.js", "name": "the CLI exposes and honors the isolated toolchain registry permission"}},
+    {"id": "false_confidence", "requirement_ids": ["P0-EVIDENCE-01", "P0-ASSESS-02", "P0-QUALITY-01"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/policy-engine.test.js", "name": "a Passed claim without required Evidence is downgraded and can never be Launch Ready"}},
+    {"id": "currentness", "requirement_ids": ["P0-CURRENT-01", "P0-CURRENT-02"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/plan.test.js", "name": "read-time currentness rejects tampered references and stored non-current Evidence"}},
+    {"id": "persistence_recovery", "requirement_ids": ["P0-HISTORY-01", "P0-HISTORY-02"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/verify.test.js", "name": "Verify recovers a validated crashed transaction created under an earlier Report ID"}},
+    {"id": "artifact_clean_install", "requirement_ids": ["P0-COVERAGE-01", "P0-RELEASE-01"], "command": "test:artifacts", "evidence": {"type": "script", "path": "scripts/test-release-artifacts.mjs"}},
+    {"id": "native_plugins", "requirement_ids": ["P0-COVERAGE-02", "P0-RELEASE-02"], "command": "test:artifacts", "evidence": {"type": "script", "path": "scripts/test-release-artifacts.mjs"}},
+    {"id": "p0_release_contract", "requirement_ids": ["P0-QUALITY-01"], "command": "validate:p0", "evidence": {"type": "script", "path": "scripts/validate-p0.mjs"}}
+  ]
+}

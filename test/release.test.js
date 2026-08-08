@@ -97,6 +97,45 @@ test("release validation fails when a bundled Skill command drifts", async () =>
   );
 });
 
+test("release validation synchronizes CRLF Skill checkouts", async () => {
+  const fixture = await copyRepositoryFixture(root, "launchrally-crlf-skill-", [
+    "adapters",
+    "scripts/sync-skills.mjs",
+    "skills",
+  ]);
+  const sourceSkillPath = path.join(fixture, "skills/launchrally/SKILL.md");
+  const sourceSkill = await readFile(sourceSkillPath, "utf8");
+  await writeFile(sourceSkillPath, sourceSkill.replace(/\r?\n/gu, "\r\n"), "utf8");
+  await execFileAsync("git", ["init", "--quiet"], { cwd: fixture });
+  await execFileAsync("git", ["config", "core.autocrlf", "true"], { cwd: fixture });
+  await execFileAsync("git", ["add", "adapters", "scripts", "skills"], { cwd: fixture });
+  await execFileAsync("git", [
+    "-c",
+    "user.name=LaunchRally Tests",
+    "-c",
+    "user.email=tests@launchrally.dev",
+    "commit",
+    "--quiet",
+    "-m",
+    "fixture",
+  ], { cwd: fixture });
+
+  await execFileAsync(process.execPath, ["scripts/sync-skills.mjs"], { cwd: fixture });
+  await execFileAsync(process.execPath, ["scripts/sync-skills.mjs", "--check"], {
+    cwd: fixture,
+  });
+
+  const claudeSkill = await readFile(
+    path.join(fixture, "adapters/claude/launchrally/skills/launchrally/SKILL.md"),
+    "utf8",
+  );
+  assert.match(claudeSkill, /disable-model-invocation: true\r\n/u);
+  assert.equal(claudeSkill.replaceAll("\r\n", "").includes("\n"), false);
+  await execFileAsync("git", ["diff", "--exit-code", "--", "adapters"], {
+    cwd: fixture,
+  });
+});
+
 test("release validation rejects lifecycle scripts in a public artifact", async () => {
   const fixture = await createReleaseFixture();
   const packagePath = path.join(fixture, "packages/cli/package.json");
