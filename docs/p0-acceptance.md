@@ -5,8 +5,8 @@ product-planning sources are intentionally local and ignored under
 `docs/product/`; therefore every release-blocking requirement needed by CI
 must be represented here and in the linked GitHub issues.
 
-P0 is not Product Complete and no public Experimental release is currently
-available.
+P0 is an approved Release Candidate, not Product Complete, and no public
+Experimental release is currently available.
 
 The canonical requirement-ID registry is independently committed in
 `release/p0.json`; the machine-readable traceability source is
@@ -15,8 +15,12 @@ versioned contracts, implementation paths, named tests, tracking issue,
 status, and mandatory release gates. CI runs
 `npm run validate:acceptance` so removed requirements, renamed tests, missing
 paths, stale status, and omitted safety gates fail closed. Tagged publication
-also passes `--require-release-ready`, which blocks while any requirement is
-Open or the product and release statuses are not release-ready.
+also passes `--require-publish-ready`. That transition requires the approved
+Release Candidate identity and every pre-publication requirement to be
+Complete. Only publication, exact public smoke, and the later Telemetry-Free
+Validation requirements may remain Open. The stricter
+`--require-release-ready` gate remains reserved for a future Product Complete
+transition after exact public verification.
 
 ## Status model
 

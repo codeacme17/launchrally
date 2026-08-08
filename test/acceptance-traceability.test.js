@@ -36,7 +36,7 @@ test("the committed P0 matrix maps every normative requirement to executable evi
     status: "completed",
     schema_version: "launchrally.dev/p0-acceptance/v1",
     product_status: "incomplete",
-    release_status: "not_published",
+    release_status: "release_candidate",
     requirements: { complete: 18, open: 4, total: 22 },
     release_gates: 10,
   });
@@ -136,7 +136,9 @@ test("CI runs contract and clean journey gates on every required Node and OS tar
     assert.match(ci, new RegExp(command, "u"), command);
     assert.match(release, new RegExp(command, "u"), command);
   }
-  assert.match(release, /npm run validate:acceptance -- --require-release-ready/u);
+  assert.match(release, /npm run validate:acceptance -- --require-publish-ready/u);
+  assert.match(release, /public-smoke:[\s\S]*needs: publish[\s\S]*npm run test:public-release/u);
+  assert.match(release, /prerelease:[\s\S]*needs: public-smoke[\s\S]*gh release create/u);
 });
 
 test("release readiness fails closed while any normative requirement remains open", async () => {
@@ -176,6 +178,45 @@ test("release readiness accepts the future complete release-candidate transition
   assert.equal(JSON.parse(stdout).release_status, "release_candidate");
 });
 
+test("publication readiness accepts only the approved pre-publication requirements as open", async () => {
+  const fixture = await createAcceptanceFixture();
+  const matrixPath = path.join(fixture, "release/p0-acceptance.json");
+  const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
+  await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["scripts/validate-acceptance.mjs", "--root", fixture, "--require-publish-ready", "--json"],
+    { cwd: root },
+  );
+  assert.equal(JSON.parse(stdout).release_status, "release_candidate");
+
+  matrix.requirements.find(({ id }) => id === "P0-QUALITY-01").status = "open";
+  await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
+  const acceptancePath = path.join(fixture, "docs/p0-acceptance.md");
+  const acceptance = await readFile(acceptancePath, "utf8");
+  await writeFile(
+    acceptancePath,
+    acceptance.replace(
+      "| P0-QUALITY-01 | PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates | CI validation | #39 | Complete |",
+      "| P0-QUALITY-01 | PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates | CI validation | #39 | Open |",
+    ),
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["scripts/validate-acceptance.mjs", "--root", fixture, "--require-publish-ready", "--json"],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /acceptance_publish_blocked/u);
+      assert.match(error.stderr, /P0-QUALITY-01/u);
+      return true;
+    },
+  );
+});
+
 test("public status remains pre-release until an Experimental release exists", async () => {
   const [readme, quickstart, contributing, validation, release] = await Promise.all([
     "README.md",
@@ -193,6 +234,6 @@ test("public status remains pre-release until an Experimental release exists", a
     (({ product_status, release_status }) => ({ product_status, release_status }))(
       JSON.parse(release),
     ),
-    { product_status: "incomplete", release_status: "not_published" },
+    { product_status: "incomplete", release_status: "release_candidate" },
   );
 });

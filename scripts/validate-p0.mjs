@@ -17,7 +17,7 @@ if (
   contract.schema_version !== "launchrally.dev/p0-release/v1"
   || contract.phase !== "p0"
   || contract.product_status !== "incomplete"
-  || contract.release_status !== "not_published"
+  || contract.release_status !== "release_candidate"
   || contract.validation_mode !== "telemetry_free"
   || contract.license !== "Apache-2.0"
   || !Array.isArray(contract.acceptance_requirement_ids)

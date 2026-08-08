@@ -1,7 +1,7 @@
 {
   "schema_version": "launchrally.dev/p0-acceptance/v1",
   "product_status": "incomplete",
-  "release_status": "not_published",
+  "release_status": "release_candidate",
   "requirements": [
     {
       "id": "P0-CONTRACT-01",
@@ -168,18 +168,18 @@
     {
       "id": "P0-RELEASE-01",
       "requirement": "Five exact public packages publish with provenance under the Experimental channel",
-      "contracts": ["release/artifacts.json"],
+      "contracts": ["release/artifacts.json", "docs/release-runbook.md"],
       "implementation": ["scripts/publish-release.mjs", ".github/workflows/release.yml"],
-      "tests": [{"path": "test/release.test.js", "name": "npm release packages are public, provenance-enabled, and file-allowlisted"}],
+      "tests": [{"path": "test/release.test.js", "name": "release CI verifies clean artifacts before OIDC provenance publishing"}],
       "tracking": "#40",
       "status": "open"
     },
     {
       "id": "P0-RELEASE-02",
       "requirement": "Exact public CLI and both Plugin paths pass clean external smoke tests before GitHub prerelease creation",
-      "contracts": ["release/artifacts.json"],
+      "contracts": ["release/artifacts.json", "docs/release-runbook.md"],
       "implementation": ["scripts/test-release-artifacts.mjs", ".github/workflows/release.yml"],
-      "tests": [{"path": "test/release.test.js", "name": "packed Plugin adapters pass their native host validation"}],
+      "tests": [{"path": "test/release.test.js", "name": "release validation plans exact public CLI and Plugin smoke inputs"}],
       "tracking": "#40",
       "status": "open"
     },
