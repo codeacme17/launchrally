@@ -1733,6 +1733,8 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
   const directory = await fixture();
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-registry-report-"));
+  const npmCache = await mkdtemp(path.join(os.tmpdir(), "launchrally-empty-npm-cache-"));
+  const isolatedEnvironment = { ...process.env, NPM_CONFIG_CACHE: npmCache };
   const reportPath = path.join(reportDirectory, "audit.json");
   await writeFile(reportPath, JSON.stringify(audit));
 
@@ -1744,7 +1746,7 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
     directory,
     "--report",
     reportPath,
-  ])).stdout);
+  ], { env: isolatedEnvironment })).stdout);
 
   assert.equal(permission.status, "needs_permission");
   assert.equal(permission.request.permissions[0].id, "npm_registry_read");
@@ -1761,7 +1763,7 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
       permission.interaction.resume_token,
       "--permissions",
       JSON.stringify({ npm_registry_read: "denied" }),
-    ]),
+    ], { env: isolatedEnvironment }),
     (error) => {
       const result = JSON.parse(error.stdout);
       assert.equal(result.error, "registry_permission_denied");

@@ -105,7 +105,7 @@ async function validate() {
   );
   if (
     matrix.schema_version !== "launchrally.dev/p0-acceptance/v1"
-    || !new Set(["complete", "incomplete"]).has(matrix.product_status)
+    || !new Set(["complete", "incomplete", "suspended"]).has(matrix.product_status)
     || !new Set(["experimental", "not_published", "release_candidate"])
       .has(matrix.release_status)
     || !Array.isArray(matrix.requirements)
@@ -156,6 +156,12 @@ async function validate() {
     if (!requirements.has(id)) fail("acceptance_unmapped_requirement", id);
   }
   const p0 = await readJson("release/p0.json");
+  if (
+    matrix.product_status !== p0.product_status
+    || matrix.release_status !== p0.release_status
+  ) {
+    fail("acceptance_status_drift", "release/p0-acceptance.json and release/p0.json");
+  }
   if (!Array.isArray(p0.acceptance_requirement_ids)) {
     fail("acceptance_invalid_canonical_ids", "release/p0.json");
   }

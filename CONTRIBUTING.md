@@ -1,6 +1,6 @@
 # Contributing to LaunchRally
 
-LaunchRally is a pre-release development project under Apache-2.0. No public Experimental release exists yet. By submitting a contribution, you agree that it is licensed under Apache-2.0 and that you have the right to submit it.
+LaunchRally is an Experimental open-source project under Apache-2.0. P0 is Product Complete and publicly released, while Telemetry-Free Validation remains in progress and LaunchRally is not P0 Validated. By submitting a contribution, you agree that it is licensed under Apache-2.0 and that you have the right to submit it.
 
 ## Choose a feedback path
 
@@ -27,3 +27,5 @@ npm run test:artifacts
 ```
 
 Generated Plugin Skill copies must remain synchronized with the canonical Skill. Update tests at public behavior seams and preserve the local-first permission boundaries.
+
+Validation Log changes must append aggregate non-identifying entries without editing reviewed history. Use the per-field taxonomy documented in the validation guide; extend it in the same pull request when a new aggregate category is needed, and never substitute raw field-report text. P1 discovery and design are welcome; authority-expanding P1 implementation remains blocked until the committed qualitative decision is P0 Validated and the Quality Floor is satisfied.

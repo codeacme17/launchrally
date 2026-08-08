@@ -1,7 +1,7 @@
 {
   "schema_version": "launchrally.dev/p0-acceptance/v1",
-  "product_status": "incomplete",
-  "release_status": "release_candidate",
+  "product_status": "complete",
+  "release_status": "experimental",
   "requirements": [
     {
       "id": "P0-CONTRACT-01",
@@ -172,7 +172,7 @@
       "implementation": ["scripts/publish-release.mjs", ".github/workflows/release.yml"],
       "tests": [{"path": "test/release.test.js", "name": "release CI verifies clean artifacts before OIDC provenance publishing"}],
       "tracking": "#40",
-      "status": "open"
+      "status": "complete"
     },
     {
       "id": "P0-RELEASE-02",
@@ -181,7 +181,7 @@
       "implementation": ["scripts/test-release-artifacts.mjs", ".github/workflows/release.yml"],
       "tests": [{"path": "test/release.test.js", "name": "release validation plans exact public CLI and Plugin smoke inputs"}],
       "tracking": "#40",
-      "status": "open"
+      "status": "complete"
     },
     {
       "id": "P0-VALIDATE-01",
@@ -190,16 +190,16 @@
       "implementation": ["scripts/validate-p0.mjs"],
       "tests": [{"path": "test/p0-release.test.js", "name": "the Phase 0 Validation Log rejects user-level analytics"}],
       "tracking": "#41",
-      "status": "open"
+      "status": "complete"
     },
     {
       "id": "P0-VALIDATE-02",
       "requirement": "P0 Validated requires a documented qualitative decision while the Quality Floor remains satisfied",
       "contracts": ["docs/phase-0-validation.md"],
       "implementation": ["scripts/validate-p0.mjs"],
-      "tests": [{"path": "test/p0-release.test.js", "name": "the public release kit documents use, data, safety, feedback, and validation"}],
+      "tests": [{"path": "test/p0-release.test.js", "name": "P0 Validated requires a documented qualitative decision basis"}],
       "tracking": "#41",
-      "status": "open"
+      "status": "complete"
     }
   ],
   "release_gates": [
