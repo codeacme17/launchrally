@@ -11,11 +11,12 @@ const claudeDestination = path.join(root, "adapters", "claude", "launchrally", "
 
 async function addClaudeInvocationGuard(skillPath) {
   const content = await readFile(skillPath, "utf8");
-  const lines = content.split("\n");
+  const newline = content.match(/\r?\n/u)?.[0] ?? "\n";
+  const lines = content.split(/\r?\n/u);
   const frontmatterEnd = lines.indexOf("---", 1);
   if (frontmatterEnd === -1) throw new Error("SKILL.md frontmatter is invalid");
   lines.splice(frontmatterEnd, 0, "disable-model-invocation: true");
-  await writeFile(skillPath, lines.join("\n"), "utf8");
+  await writeFile(skillPath, lines.join(newline), "utf8");
 }
 
 async function syncTo(codexTarget, claudeTarget) {
@@ -44,7 +45,7 @@ async function filesUnder(directory, prefix = "") {
 async function normalisedContent(filePath, claude = false) {
   let content = await readFile(filePath, "utf8");
   if (claude && path.basename(filePath) === "SKILL.md") {
-    content = content.replace("disable-model-invocation: true\n", "");
+    content = content.replace(/disable-model-invocation: true\r?\n/u, "");
   }
   return content;
 }
