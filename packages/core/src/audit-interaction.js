@@ -338,7 +338,7 @@ function inputFields(auditBrief) {
     {
       field_id: "production_targets",
       value_type: "url_array",
-      prompt: "Which public production URLs are in scope?",
+      prompt: "Which confirmed public target URLs are in scope?",
       candidates: [],
       current_value: auditBrief.production_targets.values,
     },

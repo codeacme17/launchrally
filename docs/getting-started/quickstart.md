@@ -12,6 +12,8 @@ npm exec --package=@launchrally/cli@0.1.0 -- rally audit --json --cwd .
 
 The first response is a versioned interaction, not a completed assessment. Supply only the requested typed answers, confirm the complete Check plan, and decide public and Provider read permissions separately. Keep the completed JSON unchanged if you later choose `init`, `plan`, or `verify`; the [data-model guide](../concepts/data-model.md) explains those artifacts.
 
+The v2 JSON contract retains `production_targets` as a compatibility field. Its values are the confirmed public targets for the reviewed `intended_environment`, so a staging Audit stores staging targets in `production_targets`; Human Mode and derived Report Views label them with the reviewed environment.
+
 Omit `--json` in a TTY to run the complete Human Mode wizard in one process. It asks for release intent, plan confirmation, and each public or Provider read separately. Every permission defaults to denied. Use `--plain` for a framework-free numbered interface or when terminal styling is unsuitable; `TERM=dumb` selects it automatically.
 
 Human Mode prints prompts to stderr and a concise assessment to stdout. It does not expose resume tokens or write `.launchrally/**`. Add `--output <path>` or explicitly confirm a save path to write the complete Audit JSON, then use that file with `rally init --report <path>`. Non-TTY callers must use `--json`, which preserves the versioned one-transition Agent/CI protocol.

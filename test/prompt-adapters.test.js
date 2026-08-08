@@ -44,7 +44,7 @@ test("the Plain adapter explains and validates required input before continuing"
       fields: [{
         field_id: "production_targets",
         value_type: "url_array",
-        prompt: "Which public production URLs are in scope?",
+        prompt: "Which confirmed public target URLs are in scope?",
         candidates: [],
         current_value: [],
       }],
@@ -55,7 +55,7 @@ test("the Plain adapter explains and validates required input before continuing"
   assert.deepEqual(response, {
     answers: { production_targets: ["https://app.example.com"] },
   });
-  assert.match(rendered, /Which public production URLs are in scope\? \(Required\)/u);
+  assert.match(rendered, /Which confirmed public target URLs are in scope\? \(Required\)/u);
   assert.match(rendered, /Example: https:\/\/app\.example\.com/u);
   assert.match(rendered, /This field is required\./u);
   assert.match(rendered, /Enter a valid public http or https URL/u);
@@ -456,9 +456,40 @@ test("the Plain adapter uses numbered choices and default-deny confirmations wit
   assert.deepEqual(permission, {
     permission_decisions: { public_verification: "denied" },
   });
+  assert.match(rendered, /Production targets:\s+  - https:\/\/example\.com\//u);
   assert.match(rendered, /1\. Confirm[\s\S]*2\. Revise[\s\S]*3\. Cancel/u);
   assert.match(rendered, /Public verification[\s\S]*\[y\/N\]/u);
   assert.doesNotMatch(rendered, /\u001b\[[0-?]*[ -\/]*[@-~]/u);
+});
+
+test("the Plain adapter labels targets with the intended staging environment", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("3\n"), 10);
+  await prompt.respond({
+    status: "needs_confirmation",
+    operation: "audit",
+    audit_brief: {
+      intended_environment: { value: "staging" },
+      production_targets: { values: ["https://staging.example.com/"] },
+      core_journeys: { values: [] },
+      provider_roles: { values: [] },
+      support_layers: { values: [] },
+      planned_checks: [],
+    },
+    authorization_plan: [],
+    request: { prompt: "Confirm this Audit Brief." },
+  });
+  await prompt.close();
+
+  assert.match(rendered, /Staging targets:\s+  - https:\/\/staging\.example\.com\//u);
+  assert.doesNotMatch(rendered, /Production targets/u);
 });
 
 test("the Clack adapter accepts injected TTY streams and keeps permission meaning in text", async () => {
@@ -607,7 +638,7 @@ test("the Clack adapter shows examples and validates required text input in plac
       fields: [{
         field_id: "production_targets",
         value_type: "url_array",
-        prompt: "Which public production URLs are in scope?",
+        prompt: "Which confirmed public target URLs are in scope?",
         candidates: [],
         current_value: [],
       }],
@@ -619,7 +650,7 @@ test("the Clack adapter shows examples and validates required text input in plac
     answers: { production_targets: ["https://app.example.com"] },
   });
   const semanticOutput = stripVTControlCharacters(rendered);
-  assert.match(semanticOutput, /Which public production URLs are in scope\? \(Required\)/u);
+  assert.match(semanticOutput, /Which confirmed public target URLs are in scope\? \(Required\)/u);
   assert.match(semanticOutput, /Example: https:\/\/app\.example\.com/u);
   assert.match(semanticOutput, /This field is required\./u);
 });
@@ -648,7 +679,7 @@ test("the Clack adapter keeps an invalid production URL in the current question"
       fields: [{
         field_id: "production_targets",
         value_type: "url_array",
-        prompt: "Which public production URLs are in scope?",
+        prompt: "Which confirmed public target URLs are in scope?",
         candidates: [],
         current_value: [],
       }],

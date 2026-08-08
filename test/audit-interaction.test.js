@@ -11,6 +11,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
+import { createPublicVerificationPlan } from "../packages/core/src/public-verification.js";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -125,6 +126,10 @@ test("Agent Mode asks only for unknown release intent in a versioned state", asy
       "provider_roles",
       "support_layers",
     ],
+  );
+  assert.equal(
+    result.request.fields.find((field) => field.field_id === "production_targets").prompt,
+    "Which confirmed public target URLs are in scope?",
   );
   for (const field of result.request.fields) {
     assert.deepEqual(Object.keys(field), [
@@ -365,7 +370,7 @@ test("Agent Mode discloses every read-only public probe before approval", async 
         port: 443,
         path: "/",
         method: "DNS_LOOKUP",
-        purpose: "Resolve the confirmed production host.",
+        purpose: "Resolve the production host.",
         timeout_ms: 5000,
       },
       {
@@ -376,7 +381,7 @@ test("Agent Mode discloses every read-only public probe before approval", async 
         port: 443,
         path: "/",
         method: "TLS_HANDSHAKE",
-        purpose: "Verify the confirmed production target certificate and TLS handshake.",
+        purpose: "Verify the production target certificate and TLS handshake.",
         timeout_ms: 5000,
       },
       {
@@ -435,6 +440,56 @@ test("Agent Mode discloses every read-only public probe before approval", async 
     targets: result.audit_brief.public_verification.targets,
     probes: result.audit_brief.public_verification.probes,
   });
+});
+
+test("Agent Mode probe purposes use the confirmed intended environment", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({ ...CONFIRMED_ANSWERS, intended_environment: "staging" }),
+  ]);
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.equal(
+    result.audit_brief.public_verification.probes.find((probe) => probe.kind === "dns").purpose,
+    "Resolve the staging host.",
+  );
+  assert.equal(
+    result.audit_brief.public_verification.probes.find((probe) => probe.kind === "tls").purpose,
+    "Verify the staging target certificate and TLS handshake.",
+  );
+  assert.doesNotMatch(
+    JSON.stringify(result.audit_brief.public_verification.probes),
+    /production target|production host/u,
+  );
+});
+
+test("public probe purposes support custom and unknown environment labels", () => {
+  const answers = {
+    production_targets: ["https://example.com/"],
+    core_journeys: [],
+  };
+  const custom = createPublicVerificationPlan({
+    ...answers,
+    intended_environment: "QA East",
+  });
+  assert.equal(
+    custom.probes.find((probe) => probe.kind === "tls").purpose,
+    "Verify the QA East target certificate and TLS handshake.",
+  );
+
+  const unknown = createPublicVerificationPlan(answers);
+  assert.equal(
+    unknown.probes.find((probe) => probe.kind === "dns").purpose,
+    "Resolve the confirmed host.",
+  );
+  assert.equal(
+    unknown.probes.find((probe) => probe.kind === "tls").purpose,
+    "Verify the confirmed target certificate and TLS handshake.",
+  );
 });
 
 test("confirmation requests public and Provider permissions as distinct boundaries", async () => {

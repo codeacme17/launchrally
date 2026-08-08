@@ -143,7 +143,10 @@ function createManifest(report) {
         },
       production_targets: release.confirmed
         ? declared(release.production_targets)
-        : { state: "unknown", reason: "The first Report did not confirm production targets." },
+        : {
+            state: "unknown",
+            reason: "The first Report did not confirm targets for the intended environment.",
+          },
       core_journeys: release.confirmed
         ? declared(release.core_journeys)
         : { state: "unknown", reason: "The first Report did not confirm core journeys." },

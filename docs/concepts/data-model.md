@@ -8,6 +8,8 @@ LaunchRally keeps declared intent, conclusions, and supporting observations sepa
 
 A valid legacy `.launchrally/launch-manifest.json` Manifest v1 is readable only for migration. Init previews the canonical YAML creation and legacy JSON deletion together, then applies neither without confirmation. Invalid, ambiguous, symlinked, or unsupported inputs fail closed.
 
+Manifest and Report v2 retain `production_targets` as a compatibility field. Its values are the confirmed public targets for `intended_environment`; the field name does not independently assert that the reviewed environment is production.
+
 ## Isolated toolchain
 
 `.launchrally/toolchain/package.json` and `package-lock.json` are the committed execution dependency boundary for every ecosystem. They contain the exact `@launchrally/cli` version and are previewed and recovered with the other Init-owned files. LaunchRally never adds itself to an application manifest or application lockfile. Toolchain resolution tries npm's offline cache first; only an explicit `npm_registry_read` decision permits the disclosed read from `https://registry.npmjs.org`, and lifecycle scripts remain disabled.

@@ -9,6 +9,7 @@ import {
 
 import { LOCAL_SAFE_SCAN_POLICY } from "./local-safe-scan.js";
 import { assertSafeEvidenceArtifact } from "./evidence-artifact.js";
+import { environmentTargetLabel } from "./environment-terminology.js";
 import { MANIFEST_RELATIVE_PATH } from "./manifest.js";
 import { evaluateLaunchPolicy } from "./policy-engine.js";
 
@@ -269,7 +270,11 @@ export function renderReportMarkdown(record) {
     "## Audit Brief",
     "",
     `Environment: ${oneLine(scope.release_intent.intended_environment ?? "unconfirmed")}`,
-    ...scope.release_intent.production_targets.map((target) => `Target: ${oneLine(target)}`),
+    ...scope.release_intent.production_targets.map((target) =>
+      `${environmentTargetLabel(scope.release_intent.intended_environment, {
+        capitalize: true,
+      })}: ${oneLine(target)}`,
+    ),
     ...scope.release_intent.core_journeys.map((journey) =>
       typeof journey === "string"
         ? `Core journey: ${oneLine(journey)}`

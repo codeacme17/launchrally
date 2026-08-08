@@ -4,6 +4,11 @@ import https from "node:https";
 import { isIP } from "node:net";
 import tls from "node:tls";
 
+import {
+  environmentHostLabel,
+  environmentTargetLabel,
+} from "./environment-terminology.js";
+
 const COLLECTOR_VERSION = "public-verification/v1";
 const PROBE_TIMEOUT_MS = 5000;
 const MAX_CONCURRENT_PROBES = 4;
@@ -27,6 +32,7 @@ function probe({ id, kind, target, method, purpose, verificationMode }) {
 export function createPublicVerificationPlan(answers) {
   const targets = answers?.production_targets ?? [];
   const journeys = answers?.core_journeys ?? [];
+  const environment = answers?.intended_environment;
   const probes = [];
 
   targets.forEach((target, targetIndex) => {
@@ -37,7 +43,7 @@ export function createPublicVerificationPlan(answers) {
       kind: "dns",
       target,
       method: "DNS_LOOKUP",
-      purpose: "Resolve the confirmed production host.",
+      purpose: `Resolve the ${environmentHostLabel(environment)}.`,
     }));
     if (url.protocol === "https:") {
       probes.push(probe({
@@ -45,7 +51,7 @@ export function createPublicVerificationPlan(answers) {
         kind: "tls",
         target,
         method: "TLS_HANDSHAKE",
-        purpose: "Verify the confirmed production target certificate and TLS handshake.",
+        purpose: `Verify the ${environmentTargetLabel(environment)} certificate and TLS handshake.`,
       }));
     }
     probes.push(probe({
