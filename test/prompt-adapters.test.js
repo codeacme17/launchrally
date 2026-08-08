@@ -96,6 +96,104 @@ test("the Plain adapter uses numbered choices for selectable input", async () =>
   assert.match(rendered, /4\. Other — enter a custom value/u);
 });
 
+test("the Plain adapter lets a user return to and revise the previous question", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("1\n"), 10);
+  setTimeout(() => input.write("4\n"), 30);
+  setTimeout(() => input.write("2\n"), 50);
+  setTimeout(() => input.write("\n"), 70);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "intended_environment",
+        value_type: "string",
+        prompt: "Which environment is this Audit preparing for?",
+        candidates: [],
+        current_value: null,
+      }, {
+        field_id: "support_layers",
+        value_type: "string_array",
+        prompt: "Which support layers should the Audit include?",
+        candidates: [],
+        current_value: [],
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      intended_environment: "staging",
+      support_layers: [],
+    },
+  });
+  assert.match(rendered, /4\. Back — change the previous answer/u);
+});
+
+test("the Plain adapter accepts :back from a text question", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("1\n"), 10);
+  setTimeout(() => input.write(":back\n"), 30);
+  setTimeout(() => input.write("2\n"), 50);
+  setTimeout(() => input.write("https://app.example.com\n"), 70);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "intended_environment",
+        value_type: "string",
+        prompt: "Which environment is this Audit preparing for?",
+        candidates: [],
+        current_value: null,
+      }, {
+        field_id: "production_targets",
+        value_type: "url_array",
+        prompt: "Which public production URLs are in scope?",
+        candidates: [],
+        current_value: [],
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      intended_environment: "staging",
+      production_targets: ["https://app.example.com"],
+    },
+  });
+  assert.match(rendered, /enter :back to change the previous answer/u);
+});
+
 test("the Plain adapter uses numbered multi-select for Provider roles", async () => {
   const input = ttyStream();
   const output = ttyStream();
@@ -277,6 +375,47 @@ test("the Plain adapter rejects unsafe custom Journeys before submitting to Core
   assert.match(rendered, /Use a safe GET Journey/u);
 });
 
+test("the Plain adapter accepts a safe GET path without requiring a purpose", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("2\n"), 10);
+  setTimeout(() => input.write("GET /\n"), 30);
+  setTimeout(() => input.write("GET /fallback — fallback loads\n"), 50);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "core_journeys",
+        value_type: "journey_array",
+        prompt: "Which GET paths and user journeys must work for this release?",
+        candidates: [],
+        current_value: [],
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      core_journeys: [{ method: "GET", path: "/", purpose: "homepage loads" }],
+    },
+  });
+  assert.doesNotMatch(rendered, /Use a safe GET Journey/u);
+});
+
 test("the Plain adapter uses numbered choices and default-deny confirmations without ANSI", async () => {
   const input = ttyStream();
   const output = ttyStream();
@@ -397,6 +536,56 @@ test("the Clack adapter uses a select prompt for the environment", async () => {
   assert.match(semanticOutput, /Which environment is this Audit preparing for\? \(Required\)/u);
   assert.match(semanticOutput, /Production[\s\S]*Staging[\s\S]*Preview/u);
   assert.match(semanticOutput, /Other — enter a custom value/u);
+});
+
+test("the Clack adapter lets a user return to and revise the previous question", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\r"), 20);
+  setTimeout(() => input.write("\u001b[B\u001b[B\u001b[B \r"), 60);
+  setTimeout(() => input.write("\u001b[B\r"), 100);
+  setTimeout(() => input.write("\r"), 140);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "intended_environment",
+        value_type: "string",
+        prompt: "Which environment is this Audit preparing for?",
+        candidates: [],
+        current_value: null,
+      }, {
+        field_id: "support_layers",
+        value_type: "string_array",
+        prompt: "Which support layers should the Audit include?",
+        candidates: [],
+        current_value: [],
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      intended_environment: "staging",
+      support_layers: [],
+    },
+  });
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /Back — change the previous answer/u);
 });
 
 test("the Clack adapter shows examples and validates required text input in place", async () => {
@@ -525,6 +714,47 @@ test("the Clack adapter selects a recommended public Journey without free-form i
     semanticOutput,
     /Skip public Journey verification — creates a Verification Gap/u,
   );
+});
+
+test("the Clack adapter accepts a safe GET path without requiring a purpose", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\u001b[B \r"), 20);
+  setTimeout(() => input.write("GET /\r"), 60);
+  const response = await prompt.respond({
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "core_journeys",
+        value_type: "journey_array",
+        prompt: "Which GET paths and user journeys must work for this release?",
+        candidates: [],
+        current_value: [],
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      core_journeys: [{ method: "GET", path: "/", purpose: "homepage loads" }],
+    },
+  });
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.doesNotMatch(semanticOutput, /Use a safe GET Journey/u);
 });
 
 test("the Plain adapter turns process SIGINT into a recoverable prompt cancellation", async () => {

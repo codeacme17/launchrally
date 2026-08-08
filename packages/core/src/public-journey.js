@@ -8,6 +8,10 @@ function safeJourneyPath(journeyPath) {
     && !journeyPath.includes("#");
 }
 
+function defaultJourneyPurpose(journeyPath) {
+  return journeyPath === "/" ? "homepage loads" : `${journeyPath} loads`;
+}
+
 export function parsePublicJourneyInput(input, { allowDescription = true } = {}) {
   if (typeof input === "object" && input !== null) {
     const journey = {
@@ -32,7 +36,7 @@ export function parsePublicJourneyInput(input, { allowDescription = true } = {})
   const journey = {
     method: declared[1].toUpperCase(),
     path: declared[2],
-    purpose: declared[3]?.trim() ?? "",
+    purpose: declared[3]?.trim() || defaultJourneyPurpose(declared[2]),
   };
   return journey.method === "GET" && safeJourneyPath(journey.path) && journey.purpose
     ? { value: journey }

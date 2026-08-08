@@ -5,6 +5,8 @@ import { parsePublicJourneyInput } from "@launchrally/core";
 
 import { PromptCancelledError } from "./human-audit.js";
 
+const BACK_VALUE = Symbol("back-value");
+
 const FIELD_PRESENTATION = Object.freeze({
   intended_environment: Object.freeze({
     required: true,
@@ -24,7 +26,7 @@ const FIELD_PRESENTATION = Object.freeze({
     required: true,
     display_prompt: "Which public Journeys should LaunchRally verify?",
     requirement: "Choose one or Skip",
-    example: "GET / — homepage loads, GET /checkout — checkout completes",
+    example: "GET /, GET /checkout — checkout completes",
     allow_custom: true,
     allow_skip: true,
     skip_label: "Skip public Journey verification — creates a Verification Gap",
@@ -218,6 +220,7 @@ function parseFieldValue(field, value) {
 
 function fieldInputError(field, value) {
   const input = String(value ?? "").trim();
+  if (isBackRequest(field, input)) return undefined;
   if (field.required && !input) return "This field is required.";
   if (field.value_type !== "journey_array" || !input) return undefined;
   const entries = input.split(",").map((entry) => entry.trim()).filter(Boolean);
@@ -226,7 +229,7 @@ function fieldInputError(field, value) {
   );
   return safe
     ? undefined
-    : "Use a safe GET Journey, for example: GET /checkout — checkout completes.";
+    : "Use a safe GET Journey, for example: GET / or GET /checkout — checkout completes.";
 }
 
 function emptyFieldValue(value) {
@@ -234,11 +237,18 @@ function emptyFieldValue(value) {
     || (Array.isArray(value) && value.length === 0);
 }
 
+function isBackRequest(field, value) {
+  return field.can_go_back && String(value).trim() === ":back";
+}
+
 function fieldLabel(field) {
   const current = currentFieldValue(field);
   const requirement = field.requirement
     ?? (field.required ? "Required" : "Optional — press Enter to skip");
-  return `${field.display_prompt ?? field.prompt} (${requirement})${current ? ` [${current}]` : ""}`;
+  const backHint = field.can_go_back && !field.options?.length
+    ? " — enter :back to change the previous answer"
+    : "";
+  return `${field.display_prompt ?? field.prompt} (${requirement})${current ? ` [${current}]` : ""}${backHint}`;
 }
 
 function fieldMessage(field) {
@@ -272,24 +282,40 @@ function fieldOptions(field) {
   }));
 }
 
-function selectionOptions(field, { customValue, skipValue }) {
+function selectionOptions(field, { customValue, skipValue, backValue }) {
   return [
     ...fieldOptions(field),
     ...(field.allow_custom
       ? [{ label: "Other — enter a custom value", value: customValue }]
       : []),
     ...(field.allow_skip ? [{ label: field.skip_label, value: skipValue }] : []),
+    ...(field.can_go_back
+      ? [{ label: "Back — change the previous answer", value: backValue }]
+      : []),
   ];
 }
 
-function resolveMultiSelection(selected, { customValue, skipValue }) {
+function resolveMultiSelection(selected, { customValue, skipValue, backValue }) {
+  const back = selected.includes(backValue);
   const skip = selected.includes(skipValue);
   const custom = selected.includes(customValue);
-  const values = selected.filter((value) => value !== skipValue && value !== customValue);
+  const values = selected.filter(
+    (value) => value !== backValue && value !== skipValue && value !== customValue,
+  );
+  if (back && selected.length > 1) {
+    return { error: "Back cannot be combined with another selection." };
+  }
   if (skip && (custom || values.length > 0)) {
     return { error: "Skip cannot be combined with another Journey." };
   }
-  return { skip, custom, values };
+  return { back, skip, custom, values };
+}
+
+function completedMultiSelection(resolution) {
+  if (resolution.back) return { done: true, value: BACK_VALUE };
+  if (resolution.skip) return { done: true, value: [] };
+  if (!resolution.custom) return { done: true, value: resolution.values };
+  return { done: false };
 }
 
 async function collectAnswers(
@@ -300,18 +326,37 @@ async function collectAnswers(
   inputMessage = fieldMessage,
 ) {
   const answers = {};
-  for (const requestedField of result.request.fields) {
-    const field = presentedField(requestedField);
+  let fieldIndex = 0;
+  while (fieldIndex < result.request.fields.length) {
+    const requestedField = result.request.fields[fieldIndex];
+    const field = presentedField({
+      ...requestedField,
+      can_go_back: fieldIndex > 0,
+      ...(Object.hasOwn(answers, requestedField.field_id)
+        ? { current_value: answers[requestedField.field_id] }
+        : {}),
+    });
     if (field.options?.length > 0 && selectField) {
-      answers[field.field_id] = await selectField(field);
+      const value = await selectField(field);
+      if (value === BACK_VALUE) {
+        fieldIndex -= 1;
+        continue;
+      }
+      answers[field.field_id] = value;
+      fieldIndex += 1;
       continue;
     }
     while (true) {
       const raw = await ask(inputMessage(field), field);
+      if (isBackRequest(field, raw)) {
+        fieldIndex -= 1;
+        break;
+      }
       const error = fieldInputError(field, raw);
       const value = parseFieldValue(field, raw);
       if (!error && (!field.required || !emptyFieldValue(value))) {
         answers[field.field_id] = value;
+        fieldIndex += 1;
         break;
       }
       showError(error ?? "This field is required.");
@@ -355,12 +400,18 @@ export function createPlainPromptAdapter({ input, output, signals = process }) {
   const selectField = async (field) => {
     const customValue = Symbol("custom-value");
     const skipValue = Symbol("skip-value");
-    const choices = selectionOptions(field, { customValue, skipValue });
+    const choices = selectionOptions(field, {
+      customValue,
+      skipValue,
+      backValue: BACK_VALUE,
+    });
     if (!field.value_type.endsWith("_array")) {
       const value = await choose(fieldMessage(field), choices);
+      if (value === BACK_VALUE) return BACK_VALUE;
       if (value !== customValue) return value;
       while (true) {
         const raw = await ask(`Enter another value (Required)\nExample: ${field.example}`);
+        if (isBackRequest(field, raw)) return BACK_VALUE;
         const error = fieldInputError({ ...field, required: true }, raw);
         const custom = parseFieldValue(field, raw);
         if (!error && !emptyFieldValue(custom)) return custom;
@@ -383,15 +434,20 @@ export function createPlainPromptAdapter({ input, output, signals = process }) {
         continue;
       }
       const selected = indexes.map((index) => choices[index].value);
-      const resolution = resolveMultiSelection(selected, { customValue, skipValue });
+      const resolution = resolveMultiSelection(selected, {
+        customValue,
+        skipValue,
+        backValue: BACK_VALUE,
+      });
       if (resolution.error) {
         write(output, resolution.error);
         continue;
       }
-      if (resolution.skip) return [];
-      if (!resolution.custom) return resolution.values;
+      const completed = completedMultiSelection(resolution);
+      if (completed.done) return completed.value;
       while (true) {
         const raw = await ask(`Enter other values separated by commas\nExample: ${field.example}`);
+        if (isBackRequest(field, raw)) return BACK_VALUE;
         const error = fieldInputError({ ...field, required: true }, raw);
         const custom = parseFieldValue(field, raw);
         if (!error && !emptyFieldValue(custom)) {
@@ -472,7 +528,11 @@ export async function createClackPromptAdapter({ input, output }) {
   const selectField = async (field) => {
     const customValue = "__launchrally_custom_value__";
     const skipValue = "__launchrally_skip_value__";
-    const options = selectionOptions(field, { customValue, skipValue });
+    const options = selectionOptions(field, {
+      customValue,
+      skipValue,
+      backValue: BACK_VALUE,
+    });
     if (!field.value_type.endsWith("_array")) {
       const selected = cancelled(await clack.select({
         ...common,
@@ -482,15 +542,16 @@ export async function createClackPromptAdapter({ input, output }) {
           ?? field.options[0]?.value
           ?? customValue,
       }), clack, output);
+      if (selected === BACK_VALUE) return BACK_VALUE;
       if (selected !== customValue) return selected;
-      return parseFieldValue(
-        field,
-        await ask("Enter another value (Required)", {
-          ...field,
-          current_value: null,
-          required: true,
-        }),
-      );
+      const raw = await ask("Enter another value (Required)", {
+        ...field,
+        current_value: null,
+        required: true,
+      });
+      return isBackRequest(field, raw)
+        ? BACK_VALUE
+        : parseFieldValue(field, raw);
     }
 
     let initialValues = (field.current_value ?? []).map((current) =>
@@ -504,22 +565,25 @@ export async function createClackPromptAdapter({ input, output }) {
         initialValues,
         required: field.required,
       }), clack, output);
-      const resolution = resolveMultiSelection(selected, { customValue, skipValue });
+      const resolution = resolveMultiSelection(selected, {
+        customValue,
+        skipValue,
+        backValue: BACK_VALUE,
+      });
       if (resolution.error) {
         clack.note(resolution.error, "Invalid selection", common);
         initialValues = [];
         continue;
       }
-      if (resolution.skip) return [];
-      if (!resolution.custom) return resolution.values;
-      const custom = parseFieldValue(
-        field,
-        await ask("Enter other values separated by commas", {
-          ...field,
-          current_value: [],
-          required: true,
-        }),
-      );
+      const completed = completedMultiSelection(resolution);
+      if (completed.done) return completed.value;
+      const raw = await ask("Enter other values separated by commas", {
+        ...field,
+        current_value: [],
+        required: true,
+      });
+      if (isBackRequest(field, raw)) return BACK_VALUE;
+      const custom = parseFieldValue(field, raw);
       return [...resolution.values, ...custom];
     }
   };
