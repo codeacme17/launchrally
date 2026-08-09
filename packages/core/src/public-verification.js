@@ -122,11 +122,6 @@ async function withTimeout(operation, timeoutMs, { signal } = {}) {
     ]);
   } catch (error) {
     if (signal?.aborted) {
-      try {
-        await operationPromise;
-      } catch {
-        // The abort reason remains authoritative after the operation settles.
-      }
       signal.throwIfAborted();
     }
     throw error;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { promises as dns } from "node:dns";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -690,6 +691,53 @@ test("in-flight public HTTP probes abort promptly instead of becoming evidence g
     controller.abort();
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("in-flight public DNS probes abort promptly before lookup settles", async (context) => {
+  let announceLookup;
+  let rejectLookup;
+  const lookupStarted = new Promise((resolve) => {
+    announceLookup = resolve;
+  });
+  const pendingLookup = new Promise((resolve, reject) => {
+    rejectLookup = reject;
+  });
+  context.mock.method(dns, "lookup", () => {
+    announceLookup();
+    return pendingLookup;
+  });
+  const controller = new AbortController();
+  const collection = collectPublicEvidence({
+    probes: [{
+      probe_id: "target-1:dns",
+      kind: "dns",
+      target: "https://example.com/",
+      host: "example.com",
+      port: 443,
+      path: "/",
+      method: "DNS_LOOKUP",
+      purpose: "Resolve the production host.",
+      timeout_ms: 5000,
+    }],
+  }, { signal: controller.signal });
+
+  try {
+    await lookupStarted;
+    controller.abort();
+    await assert.rejects(
+      Promise.race([
+        collection,
+        new Promise((resolve, reject) => setTimeout(
+          () => reject(new Error("public DNS probe did not abort promptly")),
+          250,
+        )),
+      ]),
+      (error) => error?.name === "AbortError",
+    );
+  } finally {
+    rejectLookup(new Error("late DNS lookup failure"));
+    await new Promise((resolve) => setImmediate(resolve));
   }
 });
 
