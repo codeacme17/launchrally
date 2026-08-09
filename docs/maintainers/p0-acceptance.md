@@ -7,8 +7,10 @@ must be represented here and in the linked GitHub issues.
 
 The P0 Product Complete claim is suspended while the Quality Floor regression
 is reviewed; `0.1.0` remains publicly available as an Experimental release.
-Telemetry-Free Validation is collecting directional signals and P0 Validated
-remains false.
+Aggregate directional-signal collection continues under the Telemetry-Free
+Validation learning process, but the machine validation authority state is
+suspended while the Quality Floor regression is open. P0 Validated remains
+false.
 
 The canonical requirement-ID registry is independently committed in
 `release/p0.json`; the machine-readable traceability source is

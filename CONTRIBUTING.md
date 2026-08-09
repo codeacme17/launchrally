@@ -1,6 +1,6 @@
 # Contributing to LaunchRally
 
-LaunchRally is an Experimental open-source project under Apache-2.0. The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; the Experimental release remains public, Telemetry-Free Validation remains in progress, and LaunchRally is not P0 Validated. By submitting a contribution, you agree that it is licensed under Apache-2.0 and that you have the right to submit it.
+LaunchRally is an Experimental open-source project under Apache-2.0. The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed, and the Experimental release remains public. Aggregate directional-signal collection continues under the Telemetry-Free Validation learning process, but the machine validation authority state is suspended while the Quality Floor regression is open; LaunchRally is not P0 Validated. By submitting a contribution, you agree that it is licensed under Apache-2.0 and that you have the right to submit it.
 
 ## Choose a feedback path
 

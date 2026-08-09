@@ -18,7 +18,7 @@ const COMPLETION_CLAIMS = [
   {
     path: "CONTRIBUTING.md",
     complete: "P0 is Product Complete and publicly released",
-    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; the Experimental release remains public",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed, and the Experimental release remains public",
   },
   {
     path: "docs/maintainers/phase-0-validation.md",
@@ -105,7 +105,8 @@ test("the public release kit documents use, data, safety, feedback, and validati
 
   assert.match(readme, /Status: Experimental P0/iu);
   assert.match(readme, /P0 Product Complete claim is suspended/iu);
-  assert.match(readme, /Telemetry-Free Validation.*collecting/iu);
+  assert.match(readme, /Aggregate directional-signal collection continues/iu);
+  assert.match(readme, /machine validation authority state is suspended/iu);
   assert.match(readme, /not P0 Validated/iu);
   assert.match(readme, /github\.com\/codeacme17\/launchrally\/issues/u);
   assert.match(readme, /github\.com\/codeacme17\/launchrally\/discussions/u);
