@@ -45,6 +45,22 @@ test("Report destinations distinguish new files, collisions, and unusable paths"
   });
 });
 
+test("Report destination checks reject an already-aborted operation", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-destination-abort-"));
+  const destination = path.join(directory, "report.json");
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    inspectReportDestination(destination, { signal: controller.signal }),
+    (error) => error?.name === "AbortError",
+  );
+  await assert.rejects(
+    isLaunchRallyDestination(directory, destination, { signal: controller.signal }),
+    (error) => error?.name === "AbortError",
+  );
+});
+
 test("Audit reserves every .launchrally destination for separately confirmed Init", async () => {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "launchrally-reserved-"));
   const reservedReports = path.join(cwd, ".launchrally", "reports");

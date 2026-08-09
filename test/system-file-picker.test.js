@@ -167,6 +167,60 @@ test("the Linux file picker uses zenity when a graphical session is available", 
   assert.equal(calls[1].options.shell, false);
 });
 
+test("file picker availability rethrows an in-flight abort", async () => {
+  const controller = new AbortController();
+  let startProbe;
+  const probeStarted = new Promise((resolve) => {
+    startProbe = resolve;
+  });
+  const picker = createSystemFilePicker({
+    platform: "linux",
+    env: { DISPLAY: ":0" },
+    runner: async (command, arguments_, { signal }) => new Promise((resolve, reject) => {
+      startProbe();
+      const abort = () => reject(signal.reason);
+      if (signal.aborted) abort();
+      else signal.addEventListener("abort", abort, { once: true });
+    }),
+  });
+
+  const availability = picker.availability({ signal: controller.signal });
+  await probeStarted;
+  controller.abort();
+
+  await assert.rejects(availability, (error) => error?.name === "AbortError");
+});
+
+test("file picker selection rethrows an in-flight abort", async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  let startSelection;
+  const selectionStarted = new Promise((resolve) => {
+    startSelection = resolve;
+  });
+  const picker = createSystemFilePicker({
+    platform: "linux",
+    env: { DISPLAY: ":0" },
+    runner: async (command, arguments_, options) => {
+      calls += 1;
+      if (calls === 1) return { stdout: "4.0.0\n", stderr: "" };
+      return new Promise((resolve, reject) => {
+        startSelection();
+        const abort = () => reject(options.signal.reason);
+        if (options.signal.aborted) abort();
+        else options.signal.addEventListener("abort", abort, { once: true });
+      });
+    },
+  });
+  await picker.availability();
+
+  const selection = picker.chooseSavePath({ signal: controller.signal });
+  await selectionStarted;
+  controller.abort();
+
+  await assert.rejects(selection, (error) => error?.name === "AbortError");
+});
+
 test("the Linux file picker falls back to kdialog and treats exit code 1 as cancellation", async () => {
   const calls = [];
   const runner = async (command, arguments_) => {

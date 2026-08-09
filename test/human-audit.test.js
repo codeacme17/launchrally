@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtemp, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -13,6 +15,7 @@ import {
   renderHumanAuditCompletion,
   runHumanAudit,
 } from "../packages/cli/bin/human-audit.js";
+import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
 import { runAudit } from "@launchrally/core";
 
 const execFileAsync = promisify(execFile);
@@ -213,6 +216,99 @@ test("Human Audit presentation disables ANSI for every plain or colorless enviro
     env: {},
     output: { isTTY: true },
   }).width, 80);
+});
+
+test("the Human Audit driver reports project discovery while the initial Audit runs", async () => {
+  const events = [];
+  const result = { status: "completed", outcome: "scope_not_confirmed" };
+  const prompt = {
+    async start() {
+      events.push("start");
+    },
+    async activity(label, operation) {
+      events.push(`activity:${label}`);
+      const value = await operation();
+      events.push("activity:completed");
+      return value;
+    },
+    async close() {
+      events.push("close");
+    },
+  };
+
+  const outcome = await runHumanAudit({
+    cwd: "/workspace",
+    version: "0.1.0",
+    prompt,
+    runAudit: async () => {
+      events.push("audit");
+      return result;
+    },
+  });
+
+  assert.equal(outcome.result, result);
+  assert.deepEqual(events, [
+    "start",
+    "activity:Discovering project and scanning repository…",
+    "audit",
+    "activity:completed",
+    "close",
+  ]);
+});
+
+test("the Human Audit driver updates feedback across every resumable Audit phase", async () => {
+  const activityLabels = [];
+  const results = [
+    {
+      status: "needs_input",
+      interaction: { resume_token: "input-token" },
+    },
+    {
+      status: "needs_confirmation",
+      interaction: { resume_token: "confirmation-token" },
+    },
+    {
+      status: "needs_permission",
+      interaction: { resume_token: "permission-token" },
+      request: {
+        permissions: [{
+          permission_id: "provider_read:cloudflare",
+          boundary: "provider_read",
+          scope: { provider: "cloudflare" },
+        }],
+      },
+    },
+    { status: "completed", outcome: "audit_completed" },
+  ];
+  const prompt = {
+    async start() {},
+    async activity(label, operation) {
+      activityLabels.push(label);
+      return operation();
+    },
+    async respond(result) {
+      if (result.status === "needs_input") return { answers: {} };
+      if (result.status === "needs_confirmation") return { confirmation: "confirm" };
+      return {
+        permission_decisions: { "provider_read:cloudflare": "approved" },
+      };
+    },
+    async close() {},
+  };
+
+  await runHumanAudit({
+    cwd: "/workspace",
+    version: "0.1.0",
+    prompt,
+    runAudit: async () => results.shift(),
+  });
+
+  assert.deepEqual(activityLabels, [
+    "Discovering project and scanning repository…",
+    "Updating project scan and Audit Brief…",
+    "Preparing Audit permission requests…",
+    "Reading Cloudflare Provider data and generating Report…",
+  ]);
 });
 
 test("the Human Audit driver retries Core validation and denies each permission by default", async () => {
@@ -562,6 +658,182 @@ test("a cancelled system file picker returns to the confirmed save menu", async 
   assert.equal(chooseRequests[0].file_picker_available, true);
   assert.equal(chooseRequests[0].save_confirmed, undefined);
   assert.equal(chooseRequests[1].save_confirmed, true);
+});
+
+test("a Human Audit reports system and file work while saving its Report", async () => {
+  const requestedPath = path.resolve("/workspace/report.json");
+  const activityLabels = [];
+  const responses = [
+    { file_picker: true },
+    { decision: "save" },
+  ];
+
+  const outcome = await runHumanAudit({
+    cwd: "/workspace",
+    version: "0.1.0",
+    prompt: {
+      async start() {},
+      async activity(label, operation) {
+        activityLabels.push(label);
+        return operation();
+      },
+      async respond() {},
+      async reportSave() {
+        return responses.shift();
+      },
+      async close() {},
+    },
+    runAudit: async () => ({
+      status: "completed",
+      report: { report_id: "report-1" },
+    }),
+    filePicker: {
+      async availability() {
+        return { available: true };
+      },
+      async chooseSavePath() {
+        return requestedPath;
+      },
+    },
+    inspectDestination: async () => ({ valid: true, collision: false }),
+    saveResult: async (outputPath) => outputPath,
+  });
+
+  assert.equal(outcome.outputPath, requestedPath);
+  assert.deepEqual(activityLabels, [
+    "Discovering project and scanning repository…",
+    "Checking Report save options…",
+    "Opening system file picker…",
+    "Checking Report destination…",
+    "Saving Audit Report…",
+  ]);
+});
+
+test("a Human Audit cancels cleanly when system work is interrupted", async () => {
+  const events = [];
+  const outcome = await runHumanAudit({
+    cwd: "/workspace",
+    version: "0.1.0",
+    prompt: {
+      async start() {},
+      async activity(label, operation) {
+        events.push(label);
+        if (label === "Opening system file picker…") {
+          throw new PromptCancelledError();
+        }
+        return operation();
+      },
+      async reportSave() {
+        return events.includes("Opening system file picker…")
+          ? {}
+          : { file_picker: true };
+      },
+      async close() {
+        events.push("close");
+      },
+    },
+    runAudit: async () => ({
+      status: "completed",
+      report: { report_id: "report-1" },
+    }),
+    filePicker: {
+      async availability() {
+        return { available: true };
+      },
+      async chooseSavePath() {
+        throw new Error("should be wrapped by the activity seam");
+      },
+    },
+  });
+
+  assert.equal(outcome.exitCode, 130);
+  assert.equal(outcome.result, null);
+  assert.equal(events.at(-1), "close");
+});
+
+test("a cancelled Human Audit aborts saving before returning without detached side effects", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const signals = new EventEmitter();
+  const prompt = createPlainPromptAdapter({ input, output, signals, activityDelayMs: 0 });
+  let sideEffect = false;
+  let saveSettled = false;
+
+  const audit = runHumanAudit({
+    cwd: "/workspace",
+    version: "0.1.0",
+    outputPath: "/workspace/report.json",
+    prompt,
+    runAudit: async () => ({
+      status: "completed",
+      report: { report_id: "report-1" },
+    }),
+    saveResult: async (outputPath, result, options, { signal } = {}) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          sideEffect = true;
+          saveSettled = true;
+          resolve(outputPath);
+        }, 50);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          saveSettled = true;
+          const error = new Error("The save was aborted.");
+          error.name = "AbortError";
+          reject(error);
+        }, { once: true });
+      }),
+  });
+  setTimeout(() => signals.emit("SIGINT"), 10);
+
+  const outcome = await audit;
+  await new Promise((resolve) => setTimeout(resolve, 70));
+
+  assert.equal(outcome.exitCode, 130);
+  assert.equal(saveSettled, true);
+  assert.equal(sideEffect, false);
+  assert.equal(signals.listenerCount("SIGINT"), 0);
+});
+
+test("a Human Audit aborts a cooperative Core run promptly on SIGINT", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const signals = new EventEmitter();
+  const prompt = createPlainPromptAdapter({ input, output, signals, activityDelayMs: 0 });
+  let startAudit;
+  const auditStarted = new Promise((resolve) => {
+    startAudit = resolve;
+  });
+  let coreSettled = false;
+  const audit = runHumanAudit({
+    cwd: "/workspace",
+    version: "0.1.0",
+    prompt,
+    runAudit: async (cwd, version, interactionOptions, { signal } = {}) =>
+      new Promise((resolve, reject) => {
+        startAudit();
+        const abort = () => {
+          coreSettled = true;
+          reject(signal.reason);
+        };
+        if (signal.aborted) abort();
+        else signal.addEventListener("abort", abort, { once: true });
+      }),
+  });
+
+  await auditStarted;
+  signals.emit("SIGINT");
+  const outcome = await Promise.race([
+    audit,
+    new Promise((resolve, reject) => setTimeout(
+      () => reject(new Error("Human Audit did not cancel promptly")),
+      100,
+    )),
+  ]);
+
+  assert.equal(outcome.exitCode, 130);
+  assert.equal(coreSettled, true);
+  assert.equal(signals.listenerCount("SIGINT"), 0);
 });
 
 test("a Human Audit overwrites a collision only after a separate explicit decision", async () => {

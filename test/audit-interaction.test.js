@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { promises as dns } from "node:dns";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
@@ -11,7 +12,10 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
-import { createPublicVerificationPlan } from "../packages/core/src/public-verification.js";
+import {
+  collectPublicEvidence,
+  createPublicVerificationPlan,
+} from "../packages/core/src/public-verification.js";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -644,6 +648,107 @@ test("approved public probes collect fresh read-only evidence through the CLI co
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test("in-flight public HTTP probes abort promptly instead of becoming evidence gaps", async () => {
+  let acceptRequest;
+  const requested = new Promise((resolve) => {
+    acceptRequest = resolve;
+  });
+  const server = createServer(() => acceptRequest());
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const controller = new AbortController();
+  const { port } = server.address();
+  const target = `http://127.0.0.1:${port}/`;
+  const collection = collectPublicEvidence({
+    probes: [{
+      probe_id: "target-1:http",
+      kind: "http",
+      target,
+      host: "127.0.0.1",
+      port,
+      path: "/",
+      method: "GET",
+      purpose: "Verify HTTP reachability without following redirects.",
+      timeout_ms: 5000,
+    }],
+  }, { signal: controller.signal });
+
+  try {
+    await requested;
+    controller.abort();
+    await assert.rejects(
+      Promise.race([
+        collection,
+        new Promise((resolve, reject) => setTimeout(
+          () => reject(new Error("public probe did not abort promptly")),
+          250,
+        )),
+      ]),
+      (error) => error?.name === "AbortError",
+    );
+  } finally {
+    controller.abort();
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("in-flight public DNS probes abort promptly before lookup settles", async (context) => {
+  let announceLookup;
+  let rejectLookup;
+  const lookupStarted = new Promise((resolve) => {
+    announceLookup = resolve;
+  });
+  const pendingLookup = new Promise((resolve, reject) => {
+    rejectLookup = reject;
+  });
+  context.mock.method(dns, "lookup", () => {
+    announceLookup();
+    return pendingLookup;
+  });
+  const controller = new AbortController();
+  const collection = collectPublicEvidence({
+    probes: [{
+      probe_id: "target-1:dns",
+      kind: "dns",
+      target: "https://example.com/",
+      host: "example.com",
+      port: 443,
+      path: "/",
+      method: "DNS_LOOKUP",
+      purpose: "Resolve the production host.",
+      timeout_ms: 5000,
+    }],
+  }, { signal: controller.signal });
+
+  try {
+    await lookupStarted;
+    controller.abort();
+    await assert.rejects(
+      Promise.race([
+        collection,
+        new Promise((resolve, reject) => setTimeout(
+          () => reject(new Error("public DNS probe did not abort promptly")),
+          250,
+        )),
+      ]),
+      (error) => error?.name === "AbortError",
+    );
+  } finally {
+    rejectLookup(new Error("late DNS lookup failure"));
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+});
+
+test("already-aborted public collection starts no probes", async () => {
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    collectPublicEvidence({ probes: [] }, { signal: controller.signal }),
+    (error) => error?.name === "AbortError",
+  );
 });
 
 test("a failed public Journey produces one concrete safe targeted Audit action", async () => {

@@ -551,12 +551,18 @@ async function main() {
         outputPath: optionValue("--output"),
         filePicker,
         inspectDestination: inspectReportDestination,
-        saveResult: async (requestedPath, result, { overwrite = false } = {}) => {
+        saveResult: async (
+          requestedPath,
+          result,
+          { overwrite = false } = {},
+          { signal } = {},
+        ) => {
           const resolvedPath = path.resolve(requestedPath);
           try {
             await writeFile(resolvedPath, `${JSON.stringify(result, null, 2)}\n`, {
               encoding: "utf8",
               flag: overwrite ? "w" : "wx",
+              signal,
             });
           } catch (error) {
             error.code = "audit_output_failed";

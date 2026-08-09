@@ -8,7 +8,10 @@ import {
   createClackPromptAdapter,
   createPlainPromptAdapter,
 } from "../packages/cli/bin/prompt-adapters.js";
-import { PromptCancelledError } from "../packages/cli/bin/human-audit.js";
+import {
+  humanAuditPresentationOptions,
+  PromptCancelledError,
+} from "../packages/cli/bin/human-audit.js";
 
 function ttyStream() {
   const stream = new PassThrough();
@@ -19,6 +22,131 @@ function ttyStream() {
   return stream;
 }
 
+test("the Plain adapter reports active work and a clear text completion", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output, activityDelayMs: 0 });
+
+  const value = await prompt.activity(
+    "Scanning repository…",
+    async () => "complete",
+  );
+  await prompt.close();
+
+  assert.equal(value, "complete");
+  assert.equal(rendered, [
+    "Working: Scanning repository…",
+    "Completed: Scanning repository.",
+    "",
+  ].join("\n"));
+});
+
+test("the Plain adapter suppresses status flicker for short work", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output, activityDelayMs: 50 });
+
+  await prompt.activity("Scanning repository…", async () => {});
+  await prompt.close();
+
+  assert.equal(rendered, "");
+});
+
+test("the Plain adapter replaces active work with a failure state", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output, activityDelayMs: 0 });
+
+  await assert.rejects(
+    prompt.activity("Reading Cloudflare Provider data…", async () => {
+      throw new Error("provider unavailable");
+    }),
+    /provider unavailable/u,
+  );
+  await prompt.close();
+
+  assert.equal(rendered, [
+    "Working: Reading Cloudflare Provider data…",
+    "Failed: Reading Cloudflare Provider data.",
+    "",
+  ].join("\n"));
+});
+
+test("the Plain adapter cancels active work on SIGINT and removes its listener", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const signals = new EventEmitter();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({
+    input,
+    output,
+    signals,
+    activityDelayMs: 0,
+  });
+
+  const activity = prompt.activity(
+    "Verifying public Journeys…",
+    async (signal) => new Promise((resolve, reject) => {
+      const abort = () => reject(new PromptCancelledError());
+      if (signal.aborted) abort();
+      else signal.addEventListener("abort", abort, { once: true });
+    }),
+  );
+  signals.emit("SIGINT");
+  await assert.rejects(activity, PromptCancelledError);
+  await prompt.close();
+
+  assert.equal(rendered, [
+    "Working: Verifying public Journeys…",
+    "Cancelled: Verifying public Journeys.",
+    "",
+  ].join("\n"));
+  assert.equal(signals.listenerCount("SIGINT"), 0);
+});
+
+test("the Plain adapter waits for non-cooperative work to settle after cancellation", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const signals = new EventEmitter();
+  const prompt = createPlainPromptAdapter({
+    input,
+    output,
+    signals,
+    activityDelayMs: 0,
+  });
+  let settlements = 0;
+
+  const activity = prompt.activity(
+    "Saving Audit Report…",
+    async () => new Promise((resolve) => {
+      setTimeout(() => {
+        settlements += 1;
+        resolve();
+      }, 30);
+    }),
+  );
+  signals.emit("SIGINT");
+  await assert.rejects(activity, PromptCancelledError);
+  assert.equal(settlements, 1);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(settlements, 1);
+  await prompt.close();
+});
 function journeyInput(candidates) {
   return {
     status: "needs_input",
@@ -673,6 +801,99 @@ test("the Clack adapter accepts injected TTY streams and keeps permission meanin
   assert.match(semanticOutput, /Public verification/u);
   assert.match(semanticOutput, /Targets: https:\/\/example\.com\//u);
   assert.match(semanticOutput, /Approve this permission\?/u);
+});
+
+test("the Clack adapter displays and completes active work", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({
+    input,
+    output,
+    activityDelayMs: 0,
+  });
+  let finish;
+
+  const activity = prompt.activity(
+    "Verifying public Journeys…",
+    async () => new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.match(stripVTControlCharacters(rendered), /Verifying public Journeys/u);
+  finish("verified");
+  assert.equal(await activity, "verified");
+  await prompt.close();
+
+  assert.match(
+    stripVTControlCharacters(rendered),
+    /Verifying public Journeys\./u,
+  );
+});
+
+test("the Clack adapter cancels active work on SIGINT and removes its listener", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const signals = new EventEmitter();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({
+    input,
+    output,
+    signals,
+    activityDelayMs: 0,
+  });
+  const activity = prompt.activity(
+    "Reading Cloudflare Provider data…",
+    async (signal) => new Promise((resolve, reject) => {
+      const abort = () => reject(signal.reason);
+      if (signal.aborted) abort();
+      else signal.addEventListener("abort", abort, { once: true });
+    }),
+  );
+
+  signals.emit("SIGINT");
+  await assert.rejects(activity, PromptCancelledError);
+  await prompt.close();
+
+  assert.match(
+    stripVTControlCharacters(rendered),
+    /Cancelled: Reading Cloudflare Provider data\./u,
+  );
+  assert.equal(signals.listenerCount("SIGINT"), 0);
+});
+
+test("NO_COLOR Human Mode retains textual Clack activity states", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const presentation = humanAuditPresentationOptions({
+    env: { NO_COLOR: "1" },
+    output,
+  });
+  const prompt = await createClackPromptAdapter({
+    input,
+    output,
+    activityDelayMs: 0,
+  });
+
+  await prompt.activity("Generating Audit Report…", async () => "complete");
+  await prompt.close();
+
+  assert.deepEqual(presentation, { plain: false, styled: false, width: 100 });
+  assert.match(
+    stripVTControlCharacters(rendered),
+    /Completed: Generating Audit Report\./u,
+  );
 });
 
 test("the Clack adapter uses a select prompt for the environment", async () => {

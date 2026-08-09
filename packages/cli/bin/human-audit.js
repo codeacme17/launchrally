@@ -18,6 +18,15 @@ const ASSESSMENT_PRESENTATION = Object.freeze({
 });
 const UNKNOWN_ASSESSMENT_PRESENTATION = Object.freeze({ label: "Not Available", style: "1" });
 const GRAPHEME_SEGMENTER = new Intl.Segmenter("en", { granularity: "grapheme" });
+const PROVIDER_LABELS = Object.freeze({
+  cloudflare: "Cloudflare",
+  netlify: "Netlify",
+  posthog: "PostHog",
+  sentry: "Sentry",
+  stripe: "Stripe",
+  supabase: "Supabase",
+  vercel: "Vercel",
+});
 
 function styledText(value, style, enabled) {
   return enabled ? `\u001B[${style}m${value}\u001B[0m` : value;
@@ -130,6 +139,27 @@ function shellArgument(value) {
   return JSON.stringify(String(value));
 }
 
+function approvedAuditActivityLabel(result, permissionDecisions) {
+  const approved = result.request.permissions.filter(
+    ({ permission_id: permissionId }) => permissionDecisions[permissionId] === "approved",
+  );
+  const publicApproved = approved.some(({ boundary }) => boundary === "public_network");
+  const providers = approved
+    .filter(({ boundary }) => boundary === "provider_read")
+    .map(({ scope }) => scope.provider);
+  if (publicApproved && providers.length > 0) {
+    return "Running public and Provider verification and generating Report…";
+  }
+  if (publicApproved) return "Verifying public Journeys and generating Report…";
+  if (providers.length === 1) {
+    const provider = PROVIDER_LABELS[providers[0]]
+      ?? `${providers[0][0]?.toUpperCase() ?? ""}${providers[0].slice(1)}`;
+    return `Reading ${provider} Provider data and generating Report…`;
+  }
+  if (providers.length > 1) return "Reading approved Provider data and generating Report…";
+  return "Evaluating Audit and generating Report…";
+}
+
 export function renderHumanAuditCompletion(result, {
   cwd,
   outputPath,
@@ -223,32 +253,47 @@ export async function runHumanAudit({
   filePicker,
 }) {
   let result;
+  const runActivity = (label, operation) => prompt.activity
+    ? prompt.activity(label, operation)
+    : operation();
   try {
     await prompt.start();
-    result = await runAudit(cwd, version);
+    result = await runActivity(
+      "Discovering project and scanning repository…",
+      (signal) => runAudit(cwd, version, undefined, { signal }),
+    );
 
     while (["needs_input", "needs_confirmation", "needs_permission"].includes(result.status)) {
       const response = await prompt.respond(result);
       if (result.status === "needs_input") {
-        result = await runAudit(cwd, version, {
-          resume_token: result.interaction.resume_token,
-          answers: response.answers,
-        });
+        result = await runActivity(
+          "Updating project scan and Audit Brief…",
+          (signal) => runAudit(cwd, version, {
+            resume_token: result.interaction.resume_token,
+            answers: response.answers,
+          }, { signal }),
+        );
         continue;
       }
 
       if (result.status === "needs_confirmation") {
-        result = await runAudit(cwd, version, {
-          resume_token: result.interaction.resume_token,
-          confirmation: response.confirmation,
-        });
+        result = await runActivity(
+          "Preparing Audit permission requests…",
+          (signal) => runAudit(cwd, version, {
+            resume_token: result.interaction.resume_token,
+            confirmation: response.confirmation,
+          }, { signal }),
+        );
         continue;
       }
 
-      result = await runAudit(cwd, version, {
-        resume_token: result.interaction.resume_token,
-        permission_decisions: response.permission_decisions,
-      });
+      result = await runActivity(
+        approvedAuditActivityLabel(result, response.permission_decisions),
+        (signal) => runAudit(cwd, version, {
+          resume_token: result.interaction.resume_token,
+          permission_decisions: response.permission_decisions,
+        }, { signal }),
+      );
     }
 
     if (result.status === "completed" && result.report) {
@@ -257,7 +302,10 @@ export async function runHumanAudit({
       if (!savePath && prompt.reportSave) {
         const suggestedPath = path.resolve(cwd, DEFAULT_REPORT_FILENAME);
         const filePickerState = filePicker
-          ? await filePicker.availability()
+          ? await runActivity(
+            "Checking Report save options…",
+            (signal) => filePicker.availability({ signal }),
+          )
           : { available: false };
         let saveConfirmed = false;
         let notice;
@@ -275,19 +323,32 @@ export async function runHumanAudit({
           let selectedPath = choice.output_path;
           if (choice.file_picker) {
             try {
-              selectedPath = await filePicker.chooseSavePath();
-            } catch {
+              selectedPath = await runActivity(
+                "Opening system file picker…",
+                (signal) => filePicker.chooseSavePath({ signal }),
+              );
+            } catch (error) {
+              if (error instanceof PromptCancelledError) throw error;
               notice = "The system file picker could not open. Choose another destination.";
               continue;
             }
             if (!selectedPath) continue;
           }
           const resolvedPath = path.resolve(selectedPath);
-          if (await isLaunchRallyDestination(cwd, resolvedPath)) {
+          const destinationState = await runActivity(
+            "Checking Report destination…",
+            async (signal) => {
+              if (await isLaunchRallyDestination(cwd, resolvedPath, { signal })) {
+                return { reserved: true };
+              }
+              return { inspection: await inspectDestination(resolvedPath, { signal }) };
+            },
+          );
+          if (destinationState.reserved) {
             notice = "Audit cannot save inside .launchrally/**. Choose another destination; Init creates that directory only after separate confirmation.";
             continue;
           }
-          const inspection = await inspectDestination(resolvedPath);
+          const inspection = destinationState.inspection;
           if (!inspection.valid) {
             notice = "The selected Report destination is not usable. Choose another destination.";
             continue;
@@ -314,7 +375,15 @@ export async function runHumanAudit({
         savePath = (await prompt.respond(result)).output_path;
       }
       if (savePath) {
-        savePath = await saveResult?.(savePath, result, { overwrite }) ?? savePath;
+        savePath = await runActivity(
+          "Saving Audit Report…",
+          async (signal) => await saveResult?.(
+            savePath,
+            result,
+            { overwrite },
+            { signal },
+          ) ?? savePath,
+        );
       }
       outputPath = savePath;
     }

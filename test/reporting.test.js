@@ -14,7 +14,9 @@ import {
   assertValidReportPackage,
 } from "../packages/contracts/src/index.js";
 import {
+  createInitialSnapshot,
   renderReportMarkdown,
+  rethrowIfAborted,
   runAudit,
 } from "../packages/core/src/index.js";
 
@@ -45,6 +47,27 @@ async function reachConfirmation(directory, answers = ANSWERS) {
     answers,
   });
 }
+
+test("an already-aborted Audit stops before project discovery", async () => {
+  const directory = await fixture();
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    createInitialSnapshot(directory, { signal: controller.signal }),
+    (error) => error?.name === "AbortError",
+  );
+});
+
+test("Core abort classification rethrows standard abort-shaped errors", () => {
+  for (const error of [
+    Object.assign(new Error("aborted by name"), { name: "AbortError" }),
+    Object.assign(new Error("aborted by code"), { code: "ABORT_ERR" }),
+  ]) {
+    assert.throws(() => rethrowIfAborted(error), (thrown) => thrown === error);
+  }
+  assert.doesNotThrow(() => rethrowIfAborted(new Error("ordinary failure")));
+});
 
 async function complete(directory, { answers = ANSWERS, ...finalOptions } = {}) {
   const confirmation = await reachConfirmation(directory, answers);

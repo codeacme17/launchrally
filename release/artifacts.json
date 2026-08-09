@@ -47,6 +47,7 @@
         "provider-decision-cards/v1/cloudflare-workers.json",
         "provider-decision-cards/v1/vercel.json",
         "src/audit-interaction.js",
+        "src/cancellation.js",
         "src/check-catalog.js",
         "src/evidence-artifact.js",
         "src/environment-terminology.js",

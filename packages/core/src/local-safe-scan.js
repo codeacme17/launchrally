@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { lstat, open, readdir, realpath } from "node:fs/promises";
 import path from "node:path";
 
+import { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
 import {
   classifyContentFile,
   extractContentFact,
@@ -90,9 +91,11 @@ async function pathExists(candidate) {
   }
 }
 
-export async function scanRepository(selectedRoot) {
+export async function scanRepository(selectedRoot, { signal } = {}) {
+  throwIfAborted(signal);
   const selectedPath = path.resolve(selectedRoot);
   const selectedStat = await lstat(selectedPath);
+  throwIfAborted(signal);
   if (selectedStat.isSymbolicLink()) {
     const error = new Error("Audit root cannot be a symlink.");
     error.code = "INVALID_AUDIT_ROOT";
@@ -104,6 +107,7 @@ export async function scanRepository(selectedRoot) {
     throw error;
   }
   const root = await realpath(selectedPath);
+  throwIfAborted(signal);
 
   const facts = [];
   const errors = [];
@@ -127,6 +131,7 @@ export async function scanRepository(selectedRoot) {
   }
 
   async function readSafeFile(absolutePath, relativePath, knownStat, options = {}) {
+    throwIfAborted(signal);
     let handle;
     try {
       const currentStat = knownStat ?? await lstat(absolutePath);
@@ -165,6 +170,7 @@ export async function scanRepository(selectedRoot) {
         return null;
       }
       const content = await handle.readFile();
+      throwIfAborted(signal);
       contentDigests[relativePath] = `sha256:${createHash("sha256").update(content).digest("hex")}`;
       if (isBinary(content)) {
         if (options.allow_binary) return "";
@@ -172,7 +178,8 @@ export async function scanRepository(selectedRoot) {
         return null;
       }
       return content.toString("utf8");
-    } catch {
+    } catch (error) {
+      rethrowIfAborted(error, signal);
       recordError("unreadable", relativePath);
       return null;
     } finally {
@@ -181,6 +188,7 @@ export async function scanRepository(selectedRoot) {
   }
 
   async function walk(absoluteDirectory, relativeDirectory, inheritedRules) {
+    throwIfAborted(signal);
     let canonicalDirectory;
     let entries;
     try {
@@ -190,7 +198,8 @@ export async function scanRepository(selectedRoot) {
         return;
       }
       entries = await readdir(canonicalDirectory, { withFileTypes: true });
-    } catch {
+    } catch (error) {
+      rethrowIfAborted(error, signal);
       recordError("unreadable", relativeDirectory || ".");
       return;
     }
@@ -214,6 +223,7 @@ export async function scanRepository(selectedRoot) {
     }
 
     for (const entry of entries) {
+      throwIfAborted(signal);
       const relativePath = relativeDirectory
         ? `${relativeDirectory}/${entry.name}`
         : entry.name;
@@ -251,7 +261,8 @@ export async function scanRepository(selectedRoot) {
             exclude("nested_repositories");
             continue;
           }
-        } catch {
+        } catch (error) {
+          rethrowIfAborted(error, signal);
           recordError("unreadable", relativePath);
           continue;
         }
@@ -274,7 +285,8 @@ export async function scanRepository(selectedRoot) {
       let stat;
       try {
         stat = await lstat(absolutePath);
-      } catch {
+      } catch (error) {
+        rethrowIfAborted(error, signal);
         uncoverRootLockfile(relativePath, "unreadable");
         recordError("unreadable", relativePath);
         continue;
@@ -334,6 +346,7 @@ export async function scanRepository(selectedRoot) {
   }
 
   await walk(root, "", []);
+  throwIfAborted(signal);
   return {
     root: selectedPath,
     policy_version: LOCAL_SAFE_SCAN_POLICY,
