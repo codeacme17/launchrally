@@ -54,7 +54,7 @@ const FIELD_PRESENTATION = Object.freeze({
   core_journeys: Object.freeze({
     required: true,
     display_prompt: "Which public Journeys should LaunchRally verify?",
-    requirement: "Choose one or Skip",
+    requirement: "Select one or more Journeys. Select all detected journeys includes only detected choices; you can then deselect individual Journeys.",
     example: "GET /, GET /checkout — checkout completes",
     allow_custom: true,
     allow_skip: true,
@@ -121,6 +121,7 @@ function journeyOptions(candidates = []) {
     .map((journey) => ({
       label: `${journeyLabel(journey)} (${detectedJourneys.some((candidate) => candidate.path === journey.path) ? "detected" : "recommended"})`,
       value: journey,
+      detected: detectedJourneys.some((candidate) => candidate.path === journey.path),
     }));
 }
 
@@ -317,9 +318,13 @@ function fieldOptions(field) {
   }));
 }
 
-function selectionOptions(field, { customValue, skipValue }) {
+function selectionOptions(field, { customValue, selectAllValue, skipValue }) {
+  const options = fieldOptions(field);
   return [
-    ...fieldOptions(field),
+    ...(selectAllValue && options.some((option) => option.detected)
+      ? [{ label: "Select all detected journeys", value: selectAllValue }]
+      : []),
+    ...options,
     ...(field.allow_custom
       ? [{ label: "Other — enter a custom value", value: customValue }]
       : []),
@@ -424,9 +429,11 @@ export function createPlainPromptAdapter({ input, output, signals = process }) {
   };
   const selectField = async (field) => {
     const customValue = Symbol("custom-value");
+    const selectAllValue = Symbol("select-all-value");
     const skipValue = Symbol("skip-value");
     const choices = selectionOptions(field, {
       customValue,
+      selectAllValue,
       skipValue,
     });
     if (!field.value_type.endsWith("_array")) {
@@ -456,6 +463,31 @@ export function createPlainPromptAdapter({ input, output, signals = process }) {
         continue;
       }
       const selected = indexes.map((index) => choices[index].value);
+      if (selected.includes(selectAllValue)) {
+        if (selected.length > 1) {
+          write(output, "Select all detected journeys by itself, then deselect any you do not want.");
+          continue;
+        }
+        const detected = fieldOptions(field).filter((option) => option.detected);
+        write(output, "All detected Journeys selected:");
+        detected.forEach((option, index) => write(output, `${index + 1}. ${option.label}`));
+        while (true) {
+          const deselected = (await ask(
+            "Deselect detected Journeys by number, or press Enter to keep all:",
+          )).trim();
+          if (!deselected) return detected.map((option) => option.value);
+          const deselectedIndexes = [...new Set(
+            deselected.split(",").map((value) => Number(value.trim()) - 1),
+          )];
+          if (deselectedIndexes.some((index) => !detected[index])) {
+            write(output, `Enter numbers from 1 to ${detected.length}, separated by commas.`);
+            continue;
+          }
+          return detected
+            .filter((_, index) => !deselectedIndexes.includes(index))
+            .map((option) => option.value);
+        }
+      }
       const resolution = resolveMultiSelection(selected, {
         customValue,
         skipValue,
@@ -564,6 +596,70 @@ function cancelled(value, clack, output) {
   throw new PromptCancelledError();
 }
 
+async function journeyMultiselect({
+  clack,
+  common,
+  detectedValues,
+  initialValues,
+  message,
+  options,
+  required,
+  selectAllValue,
+}) {
+  const { MultiSelectPrompt } = await import("@clack/core");
+  class JourneyMultiSelectPrompt extends MultiSelectPrompt {
+    constructor(promptOptions) {
+      super(promptOptions);
+      this.on("cursor", (action) => {
+        if (action !== "space" || !this.value?.includes(selectAllValue)) return;
+        this.value = [...detectedValues];
+      });
+      this.on("key", (_character, key) => {
+        if (key.name === "a") this.value = [...detectedValues];
+      });
+    }
+  }
+
+  return new JourneyMultiSelectPrompt({
+    ...common,
+    options,
+    initialValues,
+    required,
+    validate(values) {
+      if (required && (!values || values.length === 0)) {
+        return "Select at least one Journey or Skip public Journey verification.";
+      }
+      return undefined;
+    },
+    render() {
+      const selected = this.value ?? [];
+      const selectedLabels = options
+        .filter((option) => selected.includes(option.value))
+        .map((option) => option.label);
+      if (this.state === "submit") {
+        return `${clack.symbol(this.state)}  ${message}\n  ${selectedLabels.join(", ") || "none"}`;
+      }
+      const choices = clack.limitOptions({
+        cursor: this.cursor,
+        options,
+        output: common.output,
+        rowPadding: 3,
+        style: (option, active) => {
+          const cursor = active ? ">" : " ";
+          const checked = selected.includes(option.value) ? "[x]" : "[ ]";
+          return `${cursor} ${checked} ${option.label}`;
+        },
+      });
+      return [
+        `${clack.symbol(this.state)}  ${message}`,
+        ...choices,
+        ...(this.state === "error" ? [this.error] : []),
+        "Space: select or deselect · Enter: confirm · A: select all detected journeys",
+      ].join("\n");
+    },
+  }).prompt();
+}
+
 export async function createClackPromptAdapter({ input, output }) {
   const clack = await loadClack();
   const common = { input, output, withGuide: false };
@@ -578,9 +674,14 @@ export async function createClackPromptAdapter({ input, output }) {
   }), clack, output);
   const selectField = async (field) => {
     const customValue = "__launchrally_custom_value__";
+    const selectAllValue = "__launchrally_select_all_detected_value__";
     const skipValue = "__launchrally_skip_value__";
+    const detectedValues = fieldOptions(field)
+      .filter((option) => option.detected)
+      .map((option) => option.value);
     const options = selectionOptions(field, {
       customValue,
+      selectAllValue: detectedValues.length > 0 ? selectAllValue : undefined,
       skipValue,
     });
     if (!field.value_type.endsWith("_array")) {
@@ -605,13 +706,24 @@ export async function createClackPromptAdapter({ input, output }) {
       field.options.find((option) => sameOptionValue(option.value, current))?.value ?? current,
     );
     while (true) {
-      const selected = cancelled(await clack.multiselect({
-        ...common,
-        message: fieldMessage(field),
-        options,
-        initialValues,
-        required: field.required,
-      }), clack, output);
+      const selected = cancelled(await (detectedValues.length > 0
+        ? journeyMultiselect({
+          clack,
+          common,
+          detectedValues,
+          initialValues,
+          message: fieldMessage(field),
+          options,
+          required: field.required,
+          selectAllValue,
+        })
+        : clack.multiselect({
+          ...common,
+          message: fieldMessage(field),
+          options,
+          initialValues,
+          required: field.required,
+        })), clack, output);
       const resolution = resolveMultiSelection(selected, {
         customValue,
         skipValue,
