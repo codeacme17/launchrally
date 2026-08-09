@@ -5,9 +5,10 @@ product-planning sources are intentionally local and ignored under
 `docs/product/`; therefore every release-blocking requirement needed by CI
 must be represented here and in the linked GitHub issues.
 
-P0 is Product Complete and `0.1.0` is publicly available as an Experimental
-release. Telemetry-Free Validation is collecting directional signals and P0
-Validated remains false.
+The P0 Product Complete claim is suspended while the Quality Floor regression
+is reviewed; `0.1.0` remains publicly available as an Experimental release.
+Telemetry-Free Validation is collecting directional signals and P0 Validated
+remains false.
 
 The canonical requirement-ID registry is independently committed in
 `release/p0.json`; the machine-readable traceability source is

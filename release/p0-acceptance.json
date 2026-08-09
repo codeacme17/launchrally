@@ -1,6 +1,6 @@
 {
   "schema_version": "launchrally.dev/p0-acceptance/v1",
-  "product_status": "complete",
+  "product_status": "suspended",
   "release_status": "experimental",
   "requirements": [
     {
