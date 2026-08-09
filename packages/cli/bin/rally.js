@@ -15,6 +15,7 @@ import {
   runVerify,
 } from "@launchrally/core";
 import {
+  humanAuditPresentationOptions,
   renderHumanAuditCompletion,
   runHumanAudit,
 } from "./human-audit.js";
@@ -531,8 +532,12 @@ async function main() {
     const { createClackPromptAdapter, createPlainPromptAdapter } = await import(
       "./prompt-adapters.js"
     );
-    const plain = args.includes("--plain") || process.env.TERM === "dumb";
-    const prompt = plain
+    const presentation = humanAuditPresentationOptions({
+      args,
+      env: process.env,
+      output: process.stdout,
+    });
+    const prompt = presentation.plain
       ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
       : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
     const filePicker = createSystemFilePicker({ defaultDirectory: path.resolve(cwd) });
@@ -572,6 +577,8 @@ async function main() {
     process.stdout.write(`${renderHumanAuditCompletion(outcome.result, {
       cwd: path.resolve(cwd),
       outputPath: outcome.outputPath,
+      styled: presentation.styled,
+      width: presentation.width,
     })}\n`);
     return outcome.exitCode;
   }

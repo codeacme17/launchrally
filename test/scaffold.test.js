@@ -205,7 +205,7 @@ test("audit renders a concise assessment, Findings, Gaps, and next command for a
 
   assert.match(
     stdout,
-    /LaunchRally Audit[\s\S]*Assessment: Inconclusive[\s\S]*Failed Findings:[\s\S]*Verification Gaps:[\s\S]*web\.public\.availability[\s\S]*Next command: rally init .*--report <saved-report-path>/,
+    /LaunchRally Audit[\s\S]*Assessment\nInconclusive[\s\S]*Failed Findings \(0\)[\s\S]*Verification Gaps \(\d+\)[\s\S]*web\.public\.availability[\s\S]*Next command\nrally init .*--report <saved-report-path>/,
   );
   assert.doesNotMatch(stdout, /Initial Readiness Snapshot|# LaunchRally Audit Report/u);
 });
@@ -292,7 +292,7 @@ test("audit renders failed Findings without dumping the Action Queue", async () 
 
   assert.match(
     stdout,
-    /Failed Findings:[\s\S]*\[P0\] web\.baseline\.lockfile — No dependency lockfile was found/,
+    /Failed Findings \(1\)[\s\S]*\[P0\] web\.baseline\.lockfile\n  No dependency lockfile was found/,
   );
   assert.doesNotMatch(stdout, /Action Queue/u);
 });
@@ -322,7 +322,7 @@ test("audit distinguishes an invalid package manifest from a missing one", async
   assert.doesNotMatch(terminalOutput, new RegExp(SECRET_SENTINEL));
   assert.match(
     terminalOutput,
-    /Failed Findings:[\s\S]*web\.baseline\.package-manifest — The root package manifest is invalid\./,
+    /Failed Findings \(1\)[\s\S]*web\.baseline\.package-manifest\n  The root package manifest is invalid\./,
   );
 });
 

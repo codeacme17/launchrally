@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import {
+  humanAuditPresentationOptions,
   PromptCancelledError,
   renderHumanAuditCompletion,
   runHumanAudit,
@@ -34,6 +35,184 @@ const VALID_ANSWERS = Object.freeze({
   core_journeys: ["visitor can sign up"],
   provider_roles: [{ provider: "sentry", role: "observability" }],
   support_layers: ["monitoring"],
+});
+
+test("the Human Audit completion separates its assessment, work, Report, and next command", () => {
+  const summary = renderHumanAuditCompletion({
+    outcome: "audit_completed",
+    report: {
+      assessment: "no_go",
+      results: {
+        checks: [{
+          status: "failed",
+          priority: "p0",
+          check_id: "web.baseline.lockfile",
+          summary: "No dependency lockfile was found.",
+        }],
+        verification_gaps: [{
+          priority: "p1",
+          check_id: "web.public.availability",
+          reason: "Public verification permission was denied.",
+        }],
+      },
+    },
+    next: { type: "init" },
+  }, {
+    cwd: "/workspace/site",
+    outputPath: "/workspace/site/audit.json",
+  });
+  const lines = summary.split("\n");
+  const assessment = lines.indexOf("Assessment");
+  const failed = lines.indexOf("Failed Findings (1)");
+  const gaps = lines.indexOf("Verification Gaps (1)");
+  const report = lines.indexOf("Report");
+  const next = lines.indexOf("Next command");
+
+  assert.ok(assessment < failed && failed < gaps && gaps < report && report < next);
+  assert.equal(lines[assessment + 1], "No Go");
+  assert.equal(lines[failed + 1], "[P0] web.baseline.lockfile");
+  assert.equal(lines[failed + 2], "  No dependency lockfile was found.");
+  assert.equal(lines[gaps + 1], "[P1] web.public.availability");
+  assert.equal(lines[gaps + 2], "  Public verification permission was denied.");
+  assert.equal(lines[report + 1], "/workspace/site/audit.json");
+  assert.equal(
+    lines[next + 1],
+    'rally init --cwd "/workspace/site" --report "/workspace/site/audit.json"',
+  );
+});
+
+test("the Human Audit completion labels every assessment without relying on styling", () => {
+  const ansi = /\u001B\[[0-?]*[ -/]*[@-~]/gu;
+  const assessments = new Map([
+    ["launch_ready", "Ready"],
+    ["ready_with_warnings", "Ready with Warnings"],
+    ["no_go", "No Go"],
+    ["inconclusive", "Inconclusive"],
+  ]);
+
+  for (const [assessment, label] of assessments) {
+    const result = {
+      outcome: "audit_completed",
+      report: {
+        assessment,
+        results: { checks: [], verification_gaps: [] },
+      },
+    };
+    const plain = renderHumanAuditCompletion(result, {
+      cwd: "/workspace/site",
+      styled: false,
+    });
+    const styled = renderHumanAuditCompletion(result, {
+      cwd: "/workspace/site",
+      styled: true,
+    });
+
+    assert.match(plain, new RegExp(`Assessment\\n${label}`, "u"));
+    assert.doesNotMatch(plain, ansi);
+    assert.match(styled, ansi);
+    assert.equal(styled.replaceAll(ansi, ""), plain);
+  }
+});
+
+test("the Human Audit completion wraps long item content without changing copyable values", () => {
+  const outputPath = "/workspace/a-very-long-directory-name/launchrally-audit-report.json";
+  const summary = renderHumanAuditCompletion({
+    outcome: "audit_completed",
+    report: {
+      assessment: "no_go",
+      results: {
+        checks: [{
+          status: "failed",
+          priority: "p0",
+          check_id: "web.public.extremely-long-production-availability-check",
+          summary: "The observed public journey returned an unsuccessful response repeatedly.",
+        }],
+        verification_gaps: [],
+      },
+    },
+    next: { type: "init" },
+  }, {
+    cwd: "/workspace/a-very-long-directory-name",
+    outputPath,
+    width: 32,
+  });
+  const command = `rally init --cwd ${JSON.stringify(
+    "/workspace/a-very-long-directory-name",
+  )} --report ${JSON.stringify(outputPath)}`;
+  const lines = summary.split("\n");
+  const failedStart = lines.indexOf("Failed Findings (1)") + 1;
+  const gapsStart = lines.indexOf("Verification Gaps (0)");
+  const itemLines = lines.slice(failedStart, gapsStart - 1);
+
+  assert.ok(itemLines.length > 3);
+  assert.equal(itemLines[0], "[P0]");
+  assert.ok(itemLines.slice(1).every((line) => line.startsWith("  ")));
+  assert.ok(itemLines.every((line) => [...line].length <= 32));
+  assert.equal(lines.filter((line) => line === outputPath).length, 1);
+  assert.equal(lines.filter((line) => line === command).length, 1);
+});
+
+test("the Human Audit completion honors very narrow terminal cells for wide text", () => {
+  const outputPath = "/report.json";
+  const summary = renderHumanAuditCompletion({
+    outcome: "audit_completed",
+    report: {
+      assessment: "no_go",
+      results: {
+        checks: [{
+          status: "failed",
+          priority: "p0",
+          check_id: "web.public.发布可用性检查",
+          summary: "公共旅程返回了失败响应。",
+        }],
+        verification_gaps: [],
+      },
+    },
+    next: { type: "init" },
+  }, {
+    cwd: "/workspace",
+    outputPath,
+    width: 12,
+  });
+  const command = 'rally init --cwd "/workspace" --report "/report.json"';
+  const terminalWidth = (value) => [...value].reduce(
+    (total, character) => total + (/\p{Script=Han}/u.test(character) ? 2 : 1),
+    0,
+  );
+
+  for (const line of summary.split("\n")) {
+    if (line === "" || line === outputPath || line === command) continue;
+    assert.ok(terminalWidth(line) <= 12, `${JSON.stringify(line)} exceeds 12 cells`);
+  }
+  assert.match(summary, /公共旅程/u);
+  assert.equal(summary.split("\n").filter((line) => line === command).length, 1);
+});
+
+test("Human Audit presentation disables ANSI for every plain or colorless environment", () => {
+  const colorlessCases = [
+    { args: ["--plain"], env: {}, output: { isTTY: true, columns: 72 } },
+    { args: [], env: { TERM: "dumb" }, output: { isTTY: true, columns: 72 } },
+    { args: [], env: { NO_COLOR: "" }, output: { isTTY: true, columns: 72 } },
+    { args: [], env: {}, output: { isTTY: false, columns: 72 } },
+  ];
+
+  for (const options of colorlessCases) {
+    assert.equal(humanAuditPresentationOptions(options).styled, false);
+  }
+  assert.deepEqual(humanAuditPresentationOptions({
+    args: [],
+    env: {},
+    output: { isTTY: true, columns: 72 },
+  }), {
+    plain: false,
+    styled: true,
+    width: 72,
+  });
+  assert.equal(humanAuditPresentationOptions({
+    args: ["--plain"],
+    env: {},
+    output: { isTTY: true },
+  }).width, 80);
 });
 
 test("the Human Audit driver retries Core validation and denies each permission by default", async () => {
@@ -121,10 +300,10 @@ test("the Human Audit driver retries Core validation and denies each permission 
   ]);
   assert.deepEqual(await readdir(fixture), ["package-lock.json", "package.json"]);
   const summary = renderHumanAuditCompletion(outcome.result, { cwd: fixture });
-  assert.match(summary, /Assessment:/u);
-  assert.match(summary, /Failed Findings:/u);
-  assert.match(summary, /Verification Gaps:/u);
-  assert.match(summary, /Next command: rally init .*--report <saved-report-path>/u);
+  assert.match(summary, /Assessment\n/u);
+  assert.match(summary, /Failed Findings \(\d+\)\n/u);
+  assert.match(summary, /Verification Gaps \(\d+\)\n/u);
+  assert.match(summary, /Next command\nrally init .*--report <saved-report-path>/u);
   assert.doesNotMatch(summary, /No input or approval is required for this local-only Audit/u);
   assert.doesNotMatch(summary, /# LaunchRally Audit Report/u);
 });
@@ -220,7 +399,7 @@ test("the Human Audit driver supports revision and cancellation without granting
   const summary = renderHumanAuditCompletion(outcome.result, { cwd: fixture });
   assert.equal(outcome.result.next.type, "init");
   assert.match(summary, /Audit Brief was not confirmed/u);
-  assert.match(summary, /Next command: rally init --cwd/u);
+  assert.match(summary, /Next command\nrally init --cwd/u);
   assert.deepEqual(await readdir(fixture), ["package-lock.json", "package.json"]);
 });
 
@@ -278,7 +457,7 @@ test("a Human Audit discloses and writes the deterministic default Report path",
       cwd: fixture,
       outputPath: outcome.outputPath,
     }),
-    /Next command: rally init .*--report/u,
+    /Next command\nrally init .*--report/u,
   );
 });
 
