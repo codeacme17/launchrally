@@ -224,10 +224,11 @@ test("the Human Audit driver supports revision and cancellation without granting
   assert.deepEqual(await readdir(fixture), ["package-lock.json", "package.json"]);
 });
 
-test("a Human Audit writes full JSON only after an explicit save path", async () => {
+test("a Human Audit discloses and writes the deterministic default Report path", async () => {
   const fixture = await createFixture();
-  const requestedPath = path.join(fixture, "audit-result.json");
+  const requestedPath = path.join(fixture, "launchrally-audit-report.json");
   let saved;
+  const saveRequests = [];
   const prompt = {
     async start() {},
     async respond(result) {
@@ -240,7 +241,14 @@ test("a Human Audit writes full JSON only after an explicit save path", async ()
           ),
         };
       }
-      return { output_path: requestedPath };
+      return {};
+    },
+    async reportSave(request) {
+      saveRequests.push(request);
+      if (request.phase === "choose") {
+        return { output_path: request.suggested_path, suggested: true };
+      }
+      return { decision: "save" };
     },
     async close() {},
   };
@@ -250,6 +258,7 @@ test("a Human Audit writes full JSON only after an explicit save path", async ()
     version: "0.1.0",
     prompt,
     runAudit,
+    inspectDestination: async () => ({ valid: true, collision: false }),
     saveResult: async (outputPath, result) => {
       saved = { outputPath, result };
       return path.resolve(outputPath);
@@ -259,6 +268,11 @@ test("a Human Audit writes full JSON only after an explicit save path", async ()
   assert.equal(outcome.outputPath, requestedPath);
   assert.equal(saved.outputPath, requestedPath);
   assert.equal(saved.result.report.report_id, outcome.result.report.report_id);
+  assert.deepEqual(saveRequests, [{
+    phase: "choose",
+    suggested_path: requestedPath,
+    file_picker_available: false,
+  }]);
   assert.match(
     renderHumanAuditCompletion(outcome.result, {
       cwd: fixture,
@@ -266,6 +280,217 @@ test("a Human Audit writes full JSON only after an explicit save path", async ()
     }),
     /Next command: rally init .*--report/u,
   );
+});
+
+test("a Human Audit lets the builder choose another path after a collision", async () => {
+  const cwd = path.resolve("/workspace");
+  const suggestedPath = path.join(cwd, "launchrally-audit-report.json");
+  const customPath = path.join(cwd, "reports", "custom.json");
+  const requests = [];
+  const responses = [
+    { output_path: suggestedPath },
+    { decision: "choose_another" },
+    { output_path: customPath },
+    { decision: "save" },
+  ];
+  let saved;
+  const result = {
+    status: "completed",
+    report: { report_id: "report-1" },
+  };
+
+  const outcome = await runHumanAudit({
+    cwd,
+    version: "0.1.0",
+    prompt: {
+      async start() {},
+      async respond() {
+        throw new Error("Core prompting was not expected.");
+      },
+      async reportSave(request) {
+        requests.push(request);
+        return responses.shift();
+      },
+      async close() {},
+    },
+    runAudit: async () => result,
+    inspectDestination: async (outputPath) => ({
+      valid: true,
+      collision: outputPath === suggestedPath,
+    }),
+    saveResult: async (outputPath) => {
+      saved = outputPath;
+      return outputPath;
+    },
+  });
+
+  assert.equal(outcome.outputPath, customPath);
+  assert.equal(saved, customPath);
+  assert.deepEqual(requests.map((request) => ({
+    phase: request.phase,
+    collision: request.collision,
+    resolved_path: request.resolved_path,
+  })), [
+    { phase: "choose", collision: undefined, resolved_path: undefined },
+    { phase: "confirm", collision: true, resolved_path: suggestedPath },
+    { phase: "choose", collision: undefined, resolved_path: undefined },
+    { phase: "confirm", collision: false, resolved_path: customPath },
+  ]);
+});
+
+test("a cancelled system file picker returns to the confirmed save menu", async () => {
+  const cwd = path.resolve("/workspace");
+  const customPath = path.join(cwd, "custom.json");
+  const chooseRequests = [];
+  const responses = [
+    { file_picker: true },
+    { output_path: customPath },
+    { decision: "save" },
+  ];
+  let pickerCalls = 0;
+
+  const outcome = await runHumanAudit({
+    cwd,
+    version: "0.1.0",
+    prompt: {
+      async start() {},
+      async respond() {
+        throw new Error("Core prompting was not expected.");
+      },
+      async reportSave(request) {
+        if (request.phase === "choose") chooseRequests.push(request);
+        return responses.shift();
+      },
+      async close() {},
+    },
+    runAudit: async () => ({ status: "completed", report: { report_id: "report-1" } }),
+    filePicker: {
+      async availability() {
+        return { available: true, provider: "osascript" };
+      },
+      async chooseSavePath() {
+        pickerCalls += 1;
+        return null;
+      },
+    },
+    inspectDestination: async () => ({ valid: true, collision: false }),
+    saveResult: async (outputPath) => outputPath,
+  });
+
+  assert.equal(outcome.outputPath, customPath);
+  assert.equal(pickerCalls, 1);
+  assert.equal(chooseRequests.length, 2);
+  assert.equal(chooseRequests[0].file_picker_available, true);
+  assert.equal(chooseRequests[0].save_confirmed, undefined);
+  assert.equal(chooseRequests[1].save_confirmed, true);
+});
+
+test("a Human Audit overwrites a collision only after a separate explicit decision", async () => {
+  const cwd = path.resolve("/workspace");
+  const requestedPath = path.join(cwd, "launchrally-audit-report.json");
+  const responses = [
+    { output_path: requestedPath },
+    { decision: "overwrite" },
+  ];
+  let saveOptions;
+
+  const outcome = await runHumanAudit({
+    cwd,
+    version: "0.1.0",
+    prompt: {
+      async start() {},
+      async respond() {},
+      async reportSave() {
+        return responses.shift();
+      },
+      async close() {},
+    },
+    runAudit: async () => ({ status: "completed", report: { report_id: "report-1" } }),
+    inspectDestination: async () => ({ valid: true, collision: true }),
+    saveResult: async (outputPath, result, options) => {
+      saveOptions = options;
+      return outputPath;
+    },
+  });
+
+  assert.equal(outcome.outputPath, requestedPath);
+  assert.deepEqual(saveOptions, { overwrite: true });
+});
+
+test("an explicit --output path keeps its non-interactive exclusive-write behavior", async () => {
+  const requestedPath = path.resolve("/workspace/provided.json");
+  let saveOptions;
+
+  const outcome = await runHumanAudit({
+    cwd: "/workspace",
+    version: "0.1.0",
+    outputPath: requestedPath,
+    prompt: {
+      async start() {},
+      async respond() {
+        throw new Error("--output must not prompt for a save destination.");
+      },
+      async reportSave() {
+        throw new Error("--output must not prompt for a save destination.");
+      },
+      async close() {},
+    },
+    runAudit: async () => ({ status: "completed", report: { report_id: "report-1" } }),
+    inspectDestination: async () => {
+      throw new Error("--output must not preflight collisions interactively.");
+    },
+    saveResult: async (outputPath, result, options) => {
+      saveOptions = options;
+      return outputPath;
+    },
+  });
+
+  assert.equal(outcome.outputPath, requestedPath);
+  assert.deepEqual(saveOptions, { overwrite: false });
+});
+
+test("a Human Audit rejects reserved and unusable Report destinations", async () => {
+  const cwd = path.resolve("/workspace");
+  const reservedPath = path.join(cwd, ".launchrally", "report.json");
+  const unusablePath = path.join(cwd, "missing", "report.json");
+  const validPath = path.join(cwd, "report.json");
+  const responses = [
+    { output_path: reservedPath },
+    { output_path: unusablePath },
+    { output_path: validPath },
+    { decision: "save" },
+  ];
+  const chooseRequests = [];
+  const inspected = [];
+
+  const outcome = await runHumanAudit({
+    cwd,
+    version: "0.1.0",
+    prompt: {
+      async start() {},
+      async respond() {},
+      async reportSave(request) {
+        if (request.phase === "choose") chooseRequests.push(request);
+        return responses.shift();
+      },
+      async close() {},
+    },
+    runAudit: async () => ({ status: "completed", report: { report_id: "report-1" } }),
+    inspectDestination: async (outputPath) => {
+      inspected.push(outputPath);
+      return outputPath === unusablePath
+        ? { valid: false, reason: "parent_unavailable" }
+        : { valid: true, collision: false };
+    },
+    saveResult: async (outputPath) => outputPath,
+  });
+
+  assert.equal(outcome.outputPath, validPath);
+  assert.deepEqual(inspected, [unusablePath, validPath]);
+  assert.match(chooseRequests[1].notice, /\.launchrally/u);
+  assert.match(chooseRequests[2].notice, /not usable/u);
+  assert.equal(chooseRequests[1].save_confirmed, true);
+  assert.equal(chooseRequests[2].save_confirmed, true);
 });
 
 test("an interrupted Human Audit closes its prompt and returns exit code 130 without repository writes", async () => {

@@ -343,6 +343,25 @@ function completedMultiSelection(resolution) {
   return { done: false };
 }
 
+function reportDestinationOptions(request) {
+  return [
+    { label: `Use suggested path — ${request.suggested_path}`, value: "suggested" },
+    ...(request.file_picker_available
+      ? [{ label: "Open the system file picker", value: "file_picker" }]
+      : []),
+    { label: "Enter a custom path", value: "custom" },
+    { label: "Do not save", value: "cancel" },
+  ];
+}
+
+function reportCollisionOptions() {
+  return [
+    { label: "Overwrite the existing file", value: "overwrite" },
+    { label: "Choose another path", value: "choose_another" },
+    { label: "Do not save", value: "cancel" },
+  ];
+}
+
 async function collectAnswers(
   result,
   ask,
@@ -463,6 +482,42 @@ export function createPlainPromptAdapter({ input, output, signals = process }) {
     async start() {
       write(output, "LaunchRally Audit");
     },
+    async reportSave(request) {
+      if (request.phase === "choose") {
+        if (request.notice) write(output, request.notice);
+        if (!request.save_confirmed
+          && !await confirm("Save the complete Audit JSON to a file?")) return {};
+        const selected = await choose(
+          "Choose where to save the complete Report:",
+          reportDestinationOptions(request),
+        );
+        if (selected === "suggested") {
+          return { output_path: request.suggested_path, suggested: true };
+        }
+        if (selected === "file_picker") return { file_picker: true };
+        if (selected === "custom") {
+          while (true) {
+            const outputPath = (await ask("Save path:")).trim();
+            if (outputPath) return { output_path: outputPath };
+            write(output, "Enter a non-empty Report path.");
+          }
+        }
+        return {};
+      }
+      if (request.phase === "confirm") {
+        write(output, `Exact Report destination: ${request.resolved_path}`);
+        if (request.collision) {
+          write(output, "A file already exists at this destination.");
+          return {
+            decision: await choose("Choose how to continue:", reportCollisionOptions()),
+          };
+        }
+        return await confirm("Write the complete Report to this path?")
+          ? { decision: "save" }
+          : { decision: "cancel" };
+      }
+      return {};
+    },
     async respond(result) {
       if (result.status === "needs_input") {
         write(output, inputStateText(result));
@@ -493,11 +548,6 @@ export function createPlainPromptAdapter({ input, output, signals = process }) {
             : "denied";
         }
         return { permission_decisions: permissionDecisions };
-      }
-      if (result.status === "completed" && result.report) {
-        if (!await confirm("Save the complete Audit JSON to a file?")) return {};
-        const outputPath = (await ask("Save path:")).trim();
-        return outputPath ? { output_path: outputPath } : {};
       }
       return {};
     },
@@ -587,6 +637,64 @@ export async function createClackPromptAdapter({ input, output }) {
     async start() {
       clack.intro("LaunchRally Audit", common);
     },
+    async reportSave(request) {
+      if (request.phase === "choose") {
+        if (request.notice) clack.note(request.notice, "System file picker", common);
+        if (!request.save_confirmed) {
+          const save = await clack.confirm({
+            ...common,
+            message: "Save the complete Audit JSON to a file?",
+            initialValue: false,
+          });
+          if (!cancelled(save, clack, output)) return {};
+        }
+        const selected = cancelled(await clack.select({
+          ...common,
+          message: "Choose where to save the complete Report:",
+          options: reportDestinationOptions(request),
+          initialValue: "suggested",
+        }), clack, output);
+        if (selected === "suggested") {
+          return { output_path: request.suggested_path, suggested: true };
+        }
+        if (selected === "file_picker") return { file_picker: true };
+        if (selected === "custom") {
+          const outputPath = await ask("Save path:", { required: true });
+          return { output_path: outputPath.trim() };
+        }
+        return {};
+      }
+      if (request.phase === "confirm") {
+        clack.note(
+          `Exact Report destination: ${request.resolved_path}`,
+          "Report save",
+          common,
+        );
+        if (request.collision) {
+          clack.note(
+            "A file already exists at this destination.",
+            "Existing file",
+            common,
+          );
+          const decision = await clack.select({
+            ...common,
+            message: "Choose how to continue:",
+            options: reportCollisionOptions(),
+            initialValue: "choose_another",
+          });
+          return { decision: cancelled(decision, clack, output) };
+        }
+        const save = await clack.confirm({
+          ...common,
+          message: "Write the complete Report to this path?",
+          initialValue: false,
+        });
+        return cancelled(save, clack, output)
+          ? { decision: "save" }
+          : { decision: "cancel" };
+      }
+      return {};
+    },
     async respond(result) {
       if (result.status === "needs_input") {
         clack.note(inputStateText(result), "Audit Brief", common);
@@ -622,16 +730,6 @@ export async function createClackPromptAdapter({ input, output }) {
             : "denied";
         }
         return { permission_decisions: permissionDecisions };
-      }
-      if (result.status === "completed" && result.report) {
-        const save = await clack.confirm({
-          ...common,
-          message: "Save the complete Audit JSON to a file?",
-          initialValue: false,
-        });
-        if (!cancelled(save, clack, output)) return {};
-        const outputPath = await ask("Save path:");
-        return outputPath.trim() ? { output_path: outputPath.trim() } : {};
       }
       return {};
     },

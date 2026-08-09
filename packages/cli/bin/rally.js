@@ -18,6 +18,8 @@ import {
   renderHumanAuditCompletion,
   runHumanAudit,
 } from "./human-audit.js";
+import { inspectReportDestination } from "./report-destination.js";
+import { createSystemFilePicker } from "./system-file-picker.js";
 
 const VERSION = "0.1.0";
 const args = process.argv.slice(2);
@@ -533,6 +535,7 @@ async function main() {
     const prompt = plain
       ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
       : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+    const filePicker = createSystemFilePicker({ defaultDirectory: path.resolve(cwd) });
     let outcome;
     try {
       outcome = await runHumanAudit({
@@ -541,12 +544,14 @@ async function main() {
         prompt,
         runAudit,
         outputPath: optionValue("--output"),
-        saveResult: async (requestedPath, result) => {
+        filePicker,
+        inspectDestination: inspectReportDestination,
+        saveResult: async (requestedPath, result, { overwrite = false } = {}) => {
           const resolvedPath = path.resolve(requestedPath);
           try {
             await writeFile(resolvedPath, `${JSON.stringify(result, null, 2)}\n`, {
               encoding: "utf8",
-              flag: "wx",
+              flag: overwrite ? "w" : "wx",
             });
           } catch (error) {
             error.code = "audit_output_failed";

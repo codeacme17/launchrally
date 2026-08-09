@@ -14,7 +14,7 @@ npm exec --package=@launchrally/cli@0.1.0 -- rally audit --json --cwd .
 
 If npm needs to download the package, review its normal confirmation. Do not bypass that prompt. The first Audit does not modify the project. Optional project adoption happens later through `rally init`, which pins `@launchrally/cli` in the committed `.launchrally/toolchain/package.json` and npm lockfile without changing application dependencies. Init tries npm's offline cache first. A cache miss produces a typed permission request that discloses the exact package, version, registry source, and lifecycle-script-disabled command before any registry read; the file preview and confirmation follow only after resolution succeeds.
 
-For an interactive TTY wizard, omit `--json`. Add `--plain` for numbered choices and `[y/N]` confirmations. Human Mode writes prompts to stderr, prints a concise assessment to stdout, and writes full Report JSON only after `--output <path>` or an explicit save confirmation. Non-TTY automation must keep `--json`.
+For an interactive TTY wizard, omit `--json`. Add `--plain` for numbered choices and `[y/N]` confirmations. Human Mode writes prompts to stderr, prints a concise assessment to stdout, and writes full Report JSON only after `--output <path>` or an explicit save confirmation. After confirmation, accept the disclosed `<cwd>/launchrally-audit-report.json` suggestion with one selection, enter a custom path, or use the optional native system file picker when a supported local GUI is available. LaunchRally validates custom destinations, shows the exact resolved destination before writing, rejects `.launchrally/**`, and requires a separate decision before overwriting an existing file. Non-TTY automation must keep `--json`.
 
 ## Codex Plugin
 
