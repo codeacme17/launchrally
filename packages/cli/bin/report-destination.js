@@ -3,7 +3,7 @@ import { access, lstat, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-async function canonicalDestination(destination) {
+async function destinationWithCanonicalParent(destination) {
   try {
     const parent = await realpath(path.dirname(destination));
     return path.join(parent, path.basename(destination));
@@ -17,7 +17,7 @@ async function canonicalLaunchRallyRoot(cwd) {
   try {
     return await realpath(launchRallyRoot);
   } catch {
-    return canonicalDestination(launchRallyRoot);
+    return destinationWithCanonicalParent(launchRallyRoot);
   }
 }
 
@@ -25,19 +25,27 @@ function comparablePath(value, platform) {
   return ["darwin", "win32"].includes(platform) ? value.toLowerCase() : value;
 }
 
+function isPathWithin(root, candidate, platform) {
+  const relative = path.relative(
+    comparablePath(root, platform),
+    comparablePath(candidate, platform),
+  );
+  return relative === ""
+    || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+}
+
 export async function isLaunchRallyDestination(
   cwd,
   destination,
   { platform = process.platform } = {},
 ) {
+  const lexicalLaunchRallyRoot = path.resolve(cwd, ".launchrally");
+  const lexicalCandidate = path.resolve(destination);
+  if (isPathWithin(lexicalLaunchRallyRoot, lexicalCandidate, platform)) return true;
+
   const launchRallyRoot = await canonicalLaunchRallyRoot(cwd);
-  const candidate = await canonicalDestination(destination);
-  const relative = path.relative(
-    comparablePath(launchRallyRoot, platform),
-    comparablePath(candidate, platform),
-  );
-  return relative === ""
-    || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative));
+  const candidate = await destinationWithCanonicalParent(destination);
+  return isPathWithin(launchRallyRoot, candidate, platform);
 }
 
 export async function inspectReportDestination(destination) {

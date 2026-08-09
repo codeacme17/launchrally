@@ -17,6 +17,7 @@ test("the macOS file picker probes osascript and requests the default report pat
   };
   const picker = createSystemFilePicker({
     platform: "darwin",
+    userId: 501,
     env: {},
     defaultDirectory: "/work",
     runner,
@@ -47,6 +48,7 @@ test("the macOS file picker returns null when the user cancels", async () => {
   };
   const picker = createSystemFilePicker({
     platform: "darwin",
+    userId: 501,
     env: {},
     defaultDirectory: "/work",
     runner,
@@ -59,6 +61,7 @@ test("the file picker preserves whitespace that belongs to the selected filename
   let calls = 0;
   const picker = createSystemFilePicker({
     platform: "darwin",
+    userId: 501,
     env: {},
     runner: async () => {
       calls += 1;
@@ -230,6 +233,7 @@ test("the file picker treats an explicitly false CI flag as a local session", as
   let calls = 0;
   const picker = createSystemFilePicker({
     platform: "darwin",
+    userId: 501,
     env: { CI: "false" },
     runner: async () => {
       calls += 1;
@@ -247,6 +251,7 @@ test("the file picker treats an explicitly false CI flag as a local session", as
 test("the file picker rejects headless macOS and Windows sessions after native probing", async () => {
   const mac = createSystemFilePicker({
     platform: "darwin",
+    userId: 501,
     env: {},
     runner: async (command) => {
       if (command === "launchctl") throw Object.assign(new Error("no Aqua session"), { code: 113 });
@@ -273,6 +278,7 @@ test("the file picker reports native dialog failures separately from cancellatio
   let calls = 0;
   const picker = createSystemFilePicker({
     platform: "darwin",
+    userId: 501,
     env: {},
     defaultDirectory: "/work",
     runner: async () => {

@@ -49,8 +49,12 @@ test("Audit reserves every .launchrally destination for separately confirmed Ini
   const cwd = await mkdtemp(path.join(os.tmpdir(), "launchrally-reserved-"));
   const reservedReports = path.join(cwd, ".launchrally", "reports");
   const alias = path.join(cwd, "reports");
+  const externalReports = path.join(cwd, "external-reports");
+  const outboundAlias = path.join(cwd, ".launchrally", "outbound");
   await mkdir(reservedReports, { recursive: true });
+  await mkdir(externalReports);
   await symlink(reservedReports, alias);
+  await symlink(externalReports, outboundAlias);
 
   assert.equal(await isLaunchRallyDestination(cwd, path.join(cwd, ".launchrally")), true);
   assert.equal(
@@ -61,6 +65,10 @@ test("Audit reserves every .launchrally destination for separately confirmed Ini
     true,
   );
   assert.equal(await isLaunchRallyDestination(cwd, path.join(alias, "audit.json")), true);
+  assert.equal(
+    await isLaunchRallyDestination(cwd, path.join(outboundAlias, "audit.json")),
+    true,
+  );
   assert.equal(
     await isLaunchRallyDestination(
       cwd,
