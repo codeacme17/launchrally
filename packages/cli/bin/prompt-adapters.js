@@ -483,10 +483,17 @@ export function createPlainPromptAdapter({ input, output, signals = process }) {
             write(output, `Enter numbers from 1 to ${detected.length}, separated by commas.`);
             continue;
           }
-          return detected
+          const remaining = detected
             .filter((_, index) => !deselectedIndexes.includes(index))
             .map((option) => option.value);
+          if (remaining.length > 0) return remaining;
+          write(
+            output,
+            "Select at least one detected Journey, or return to the picker and explicitly choose Skip.",
+          );
+          break;
         }
+        continue;
       }
       const resolution = resolveMultiSelection(selected, {
         customValue,

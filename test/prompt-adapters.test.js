@@ -408,6 +408,35 @@ test("the Plain adapter lets users deselect a detected Journey after selecting a
   });
 });
 
+test("the Plain adapter requires an explicit Skip after deselecting every detected Journey", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("1\n"), 10);
+  setTimeout(() => input.write("1,2\n"), 30);
+  setTimeout(() => input.write("6\n"), 50);
+  const response = await prompt.respond(journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response, { answers: { core_journeys: [] } });
+  assert.match(
+    rendered,
+    /Select at least one detected Journey, or return to the picker and explicitly choose Skip\./u,
+  );
+  assert.equal(
+    rendered.match(/Select one or more numbers separated by commas:/gu)?.length,
+    2,
+  );
+});
+
 test("the Plain adapter rejects unsafe custom Journeys before submitting to Core", async () => {
   const input = ttyStream();
   const output = ttyStream();
