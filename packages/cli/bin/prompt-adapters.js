@@ -136,6 +136,51 @@ function write(output, value) {
   output.write(`${value}\n`);
 }
 
+function completedActivityLabel(label) {
+  return `${String(label).replace(/(?:…|\.\.\.)$/u, "").trim()}.`;
+}
+
+async function runPromptActivity({
+  label,
+  operation,
+  signal,
+  delayMs,
+  start,
+  complete,
+  fail,
+  cancel,
+}) {
+  let active = false;
+  const activate = () => {
+    active = true;
+    start(label);
+  };
+  const timer = delayMs <= 0 ? (activate(), undefined) : setTimeout(activate, delayMs);
+  let handleAbort;
+  const abort = signal && new Promise((resolve, reject) => {
+    handleAbort = () => reject(new PromptCancelledError());
+    if (signal.aborted) handleAbort();
+    else signal.addEventListener("abort", handleAbort, { once: true });
+  });
+
+  try {
+    const operationPromise = Promise.resolve().then(operation);
+    const value = await (abort ? Promise.race([operationPromise, abort]) : operationPromise);
+    if (active) complete(completedActivityLabel(label));
+    return value;
+  } catch (error) {
+    if (error instanceof PromptCancelledError || signal?.aborted) {
+      cancel(completedActivityLabel(label), active);
+    } else {
+      fail(completedActivityLabel(label), active);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    if (handleAbort) signal.removeEventListener("abort", handleAbort);
+  }
+}
+
 function list(values, render = String) {
   return values.length > 0 ? values.map((value) => `  - ${render(value)}`).join("\n") : "  - None";
 }
@@ -390,7 +435,12 @@ async function collectAnswers(
   return answers;
 }
 
-export function createPlainPromptAdapter({ input, output, signals = process }) {
+export function createPlainPromptAdapter({
+  input,
+  output,
+  signals = process,
+  activityDelayMs = 120,
+}) {
   const controller = new AbortController();
   const readline = createInterface({ input, output, terminal: false });
   const handleInterrupt = () => controller.abort();
@@ -482,6 +532,18 @@ export function createPlainPromptAdapter({ input, output, signals = process }) {
     async start() {
       write(output, "LaunchRally Audit");
     },
+    async activity(label, operation) {
+      return runPromptActivity({
+        label,
+        operation,
+        signal: controller.signal,
+        delayMs: activityDelayMs,
+        start: (message) => write(output, `Working: ${message}`),
+        complete: (message) => write(output, `Completed: ${message}`),
+        fail: (message) => write(output, `Failed: ${message}`),
+        cancel: (message) => write(output, `Cancelled: ${message}`),
+      });
+    },
     async reportSave(request) {
       if (request.phase === "choose") {
         if (request.notice) write(output, request.notice);
@@ -564,8 +626,16 @@ function cancelled(value, clack, output) {
   throw new PromptCancelledError();
 }
 
-export async function createClackPromptAdapter({ input, output }) {
+export async function createClackPromptAdapter({
+  input,
+  output,
+  signals = process,
+  activityDelayMs = 120,
+}) {
   const clack = await loadClack();
+  const controller = new AbortController();
+  const handleInterrupt = () => controller.abort();
+  signals.on("SIGINT", handleInterrupt);
   const common = { input, output, withGuide: false };
   const ask = async (message, field = {}) => cancelled(await clack.text({
     ...common,
@@ -636,6 +706,29 @@ export async function createClackPromptAdapter({ input, output }) {
   return {
     async start() {
       clack.intro("LaunchRally Audit", common);
+    },
+    async activity(label, operation) {
+      const completionLabel = completedActivityLabel(label);
+      const spinner = clack.spinner({
+        ...common,
+        signal: controller.signal,
+        cancelMessage: `Cancelled: ${completionLabel}`,
+        errorMessage: `Failed: ${completionLabel}`,
+      });
+      return runPromptActivity({
+        label,
+        operation,
+        signal: controller.signal,
+        delayMs: activityDelayMs,
+        start: (message) => spinner.start(message),
+        complete: (message) => spinner.stop(`Completed: ${message}`),
+        fail: (message, active) => active
+          ? spinner.error(`Failed: ${message}`)
+          : clack.log.error(`Failed: ${message}`, common),
+        cancel: (message, active) => active
+          ? spinner.cancel(`Cancelled: ${message}`)
+          : clack.cancel(`Cancelled: ${message}`, common),
+      });
     },
     async reportSave(request) {
       if (request.phase === "choose") {
@@ -733,6 +826,8 @@ export async function createClackPromptAdapter({ input, output }) {
       }
       return {};
     },
-    async close() {},
+    async close() {
+      signals.off("SIGINT", handleInterrupt);
+    },
   };
 }

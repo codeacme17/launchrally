@@ -19,6 +19,99 @@ function ttyStream() {
   return stream;
 }
 
+test("the Plain adapter reports active work and a clear text completion", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output, activityDelayMs: 0 });
+
+  const value = await prompt.activity(
+    "Scanning repository…",
+    async () => "complete",
+  );
+  await prompt.close();
+
+  assert.equal(value, "complete");
+  assert.equal(rendered, [
+    "Working: Scanning repository…",
+    "Completed: Scanning repository.",
+    "",
+  ].join("\n"));
+});
+
+test("the Plain adapter suppresses status flicker for short work", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output, activityDelayMs: 50 });
+
+  await prompt.activity("Scanning repository…", async () => {});
+  await prompt.close();
+
+  assert.equal(rendered, "");
+});
+
+test("the Plain adapter replaces active work with a failure state", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output, activityDelayMs: 0 });
+
+  await assert.rejects(
+    prompt.activity("Reading Cloudflare Provider data…", async () => {
+      throw new Error("provider unavailable");
+    }),
+    /provider unavailable/u,
+  );
+  await prompt.close();
+
+  assert.equal(rendered, [
+    "Working: Reading Cloudflare Provider data…",
+    "Failed: Reading Cloudflare Provider data.",
+    "",
+  ].join("\n"));
+});
+
+test("the Plain adapter cancels active work on SIGINT and removes its listener", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const signals = new EventEmitter();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({
+    input,
+    output,
+    signals,
+    activityDelayMs: 0,
+  });
+
+  const activity = prompt.activity(
+    "Verifying public Journeys…",
+    async () => new Promise(() => {}),
+  );
+  signals.emit("SIGINT");
+  await assert.rejects(activity, PromptCancelledError);
+  await prompt.close();
+
+  assert.equal(rendered, [
+    "Working: Verifying public Journeys…",
+    "Cancelled: Verifying public Journeys.",
+    "",
+  ].join("\n"));
+  assert.equal(signals.listenerCount("SIGINT"), 0);
+});
+
 test("the Plain adapter explains and validates required input before continuing", async () => {
   const input = ttyStream();
   const output = ttyStream();
@@ -562,6 +655,38 @@ test("the Clack adapter accepts injected TTY streams and keeps permission meanin
   assert.match(semanticOutput, /Public verification/u);
   assert.match(semanticOutput, /Targets: https:\/\/example\.com\//u);
   assert.match(semanticOutput, /Approve this permission\?/u);
+});
+
+test("the Clack adapter displays and completes active work", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({
+    input,
+    output,
+    activityDelayMs: 0,
+  });
+  let finish;
+
+  const activity = prompt.activity(
+    "Verifying public Journeys…",
+    async () => new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.match(stripVTControlCharacters(rendered), /Verifying public Journeys/u);
+  finish("verified");
+  assert.equal(await activity, "verified");
+  await prompt.close();
+
+  assert.match(
+    stripVTControlCharacters(rendered),
+    /Verifying public Journeys\./u,
+  );
 });
 
 test("the Clack adapter uses a select prompt for the environment", async () => {
