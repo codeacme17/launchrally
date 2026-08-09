@@ -58,6 +58,7 @@ function failedPublicObservation(entry) {
     || artifact.status !== "failed"
   ) return null;
   const observation = {
+    kind: "public_observation",
     evidence_digest: entry.digest,
     probe_id: artifact.probe_id,
     probe_kind: artifact.probe_kind,
@@ -71,15 +72,39 @@ function failedPublicObservation(entry) {
   return observation;
 }
 
+function localObservation(entry) {
+  const artifact = entry.normalized_artifact;
+  if (
+    entry.evidence_kind !== "local_observation"
+    || artifact?.kind !== "local_observation"
+  ) return null;
+  return {
+    kind: "local_observation",
+    evidence_digest: entry.digest,
+    target: artifact.target,
+    outcome: artifact.outcome,
+  };
+}
+
 function actionEvidence(finding, evidenceByDigest) {
   const entries = finding.evidence
     .map((reference) => evidenceByDigest.get(reference.digest))
     .filter(Boolean);
-  const failedPublicEntries = entries.filter((entry) => failedPublicObservation(entry));
-  const supportingEntries = failedPublicEntries.length > 0 ? failedPublicEntries : entries;
+  const failedPublic = entries.map((entry) => ({
+    entry,
+    observation: failedPublicObservation(entry),
+  })).filter(({ observation }) => observation);
+  const supportingEntries = failedPublic.length > 0
+    ? failedPublic.map(({ entry }) => entry)
+    : entries;
+  const observations = failedPublic.length > 0
+    ? failedPublic.map(({ observation }) => observation)
+    : entries.map(localObservation).filter(Boolean);
   return {
     evidence: supportingEntries.map(actionEvidenceReference),
-    observations: failedPublicEntries.map(failedPublicObservation),
+    observations: observations.length > 0
+      ? observations
+      : [{ kind: "check_result", summary: finding.summary }],
   };
 }
 

@@ -140,7 +140,10 @@ test("a Critical failure is gating, produces No-Go, and is the only Action Queue
       source: "local_safe_scan/v1",
       target: "repository:critical-lockfile",
     }],
-    observations: [],
+    observations: [{
+      kind: "check_result",
+      summary: "critical-lockfile is failed",
+    }],
     targeted_verification: {
       operation: "verify",
       scope: "targeted",
@@ -224,6 +227,7 @@ test("failed public observations become safe deterministic targeted actions", ()
     })),
     observations: [
       {
+        kind: "public_observation",
         evidence_digest: "sha256:journey-one",
         probe_id: "target-1:journey-1",
         probe_kind: "journey",
@@ -233,6 +237,7 @@ test("failed public observations become safe deterministic targeted actions", ()
         status_code: 500,
       },
       {
+        kind: "public_observation",
         evidence_digest: "sha256:journey-two",
         probe_id: "target-1:journey-2",
         probe_kind: "journey",

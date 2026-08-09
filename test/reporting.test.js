@@ -11,6 +11,7 @@ import {
   REPORT_CONTRACT_MAJOR,
   assertSupportedManifestVersion,
   assertSupportedReportVersion,
+  assertValidReportPackage,
 } from "../packages/contracts/src/index.js";
 import {
   renderReportMarkdown,
@@ -25,13 +26,15 @@ const ANSWERS = Object.freeze({
   support_layers: [],
 });
 
-async function fixture() {
+async function fixture({ withLockfile = true } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-report-"));
   await writeFile(
     path.join(directory, "package.json"),
     JSON.stringify({ name: "report-web", scripts: { build: "vite build" } }),
   );
-  await writeFile(path.join(directory, "package-lock.json"), '{"lockfileVersion":3}');
+  if (withLockfile) {
+    await writeFile(path.join(directory, "package-lock.json"), '{"lockfileVersion":3}');
+  }
   return directory;
 }
 
@@ -159,6 +162,24 @@ test("repeated Audits create new Records and Indexes without mutating earlier re
   assert.ok(!Number.isNaN(Date.parse(first.report.created_at)));
   assert.ok(!Number.isNaN(Date.parse(second.report.created_at)));
   assert.equal(JSON.stringify(first), firstSnapshot);
+});
+
+test("historical Report v2 actions remain valid and keep their legacy Markdown rendering", async () => {
+  const directory = await fixture({ withLockfile: false });
+  const result = structuredClone(await complete(directory));
+  for (const action of result.report.results.action_queue) {
+    delete action.evidence;
+    delete action.observations;
+    delete action.targeted_verification;
+  }
+  result.report_view.content = renderReportMarkdown(result.report);
+
+  assert.doesNotThrow(() => assertValidReportPackage(result));
+  assert.doesNotMatch(result.report_view.content, /Severity: critical; Gating:/u);
+  assert.match(
+    result.report_view.content,
+    /\[P0\] web\.baseline\.lockfile — Commit the package manager lockfile/u,
+  );
 });
 
 test("derived Report Views label compatibility targets with the reviewed environment", async () => {

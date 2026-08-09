@@ -332,7 +332,7 @@
     },
     "action": {
       "type": "object",
-      "required": ["check_id", "priority", "severity", "gating", "dependency_unblocking", "core_journey_impact", "action", "evidence", "observations", "targeted_verification"],
+      "required": ["check_id", "priority", "severity", "gating", "dependency_unblocking", "core_journey_impact", "action"],
       "properties": {
         "check_id": { "type": "string", "minLength": 1 },
         "priority": { "$ref": "#/$defs/priority" },
@@ -348,7 +348,8 @@
         },
         "observations": {
           "type": "array",
-          "items": { "$ref": "#/$defs/actionObservation" }
+          "items": { "$ref": "#/$defs/actionObservation" },
+          "minItems": 1
         },
         "targeted_verification": { "$ref": "#/$defs/targetedVerification" }
       },
@@ -365,9 +366,17 @@
       "additionalProperties": false
     },
     "actionObservation": {
+      "oneOf": [
+        { "$ref": "#/$defs/publicActionObservation" },
+        { "$ref": "#/$defs/localActionObservation" },
+        { "$ref": "#/$defs/checkResultObservation" }
+      ]
+    },
+    "publicActionObservation": {
       "type": "object",
-      "required": ["evidence_digest", "probe_id", "probe_kind", "method", "path", "outcome"],
+      "required": ["kind", "evidence_digest", "probe_id", "probe_kind", "method", "path", "outcome"],
       "properties": {
+        "kind": { "const": "public_observation" },
         "evidence_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
         "probe_id": { "type": "string", "minLength": 1 },
         "probe_kind": { "enum": ["dns", "tls", "http", "health", "journey"] },
@@ -375,6 +384,26 @@
         "path": { "type": "string", "pattern": "^/" },
         "outcome": { "enum": ["resolved", "secure", "reachable", "healthy", "completed", "journey_definition_incomplete", "redirect_not_followed", "target_mismatch", "http_status_failure", "dns_failure", "certificate_failure", "unreachable", "timeout", "execution_failure"] },
         "status_code": { "type": "integer", "minimum": 0, "maximum": 599 }
+      },
+      "additionalProperties": false
+    },
+    "localActionObservation": {
+      "type": "object",
+      "required": ["kind", "evidence_digest", "target", "outcome"],
+      "properties": {
+        "kind": { "const": "local_observation" },
+        "evidence_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "target": { "type": "string", "minLength": 1 },
+        "outcome": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "checkResultObservation": {
+      "type": "object",
+      "required": ["kind", "summary"],
+      "properties": {
+        "kind": { "const": "check_result" },
+        "summary": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },

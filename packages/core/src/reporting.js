@@ -257,6 +257,12 @@ function markdownList(items, render, empty = "- None") {
 }
 
 function renderActionObservation(observation) {
+  if (observation.kind === "check_result") {
+    return `  Observation: ${oneLine(observation.summary)}`;
+  }
+  if (observation.kind === "local_observation") {
+    return `  Observation: ${oneLine(observation.target)} — ${oneLine(observation.outcome)}`;
+  }
   const status = Object.hasOwn(observation, "status_code")
     ? ` (HTTP ${oneLine(observation.status_code)})`
     : "";
@@ -274,6 +280,9 @@ function renderTargetedVerify(targetedVerification) {
 }
 
 function renderAction(item) {
+  if (!item.evidence && !item.observations && !item.targeted_verification) {
+    return `[${item.priority.toUpperCase()}] ${oneLine(item.check_id)} — ${oneLine(item.action)}`;
+  }
   const lines = [
     `[${item.priority.toUpperCase()}] ${oneLine(item.check_id)} — ${oneLine(item.action)}`,
     `  Severity: ${oneLine(item.severity)}; Gating: ${item.gating ? "yes" : "no"}; Core journey impact: ${oneLine(item.core_journey_impact)}`,

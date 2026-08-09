@@ -244,7 +244,12 @@ test("audit reports a failed Web baseline Check when the lockfile is missing", a
         source: "local_safe_scan/v1",
         target: "repository:root-lockfiles",
       }],
-      observations: [],
+      observations: [{
+        kind: "local_observation",
+        evidence_digest: action.evidence[0].digest,
+        target: "repository:root-lockfiles",
+        outcome: "No supported root dependency lockfile was present in the complete Local Safe Scan.",
+      }],
       targeted_verification: {
         operation: "verify",
         scope: "targeted",

@@ -693,6 +693,7 @@ test("a failed public Journey produces one concrete safe targeted Audit action",
       core_journey_impact: "direct",
     });
     assert.deepEqual(action.observations, [{
+      kind: "public_observation",
       evidence_digest: action.evidence[0].digest,
       probe_id: "target-1:journey-1",
       probe_kind: "journey",
