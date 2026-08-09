@@ -14,6 +14,7 @@
     "node": ">=20.12.0"
   },
   "dependencies": {
+    "@clack/core": "1.4.3",
     "@clack/prompts": "1.7.0",
     "@launchrally/contracts": "0.1.0",
     "@launchrally/core": "0.1.0"

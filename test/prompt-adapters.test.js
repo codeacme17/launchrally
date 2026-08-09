@@ -19,6 +19,28 @@ function ttyStream() {
   return stream;
 }
 
+function journeyInput(candidates) {
+  return {
+    status: "needs_input",
+    operation: "audit",
+    audit_brief: {
+      project: { name: "launchrally", type: "web" },
+      provider_roles: { candidates: [] },
+      support_layers: { candidates: [] },
+    },
+    request: {
+      validation_errors: [],
+      fields: [{
+        field_id: "core_journeys",
+        value_type: "journey_array",
+        prompt: "Which GET paths and user journeys must work for this release?",
+        candidates,
+        current_value: [],
+      }],
+    },
+  };
+}
+
 test("the Plain adapter explains and validates required input before continuing", async () => {
   const input = ttyStream();
   const output = ttyStream();
@@ -275,7 +297,10 @@ test("the Plain adapter offers a recommended Journey and an explicit Skip choice
     /Skip public Journey verification — creates a Verification Gap/u,
   );
   assert.match(rendered, /Skip cannot be combined with another Journey\./u);
-  assert.match(rendered, /Which public Journeys should LaunchRally verify\? \(Choose one or Skip\)/u);
+  assert.match(
+    rendered,
+    /Which public Journeys should LaunchRally verify\? \(Select one or more Journeys\./u,
+  );
 });
 
 test("the Plain adapter offers safely detected public routes as Journey choices", async () => {
@@ -287,8 +312,7 @@ test("the Plain adapter offers safely detected public routes as Journey choices"
   });
   const prompt = createPlainPromptAdapter({ input, output });
 
-  setTimeout(() => input.write("2\n"), 10);
-  setTimeout(() => input.write("GET /fallback — fallback loads\n"), 30);
+  setTimeout(() => input.write("3\n"), 10);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -324,6 +348,93 @@ test("the Plain adapter offers safely detected public routes as Journey choices"
   assert.match(rendered, /GET \/dashboard — dashboard page loads \(detected\)/u);
   assert.match(rendered, /GET \/docs — docs page loads \(detected\)/u);
   assert.match(rendered, /GET \/pricing — pricing page loads \(detected\)/u);
+});
+
+test("the Plain adapter selects detected Journeys without recommended, Other, or Skip choices", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("1\n"), 10);
+  setTimeout(() => input.write("\n"), 30);
+  const response = await prompt.respond(journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      core_journeys: [
+        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
+        { method: "GET", path: "/docs", purpose: "docs page loads" },
+      ],
+    },
+  });
+  assert.match(rendered, /Select all detected journeys/u);
+  assert.match(rendered, /GET \/ — homepage loads \(recommended\)/u);
+  assert.match(rendered, /Other — enter a custom value/u);
+  assert.match(rendered, /Skip public Journey verification/u);
+  assert.match(rendered, /Deselect detected Journeys by number, or press Enter to keep all:/u);
+  assert.match(
+    rendered,
+    /Select one or more Journeys\. Select all detected journeys includes only detected choices; you can then deselect individual Journeys\./u,
+  );
+});
+
+test("the Plain adapter lets users deselect a detected Journey after selecting all", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("1\n"), 10);
+  setTimeout(() => input.write("2\n"), 30);
+  const response = await prompt.respond(journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      core_journeys: [
+        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
+      ],
+    },
+  });
+});
+
+test("the Plain adapter requires an explicit Skip after deselecting every detected Journey", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("1\n"), 10);
+  setTimeout(() => input.write("1,2\n"), 30);
+  setTimeout(() => input.write("6\n"), 50);
+  const response = await prompt.respond(journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response, { answers: { core_journeys: [] } });
+  assert.match(
+    rendered,
+    /Select at least one detected Journey, or return to the picker and explicitly choose Skip\./u,
+  );
+  assert.equal(
+    rendered.match(/Select one or more numbers separated by commas:/gu)?.length,
+    2,
+  );
 });
 
 test("the Plain adapter rejects unsafe custom Journeys before submitting to Core", async () => {
@@ -813,6 +924,119 @@ test("the Clack adapter selects a recommended public Journey without free-form i
     semanticOutput,
     /Skip public Journey verification — creates a Verification Gap/u,
   );
+});
+
+test("the Clack adapter selects only detected Journeys and allows individual deselection", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write(" "), 20);
+  setTimeout(() => input.write("\u001b[B\u001b[B "), 40);
+  setTimeout(() => input.write("\r"), 60);
+  const response = await prompt.respond(journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      core_journeys: [
+        { method: "GET", path: "/docs", purpose: "docs page loads" },
+      ],
+    },
+  });
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /Select all detected journeys/u);
+  assert.match(semanticOutput, /GET \/ — homepage loads \(recommended\)/u);
+  assert.match(semanticOutput, /Other — enter a custom value/u);
+  assert.match(semanticOutput, /Skip public Journey verification/u);
+  assert.match(semanticOutput, /Space: toggle/u);
+  assert.match(semanticOutput, /Enter: confirm/u);
+  assert.match(semanticOutput, /› ◻ Select all detected journeys/u);
+  assert.match(semanticOutput, /◻ Select all detected journeys/u);
+  assert.match(semanticOutput, /◼ GET \/dashboard — dashboard page loads \(detected\)/u);
+  assert.doesNotMatch(semanticOutput, /\[(?: |x)\]/u);
+});
+
+test("the Clack bulk action clears a recommended Journey selection", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\u001b[B "), 20);
+  setTimeout(() => input.write("\u001b[A "), 40);
+  setTimeout(() => input.write("\r"), 60);
+  const response = await prompt.respond(journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      core_journeys: [
+        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
+        { method: "GET", path: "/docs", purpose: "docs page loads" },
+      ],
+    },
+  });
+});
+
+test("the Clack bulk action clears Other and Skip Journey selections", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\u001b[B\u001b[B\u001b[B\u001b[B "), 20);
+  setTimeout(() => input.write("\u001b[B "), 40);
+  setTimeout(() => input.write("\u001b[B "), 60);
+  setTimeout(() => input.write("\r"), 80);
+  const response = await prompt.respond(journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      core_journeys: [
+        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
+        { method: "GET", path: "/docs", purpose: "docs page loads" },
+      ],
+    },
+  });
+});
+
+test("the Clack A shortcut selects only detected Journeys and remains editable", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\u001b[B "), 20);
+  setTimeout(() => input.write("\u001b[B\u001b[B\u001b[B "), 40);
+  setTimeout(() => input.write("\u001b[B "), 60);
+  setTimeout(() => input.write("a"), 80);
+  setTimeout(() => input.write("\u001b[A\u001b[A "), 100);
+  setTimeout(() => input.write("\r"), 120);
+  const response = await prompt.respond(journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      core_journeys: [
+        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
+      ],
+    },
+  });
 });
 
 test("the Clack adapter accepts a safe GET path without requiring a purpose", async () => {
