@@ -54,7 +54,7 @@ const FIELD_PRESENTATION = Object.freeze({
   core_journeys: Object.freeze({
     required: true,
     display_prompt: "Which public Journeys should LaunchRally verify?",
-    requirement: "Select one or more Journeys",
+    requirement: "Select one or more Journeys. Select all detected journeys includes only detected choices; you can then deselect individual Journeys.",
     example: "GET /, GET /checkout — checkout completes",
     allow_custom: true,
     allow_skip: true,
@@ -656,21 +656,22 @@ async function journeyMultiselect({
         rowPadding: 3,
         style: (option, active) => {
           const checked = selected.includes(option.value);
+          const cursor = active ? "› " : "  ";
           const marker = checked
             ? styleText("green", "◼")
             : styleText(active ? "cyan" : "dim", "◻");
           const label = active
             ? option.label
             : styleText("dim", option.label);
-          return `${marker} ${label}`;
+          return `${cursor}${marker} ${label}`;
         },
       });
       const instructions = [
-        `${styleText("dim", "↑/↓")} to navigate`,
+        `${styleText("dim", "Up/Down:")} navigate`,
         `${styleText("dim", "Space:")} toggle`,
         `${styleText("dim", "Enter:")} confirm`,
         `${styleText("dim", "A:")} select all detected`,
-      ].join(" • ");
+      ].join("  ");
       return [
         `${clack.symbol(this.state)}  ${message}`,
         ...choices,
@@ -733,7 +734,7 @@ export async function createClackPromptAdapter({ input, output }) {
           common,
           detectedValues,
           initialValues,
-          message: fieldMessage(field),
+          message: fieldMessage({ ...field, requirement: "Select one or more Journeys" }),
           options,
           required: field.required,
           selectAllValue,
