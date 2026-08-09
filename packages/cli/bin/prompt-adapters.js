@@ -118,11 +118,14 @@ function journeyOptions(candidates = []) {
     .sort((left, right) =>
       left.path === "/" ? -1 : right.path === "/" ? 1 : left.path.localeCompare(right.path),
     )
-    .map((journey) => ({
-      label: `${journeyLabel(journey)} (${detectedJourneys.some((candidate) => candidate.path === journey.path) ? "detected" : "recommended"})`,
-      value: journey,
-      detected: detectedJourneys.some((candidate) => candidate.path === journey.path),
-    }));
+    .map((journey) => {
+      const detected = detectedJourneys.some((candidate) => candidate.path === journey.path);
+      return {
+        label: `${journeyLabel(journey)} (${detected ? "detected" : "recommended"})`,
+        value: journey,
+        detected,
+      };
+    });
 }
 
 function presentedField(field) {

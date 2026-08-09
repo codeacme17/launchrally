@@ -1009,6 +1009,32 @@ test("the Clack bulk action clears Other and Skip Journey selections", async () 
   });
 });
 
+test("the Clack A shortcut selects only detected Journeys and remains editable", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\u001b[B "), 20);
+  setTimeout(() => input.write("\u001b[B\u001b[B\u001b[B "), 40);
+  setTimeout(() => input.write("\u001b[B "), 60);
+  setTimeout(() => input.write("a"), 80);
+  setTimeout(() => input.write("\u001b[A\u001b[A "), 100);
+  setTimeout(() => input.write("\r"), 120);
+  const response = await prompt.respond(journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    answers: {
+      core_journeys: [
+        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
+      ],
+    },
+  });
+});
+
 test("the Clack adapter accepts a safe GET path without requiring a purpose", async () => {
   const input = ttyStream();
   const output = ttyStream();
