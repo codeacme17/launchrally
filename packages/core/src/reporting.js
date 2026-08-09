@@ -256,6 +256,40 @@ function markdownList(items, render, empty = "- None") {
   return items.length > 0 ? items.map((item) => `- ${render(item)}`).join("\n") : empty;
 }
 
+function renderActionObservation(observation) {
+  const status = Object.hasOwn(observation, "status_code")
+    ? ` (HTTP ${oneLine(observation.status_code)})`
+    : "";
+  return `  Observation: ${oneLine(observation.method)} ${oneLine(
+    observation.path,
+  )} — ${oneLine(observation.outcome)}${status} [${oneLine(observation.probe_id)}]`;
+}
+
+function renderTargetedVerify(targetedVerification) {
+  return `rally verify --report <saved-report-path> --scope ${oneLine(
+    targetedVerification.scope,
+  )} --checks '${oneLine(JSON.stringify(
+    targetedVerification.check_ids,
+  ))}' --json --cwd <repository-root>`;
+}
+
+function renderAction(item) {
+  const lines = [
+    `[${item.priority.toUpperCase()}] ${oneLine(item.check_id)} — ${oneLine(item.action)}`,
+    `  Severity: ${oneLine(item.severity)}; Gating: ${item.gating ? "yes" : "no"}; Core journey impact: ${oneLine(item.core_journey_impact)}`,
+    ...(item.observations ?? []).map(renderActionObservation),
+    ...(item.evidence ?? []).map((reference) =>
+      `  Evidence: ${oneLine(reference.digest)} — ${oneLine(reference.source)} — ${oneLine(
+        reference.target,
+      )}`,
+    ),
+    ...(item.targeted_verification
+      ? [`  Verify: ${renderTargetedVerify(item.targeted_verification)}`]
+      : []),
+  ];
+  return lines.join("\n");
+}
+
 export function renderReportMarkdown(record) {
   assertSupportedReportVersion(record);
   const scope = record.scope;
@@ -312,9 +346,7 @@ export function renderReportMarkdown(record) {
     "",
     "## Action Queue",
     "",
-    markdownList(record.results.action_queue, (item) =>
-      `[${item.priority.toUpperCase()}] ${oneLine(item.check_id)} — ${oneLine(item.action)}`,
-    ),
+    markdownList(record.results.action_queue, renderAction),
     "",
     "## Verification Gaps",
     "",

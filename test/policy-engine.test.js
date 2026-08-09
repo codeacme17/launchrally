@@ -53,7 +53,10 @@ function evaluate({
           digest: reference.digest,
           evidence_kind: "file",
           source: "local_safe_scan/v1",
+          target: `repository:${check.check_id}`,
           collected_at: evaluated_at,
+          freshness_class: "repository_snapshot",
+          redaction_state: "metadata_only",
         });
       }
     }
@@ -132,8 +135,120 @@ test("a Critical failure is gating, produces No-Go, and is the only Action Queue
     dependency_unblocking: true,
     core_journey_impact: "indirect",
     action: "Commit the lockfile.",
+    evidence: [{
+      digest: "sha256:critical-lockfile",
+      source: "local_safe_scan/v1",
+      target: "repository:critical-lockfile",
+    }],
+    observations: [],
+    targeted_verification: {
+      operation: "verify",
+      scope: "targeted",
+      check_ids: ["critical-lockfile"],
+    },
   }]);
   assert.deepEqual(result.verification_gaps, []);
+});
+
+test("failed public observations become safe deterministic targeted actions", () => {
+  const required = declaration("web.public.core-journeys", "critical", "always", {
+    core_journey_impact: "direct",
+  });
+  required.failure_evidence_requirement = {
+    accepted_kinds: ["public_observation"],
+    minimum_items: 1,
+    provenance_required: true,
+  };
+  const collectedAt = "2026-08-06T12:00:00.000Z";
+  const observations = [
+    ["sha256:journey-one", "target-1:journey-1", "/critical-path", 500],
+    ["sha256:journey-two", "target-1:journey-2", "/secondary-path", 503],
+  ].map(([digest, probeId, journeyPath, statusCode]) => ({
+    digest,
+    evidence_kind: "public_observation",
+    source: "public-verification/v1",
+    target: `https://example.com${journeyPath}`,
+    collected_at: collectedAt,
+    freshness_class: "audit_time",
+    redaction_state: "normalized",
+    normalized_artifact: {
+      kind: "public_observation",
+      probe_id: probeId,
+      probe_kind: "journey",
+      target: `https://example.com${journeyPath}`,
+      host: "example.com",
+      port: 443,
+      path: journeyPath,
+      method: "GET",
+      purpose: "Verify a declared core journey.",
+      status: "failed",
+      outcome: "http_status_failure",
+      collected_at: collectedAt,
+      duration_ms: 1,
+      details: {
+        status_code: statusCode,
+        response_body: "must-not-enter-action",
+        headers: { authorization: "Bearer must-not-enter-action" },
+      },
+      raw_provider_output: "must-not-enter-action",
+      unallowlisted: "must-not-enter-action",
+      provenance: {
+        collector: "public-verification/v1",
+        exact_target: `https://example.com${journeyPath}`,
+        collected_at: collectedAt,
+      },
+    },
+  }));
+  const result = evaluate({
+    declarations: [required],
+    checks: [{
+      ...finding("web.public.core-journeys", "failed"),
+      priority: "p0",
+      evidence: observations.map(({ digest }) => ({ digest })),
+    }],
+    evidence_entries: observations,
+  });
+
+  assert.deepEqual(result.action_queue, [{
+    check_id: "web.public.core-journeys",
+    priority: "p0",
+    severity: "critical",
+    gating: true,
+    dependency_unblocking: false,
+    core_journey_impact: "direct",
+    action: "Resolve the failed verification rule.",
+    evidence: observations.map((entry) => ({
+      digest: entry.digest,
+      source: entry.source,
+      target: entry.target,
+    })),
+    observations: [
+      {
+        evidence_digest: "sha256:journey-one",
+        probe_id: "target-1:journey-1",
+        probe_kind: "journey",
+        method: "GET",
+        path: "/critical-path",
+        outcome: "http_status_failure",
+        status_code: 500,
+      },
+      {
+        evidence_digest: "sha256:journey-two",
+        probe_id: "target-1:journey-2",
+        probe_kind: "journey",
+        method: "GET",
+        path: "/secondary-path",
+        outcome: "http_status_failure",
+        status_code: 503,
+      },
+    ],
+    targeted_verification: {
+      operation: "verify",
+      scope: "targeted",
+      check_ids: ["web.public.core-journeys"],
+    },
+  }]);
+  assert.doesNotMatch(JSON.stringify(result.action_queue), /must-not-enter-action/u);
 });
 
 test("insufficient Evidence remains Unverified and produces Inconclusive", () => {

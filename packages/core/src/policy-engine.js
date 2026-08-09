@@ -42,6 +42,47 @@ function remediationOrder(left, right) {
     || left.check_id.localeCompare(right.check_id);
 }
 
+function actionEvidenceReference(entry) {
+  return {
+    digest: entry.digest,
+    ...(typeof entry.source === "string" ? { source: entry.source } : {}),
+    ...(typeof entry.target === "string" ? { target: entry.target } : {}),
+  };
+}
+
+function failedPublicObservation(entry) {
+  const artifact = entry.normalized_artifact;
+  if (
+    entry.evidence_kind !== "public_observation"
+    || artifact?.kind !== "public_observation"
+    || artifact.status !== "failed"
+  ) return null;
+  const observation = {
+    evidence_digest: entry.digest,
+    probe_id: artifact.probe_id,
+    probe_kind: artifact.probe_kind,
+    method: artifact.method,
+    path: artifact.path,
+    outcome: artifact.outcome,
+  };
+  if (Number.isInteger(artifact.details?.status_code)) {
+    observation.status_code = artifact.details.status_code;
+  }
+  return observation;
+}
+
+function actionEvidence(finding, evidenceByDigest) {
+  const entries = finding.evidence
+    .map((reference) => evidenceByDigest.get(reference.digest))
+    .filter(Boolean);
+  const failedPublicEntries = entries.filter((entry) => failedPublicObservation(entry));
+  const supportingEntries = failedPublicEntries.length > 0 ? failedPublicEntries : entries;
+  return {
+    evidence: supportingEntries.map(actionEvidenceReference),
+    observations: failedPublicEntries.map(failedPublicObservation),
+  };
+}
+
 function evidenceRequirement(check, declaration) {
   return check.status === "passed"
     ? declaration.pass_evidence_requirement ?? declaration.evidence_requirement
@@ -195,6 +236,7 @@ export function evaluateLaunchPolicy({
     .filter((finding) => finding.status === "failed")
     .map((finding) => {
       const remediation = declarations.get(finding.check_id).remediation_order_policy;
+      const supportingEvidence = actionEvidence(finding, evidenceByDigest);
       return {
         check_id: finding.check_id,
         ...(finding.priority ? { priority: finding.priority } : {}),
@@ -203,6 +245,12 @@ export function evaluateLaunchPolicy({
         dependency_unblocking: remediation.dependency_unblocking,
         core_journey_impact: remediation.core_journey_impact,
         action: finding.action ?? "Resolve the failed verification rule.",
+        ...supportingEvidence,
+        targeted_verification: {
+          operation: "verify",
+          scope: "targeted",
+          check_ids: [finding.check_id],
+        },
       };
     })
     .sort(remediationOrder);

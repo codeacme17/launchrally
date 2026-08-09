@@ -18,6 +18,8 @@ Manifest and Report v2 retain `production_targets` as a compatibility field. Its
 
 Every completed full Audit or Verify produces a new immutable, time-stamped Report v2 Record bound to Check Catalog v2 and its eight Launch Risk Domains. The Record captures confirmed scope, permission decisions, execution disclosure, Check results, Verification Gaps, policy output, provenance references, limitations, and any current whole-release Assessment. A Markdown Report View is derived only from that Record; it is not a second source of truth. Historical Report v1 packages remain readable but are never emitted by a new run.
 
+Each confirmed Failed Finding contributes one structured Action Queue item with its ordering inputs, safe supporting Evidence references, allowlisted failed public-observation fields, and a deterministic targeted Verify selection for that Check. The derived Markdown View renders those same fields. This concise Audit action does not replace `rally plan`, which remains the deeper investigation and remediation model. Unverified Checks remain Verification Gaps and never enter the confirmed-failure Action Queue.
+
 A targeted Verify result covers only selected Checks and never carries a whole-release Assessment. Init, Plan, and Provider guidance re-evaluate Report currentness at read time from the clock, explicit Manifest digest and intent, the complete repository digest set, Check Catalog and support/Profile/Adapter/scan-policy versions, and Not Applicable evidence. A stale or content-invalidated Report is non-current and carries no current Assessment. Full Verify may accept a structurally valid non-current Report as immutable history so it can recollect Evidence into a new Report.
 
 ## Evidence Index

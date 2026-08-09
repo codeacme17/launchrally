@@ -646,6 +646,83 @@ test("approved public probes collect fresh read-only evidence through the CLI co
   }
 });
 
+test("a failed public Journey produces one concrete safe targeted Audit action", async () => {
+  const fixture = await createInteractionFixture({ providerSignals: false });
+  const secret = "action-queue-secret-must-not-survive";
+  const server = createServer((request, response) => {
+    if (request.url === "/critical-path") {
+      response.writeHead(500, {
+        "set-cookie": `session=${secret}`,
+        "x-api-key": secret,
+      });
+      response.end(`private response body: ${secret}`);
+      return;
+    }
+    response.writeHead(request.url === "/health" ? 204 : 200);
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const { port } = server.address();
+    const result = await completeAudit(fixture, {
+      intended_environment: "production",
+      production_targets: [`http://127.0.0.1:${port}/`],
+      core_journeys: [
+        { purpose: "critical path completes", path: "/critical-path", method: "GET" },
+      ],
+      provider_roles: [],
+      support_layers: [],
+    });
+    const action = result.report.results.action_queue.find(
+      (item) => item.check_id === "web.public.core-journeys",
+    );
+
+    assert.equal(result.report.assessment, "no_go");
+    assert.deepEqual({
+      check_id: action.check_id,
+      priority: action.priority,
+      severity: action.severity,
+      gating: action.gating,
+      core_journey_impact: action.core_journey_impact,
+    }, {
+      check_id: "web.public.core-journeys",
+      priority: "p0",
+      severity: "critical",
+      gating: true,
+      core_journey_impact: "direct",
+    });
+    assert.deepEqual(action.observations, [{
+      evidence_digest: action.evidence[0].digest,
+      probe_id: "target-1:journey-1",
+      probe_kind: "journey",
+      method: "GET",
+      path: "/critical-path",
+      outcome: "http_status_failure",
+      status_code: 500,
+    }]);
+    assert.deepEqual(action.targeted_verification, {
+      operation: "verify",
+      scope: "targeted",
+      check_ids: ["web.public.core-journeys"],
+    });
+    assert.equal(action.evidence[0].source, "public-verification/v1");
+    assert.equal(action.evidence[0].target, `http://127.0.0.1:${port}/critical-path`);
+    assert.match(
+      result.report_view.content,
+      /GET \/critical-path — http_status_failure \(HTTP 500\)/u,
+    );
+    assert.match(
+      result.report_view.content,
+      /rally verify --report <saved-report-path> --scope targeted --checks '\["web\.public\.core-journeys"\]' --json --cwd <repository-root>/u,
+    );
+    assert.doesNotMatch(JSON.stringify(result.report.results.action_queue), new RegExp(secret));
+    assert.doesNotMatch(result.report_view.content, new RegExp(secret));
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
 test("public verification records redirects without following undisclosed paths", async () => {
   const fixture = await createInteractionFixture();
   const requests = [];
