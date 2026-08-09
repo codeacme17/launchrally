@@ -16,6 +16,7 @@ import {
 import {
   createInitialSnapshot,
   renderReportMarkdown,
+  rethrowIfAborted,
   runAudit,
 } from "../packages/core/src/index.js";
 
@@ -56,6 +57,16 @@ test("an already-aborted Audit stops before project discovery", async () => {
     createInitialSnapshot(directory, { signal: controller.signal }),
     (error) => error?.name === "AbortError",
   );
+});
+
+test("Core abort classification rethrows standard abort-shaped errors", () => {
+  for (const error of [
+    Object.assign(new Error("aborted by name"), { name: "AbortError" }),
+    Object.assign(new Error("aborted by code"), { code: "ABORT_ERR" }),
+  ]) {
+    assert.throws(() => rethrowIfAborted(error), (thrown) => thrown === error);
+  }
+  assert.doesNotThrow(() => rethrowIfAborted(new Error("ordinary failure")));
 });
 
 async function complete(directory, { answers = ANSWERS, ...finalOptions } = {}) {

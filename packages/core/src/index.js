@@ -157,6 +157,7 @@ export {
   executeProviderAdapters,
   PROVIDER_ADAPTER_CONTRACT,
 } from "./provider-adapters.js";
+export { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
 export {
   createReportPackage,
   renderReportMarkdown,

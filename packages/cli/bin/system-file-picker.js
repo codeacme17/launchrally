@@ -3,6 +3,8 @@ import path from "node:path";
 import process from "node:process";
 import { promisify } from "node:util";
 
+import { rethrowIfAborted } from "@launchrally/core";
+
 const execFileAsync = promisify(execFile);
 
 export const DEFAULT_REPORT_FILENAME = "launchrally-audit-report.json";
@@ -79,11 +81,6 @@ function selectedPath(stdout) {
   return value === "" ? null : value;
 }
 
-function rethrowPickerAbort(error, signal) {
-  if (signal?.aborted) signal.throwIfAborted();
-  if (error?.name === "AbortError" || error?.code === "ABORT_ERR") throw error;
-}
-
 export function createSystemFilePicker({
   platform = process.platform,
   env = process.env,
@@ -121,7 +118,7 @@ export function createSystemFilePicker({
             cancellableRunOptions(signal),
           );
         } catch (error) {
-          rethrowPickerAbort(error, signal);
+          rethrowIfAborted(error, signal);
           return { available: false, reason: "no_gui_session" };
         }
         try {
@@ -136,7 +133,7 @@ export function createSystemFilePicker({
           selectedCommand = "osascript";
           return { available: true, provider: "osascript" };
         } catch (error) {
-          rethrowPickerAbort(error, signal);
+          rethrowIfAborted(error, signal);
           return { available: false, reason: "dialog_tool_unavailable" };
         }
       }
@@ -165,7 +162,7 @@ export function createSystemFilePicker({
           selectedCommand = candidate.command;
           return { available: true, provider: candidate.provider };
         } catch (error) {
-          rethrowPickerAbort(error, signal);
+          rethrowIfAborted(error, signal);
           // Try the next direct executable without invoking a command shell.
         }
       }
@@ -227,7 +224,7 @@ export function createSystemFilePicker({
       const result = await runner(selectedCommand, arguments_, options);
       return selectedPath(result.stdout);
     } catch (error) {
-      rethrowPickerAbort(error, signal);
+      rethrowIfAborted(error, signal);
       if (platform === "linux" && error?.code === 1) return null;
       throw new SystemFilePickerError(
         "file_picker_failed",

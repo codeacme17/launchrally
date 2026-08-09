@@ -725,6 +725,40 @@ test("the Clack adapter displays and completes active work", async () => {
   );
 });
 
+test("the Clack adapter cancels active work on SIGINT and removes its listener", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const signals = new EventEmitter();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({
+    input,
+    output,
+    signals,
+    activityDelayMs: 0,
+  });
+  const activity = prompt.activity(
+    "Reading Cloudflare Provider data…",
+    async (signal) => new Promise((resolve, reject) => {
+      const abort = () => reject(signal.reason);
+      if (signal.aborted) abort();
+      else signal.addEventListener("abort", abort, { once: true });
+    }),
+  );
+
+  signals.emit("SIGINT");
+  await assert.rejects(activity, PromptCancelledError);
+  await prompt.close();
+
+  assert.match(
+    stripVTControlCharacters(rendered),
+    /Cancelled: Reading Cloudflare Provider data\./u,
+  );
+  assert.equal(signals.listenerCount("SIGINT"), 0);
+});
+
 test("NO_COLOR Human Mode retains textual Clack activity states", async () => {
   const input = ttyStream();
   const output = ttyStream();
