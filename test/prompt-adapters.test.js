@@ -299,7 +299,7 @@ test("the Plain adapter offers a recommended Journey and an explicit Skip choice
   assert.match(rendered, /Skip cannot be combined with another Journey\./u);
   assert.match(
     rendered,
-    /Which public Journeys should LaunchRally verify\? \(Select one or more Journeys\./u,
+    /Which public Journeys should LaunchRally verify\? \(Select one or more Journeys\)/u,
   );
 });
 
@@ -382,7 +382,7 @@ test("the Plain adapter selects detected Journeys without recommended, Other, or
   assert.match(rendered, /Deselect detected Journeys by number, or press Enter to keep all:/u);
   assert.match(
     rendered,
-    /Select one or more Journeys\. Select all detected journeys includes only detected choices; you can then deselect individual Journeys\./u,
+    /Select one or more Journeys/u,
   );
 });
 
@@ -956,8 +956,11 @@ test("the Clack adapter selects only detected Journeys and allows individual des
   assert.match(semanticOutput, /GET \/ — homepage loads \(recommended\)/u);
   assert.match(semanticOutput, /Other — enter a custom value/u);
   assert.match(semanticOutput, /Skip public Journey verification/u);
-  assert.match(semanticOutput, /Space: select or deselect/u);
+  assert.match(semanticOutput, /Space: toggle/u);
   assert.match(semanticOutput, /Enter: confirm/u);
+  assert.match(semanticOutput, /◻ Select all detected journeys/u);
+  assert.match(semanticOutput, /◼ GET \/dashboard — dashboard page loads \(detected\)/u);
+  assert.doesNotMatch(semanticOutput, /\[(?: |x)\]/u);
 });
 
 test("the Clack bulk action clears a recommended Journey selection", async () => {

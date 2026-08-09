@@ -54,7 +54,7 @@ const FIELD_PRESENTATION = Object.freeze({
   core_journeys: Object.freeze({
     required: true,
     display_prompt: "Which public Journeys should LaunchRally verify?",
-    requirement: "Select one or more Journeys. Select all detected journeys includes only detected choices; you can then deselect individual Journeys.",
+    requirement: "Select one or more Journeys",
     example: "GET /, GET /checkout — checkout completes",
     allow_custom: true,
     allow_skip: true,
@@ -655,16 +655,27 @@ async function journeyMultiselect({
         output: common.output,
         rowPadding: 3,
         style: (option, active) => {
-          const cursor = active ? ">" : " ";
-          const checked = selected.includes(option.value) ? "[x]" : "[ ]";
-          return `${cursor} ${checked} ${option.label}`;
+          const checked = selected.includes(option.value);
+          const marker = checked
+            ? styleText("green", "◼")
+            : styleText(active ? "cyan" : "dim", "◻");
+          const label = active
+            ? option.label
+            : styleText("dim", option.label);
+          return `${marker} ${label}`;
         },
       });
+      const instructions = [
+        `${styleText("dim", "↑/↓")} to navigate`,
+        `${styleText("dim", "Space:")} toggle`,
+        `${styleText("dim", "Enter:")} confirm`,
+        `${styleText("dim", "A:")} select all detected`,
+      ].join(" • ");
       return [
         `${clack.symbol(this.state)}  ${message}`,
         ...choices,
         ...(this.state === "error" ? [this.error] : []),
-        "Space: select or deselect · Enter: confirm · A: select all detected journeys",
+        instructions,
       ].join("\n");
     },
   }).prompt();
