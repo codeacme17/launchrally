@@ -856,6 +856,263 @@ test("the Clack adapter accepts a safe GET path without requiring a purpose", as
   assert.doesNotMatch(semanticOutput, /Use a safe GET Journey/u);
 });
 
+test("the Clack adapter accepts the suggested Report path and discloses its destination", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+  const suggestedPath = "/workspace/launchrally-audit-report.json";
+
+  setTimeout(() => input.write("\u001b[C"), 20);
+  setTimeout(() => input.write("\r"), 40);
+  setTimeout(() => input.write("\r"), 80);
+  const choice = await prompt.reportSave({
+    phase: "choose",
+    suggested_path: suggestedPath,
+    file_picker_available: false,
+  });
+  await prompt.close();
+
+  assert.deepEqual(choice, { output_path: suggestedPath, suggested: true });
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /Save the complete Audit JSON to a file\?/u);
+  assert.match(semanticOutput, /Use suggested path — \/workspace\/launchrally-audit-report\.json/u);
+});
+
+test("the Clack adapter validates and accepts a custom Report path", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\u001b[C"), 20);
+  setTimeout(() => input.write("\r"), 40);
+  setTimeout(() => input.write("\u001b[B"), 80);
+  setTimeout(() => input.write("\r"), 100);
+  setTimeout(() => input.write("\r"), 140);
+  setTimeout(() => input.write("reports/custom.json\r"), 180);
+  const choice = await prompt.reportSave({
+    phase: "choose",
+    suggested_path: "/workspace/launchrally-audit-report.json",
+    file_picker_available: false,
+  });
+  await prompt.close();
+
+  assert.deepEqual(choice, { output_path: "reports/custom.json" });
+  assert.match(stripVTControlCharacters(rendered), /This field is required\./u);
+});
+
+test("the Clack adapter offers the system file picker when it is available", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\u001b[B"), 20);
+  setTimeout(() => input.write("\r"), 40);
+  const choice = await prompt.reportSave({
+    phase: "choose",
+    suggested_path: "/workspace/launchrally-audit-report.json",
+    file_picker_available: true,
+    save_confirmed: true,
+  });
+  await prompt.close();
+
+  assert.deepEqual(choice, { file_picker: true });
+  assert.match(stripVTControlCharacters(rendered), /Open the system file picker/u);
+});
+
+test("the Clack adapter declines Report saving by default", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\r"), 20);
+  const choice = await prompt.reportSave({
+    phase: "choose",
+    suggested_path: "/workspace/launchrally-audit-report.json",
+    file_picker_available: false,
+  });
+  await prompt.close();
+
+  assert.deepEqual(choice, {});
+});
+
+test("the Clack adapter requires a separate collision decision", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\r"), 20);
+  const confirmation = await prompt.reportSave({
+    phase: "confirm",
+    resolved_path: "/workspace/launchrally-audit-report.json",
+    collision: true,
+  });
+  await prompt.close();
+
+  assert.deepEqual(confirmation, { decision: "choose_another" });
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /A file already exists at this destination\./u);
+  assert.match(semanticOutput, /Overwrite the existing file/u);
+  assert.match(semanticOutput, /Choose another path/u);
+  assert.match(semanticOutput, /Do not save/u);
+});
+
+test("the Clack adapter cancels Report saving on Ctrl-C", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\u0003"), 20);
+  await assert.rejects(prompt.reportSave({
+    phase: "choose",
+    suggested_path: "/workspace/launchrally-audit-report.json",
+    file_picker_available: false,
+  }), PromptCancelledError);
+  await prompt.close();
+});
+
+test("the Plain adapter accepts the suggested Report path and discloses its destination", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+  const suggestedPath = "/workspace/launchrally-audit-report.json";
+
+  setTimeout(() => input.write("y\n"), 10);
+  setTimeout(() => input.write("1\n"), 30);
+  const choice = await prompt.reportSave({
+    phase: "choose",
+    suggested_path: suggestedPath,
+    file_picker_available: false,
+  });
+  await prompt.close();
+
+  assert.deepEqual(choice, { output_path: suggestedPath, suggested: true });
+  assert.match(rendered, /Save the complete Audit JSON to a file\? \[y\/N\]/u);
+  assert.match(rendered, /1\. Use suggested path — \/workspace\/launchrally-audit-report\.json/u);
+});
+
+test("the Plain adapter validates a custom Report path", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("y\n"), 10);
+  setTimeout(() => input.write("2\n"), 30);
+  setTimeout(() => input.write("\n"), 50);
+  setTimeout(() => input.write("reports/custom.json\n"), 70);
+  const choice = await prompt.reportSave({
+    phase: "choose",
+    suggested_path: "/workspace/launchrally-audit-report.json",
+    file_picker_available: false,
+  });
+  await prompt.close();
+
+  assert.deepEqual(choice, { output_path: "reports/custom.json" });
+  assert.match(rendered, /Enter a non-empty Report path\./u);
+});
+
+test("the Plain adapter offers the system file picker when it is available", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("y\n"), 10);
+  setTimeout(() => input.write("2\n"), 30);
+  const choice = await prompt.reportSave({
+    phase: "choose",
+    suggested_path: "/workspace/launchrally-audit-report.json",
+    file_picker_available: true,
+  });
+  await prompt.close();
+
+  assert.deepEqual(choice, { file_picker: true });
+  assert.match(rendered, /2\. Open the system file picker/u);
+});
+
+test("the Plain adapter never treats a colliding Report path as ordinary confirmation", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+  const resolvedPath = "/workspace/launchrally-audit-report.json";
+
+  setTimeout(() => input.write("2\n"), 10);
+  setTimeout(() => input.write("n\n"), 30);
+  const confirmation = await prompt.reportSave({
+    phase: "confirm",
+    resolved_path: resolvedPath,
+    collision: true,
+  });
+  await prompt.close();
+
+  assert.deepEqual(confirmation, { decision: "choose_another" });
+  assert.match(rendered, /A file already exists at this destination\./u);
+  assert.match(rendered, /1\. Overwrite the existing file/u);
+  assert.match(rendered, /2\. Choose another path/u);
+  assert.match(rendered, /3\. Do not save/u);
+});
+
+test("the Plain adapter declines Report saving by default", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\n"), 10);
+  const choice = await prompt.reportSave({
+    phase: "choose",
+    suggested_path: "/workspace/launchrally-audit-report.json",
+    file_picker_available: false,
+  });
+  await prompt.close();
+
+  assert.deepEqual(choice, {});
+});
+
+test("the Plain adapter cancels Report saving on Ctrl-C", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const signals = new EventEmitter();
+  const prompt = createPlainPromptAdapter({ input, output, signals });
+
+  setTimeout(() => signals.emit("SIGINT"), 10);
+  await assert.rejects(prompt.reportSave({
+    phase: "choose",
+    suggested_path: "/workspace/launchrally-audit-report.json",
+    file_picker_available: false,
+  }), PromptCancelledError);
+  await prompt.close();
+});
+
 test("the Plain adapter turns process SIGINT into a recoverable prompt cancellation", async () => {
   const input = ttyStream();
   const output = ttyStream();

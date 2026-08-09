@@ -86,6 +86,8 @@
         "bin/human-audit.js",
         "bin/prompt-adapters.js",
         "bin/rally.js",
+        "bin/report-destination.js",
+        "bin/system-file-picker.js",
         "package.json"
       ]
     },

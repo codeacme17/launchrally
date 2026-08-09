@@ -1,3 +1,8 @@
+import path from "node:path";
+
+import { isLaunchRallyDestination } from "./report-destination.js";
+import { DEFAULT_REPORT_FILENAME } from "./system-file-picker.js";
+
 export class PromptCancelledError extends Error {
   constructor() {
     super("The prompt was cancelled.");
@@ -63,6 +68,8 @@ export async function runHumanAudit({
   runAudit,
   outputPath,
   saveResult,
+  inspectDestination = async () => ({ valid: true, collision: false }),
+  filePicker,
 }) {
   let result;
   try {
@@ -95,8 +102,69 @@ export async function runHumanAudit({
 
     if (result.status === "completed" && result.report) {
       let savePath = outputPath;
-      if (!savePath) savePath = (await prompt.respond(result)).output_path;
-      if (savePath) savePath = await saveResult?.(savePath, result) ?? savePath;
+      let overwrite = false;
+      if (!savePath && prompt.reportSave) {
+        const suggestedPath = path.resolve(cwd, DEFAULT_REPORT_FILENAME);
+        const filePickerState = filePicker
+          ? await filePicker.availability()
+          : { available: false };
+        let saveConfirmed = false;
+        let notice;
+        while (!savePath) {
+          const choice = await prompt.reportSave({
+            phase: "choose",
+            suggested_path: suggestedPath,
+            file_picker_available: filePickerState.available,
+            ...(saveConfirmed ? { save_confirmed: true } : {}),
+            ...(notice ? { notice } : {}),
+          });
+          notice = undefined;
+          if (!choice.output_path && !choice.file_picker) break;
+          saveConfirmed = true;
+          let selectedPath = choice.output_path;
+          if (choice.file_picker) {
+            try {
+              selectedPath = await filePicker.chooseSavePath();
+            } catch {
+              notice = "The system file picker could not open. Choose another destination.";
+              continue;
+            }
+            if (!selectedPath) continue;
+          }
+          const resolvedPath = path.resolve(selectedPath);
+          if (await isLaunchRallyDestination(cwd, resolvedPath)) {
+            notice = "Audit cannot save inside .launchrally/**. Choose another destination; Init creates that directory only after separate confirmation.";
+            continue;
+          }
+          const inspection = await inspectDestination(resolvedPath);
+          if (!inspection.valid) {
+            notice = "The selected Report destination is not usable. Choose another destination.";
+            continue;
+          }
+          const collision = inspection.collision;
+          if (choice.suggested && !collision) {
+            savePath = resolvedPath;
+            break;
+          }
+          const confirmation = await prompt.reportSave({
+            phase: "confirm",
+            resolved_path: resolvedPath,
+            collision,
+          });
+          if (confirmation.decision === "choose_another") continue;
+          if (confirmation.decision === "save" && !collision) savePath = resolvedPath;
+          if (confirmation.decision === "overwrite" && collision) {
+            savePath = resolvedPath;
+            overwrite = true;
+          }
+          if (!savePath) break;
+        }
+      } else if (!savePath) {
+        savePath = (await prompt.respond(result)).output_path;
+      }
+      if (savePath) {
+        savePath = await saveResult?.(savePath, result, { overwrite }) ?? savePath;
+      }
       outputPath = savePath;
     }
 
