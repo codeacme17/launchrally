@@ -35,7 +35,7 @@ test("the committed P0 matrix maps every normative requirement to executable evi
   assert.deepEqual(JSON.parse(stdout), {
     status: "completed",
     schema_version: "launchrally.dev/p0-acceptance/v1",
-    product_status: "suspended",
+    product_status: "complete",
     release_status: "experimental",
     requirements: { complete: 22, open: 0, total: 22 },
     release_gates: 10,
@@ -318,8 +318,7 @@ test("public status declares Experimental while P0 validation remains distinct",
   assert.match(readme, /Status: Experimental P0/u);
   assert.match(quickstart, /public Experimental release/iu);
   assert.match(contributing, /Experimental open-source project/iu);
-  assert.match(validation, /Aggregate directional-signal collection continues/iu);
-  assert.match(validation, /machine validation authority state is suspended/iu);
+  assert.match(validation, /Telemetry-Free Validation is collecting/iu);
   assert.match(validation, /not P0 Validated/iu);
   assert.deepEqual(
     (({ product_status, release_status, validation_status }) => ({
@@ -330,9 +329,9 @@ test("public status declares Experimental while P0 validation remains distinct",
       JSON.parse(release),
     ),
     {
-      product_status: "suspended",
+      product_status: "complete",
       release_status: "experimental",
-      validation_status: "suspended",
+      validation_status: "collecting",
     },
   );
 });
