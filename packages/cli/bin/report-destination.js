@@ -37,18 +37,22 @@ function isPathWithin(root, candidate, platform) {
 export async function isLaunchRallyDestination(
   cwd,
   destination,
-  { platform = process.platform } = {},
+  { platform = process.platform, signal } = {},
 ) {
+  signal?.throwIfAborted();
   const lexicalLaunchRallyRoot = path.resolve(cwd, ".launchrally");
   const lexicalCandidate = path.resolve(destination);
   if (isPathWithin(lexicalLaunchRallyRoot, lexicalCandidate, platform)) return true;
 
   const launchRallyRoot = await canonicalLaunchRallyRoot(cwd);
+  signal?.throwIfAborted();
   const candidate = await destinationWithCanonicalParent(destination);
+  signal?.throwIfAborted();
   return isPathWithin(launchRallyRoot, candidate, platform);
 }
 
-export async function inspectReportDestination(destination) {
+export async function inspectReportDestination(destination, { signal } = {}) {
+  signal?.throwIfAborted();
   if (destination.includes("\0")) return { valid: false, reason: "invalid_path" };
 
   const parent = path.dirname(destination);
@@ -56,19 +60,24 @@ export async function inspectReportDestination(destination) {
   try {
     parentStat = await stat(parent);
   } catch {
+    signal?.throwIfAborted();
     return { valid: false, reason: "parent_unavailable" };
   }
+  signal?.throwIfAborted();
   if (!parentStat.isDirectory()) return { valid: false, reason: "parent_not_directory" };
   try {
     await access(parent, fsConstants.W_OK);
   } catch {
+    signal?.throwIfAborted();
     return { valid: false, reason: "parent_not_writable" };
   }
+  signal?.throwIfAborted();
 
   let destinationStat;
   try {
     destinationStat = await lstat(destination);
   } catch (error) {
+    signal?.throwIfAborted();
     return error?.code === "ENOENT"
       ? { valid: true, collision: false }
       : { valid: false, reason: "destination_unavailable" };
@@ -79,7 +88,9 @@ export async function inspectReportDestination(destination) {
   try {
     await access(destination, fsConstants.W_OK);
   } catch {
+    signal?.throwIfAborted();
     return { valid: false, reason: "destination_not_writable" };
   }
+  signal?.throwIfAborted();
   return { valid: true, collision: true };
 }

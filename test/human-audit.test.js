@@ -795,6 +795,47 @@ test("a cancelled Human Audit aborts saving before returning without detached si
   assert.equal(signals.listenerCount("SIGINT"), 0);
 });
 
+test("a Human Audit aborts a cooperative Core run promptly on SIGINT", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const signals = new EventEmitter();
+  const prompt = createPlainPromptAdapter({ input, output, signals, activityDelayMs: 0 });
+  let startAudit;
+  const auditStarted = new Promise((resolve) => {
+    startAudit = resolve;
+  });
+  let coreSettled = false;
+  const audit = runHumanAudit({
+    cwd: "/workspace",
+    version: "0.1.0",
+    prompt,
+    runAudit: async (cwd, version, interactionOptions, { signal } = {}) =>
+      new Promise((resolve, reject) => {
+        startAudit();
+        const abort = () => {
+          coreSettled = true;
+          reject(signal.reason);
+        };
+        if (signal.aborted) abort();
+        else signal.addEventListener("abort", abort, { once: true });
+      }),
+  });
+
+  await auditStarted;
+  signals.emit("SIGINT");
+  const outcome = await Promise.race([
+    audit,
+    new Promise((resolve, reject) => setTimeout(
+      () => reject(new Error("Human Audit did not cancel promptly")),
+      100,
+    )),
+  ]);
+
+  assert.equal(outcome.exitCode, 130);
+  assert.equal(coreSettled, true);
+  assert.equal(signals.listenerCount("SIGINT"), 0);
+});
+
 test("a Human Audit overwrites a collision only after a separate explicit decision", async () => {
   const cwd = path.resolve("/workspace");
   const requestedPath = path.join(cwd, "launchrally-audit-report.json");

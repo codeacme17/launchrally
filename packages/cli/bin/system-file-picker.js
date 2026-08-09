@@ -79,6 +79,11 @@ function selectedPath(stdout) {
   return value === "" ? null : value;
 }
 
+function rethrowPickerAbort(error, signal) {
+  if (signal?.aborted) signal.throwIfAborted();
+  if (error?.name === "AbortError" || error?.code === "ABORT_ERR") throw error;
+}
+
 export function createSystemFilePicker({
   platform = process.platform,
   env = process.env,
@@ -99,6 +104,7 @@ export function createSystemFilePicker({
   const cancellableRunOptions = (signal) => signal ? { ...runOptions, signal } : runOptions;
 
   async function availability({ signal } = {}) {
+    signal?.throwIfAborted();
     availabilityPromise ??= (async () => {
       if (!SUPPORTED_PLATFORMS.has(platform)) {
         return { available: false, reason: "unsupported_platform" };
@@ -114,7 +120,8 @@ export function createSystemFilePicker({
             ["print", `gui/${userId}`],
             cancellableRunOptions(signal),
           );
-        } catch {
+        } catch (error) {
+          rethrowPickerAbort(error, signal);
           return { available: false, reason: "no_gui_session" };
         }
         try {
@@ -128,7 +135,8 @@ export function createSystemFilePicker({
           }
           selectedCommand = "osascript";
           return { available: true, provider: "osascript" };
-        } catch {
+        } catch (error) {
+          rethrowPickerAbort(error, signal);
           return { available: false, reason: "dialog_tool_unavailable" };
         }
       }
@@ -156,7 +164,8 @@ export function createSystemFilePicker({
           if (platform === "win32" && probeValue !== "ready") continue;
           selectedCommand = candidate.command;
           return { available: true, provider: candidate.provider };
-        } catch {
+        } catch (error) {
+          rethrowPickerAbort(error, signal);
           // Try the next direct executable without invoking a command shell.
         }
       }
@@ -166,6 +175,7 @@ export function createSystemFilePicker({
   }
 
   async function chooseSavePath({ signal } = {}) {
+    signal?.throwIfAborted();
     const state = await availability({ signal });
     if (!state.available) {
       throw new SystemFilePickerError(
@@ -217,6 +227,7 @@ export function createSystemFilePicker({
       const result = await runner(selectedCommand, arguments_, options);
       return selectedPath(result.stdout);
     } catch (error) {
+      rethrowPickerAbort(error, signal);
       if (platform === "linux" && error?.code === 1) return null;
       throw new SystemFilePickerError(
         "file_picker_failed",

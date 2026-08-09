@@ -338,7 +338,7 @@ export async function runHumanAudit({
           const destinationState = await runActivity(
             "Checking Report destination…",
             async (signal) => {
-              if (await isLaunchRallyDestination(cwd, resolvedPath)) {
+              if (await isLaunchRallyDestination(cwd, resolvedPath, { signal })) {
                 return { reserved: true };
               }
               return { inspection: await inspectDestination(resolvedPath, { signal }) };
