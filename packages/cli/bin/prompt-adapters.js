@@ -163,14 +163,20 @@ async function runPromptActivity({
     else signal.addEventListener("abort", handleAbort, { once: true });
   });
 
+  const operationPromise = Promise.resolve().then(() => operation(signal));
   try {
-    const operationPromise = Promise.resolve().then(operation);
     const value = await (abort ? Promise.race([operationPromise, abort]) : operationPromise);
     if (active) complete(completedActivityLabel(label));
     return value;
   } catch (error) {
     if (error instanceof PromptCancelledError || signal?.aborted) {
       cancel(completedActivityLabel(label), active);
+      try {
+        await operationPromise;
+      } catch {
+        // The cancellation state is authoritative after all work has settled.
+      }
+      throw new PromptCancelledError();
     } else {
       fail(completedActivityLabel(label), active);
     }

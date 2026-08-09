@@ -96,8 +96,9 @@ export function createSystemFilePicker({
     shell: false,
     windowsHide: true,
   });
+  const cancellableRunOptions = (signal) => signal ? { ...runOptions, signal } : runOptions;
 
-  async function availability() {
+  async function availability({ signal } = {}) {
     availabilityPromise ??= (async () => {
       if (!SUPPORTED_PLATFORMS.has(platform)) {
         return { available: false, reason: "unsupported_platform" };
@@ -108,12 +109,20 @@ export function createSystemFilePicker({
       if (platform === "darwin") {
         if (userId === undefined) return { available: false, reason: "no_gui_session" };
         try {
-          await runner("launchctl", ["print", `gui/${userId}`], runOptions);
+          await runner(
+            "launchctl",
+            ["print", `gui/${userId}`],
+            cancellableRunOptions(signal),
+          );
         } catch {
           return { available: false, reason: "no_gui_session" };
         }
         try {
-          const probe = await runner("osascript", ["-e", "return \"ready\""], runOptions);
+          const probe = await runner(
+            "osascript",
+            ["-e", "return \"ready\""],
+            cancellableRunOptions(signal),
+          );
           if (selectedPath(probe.stdout) !== "ready") {
             return { available: false, reason: "dialog_tool_unavailable" };
           }
@@ -135,7 +144,11 @@ export function createSystemFilePicker({
         ];
       for (const candidate of candidates) {
         try {
-          const probe = await runner(candidate.command, candidate.arguments_, runOptions);
+          const probe = await runner(
+            candidate.command,
+            candidate.arguments_,
+            cancellableRunOptions(signal),
+          );
           const probeValue = selectedPath(probe.stdout);
           if (platform === "win32" && probeValue === "no_gui") {
             return { available: false, reason: "no_gui_session" };
@@ -152,8 +165,8 @@ export function createSystemFilePicker({
     return availabilityPromise;
   }
 
-  async function chooseSavePath() {
-    const state = await availability();
+  async function chooseSavePath({ signal } = {}) {
+    const state = await availability({ signal });
     if (!state.available) {
       throw new SystemFilePickerError(
         "file_picker_unavailable",
@@ -193,13 +206,14 @@ export function createSystemFilePicker({
       const options = platform === "win32"
         ? {
           ...runOptions,
+          ...(signal ? { signal } : {}),
           env: {
             ...env,
             LAUNCHRALLY_SAVE_DIRECTORY: directory,
             LAUNCHRALLY_SAVE_FILENAME: DEFAULT_REPORT_FILENAME,
           },
         }
-        : runOptions;
+        : cancellableRunOptions(signal);
       const result = await runner(selectedCommand, arguments_, options);
       return selectedPath(result.stdout);
     } catch (error) {

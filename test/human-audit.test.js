@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtemp, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
@@ -13,6 +15,7 @@ import {
   renderHumanAuditCompletion,
   runHumanAudit,
 } from "../packages/cli/bin/human-audit.js";
+import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
 import { runAudit } from "@launchrally/core";
 
 const execFileAsync = promisify(execFile);
@@ -746,6 +749,50 @@ test("a Human Audit cancels cleanly when system work is interrupted", async () =
   assert.equal(outcome.exitCode, 130);
   assert.equal(outcome.result, null);
   assert.equal(events.at(-1), "close");
+});
+
+test("a cancelled Human Audit aborts saving before returning without detached side effects", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const signals = new EventEmitter();
+  const prompt = createPlainPromptAdapter({ input, output, signals, activityDelayMs: 0 });
+  let sideEffect = false;
+  let saveSettled = false;
+
+  const audit = runHumanAudit({
+    cwd: "/workspace",
+    version: "0.1.0",
+    outputPath: "/workspace/report.json",
+    prompt,
+    runAudit: async () => ({
+      status: "completed",
+      report: { report_id: "report-1" },
+    }),
+    saveResult: async (outputPath, result, options, { signal } = {}) =>
+      new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          sideEffect = true;
+          saveSettled = true;
+          resolve(outputPath);
+        }, 50);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          saveSettled = true;
+          const error = new Error("The save was aborted.");
+          error.name = "AbortError";
+          reject(error);
+        }, { once: true });
+      }),
+  });
+  setTimeout(() => signals.emit("SIGINT"), 10);
+
+  const outcome = await audit;
+  await new Promise((resolve) => setTimeout(resolve, 70));
+
+  assert.equal(outcome.exitCode, 130);
+  assert.equal(saveSettled, true);
+  assert.equal(sideEffect, false);
+  assert.equal(signals.listenerCount("SIGINT"), 0);
 });
 
 test("a Human Audit overwrites a collision only after a separate explicit decision", async () => {

@@ -8,7 +8,10 @@ import {
   createClackPromptAdapter,
   createPlainPromptAdapter,
 } from "../packages/cli/bin/prompt-adapters.js";
-import { PromptCancelledError } from "../packages/cli/bin/human-audit.js";
+import {
+  humanAuditPresentationOptions,
+  PromptCancelledError,
+} from "../packages/cli/bin/human-audit.js";
 
 function ttyStream() {
   const stream = new PassThrough();
@@ -98,7 +101,11 @@ test("the Plain adapter cancels active work on SIGINT and removes its listener",
 
   const activity = prompt.activity(
     "Verifying public Journeys…",
-    async () => new Promise(() => {}),
+    async (signal) => new Promise((resolve, reject) => {
+      const abort = () => reject(new PromptCancelledError());
+      if (signal.aborted) abort();
+      else signal.addEventListener("abort", abort, { once: true });
+    }),
   );
   signals.emit("SIGINT");
   await assert.rejects(activity, PromptCancelledError);
@@ -110,6 +117,35 @@ test("the Plain adapter cancels active work on SIGINT and removes its listener",
     "",
   ].join("\n"));
   assert.equal(signals.listenerCount("SIGINT"), 0);
+});
+
+test("the Plain adapter waits for non-cooperative work to settle after cancellation", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const signals = new EventEmitter();
+  const prompt = createPlainPromptAdapter({
+    input,
+    output,
+    signals,
+    activityDelayMs: 0,
+  });
+  let settlements = 0;
+
+  const activity = prompt.activity(
+    "Saving Audit Report…",
+    async () => new Promise((resolve) => {
+      setTimeout(() => {
+        settlements += 1;
+        resolve();
+      }, 30);
+    }),
+  );
+  signals.emit("SIGINT");
+  await assert.rejects(activity, PromptCancelledError);
+  assert.equal(settlements, 1);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(settlements, 1);
+  await prompt.close();
 });
 
 test("the Plain adapter explains and validates required input before continuing", async () => {
@@ -686,6 +722,33 @@ test("the Clack adapter displays and completes active work", async () => {
   assert.match(
     stripVTControlCharacters(rendered),
     /Verifying public Journeys\./u,
+  );
+});
+
+test("NO_COLOR Human Mode retains textual Clack activity states", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const presentation = humanAuditPresentationOptions({
+    env: { NO_COLOR: "1" },
+    output,
+  });
+  const prompt = await createClackPromptAdapter({
+    input,
+    output,
+    activityDelayMs: 0,
+  });
+
+  await prompt.activity("Generating Audit Report…", async () => "complete");
+  await prompt.close();
+
+  assert.deepEqual(presentation, { plain: false, styled: false, width: 100 });
+  assert.match(
+    stripVTControlCharacters(rendered),
+    /Completed: Generating Audit Report\./u,
   );
 });
 

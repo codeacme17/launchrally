@@ -260,7 +260,7 @@ export async function runHumanAudit({
     await prompt.start();
     result = await runActivity(
       "Discovering project and scanning repository…",
-      () => runAudit(cwd, version),
+      (signal) => runAudit(cwd, version, undefined, { signal }),
     );
 
     while (["needs_input", "needs_confirmation", "needs_permission"].includes(result.status)) {
@@ -268,10 +268,10 @@ export async function runHumanAudit({
       if (result.status === "needs_input") {
         result = await runActivity(
           "Updating project scan and Audit Brief…",
-          () => runAudit(cwd, version, {
+          (signal) => runAudit(cwd, version, {
             resume_token: result.interaction.resume_token,
             answers: response.answers,
-          }),
+          }, { signal }),
         );
         continue;
       }
@@ -279,20 +279,20 @@ export async function runHumanAudit({
       if (result.status === "needs_confirmation") {
         result = await runActivity(
           "Preparing Audit permission requests…",
-          () => runAudit(cwd, version, {
+          (signal) => runAudit(cwd, version, {
             resume_token: result.interaction.resume_token,
             confirmation: response.confirmation,
-          }),
+          }, { signal }),
         );
         continue;
       }
 
       result = await runActivity(
         approvedAuditActivityLabel(result, response.permission_decisions),
-        () => runAudit(cwd, version, {
+        (signal) => runAudit(cwd, version, {
           resume_token: result.interaction.resume_token,
           permission_decisions: response.permission_decisions,
-        }),
+        }, { signal }),
       );
     }
 
@@ -304,7 +304,7 @@ export async function runHumanAudit({
         const filePickerState = filePicker
           ? await runActivity(
             "Checking Report save options…",
-            () => filePicker.availability(),
+            (signal) => filePicker.availability({ signal }),
           )
           : { available: false };
         let saveConfirmed = false;
@@ -325,7 +325,7 @@ export async function runHumanAudit({
             try {
               selectedPath = await runActivity(
                 "Opening system file picker…",
-                () => filePicker.chooseSavePath(),
+                (signal) => filePicker.chooseSavePath({ signal }),
               );
             } catch (error) {
               if (error instanceof PromptCancelledError) throw error;
@@ -337,11 +337,11 @@ export async function runHumanAudit({
           const resolvedPath = path.resolve(selectedPath);
           const destinationState = await runActivity(
             "Checking Report destination…",
-            async () => {
+            async (signal) => {
               if (await isLaunchRallyDestination(cwd, resolvedPath)) {
                 return { reserved: true };
               }
-              return { inspection: await inspectDestination(resolvedPath) };
+              return { inspection: await inspectDestination(resolvedPath, { signal }) };
             },
           );
           if (destinationState.reserved) {
@@ -377,7 +377,12 @@ export async function runHumanAudit({
       if (savePath) {
         savePath = await runActivity(
           "Saving Audit Report…",
-          async () => await saveResult?.(savePath, result, { overwrite }) ?? savePath,
+          async (signal) => await saveResult?.(
+            savePath,
+            result,
+            { overwrite },
+            { signal },
+          ) ?? savePath,
         );
       }
       outputPath = savePath;
