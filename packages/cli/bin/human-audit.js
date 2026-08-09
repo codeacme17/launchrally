@@ -10,18 +10,132 @@ export class PromptCancelledError extends Error {
   }
 }
 
-function titleCase(value) {
-  return String(value ?? "not available")
-    .split("_")
-    .map((word) => `${word[0]?.toUpperCase() ?? ""}${word.slice(1)}`)
-    .join(" ");
+const ASSESSMENT_PRESENTATION = Object.freeze({
+  launch_ready: Object.freeze({ label: "Ready", style: "1;32" }),
+  ready_with_warnings: Object.freeze({ label: "Ready with Warnings", style: "1;33" }),
+  no_go: Object.freeze({ label: "No Go", style: "1;31" }),
+  inconclusive: Object.freeze({ label: "Inconclusive", style: "1;36" }),
+});
+const UNKNOWN_ASSESSMENT_PRESENTATION = Object.freeze({ label: "Not Available", style: "1" });
+const GRAPHEME_SEGMENTER = new Intl.Segmenter("en", { granularity: "grapheme" });
+
+function styledText(value, style, enabled) {
+  return enabled ? `\u001B[${style}m${value}\u001B[0m` : value;
+}
+
+function isFullwidthCodePoint(codePoint) {
+  return codePoint >= 0x1100 && (
+    codePoint <= 0x115f
+    || codePoint === 0x2329
+    || codePoint === 0x232a
+    || (codePoint >= 0x2e80 && codePoint <= 0x303e)
+    || (codePoint >= 0x3040 && codePoint <= 0xa4cf)
+    || (codePoint >= 0xac00 && codePoint <= 0xd7a3)
+    || (codePoint >= 0xf900 && codePoint <= 0xfaff)
+    || (codePoint >= 0xfe10 && codePoint <= 0xfe19)
+    || (codePoint >= 0xfe30 && codePoint <= 0xfe6f)
+    || (codePoint >= 0xff00 && codePoint <= 0xff60)
+    || (codePoint >= 0xffe0 && codePoint <= 0xffe6)
+    || (codePoint >= 0x1b000 && codePoint <= 0x1b001)
+    || (codePoint >= 0x1f200 && codePoint <= 0x1f251)
+    || (codePoint >= 0x20000 && codePoint <= 0x3fffd)
+  );
+}
+
+function graphemeWidth(value) {
+  if (/\p{Extended_Pictographic}|\uFE0F/u.test(value)) return 2;
+  return [...value].reduce((width, character) => {
+    if (/[\p{Mark}\p{Control}\p{Format}]/u.test(character)) return width;
+    return width + (isFullwidthCodePoint(character.codePointAt(0)) ? 2 : 1);
+  }, 0);
+}
+
+function displaySegments(value) {
+  return [...GRAPHEME_SEGMENTER.segment(String(value))].map(({ segment }) => ({
+    segment,
+    width: graphemeWidth(segment),
+  }));
+}
+
+function displayLength(value) {
+  return displaySegments(value).reduce((width, segment) => width + segment.width, 0);
+}
+
+function normalizedWidth(width) {
+  return Number.isFinite(width) && width > 0 ? Math.max(1, Math.floor(width)) : 80;
+}
+
+function wrapText(value, width, indent = "") {
+  const normalized = String(value ?? "").trim().replace(/\s+/gu, " ");
+  const limit = normalizedWidth(width);
+  const effectiveIndent = displayLength(indent) < limit ? indent : "";
+  if (displayLength(`${effectiveIndent}${normalized}`) <= limit) {
+    return [`${effectiveIndent}${normalized}`];
+  }
+
+  const lines = [];
+  let line = effectiveIndent;
+  for (const word of normalized.split(" ")) {
+    const separator = line === effectiveIndent ? "" : " ";
+    if (displayLength(`${line}${separator}${word}`) <= limit) {
+      line = `${line}${separator}${word}`;
+      continue;
+    }
+    if (line !== effectiveIndent) {
+      lines.push(line);
+      line = effectiveIndent;
+    }
+    const segments = displaySegments(word);
+    const capacity = Math.max(1, limit - displayLength(effectiveIndent));
+    while (segments.reduce((total, segment) => total + segment.width, 0) > capacity) {
+      const chunk = [];
+      let chunkWidth = 0;
+      while (
+        segments.length > 0
+        && (chunk.length === 0 || chunkWidth + segments[0].width <= capacity)
+      ) {
+        const [segment] = segments.splice(0, 1);
+        chunk.push(segment.segment);
+        chunkWidth += segment.width;
+      }
+      lines.push(`${effectiveIndent}${chunk.join("")}`);
+    }
+    line = `${effectiveIndent}${segments.map((segment) => segment.segment).join("")}`;
+  }
+  if (line !== effectiveIndent || lines.length === 0) lines.push(line);
+  return lines;
+}
+
+function priorityStyle(priority) {
+  if (priority === "P0") return "1;31";
+  if (priority === "P1") return "1;33";
+  return "1;36";
+}
+
+export function humanAuditPresentationOptions({ args = [], env = {}, output = {} } = {}) {
+  const plain = args.includes("--plain") || env.TERM === "dumb";
+  const noColor = Object.prototype.hasOwnProperty.call(env, "NO_COLOR");
+  return {
+    plain,
+    styled: !plain && !noColor && output.isTTY === true,
+    width: Number.isInteger(output.columns) && output.columns > 0 ? output.columns : 80,
+  };
+}
+
+function assessmentPresentation(value) {
+  return ASSESSMENT_PRESENTATION[value] ?? UNKNOWN_ASSESSMENT_PRESENTATION;
 }
 
 function shellArgument(value) {
   return JSON.stringify(String(value));
 }
 
-export function renderHumanAuditCompletion(result, { cwd, outputPath } = {}) {
+export function renderHumanAuditCompletion(result, {
+  cwd,
+  outputPath,
+  styled = false,
+  width = 80,
+} = {}) {
   if (result.outcome === "scope_not_confirmed" && !result.report) {
     return [
       "LaunchRally Audit",
@@ -33,6 +147,8 @@ export function renderHumanAuditCompletion(result, { cwd, outputPath } = {}) {
   }
 
   const scopeCancelled = result.outcome === "scope_not_confirmed";
+  const assessment = assessmentPresentation(result.report.assessment);
+  const renderWidth = normalizedWidth(width);
   const failed = result.report.results.checks.filter((check) => check.status === "failed");
   const gaps = result.report.results.verification_gaps;
   const nextCommand = result.next?.type === "init"
@@ -40,25 +156,60 @@ export function renderHumanAuditCompletion(result, { cwd, outputPath } = {}) {
       outputPath ? shellArgument(outputPath) : "<saved-report-path>"
     }`
     : result.next?.message ?? "No next command is required.";
-  return [
-    "LaunchRally Audit",
+  const itemLines = (items, description) => items.length > 0
+    ? items.flatMap((item) => {
+      const priority = `[${item.priority.toUpperCase()}]`;
+      const itemHeading = `${priority} ${item.check_id}`;
+      const headingLines = displayLength(itemHeading) <= renderWidth
+        ? [itemHeading]
+        : [priority, ...wrapText(item.check_id, renderWidth, "  ")];
+      return [
+        ...headingLines,
+        ...wrapText(description(item), renderWidth, "  "),
+      ];
+    })
+    : ["None"];
+  const sections = [
+    ["LaunchRally Audit"],
     ...(scopeCancelled
-      ? ["Audit Brief was not confirmed. No public or Provider permission was granted."]
+      ? [["Scope", "Audit Brief was not confirmed. No public or Provider permission was granted."]]
       : []),
-    `Assessment: ${titleCase(result.report.assessment)}`,
-    "Failed Findings:",
-    ...(failed.length > 0
-      ? failed.map((check) => `  - [${check.priority.toUpperCase()}] ${check.check_id} — ${check.summary}`)
-      : ["  - None"]),
-    "Verification Gaps:",
-    ...(gaps.length > 0
-      ? gaps.map((gap) => `  - [${gap.priority.toUpperCase()}] ${gap.check_id} — ${gap.reason}`)
-      : ["  - None"]),
-    outputPath
-      ? `Complete Report JSON: ${outputPath}`
-      : "Complete Report JSON was not saved. Use --output or confirm a save path to write it.",
-    `Next command: ${nextCommand}`,
-  ].join("\n");
+    ["Assessment", assessment.label],
+    [`Failed Findings (${failed.length})`, ...itemLines(failed, (check) => check.summary)],
+    [`Verification Gaps (${gaps.length})`, ...itemLines(gaps, (gap) => gap.reason)],
+    [
+      "Report",
+      outputPath
+        ? outputPath
+        : "Not saved. Use --output or confirm a save path to write the complete Report JSON.",
+    ],
+    ["Next command", nextCommand],
+  ];
+  return sections.map(([heading, ...lines], index) => {
+    const headingLines = wrapText(heading, renderWidth).map((line) =>
+      styledText(line, index === 0 ? "1;36" : "1", styled));
+    const copyableValue = (heading === "Report" && outputPath)
+      || (heading === "Next command" && result.next?.type === "init");
+    const contentLines = copyableValue
+      ? lines
+      : lines.flatMap((line) => /^(?:Failed Findings|Verification Gaps)/u.test(heading)
+        ? [line]
+        : wrapText(line, renderWidth));
+    const renderedLines = contentLines.map((line) => {
+      if (heading === "Assessment") {
+        return styledText(line, assessment.style, styled);
+      }
+      if (heading === "Report" || heading === "Next command") {
+        return styledText(line, "36", styled);
+      }
+      if (/^(?:Failed Findings|Verification Gaps)/u.test(heading)) {
+        return line.replace(/^\[(P\d+)\]/u, (priority, label) =>
+          styledText(priority, priorityStyle(label), styled));
+      }
+      return line;
+    });
+    return [...headingLines, ...renderedLines].join("\n");
+  }).join("\n\n");
 }
 
 export async function runHumanAudit({
