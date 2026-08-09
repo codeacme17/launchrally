@@ -9,6 +9,28 @@ import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
+const COMPLETION_CLAIMS = [
+  {
+    path: "README.md",
+    complete: "P0 is Product Complete and `0.1.0` is publicly available",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.1.0` remains publicly available",
+  },
+  {
+    path: "CONTRIBUTING.md",
+    complete: "P0 is Product Complete and publicly released",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed, and the Experimental release remains public",
+  },
+  {
+    path: "docs/maintainers/phase-0-validation.md",
+    complete: "P0 is Product Complete and `0.1.0` is a public Experimental release.",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.1.0` remains a public Experimental release.",
+  },
+  {
+    path: "docs/maintainers/p0-acceptance.md",
+    complete: "P0 is Product Complete and `0.1.0` is publicly available as an Experimental\nrelease.",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression\nis reviewed; `0.1.0` remains publicly available as an Experimental release.",
+  },
+];
 
 async function createP0Fixture() {
   return copyRepositoryFixture(root, "launchrally-p0-", [
@@ -25,7 +47,17 @@ async function createP0Fixture() {
   ]);
 }
 
-test("the P0 release contract keeps Product Complete, Experimental, and validation distinct", async () => {
+async function replaceCompletionClaims(fixture, from, to) {
+  await Promise.all(COMPLETION_CLAIMS.map(async (claim) => {
+    const documentPath = path.join(fixture, claim.path);
+    const content = await readFile(documentPath, "utf8");
+    const updated = content.replace(claim[from], claim[to]);
+    assert.notEqual(updated, content, `${claim.path} must contain the ${from} claim`);
+    await writeFile(documentPath, updated);
+  }));
+}
+
+test("the P0 release contract keeps suspension, Experimental, and validation distinct", async () => {
   const { stdout } = await execFileAsync(
     "npm",
     ["--silent", "run", "validate:p0", "--", "--json"],
@@ -35,14 +67,14 @@ test("the P0 release contract keeps Product Complete, Experimental, and validati
   assert.deepEqual(JSON.parse(stdout), {
     status: "completed",
     phase: "p0",
-    product_status: "complete",
+    product_status: "suspended",
     release_status: "experimental",
     validation_mode: "telemetry_free",
-    validation_status: "collecting",
+    validation_status: "suspended",
     p0_validated: false,
     p1_discovery: "allowed",
     p1_authority: "blocked",
-    quality_floor_status: "satisfied",
+    quality_floor_status: "suspended",
     license: "Apache-2.0",
     feedback_channels: ["discussions", "issues", "security"],
     quality_floor: [
@@ -72,8 +104,9 @@ test("the public release kit documents use, data, safety, feedback, and validati
   ));
 
   assert.match(readme, /Status: Experimental P0/iu);
-  assert.match(readme, /P0 is Product Complete/iu);
-  assert.match(readme, /Telemetry-Free Validation.*collecting/iu);
+  assert.match(readme, /P0 Product Complete claim is suspended/iu);
+  assert.match(readme, /Aggregate directional-signal collection continues/iu);
+  assert.match(readme, /machine validation authority state is suspended/iu);
   assert.match(readme, /not P0 Validated/iu);
   assert.match(readme, /github\.com\/codeacme17\/launchrally\/issues/u);
   assert.match(readme, /github\.com\/codeacme17\/launchrally\/discussions/u);
@@ -111,8 +144,7 @@ test("the public release kit documents use, data, safety, feedback, and validati
   assert.match(security, /security\/advisories\/new/u);
 
   for (const stage of [
-    "P0 is Product Complete",
-    "P0 Product Complete",
+    "P0 Product Complete claim is suspended",
     "Experimental release",
     "Telemetry-Free Validation",
     "P0 Validated",
@@ -664,6 +696,7 @@ test("a Quality Floor regression retracts the Product Complete claim", async () 
     writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`),
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
   ]);
+  await replaceCompletionClaims(fixture, "suspended", "complete");
 
   await assert.rejects(
     execFileAsync(
@@ -677,29 +710,7 @@ test("a Quality Floor regression retracts the Product Complete claim", async () 
     },
   );
 
-  const suspensionUpdates = new Map([
-    ["README.md", [
-      "P0 is Product Complete and `0.1.0` is publicly available",
-      "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.1.0` remains publicly available",
-    ]],
-    ["CONTRIBUTING.md", [
-      "P0 is Product Complete and publicly released",
-      "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; the Experimental release remains public",
-    ]],
-    ["docs/maintainers/phase-0-validation.md", [
-      "P0 is Product Complete and `0.1.0` is a public Experimental release.",
-      "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.1.0` remains a public Experimental release.",
-    ]],
-    ["docs/maintainers/p0-acceptance.md", [
-      "P0 is Product Complete and `0.1.0` is publicly available as an Experimental",
-      "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.1.0` remains publicly available as an Experimental",
-    ]],
-  ]);
-  await Promise.all([...suspensionUpdates].map(async ([relativePath, [before, after]]) => {
-    const documentPath = path.join(fixture, relativePath);
-    const content = await readFile(documentPath, "utf8");
-    await writeFile(documentPath, content.replace(before, after));
-  }));
+  await replaceCompletionClaims(fixture, "complete", "suspended");
 
   const { stdout } = await execFileAsync(
     process.execPath,
@@ -713,22 +724,10 @@ test("a suspended Quality Floor requires a documented verified fix before restor
   const fixture = await createP0Fixture();
   const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
-  const suspended = structuredClone(log.entries.at(-1));
-  suspended.period = "2026-08-09-01";
-  suspended.quality_floor = {
-    status: "suspended",
-    regressions: [{
-      id: "qf-2026-08-09-01",
-      category: "permission_boundary",
-      status: "open",
-      summary: "A permission regression is under review.",
-    }],
-  };
-  suspended.validation_decision.status = "not_validated";
-  suspended.p1_gate.authority_expanding_implementation = "blocked";
   const restored = structuredClone(log.entries.at(-1));
   restored.period = "2026-08-10-01";
-  log.entries.push(suspended, restored);
+  restored.quality_floor = { status: "satisfied", regressions: [] };
+  log.entries.push(restored);
   await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
 
   await assert.rejects(
@@ -749,18 +748,18 @@ test("every Quality Floor regression ID requires its own verified fix", async ()
   const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   const suspended = structuredClone(log.entries.at(-1));
-  suspended.period = "2026-08-09-01";
+  suspended.period = "2026-08-10-01";
   suspended.quality_floor = {
     status: "suspended",
     regressions: [
       {
-        id: "qf-2026-08-09-01",
+        id: "qf-2026-08-10-01",
         category: "permission_boundary",
         status: "open",
         summary: "permission_boundary_regression_under_review",
       },
       {
-        id: "qf-2026-08-09-02",
+        id: "qf-2026-08-10-02",
         category: "permission_boundary",
         status: "open",
         summary: "permission_boundary_regression_under_review",
@@ -770,13 +769,24 @@ test("every Quality Floor regression ID requires its own verified fix", async ()
   suspended.validation_decision.status = "not_validated";
   suspended.p1_gate.authority_expanding_implementation = "blocked";
   const partiallyRestored = structuredClone(log.entries.at(-1));
-  partiallyRestored.period = "2026-08-10-01";
-  partiallyRestored.quality_floor.regressions = [{
-    id: "qf-2026-08-09-01",
-    category: "permission_boundary",
-    status: "verified_fixed",
-    summary: "permission_boundary_fix_verified",
-  }];
+  partiallyRestored.period = "2026-08-11-01";
+  partiallyRestored.quality_floor = {
+    status: "satisfied",
+    regressions: [
+      {
+        id: "qf-2026-08-09-01",
+        category: "evidence_integrity",
+        status: "verified_fixed",
+        summary: "evidence_integrity_fix_verified",
+      },
+      {
+        id: "qf-2026-08-10-01",
+        category: "permission_boundary",
+        status: "verified_fixed",
+        summary: "permission_boundary_fix_verified",
+      },
+    ],
+  };
   log.entries.push(suspended, partiallyRestored);
   await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
 
@@ -788,7 +798,7 @@ test("every Quality Floor regression ID requires its own verified fix", async ()
     ),
     (error) => {
       assert.match(error.stderr, /p0_quality_floor_fix_missing/u);
-      assert.match(error.stderr, /qf-2026-08-09-02/u);
+      assert.match(error.stderr, /qf-2026-08-10-02/u);
       return true;
     },
   );
@@ -799,11 +809,11 @@ test("a resolved Quality Floor regression ID can never be reused", async () => {
   const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   const suspended = structuredClone(log.entries.at(-1));
-  suspended.period = "2026-08-09-01";
+  suspended.period = "2026-08-10-01";
   suspended.quality_floor = {
     status: "suspended",
     regressions: [{
-      id: "qf-2026-08-09-01",
+      id: "qf-2026-08-10-01",
       category: "permission_boundary",
       status: "open",
       summary: "permission_boundary_regression_under_review",
@@ -812,15 +822,26 @@ test("a resolved Quality Floor regression ID can never be reused", async () => {
   suspended.validation_decision.status = "not_validated";
   suspended.p1_gate.authority_expanding_implementation = "blocked";
   const restored = structuredClone(log.entries.at(-1));
-  restored.period = "2026-08-10-01";
-  restored.quality_floor.regressions = [{
-    id: "qf-2026-08-09-01",
-    category: "permission_boundary",
-    status: "verified_fixed",
-    summary: "permission_boundary_fix_verified",
-  }];
+  restored.period = "2026-08-11-01";
+  restored.quality_floor = {
+    status: "satisfied",
+    regressions: [
+      {
+        id: "qf-2026-08-09-01",
+        category: "evidence_integrity",
+        status: "verified_fixed",
+        summary: "evidence_integrity_fix_verified",
+      },
+      {
+        id: "qf-2026-08-10-01",
+        category: "permission_boundary",
+        status: "verified_fixed",
+        summary: "permission_boundary_fix_verified",
+      },
+    ],
+  };
   const reused = structuredClone(suspended);
-  reused.period = "2026-08-11-01";
+  reused.period = "2026-08-12-01";
   log.entries.push(suspended, restored, reused);
   await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
 
@@ -832,7 +853,7 @@ test("a resolved Quality Floor regression ID can never be reused", async () => {
     ),
     (error) => {
       assert.match(error.stderr, /p0_validation_entry_incomplete/u);
-      assert.match(error.stderr, /reused regression qf-2026-08-09-01/u);
+      assert.match(error.stderr, /reused regression qf-2026-08-10-01/u);
       return true;
     },
   );
@@ -940,11 +961,11 @@ test("Quality Floor regression summaries must match open and verified-fix status
   const fixedLogPath = path.join(fixedFixture, "docs/maintainers/phase-0-validation-log.json");
   const fixedLog = JSON.parse(await readFile(fixedLogPath, "utf8"));
   const suspended = structuredClone(fixedLog.entries.at(-1));
-  suspended.period = "2026-08-09-01";
+  suspended.period = "2026-08-10-01";
   suspended.quality_floor = {
     status: "suspended",
     regressions: [{
-      id: "qf-2026-08-09-01",
+      id: "qf-2026-08-10-01",
       category: "permission_boundary",
       status: "open",
       summary: "permission_boundary_regression_under_review",
@@ -953,13 +974,24 @@ test("Quality Floor regression summaries must match open and verified-fix status
   suspended.validation_decision.status = "not_validated";
   suspended.p1_gate.authority_expanding_implementation = "blocked";
   const restored = structuredClone(fixedLog.entries.at(-1));
-  restored.period = "2026-08-10-01";
-  restored.quality_floor.regressions = [{
-    id: "qf-2026-08-09-01",
-    category: "permission_boundary",
-    status: "verified_fixed",
-    summary: "permission_boundary_regression_under_review",
-  }];
+  restored.period = "2026-08-11-01";
+  restored.quality_floor = {
+    status: "satisfied",
+    regressions: [
+      {
+        id: "qf-2026-08-09-01",
+        category: "evidence_integrity",
+        status: "verified_fixed",
+        summary: "evidence_integrity_fix_verified",
+      },
+      {
+        id: "qf-2026-08-10-01",
+        category: "permission_boundary",
+        status: "verified_fixed",
+        summary: "permission_boundary_regression_under_review",
+      },
+    ],
+  };
   fixedLog.entries.push(suspended, restored);
   await writeFile(fixedLogPath, `${JSON.stringify(fixedLog, null, 2)}\n`);
   await assert.rejects(
@@ -970,7 +1002,7 @@ test("Quality Floor regression summaries must match open and verified-fix status
     ),
     (error) => {
       assert.match(error.stderr, /p0_identifying_data_forbidden/u);
-      assert.match(error.stderr, /quality_floor\.regressions\.0\.summary/u);
+      assert.match(error.stderr, /quality_floor\.regressions\.1\.summary/u);
       return true;
     },
   );
@@ -1049,8 +1081,18 @@ test("a complete qualitative decision can advance the P0 release contract", asyn
   const contractPath = path.join(fixture, "release/p0.json");
   const log = JSON.parse(await readFile(logPath, "utf8"));
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
-  Object.assign(log.entries.at(-1), {
-    quality_floor: { status: "satisfied", regressions: [] },
+  const restored = structuredClone(log.entries.at(-1));
+  Object.assign(restored, {
+    period: "2026-08-10-01",
+    quality_floor: {
+      status: "satisfied",
+      regressions: [{
+        id: "qf-2026-08-09-01",
+        category: "evidence_integrity",
+        status: "verified_fixed",
+        summary: "evidence_integrity_fix_verified",
+      }],
+    },
     validation_decision: {
       status: "validated",
       rationale: "consistent_directional_evidence",
@@ -1066,7 +1108,9 @@ test("a complete qualitative decision can advance the P0 release contract", asyn
       authority_expanding_implementation: "allowed",
     },
   });
+  log.entries.push(restored);
   Object.assign(contract, {
+    product_status: "complete",
     validation_status: "validated",
     p0_validated: true,
     quality_floor_status: "satisfied",
@@ -1077,6 +1121,7 @@ test("a complete qualitative decision can advance the P0 release contract", asyn
     writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`),
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
   ]);
+  await replaceCompletionClaims(fixture, "suspended", "complete");
 
   const { stdout } = await execFileAsync(
     process.execPath,

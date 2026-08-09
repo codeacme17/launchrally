@@ -7,7 +7,7 @@ LaunchRally uses four deliberately separate states:
 - **Telemetry-Free Validation** is the current learning period. Aggregate trends, voluntary feedback categories, represented framework and deployment contexts, repeated value and defect patterns, recurring P1 requests, and resulting decisions are recorded without default telemetry or mandatory uploads.
 - **P0 Validated** is a future product decision supported by the published Validation Log. It is not implied by publication, passing CI, package downloads, or elapsed time.
 
-P0 is Product Complete and `0.1.0` is a public Experimental release. Telemetry-Free Validation is collecting directional signals, but LaunchRally is not P0 Validated. P1 discovery and design may continue; authority-expanding P1 implementation remains blocked.
+The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.1.0` remains a public Experimental release. Aggregate directional-signal collection continues under the Telemetry-Free Validation learning process, but the machine validation authority state is suspended while the Quality Floor regression is open. LaunchRally is not P0 Validated. P1 discovery and design may continue; authority-expanding P1 implementation remains blocked.
 
 ## Decision method
 
@@ -21,4 +21,4 @@ Update `docs/maintainers/phase-0-validation-log.json` only through a reviewed pu
 
 New entries use the reviewed per-field aggregate taxonomy enforced by `npm run validate:p0`; raw qualitative text does not belong in the log. Extend a field taxonomy in the same reviewed pull request when a genuinely new aggregate category is needed. Quality Floor regressions use stable non-identifying `qf-YYYY-MM-DD-NN` IDs so each open regression requires its own verified-fix record.
 
-Every entry records the current Quality Floor, an explicit qualitative validation decision, and the P1 gate. Any known Quality Floor regression changes validation to suspended, invalidates a P0 Validated claim, and keeps authority-expanding P1 implementation blocked until a verified fix and a later reviewed entry restore the floor. Download counts, elapsed time, quotas, or numeric adoption thresholds cannot make P0 Validated.
+Every entry records the current Quality Floor, an explicit qualitative validation decision, and the P1 gate. Any known Quality Floor regression suspends completion claims and the machine validation authority state, invalidates a P0 Validated claim, and keeps authority-expanding P1 implementation blocked until a verified fix and a later reviewed entry restore the floor. This suspension does not stop permitted aggregate, telemetry-free signal collection. Download counts, elapsed time, quotas, or numeric adoption thresholds cannot make P0 Validated.

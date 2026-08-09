@@ -35,7 +35,7 @@ test("the committed P0 matrix maps every normative requirement to executable evi
   assert.deepEqual(JSON.parse(stdout), {
     status: "completed",
     schema_version: "launchrally.dev/p0-acceptance/v1",
-    product_status: "complete",
+    product_status: "suspended",
     release_status: "experimental",
     requirements: { complete: 22, open: 0, total: 22 },
     release_gates: 10,
@@ -178,9 +178,27 @@ test("release readiness fails closed if a completed normative requirement reopen
 });
 
 test("release readiness accepts the Product Complete Experimental state", async () => {
+  const fixture = await createAcceptanceFixture();
+  const matrixPath = path.join(fixture, "release/p0-acceptance.json");
+  const contractPath = path.join(fixture, "release/p0.json");
+  const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  matrix.product_status = "complete";
+  contract.product_status = "complete";
+  await Promise.all([
+    writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
+    writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
+  ]);
+
   const { stdout } = await execFileAsync(
-    "npm",
-    ["--silent", "run", "validate:acceptance", "--", "--require-release-ready", "--json"],
+    process.execPath,
+    [
+      "scripts/validate-acceptance.mjs",
+      "--root",
+      fixture,
+      "--require-release-ready",
+      "--json",
+    ],
     { cwd: root },
   );
   assert.equal(JSON.parse(stdout).product_status, "complete");
@@ -300,12 +318,21 @@ test("public status declares Experimental while P0 validation remains distinct",
   assert.match(readme, /Status: Experimental P0/u);
   assert.match(quickstart, /public Experimental release/iu);
   assert.match(contributing, /Experimental open-source project/iu);
-  assert.match(validation, /Telemetry-Free Validation is collecting/iu);
+  assert.match(validation, /Aggregate directional-signal collection continues/iu);
+  assert.match(validation, /machine validation authority state is suspended/iu);
   assert.match(validation, /not P0 Validated/iu);
   assert.deepEqual(
-    (({ product_status, release_status }) => ({ product_status, release_status }))(
+    (({ product_status, release_status, validation_status }) => ({
+      product_status,
+      release_status,
+      validation_status,
+    }))(
       JSON.parse(release),
     ),
-    { product_status: "complete", release_status: "experimental" },
+    {
+      product_status: "suspended",
+      release_status: "experimental",
+      validation_status: "suspended",
+    },
   );
 });
