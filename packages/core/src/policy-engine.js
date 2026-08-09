@@ -42,6 +42,72 @@ function remediationOrder(left, right) {
     || left.check_id.localeCompare(right.check_id);
 }
 
+function actionEvidenceReference(entry) {
+  return {
+    digest: entry.digest,
+    ...(typeof entry.source === "string" ? { source: entry.source } : {}),
+    ...(typeof entry.target === "string" ? { target: entry.target } : {}),
+  };
+}
+
+function failedPublicObservation(entry) {
+  const artifact = entry.normalized_artifact;
+  if (
+    entry.evidence_kind !== "public_observation"
+    || artifact?.kind !== "public_observation"
+    || artifact.status !== "failed"
+  ) return null;
+  const observation = {
+    kind: "public_observation",
+    evidence_digest: entry.digest,
+    probe_id: artifact.probe_id,
+    probe_kind: artifact.probe_kind,
+    method: artifact.method,
+    path: artifact.path,
+    outcome: artifact.outcome,
+  };
+  if (Number.isInteger(artifact.details?.status_code)) {
+    observation.status_code = artifact.details.status_code;
+  }
+  return observation;
+}
+
+function localObservation(entry) {
+  const artifact = entry.normalized_artifact;
+  if (
+    entry.evidence_kind !== "local_observation"
+    || artifact?.kind !== "local_observation"
+  ) return null;
+  return {
+    kind: "local_observation",
+    evidence_digest: entry.digest,
+    target: artifact.target,
+    outcome: artifact.outcome,
+  };
+}
+
+function actionEvidence(finding, evidenceByDigest) {
+  const entries = finding.evidence
+    .map((reference) => evidenceByDigest.get(reference.digest))
+    .filter(Boolean);
+  const failedPublic = entries.map((entry) => ({
+    entry,
+    observation: failedPublicObservation(entry),
+  })).filter(({ observation }) => observation);
+  const supportingEntries = failedPublic.length > 0
+    ? failedPublic.map(({ entry }) => entry)
+    : entries;
+  const observations = failedPublic.length > 0
+    ? failedPublic.map(({ observation }) => observation)
+    : entries.map(localObservation).filter(Boolean);
+  return {
+    evidence: supportingEntries.map(actionEvidenceReference),
+    observations: observations.length > 0
+      ? observations
+      : [{ kind: "check_result", summary: finding.summary }],
+  };
+}
+
 function evidenceRequirement(check, declaration) {
   return check.status === "passed"
     ? declaration.pass_evidence_requirement ?? declaration.evidence_requirement
@@ -195,6 +261,7 @@ export function evaluateLaunchPolicy({
     .filter((finding) => finding.status === "failed")
     .map((finding) => {
       const remediation = declarations.get(finding.check_id).remediation_order_policy;
+      const supportingEvidence = actionEvidence(finding, evidenceByDigest);
       return {
         check_id: finding.check_id,
         ...(finding.priority ? { priority: finding.priority } : {}),
@@ -203,6 +270,12 @@ export function evaluateLaunchPolicy({
         dependency_unblocking: remediation.dependency_unblocking,
         core_journey_impact: remediation.core_journey_impact,
         action: finding.action ?? "Resolve the failed verification rule.",
+        ...supportingEvidence,
+        targeted_verification: {
+          operation: "verify",
+          scope: "targeted",
+          check_ids: [finding.check_id],
+        },
       };
     })
     .sort(remediationOrder);
