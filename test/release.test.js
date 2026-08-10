@@ -226,6 +226,12 @@ test("release validation rejects drift from the exact Human Mode UI dependency",
 });
 
 test("npm release packages are public, provenance-enabled, and file-allowlisted", async () => {
+  const contracts = releaseManifest.packages.find(
+    ({ name }) => name === "@launchrally/contracts",
+  );
+  assert.ok(contracts.files.includes("schemas/init-interaction/v2.schema.json"));
+  assert.ok(contracts.files.includes("schemas/verify-interaction/v2.schema.json"));
+
   for (const artifact of releaseManifest.packages) {
     const relative = `${artifact.path}/package.json`;
     const packageJson = JSON.parse(await readFile(path.join(root, relative), "utf8"));

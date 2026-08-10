@@ -53,6 +53,7 @@ const adapters = [
 ];
 
 const directJourney = {
+  schema_version: "launchrally.dev/reference-journey/v2",
   cli: {
     package: "@launchrally/cli",
     version: "0.2.1",
@@ -91,7 +92,10 @@ const directJourney = {
     ],
     [
       "init_preview",
-      ["init", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      [
+        "init", "--json", "--cwd", "{repository_root}", "--report",
+        "{manifest_source_report_path}",
+      ],
       ["init", ["needs_confirmation", "needs_permission"]],
     ],
     [
@@ -112,13 +116,17 @@ const directJourney = {
     ],
     [
       "plan_refresh",
-      ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      [
+        "plan", "--json", "--cwd", "{repository_root}", "--report",
+        "{current_report_path}",
+      ],
       ["plan", "needs_refresh"],
     ],
     [
       "refresh_permission",
       [
-        "verify", "--json", "--cwd", "{repository_root}", "--report", "{report_path}",
+        "verify", "--json", "--cwd", "{repository_root}", "--report",
+        "{manifest_source_report_path}",
         "--scope", "full",
       ],
       ["verify", "needs_permission"],
@@ -133,13 +141,17 @@ const directJourney = {
     ],
     [
       "plan",
-      ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      [
+        "plan", "--json", "--cwd", "{repository_root}", "--report",
+        "{current_report_path}",
+      ],
       ["plan", "completed"],
     ],
     [
       "handoff",
       [
-        "plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}",
+        "plan", "--json", "--cwd", "{repository_root}", "--report",
+        "{current_report_path}",
         "--handoff",
       ],
       ["plan", "completed"],
@@ -147,7 +159,8 @@ const directJourney = {
     [
       "verify_permission",
       [
-        "verify", "--json", "--cwd", "{repository_root}", "--report", "{report_path}",
+        "verify", "--json", "--cwd", "{repository_root}", "--report",
+        "{manifest_source_report_path}",
         "--scope", "full",
       ],
       ["verify", "needs_permission"],
@@ -408,7 +421,8 @@ async function executeReferenceJourney(
     const audit = await invoke("audit_completed");
     const reportPath = path.join(savedDirectory, "audit.json");
     await writeFile(reportPath, JSON.stringify(audit));
-    values.report_path = reportPath;
+    values.manifest_source_report_path = reportPath;
+    values.current_report_path = reportPath;
 
     requireGuard("init_preview", { kind: "optional", intent: "initialize_project" });
     requireGuard("init_completed", { kind: "optional", intent: "initialize_project" });
@@ -418,6 +432,10 @@ async function executeReferenceJourney(
     if (initialize) {
       initPreview = await invoke("init_preview");
       initStates.push(initPreview.status);
+      assert.deepEqual(initPreview.interaction.source_report, {
+        report_id: audit.report.report_id,
+        role: "manifest_source",
+      });
       if (initPreview.status === "needs_permission") {
         requireGuard("init_registry_permission", {
           kind: "when_registry_permission_requested",
@@ -429,6 +447,10 @@ async function executeReferenceJourney(
         });
         initPreview = await invoke("init_registry_permission");
         initStates.push(initPreview.status);
+        assert.deepEqual(initPreview.interaction.source_report, {
+          report_id: audit.report.report_id,
+          role: "manifest_source",
+        });
       }
       values.init_resume = initPreview.interaction.resume_token;
       init = await invoke("init_completed");
@@ -439,11 +461,23 @@ async function executeReferenceJourney(
       });
       await invoke("plan_refresh");
       const refreshPermission = await invoke("refresh_permission");
+      assert.deepEqual(refreshPermission.interaction.source_report, {
+        report_id: audit.report.report_id,
+        role: "manifest_source",
+      });
       values.refresh_resume = refreshPermission.interaction.resume_token;
       const refreshed = await invoke("refresh_completed");
+      assert.deepEqual(refreshed.interaction.source_report, {
+        report_id: audit.report.report_id,
+        role: "manifest_source",
+      });
+      assert.deepEqual(refreshed.interaction.current_report, {
+        report_id: refreshed.report.report_id,
+        role: "current",
+      });
       const refreshedPath = path.join(savedDirectory, "refreshed.json");
       await writeFile(refreshedPath, JSON.stringify(refreshed));
-      values.report_path = refreshedPath;
+      values.current_report_path = refreshedPath;
     }
     const plan = await invoke("plan");
     requireGuard("handoff", {
@@ -462,8 +496,22 @@ async function executeReferenceJourney(
     let verify = null;
     if (verifyAfterRemediation) {
       verifyPermission = await invoke("verify_permission");
+      assert.deepEqual(verifyPermission.interaction.source_report, {
+        report_id: audit.report.report_id,
+        role: "manifest_source",
+      });
       values.verify_resume = verifyPermission.interaction.resume_token;
       verify = await invoke("verify_completed");
+      assert.deepEqual(verify.interaction.source_report, {
+        report_id: audit.report.report_id,
+        role: "manifest_source",
+      });
+      assert.deepEqual(verify.interaction.current_report, {
+        report_id: verify.report.report_id,
+        role: "current",
+      });
+      assert.deepEqual(verify.manifest_drift, []);
+      assert.equal(verify.report.policy.current, true);
     }
 
     return {
@@ -528,6 +576,20 @@ test("native adapters ship the canonical Reference Journey for the exact CLI ver
   assert.match(canonicalJourney, /--version --json/u);
   assert.match(canonicalJourney, /contract: "launchrally\.dev\/cli\/v2"/u);
   assert.match(canonicalJourney, /cli_version/u);
+  assert.match(canonicalJourney, /Manifest-bound source Report/u);
+  assert.match(canonicalJourney, /latest current Report/u);
+  assert.match(
+    canonicalJourney,
+    /rally plan --json[^`\n]*--report <current-report-json>/u,
+  );
+  assert.match(
+    canonicalJourney,
+    /rally verify --json[^`\n]*--report <manifest-source-report-json>[^`\n]*--scope full/u,
+  );
+  assert.doesNotMatch(
+    canonicalJourney,
+    /rally verify --json[^`\n]*--report <current-report-json>[^`\n]*--scope full/u,
+  );
   assert.deepEqual(journeyContract.cli, {
     package: "@launchrally/cli",
     version: cliPackage.version,
@@ -555,6 +617,26 @@ test("native adapters ship the canonical Reference Journey for the exact CLI ver
   );
   const invocationById = new Map(
     journeyContract.invocations.map((invocation) => [invocation.id, invocation]),
+  );
+  assert.equal(
+    invocationById.get("init_preview").arguments.at(-1),
+    "{manifest_source_report_path}",
+  );
+  assert.equal(
+    invocationById.get("refresh_permission").arguments[5],
+    "{manifest_source_report_path}",
+  );
+  assert.equal(
+    invocationById.get("plan").arguments.at(-1),
+    "{current_report_path}",
+  );
+  assert.equal(
+    invocationById.get("handoff").arguments[5],
+    "{current_report_path}",
+  );
+  assert.equal(
+    invocationById.get("verify_permission").arguments[5],
+    "{manifest_source_report_path}",
   );
   assert.deepEqual(invocationById.get("init_preview").guard, {
     kind: "optional",

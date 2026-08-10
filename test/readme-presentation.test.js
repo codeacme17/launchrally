@@ -76,7 +76,7 @@ test("the README terminal visual is accessible, responsive, and fixture-derived"
   const readme = await readFile(path.join(root, "README.md"), "utf8");
   assert.match(
     readme,
-    /<picture>[\s\S]*?<source media="\(prefers-color-scheme: dark\)" srcset="docs\/assets\/launchrally-terminal-dark\.svg">[\s\S]*?<img src="docs\/assets\/launchrally-terminal-light\.svg" alt="LaunchRally terminal showing an Inconclusive audit with verification gaps and the next init command" width="680">[\s\S]*?<\/picture>/u,
+    /<picture>[\s\S]*?<source media="\(prefers-color-scheme: dark\)" srcset="docs\/assets\/launchrally-terminal-dark\.svg">[\s\S]*?<img src="docs\/assets\/launchrally-terminal-light\.svg" alt="LaunchRally terminal showing an Inconclusive audit with verification gaps and the next init command" width="380">[\s\S]*?<\/picture>/u,
   );
 
   await execFileAsync(

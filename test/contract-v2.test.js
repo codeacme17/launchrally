@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 
 import {
   CLI_INTERACTION_CONTRACT,
+  INIT_INTERACTION_SCHEMA,
   MANIFEST_SCHEMA,
   REPORT_SCHEMA,
   assertValidCliInteraction,
@@ -72,6 +73,11 @@ test("init previews the canonical deterministic Manifest v2 YAML", async () => {
   );
 
   assert.equal(MANIFEST_SCHEMA, "launchrally.dev/manifest/v2");
+  assert.equal(INIT_INTERACTION_SCHEMA, "launchrally.dev/init-interaction/v2");
+  assert.deepEqual(result.interaction.source_report, {
+    report_id: audit.report.report_id,
+    role: "manifest_source",
+  });
   assert.equal(result.manifest.schema_version, MANIFEST_SCHEMA);
   const manifestChange = result.preview.changes.find(
     (change) => change.path === ".launchrally/manifest.yaml",

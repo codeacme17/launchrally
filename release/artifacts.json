@@ -17,6 +17,7 @@
         "schemas/audit-interaction/v1.schema.json",
         "schemas/evidence-index/v1.schema.json",
         "schemas/init-interaction/v1.schema.json",
+        "schemas/init-interaction/v2.schema.json",
         "schemas/launch-plan/v1.schema.json",
         "schemas/launch-plan/v2.schema.json",
         "schemas/manifest/v1.schema.json",
@@ -32,6 +33,7 @@
         "schemas/verification-result/v1.schema.json",
         "schemas/verification-result/v2.schema.json",
         "schemas/verify-interaction/v1.schema.json",
+        "schemas/verify-interaction/v2.schema.json",
         "src/index.js"
       ]
     },
