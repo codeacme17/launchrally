@@ -2,6 +2,11 @@ import {
   createProviderAdapterPlan,
   providerRiskDomain,
 } from "./provider-adapters.js";
+import { environmentTargetLabel } from "./environment-terminology.js";
+import {
+  normalizeSupportLayers,
+  supportLayerIsSelected,
+} from "./support-layers.js";
 
 const CHECK_CATALOG_VERSION = "web-baseline-check-catalog/v2";
 const BASELINE_VERSION = "web-application-baseline/v1";
@@ -285,7 +290,7 @@ const CHECKS = Object.freeze([
       required_inputs: ["audit_brief.production_targets.values"],
       pass_evidence_requirement: PUBLIC_EVIDENCE,
       verification_rules: [
-        "Pass only after each confirmed production target is observed healthy through public verification.",
+        "Pass only after each confirmed target is observed healthy through public verification.",
       ],
       severity: "critical",
       gate: "always",
@@ -298,7 +303,13 @@ const CHECKS = Object.freeze([
       },
     }),
     applicability(_project, brief) {
-      return productionApplicability(brief, "Public availability applies to confirmed production targets.");
+      return targetApplicability(
+        brief,
+        `Public availability applies to ${environmentTargetLabel(
+          brief.intended_environment.value,
+          { plural: true },
+        )}.`,
+      );
     },
     verify(_project, brief, authorizationPlan, publicEvidence) {
       return publicVerificationResult({
@@ -308,7 +319,9 @@ const CHECKS = Object.freeze([
         subject: "availability",
         kinds: ["dns", "http", "health"],
         expectedCount: brief.production_targets.values.length * 3,
-        passedSummary: "Every confirmed production target resolved and returned successful reachability and health observations.",
+        passedSummary: `Every ${environmentTargetLabel(
+          brief.intended_environment.value,
+        )} resolved and returned successful reachability and health observations.`,
       });
     },
   },
@@ -333,7 +346,13 @@ const CHECKS = Object.freeze([
       },
     }),
     applicability(_project, brief) {
-      return productionApplicability(brief, "Transport security applies to confirmed production targets.");
+      return targetApplicability(
+        brief,
+        `Transport security applies to ${environmentTargetLabel(
+          brief.intended_environment.value,
+          { plural: true },
+        )}.`,
+      );
     },
     verify(_project, brief, authorizationPlan, publicEvidence) {
       const insecureTargets = brief.production_targets.values.filter(
@@ -342,9 +361,12 @@ const CHECKS = Object.freeze([
       if (insecureTargets.length > 0) {
         const insecureOrigins = new Set(insecureTargets.map((target) => new URL(target).origin));
         return failed(
-          `Confirmed production targets must use HTTPS: ${insecureTargets.join(", ")}.`,
+          `${environmentTargetLabel(brief.intended_environment.value, {
+            capitalize: true,
+            plural: true,
+          })} must use HTTPS: ${insecureTargets.join(", ")}.`,
           publicEvidence.filter((item) => insecureOrigins.has(new URL(item.target).origin)),
-          "Use HTTPS for every confirmed production target.",
+          `Use HTTPS for every ${environmentTargetLabel(brief.intended_environment.value)}.`,
         );
       }
       return publicVerificationResult({
@@ -354,7 +376,9 @@ const CHECKS = Object.freeze([
         subject: "transport security",
         kinds: ["tls"],
         expectedCount: brief.production_targets.values.length,
-        passedSummary: "Every confirmed production target completed an authorized TLS handshake.",
+        passedSummary: `Every ${environmentTargetLabel(
+          brief.intended_environment.value,
+        )} completed an authorized TLS handshake.`,
       });
     },
   },
@@ -422,7 +446,7 @@ const CHECKS = Object.freeze([
       risk_domain: "observability_and_operations",
       permission_id: "local_safe_scan",
       required_inputs: ["audit_brief.support_layers.values", "audit_brief.provider_roles.values"],
-      pass_evidence_requirement: RELEASE_INTENT_EVIDENCE,
+      pass_evidence_requirement: MACHINE_EVIDENCE,
       verification_rules: [
         "Mark Not Applicable only when confirmed release intent selects no monitoring or observability support.",
         "Selected support remains Unverified until configuration and signal evidence is available.",
@@ -441,7 +465,12 @@ const CHECKS = Object.freeze([
       },
     }),
     applicability(project, brief) {
-      const selected = brief.support_layers.values.includes("monitoring")
+      if (normalizeSupportLayers(brief.support_layers.values) === null) {
+        return unresolvedApplicability(
+          "Declared support-layer intent contains a value that cannot be classified.",
+        );
+      }
+      const selected = supportLayerIsSelected(brief.support_layers.values, "observability")
         || brief.provider_roles.values.some(({ role }) => role === "observability")
         || environmentNames(project).some((name) => name.startsWith("SENTRY_"));
       if (!selected) {
@@ -472,7 +501,7 @@ const CHECKS = Object.freeze([
       required_inputs: ["audit_brief.production_targets.values", "audit_brief.core_journeys.values"],
       pass_evidence_requirement: PUBLIC_EVIDENCE,
       verification_rules: [
-        "Pass only after every confirmed core journey completes against a confirmed production target with fresh public evidence.",
+        "Pass only after every confirmed core journey completes against a confirmed target with fresh public evidence.",
       ],
       severity: "critical",
       gate: "always",
@@ -642,9 +671,9 @@ function environmentFactEvidence(project, matchingNames) {
     .map((fact) => fileEvidence(fact.provenance.path));
 }
 
-function productionApplicability(brief, reason) {
+function targetApplicability(brief, reason) {
   if (brief.production_targets.values.length === 0) {
-    return unresolvedApplicability("Confirmed production targets are required to resolve applicability.");
+    return unresolvedApplicability("Confirmed targets are required to resolve applicability.");
   }
   return applicable(reason, [intentEvidence("production_targets", "confirmed")]);
 }

@@ -11,9 +11,12 @@ import {
   REPORT_CONTRACT_MAJOR,
   assertSupportedManifestVersion,
   assertSupportedReportVersion,
+  assertValidReportPackage,
 } from "../packages/contracts/src/index.js";
 import {
+  createInitialSnapshot,
   renderReportMarkdown,
+  rethrowIfAborted,
   runAudit,
 } from "../packages/core/src/index.js";
 
@@ -25,26 +28,49 @@ const ANSWERS = Object.freeze({
   support_layers: [],
 });
 
-async function fixture() {
+async function fixture({ withLockfile = true } = {}) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-report-"));
   await writeFile(
     path.join(directory, "package.json"),
     JSON.stringify({ name: "report-web", scripts: { build: "vite build" } }),
   );
-  await writeFile(path.join(directory, "package-lock.json"), '{"lockfileVersion":3}');
+  if (withLockfile) {
+    await writeFile(path.join(directory, "package-lock.json"), '{"lockfileVersion":3}');
+  }
   return directory;
 }
 
-async function reachConfirmation(directory) {
+async function reachConfirmation(directory, answers = ANSWERS) {
   const initial = await runAudit(directory, "0.1.0");
   return runAudit(directory, "0.1.0", {
     resume_token: initial.interaction.resume_token,
-    answers: ANSWERS,
+    answers,
   });
 }
 
-async function complete(directory, finalOptions = {}) {
-  const confirmation = await reachConfirmation(directory);
+test("an already-aborted Audit stops before project discovery", async () => {
+  const directory = await fixture();
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    createInitialSnapshot(directory, { signal: controller.signal }),
+    (error) => error?.name === "AbortError",
+  );
+});
+
+test("Core abort classification rethrows standard abort-shaped errors", () => {
+  for (const error of [
+    Object.assign(new Error("aborted by name"), { name: "AbortError" }),
+    Object.assign(new Error("aborted by code"), { code: "ABORT_ERR" }),
+  ]) {
+    assert.throws(() => rethrowIfAborted(error), (thrown) => thrown === error);
+  }
+  assert.doesNotThrow(() => rethrowIfAborted(new Error("ordinary failure")));
+});
+
+async function complete(directory, { answers = ANSWERS, ...finalOptions } = {}) {
+  const confirmation = await reachConfirmation(directory, answers);
   const permission = await runAudit(directory, "0.1.0", {
     resume_token: confirmation.interaction.resume_token,
     confirmation: "confirm",
@@ -118,6 +144,7 @@ test("every completed Audit returns one frozen Record, derived Markdown View, an
   assert.match(view.content, /^# LaunchRally Audit Report/mu);
   assert.match(view.content, new RegExp(`Report Record: ${report.report_id}`, "u"));
   assert.match(view.content, /Assessment: Inconclusive/u);
+  assert.match(view.content, /Production target: https:\/\/example\.com\//u);
 
   const indexedDigests = new Set(index.entries.map((entry) => entry.digest));
   const references = evidenceReferences(report);
@@ -158,6 +185,49 @@ test("repeated Audits create new Records and Indexes without mutating earlier re
   assert.ok(!Number.isNaN(Date.parse(first.report.created_at)));
   assert.ok(!Number.isNaN(Date.parse(second.report.created_at)));
   assert.equal(JSON.stringify(first), firstSnapshot);
+});
+
+test("historical Report v2 actions remain valid and keep their legacy Markdown rendering", async () => {
+  const directory = await fixture({ withLockfile: false });
+  const result = structuredClone(await complete(directory));
+  for (const action of result.report.results.action_queue) {
+    delete action.evidence;
+    delete action.observations;
+    delete action.targeted_verification;
+  }
+  result.report_view.content = renderReportMarkdown(result.report);
+
+  assert.doesNotThrow(() => assertValidReportPackage(result));
+  assert.doesNotMatch(result.report_view.content, /Severity: critical; Gating:/u);
+  assert.match(
+    result.report_view.content,
+    /\[P0\] web\.baseline\.lockfile — Commit the package manager lockfile/u,
+  );
+});
+
+test("derived Report Views label compatibility targets with the reviewed environment", async () => {
+  const directory = await fixture();
+  const staging = await complete(directory, {
+    answers: { ...ANSWERS, intended_environment: "staging" },
+  });
+  assert.match(staging.report_view.content, /Staging target: https:\/\/example\.com\//u);
+  assert.doesNotMatch(staging.report_view.content, /Production target/u);
+  assert.deepEqual(staging.report.scope.release_intent.production_targets, ["https://example.com/"]);
+
+  const custom = await complete(directory, {
+    answers: { ...ANSWERS, intended_environment: "QA\u001bEast\u007f" },
+  });
+  assert.match(custom.report_view.content, /QA East target: https:\/\/example\.com\//u);
+  assert.doesNotMatch(
+    custom.report_view.content,
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u,
+  );
+
+  const unknownRecord = structuredClone(staging.report);
+  unknownRecord.scope.release_intent.intended_environment = null;
+  const unknownView = renderReportMarkdown(unknownRecord);
+  assert.match(unknownView, /Confirmed target: https:\/\/example\.com\//u);
+  assert.doesNotMatch(unknownView, /Production target/u);
 });
 
 test("an unconfirmed scope still produces a useful local Record with execution gaps", async () => {

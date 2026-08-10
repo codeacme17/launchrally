@@ -1,18 +1,28 @@
 #!/usr/bin/env node
 
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
 import process from "node:process";
 
 import { CLI_INTERACTION_CONTRACT } from "@launchrally/contracts";
 import {
+  environmentTargetLabel,
+  reviewedEnvironmentLabel,
   runAudit,
   runInit,
   runPlan,
   runProviderGuidance,
   runVerify,
 } from "@launchrally/core";
+import {
+  humanAuditPresentationOptions,
+  renderHumanAuditCompletion,
+  runHumanAudit,
+} from "./human-audit.js";
+import { inspectReportDestination } from "./report-destination.js";
+import { createSystemFilePicker } from "./system-file-picker.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 const args = process.argv.slice(2);
 const json = args.includes("--json");
 
@@ -25,6 +35,7 @@ function commandName() {
     "--checks",
     "--cwd",
     "--gap",
+    "--output",
     "--permissions",
     "--report",
     "--role",
@@ -100,8 +111,10 @@ function renderHumanInteraction(value) {
   } else {
     lines.push(
       "Complete plan preview",
-      `Environment: ${brief.intended_environment.value}`,
-      ...brief.production_targets.values.map((target) => `Target: ${target}`),
+      `Environment: ${reviewedEnvironmentLabel(brief.intended_environment.value)}`,
+      ...brief.production_targets.values.map((target) =>
+        `${environmentTargetLabel(brief.intended_environment.value, { capitalize: true })}: ${target}`,
+      ),
       ...brief.core_journeys.values.map((journey) =>
         typeof journey === "string"
           ? `Core journey: ${journey}`
@@ -450,7 +463,7 @@ function help() {
       supporting: [{ operation: "providers", mode: "advisory" }],
     },
     message: [
-      "Usage: rally <command> [--json] [--cwd <path>]",
+      "Usage: rally <command> [--json] [--plain] [--cwd <path>] [--output <path>]",
       "",
       "Core commands:",
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
@@ -497,14 +510,83 @@ async function main() {
       });
       return 2;
     }
-    const result = await runAudit(cwd, VERSION, {
-      resume_token: optionValue("--resume"),
-      answers: answers.value,
-      confirmation: optionValue("--confirm"),
-      permission_decisions: permissionDecisions.value,
+    if (json) {
+      const result = await runAudit(cwd, VERSION, {
+        resume_token: optionValue("--resume"),
+        answers: answers.value,
+        confirmation: optionValue("--confirm"),
+        permission_decisions: permissionDecisions.value,
+      });
+      print(result);
+      return result.status === "execution_error" ? 2 : 0;
+    }
+
+    if (process.stdin.isTTY !== true) {
+      process.stderr.write([
+        "Non-TTY Human Mode cannot prompt safely.",
+        "Use rally audit --json --cwd <path> for the resumable Agent/CI protocol.",
+      ].join("\n") + "\n");
+      return 2;
+    }
+
+    const { createClackPromptAdapter, createPlainPromptAdapter } = await import(
+      "./prompt-adapters.js"
+    );
+    const presentation = humanAuditPresentationOptions({
+      args,
+      env: process.env,
+      output: process.stdout,
     });
-    print(result);
-    return result.status === "execution_error" ? 2 : 0;
+    const prompt = presentation.plain
+      ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
+      : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+    const filePicker = createSystemFilePicker({ defaultDirectory: path.resolve(cwd) });
+    let outcome;
+    try {
+      outcome = await runHumanAudit({
+        cwd,
+        version: VERSION,
+        prompt,
+        runAudit,
+        outputPath: optionValue("--output"),
+        filePicker,
+        inspectDestination: inspectReportDestination,
+        saveResult: async (
+          requestedPath,
+          result,
+          { overwrite = false } = {},
+          { signal } = {},
+        ) => {
+          const resolvedPath = path.resolve(requestedPath);
+          try {
+            await writeFile(resolvedPath, `${JSON.stringify(result, null, 2)}\n`, {
+              encoding: "utf8",
+              flag: overwrite ? "w" : "wx",
+              signal,
+            });
+          } catch (error) {
+            error.code = "audit_output_failed";
+            throw error;
+          }
+          return resolvedPath;
+        },
+      });
+    } catch (error) {
+      if (error?.code !== "audit_output_failed") throw error;
+      process.stderr.write("The complete Audit JSON could not be written. Choose a new, writable --output path.\n");
+      return 2;
+    }
+    if (outcome.exitCode === 130) {
+      process.stderr.write("Audit cancelled. The repository was not changed.\n");
+      return 130;
+    }
+    process.stdout.write(`${renderHumanAuditCompletion(outcome.result, {
+      cwd: path.resolve(cwd),
+      outputPath: outcome.outputPath,
+      styled: presentation.styled,
+      width: presentation.width,
+    })}\n`);
+    return outcome.exitCode;
   }
 
   if (command === "init") {

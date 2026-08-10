@@ -1,29 +1,39 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { promises as dns } from "node:dns";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import os from "node:os";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import test from "node:test";
+
+import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
+import {
+  collectPublicEvidence,
+  createPublicVerificationPlan,
+} from "../packages/core/src/public-verification.js";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(root, "packages", "cli", "bin", "rally.js");
 
-async function createInteractionFixture() {
+async function createInteractionFixture({ providerSignals = true } = {}) {
   const fixture = await mkdtemp(path.join(os.tmpdir(), "launchrally-interaction-"));
   await writeFile(
     path.join(fixture, "package.json"),
     JSON.stringify({ name: "interaction-web", scripts: { build: "vite build" } }),
   );
   await writeFile(path.join(fixture, "package-lock.json"), '{"lockfileVersion":3}');
-  await writeFile(
-    path.join(fixture, ".env"),
-    "VERCEL_ORG_ID=private-value\nSENTRY_DSN=private-value\n",
-  );
+  if (providerSignals) {
+    await writeFile(
+      path.join(fixture, ".env"),
+      "VERCEL_ORG_ID=private-value\nSENTRY_DSN=private-value\n",
+    );
+  }
   return fixture;
 }
 
@@ -121,13 +131,53 @@ test("Agent Mode asks only for unknown release intent in a versioned state", asy
       "support_layers",
     ],
   );
+  assert.equal(
+    result.request.fields.find((field) => field.field_id === "production_targets").prompt,
+    "Which confirmed public target URLs are in scope?",
+  );
+  for (const field of result.request.fields) {
+    assert.deepEqual(Object.keys(field), [
+      "field_id",
+      "value_type",
+      "prompt",
+      "candidates",
+      "current_value",
+    ]);
+  }
   assert.deepEqual(result.audit_brief.provider_roles.candidates, [
     { provider: "sentry", role: "observability" },
     { provider: "vercel", role: "deployment" },
   ]);
-  assert.deepEqual(result.audit_brief.support_layers.candidates, ["monitoring"]);
+  assert.deepEqual(result.audit_brief.support_layers.candidates, ["observability"]);
   assert.ok(result.interaction.resume_token.length > 20);
   assert.doesNotMatch(JSON.stringify(result), /private-value/);
+});
+
+test("Core offers only safely detected static routes as Journey candidates", async () => {
+  const fixture = await createInteractionFixture();
+  for (const relativePath of [
+    "app/page.tsx",
+    "app/dashboard/page.tsx",
+    "app/feed/(.)photo/page.tsx",
+    "app/users/[id]/page.tsx",
+    "src/routes/pricing/+page.svelte",
+    "app/routes/docs._index.tsx",
+  ]) {
+    const absolutePath = path.join(fixture, relativePath);
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, "export default function Page() {}\n");
+  }
+
+  const result = await runAudit(fixture);
+  const field = result.request.fields.find(({ field_id }) => field_id === "core_journeys");
+  assert.deepEqual(field.candidates, [
+    "GET / — homepage loads",
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+    "GET /pricing — pricing page loads",
+  ]);
+  assert.doesNotMatch(JSON.stringify(field.candidates), /\[id\]/u);
+  assert.doesNotMatch(JSON.stringify(field.candidates), /\(\.\)photo/u);
 });
 
 test("Agent Mode previews the complete unconfirmed plan before permission", async () => {
@@ -171,6 +221,143 @@ test("Agent Mode previews the complete unconfirmed plan before permission", asyn
   });
 });
 
+test("an explicit empty Journey scope can proceed to confirmation", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({ ...CONFIRMED_ANSWERS, core_journeys: [] }),
+  ]);
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.deepEqual(result.audit_brief.core_journeys.values, []);
+  assert.equal(result.audit_brief.core_journeys.confirmed, false);
+});
+
+test("Agent Mode normalizes declared observability aliases before confirmation", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      provider_roles: [],
+      support_layers: ["  Sentry   observability  ", "Sentry", "monitoring", "observability"],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.deepEqual(result.audit_brief.support_layers.values, ["observability"]);
+});
+
+test("Agent Mode rejects unknown support layers with revision guidance", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      support_layers: ["unknown incident service"],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_input");
+  assert.deepEqual(result.request.validation_errors, [
+    {
+      field_id: "support_layers",
+      code: "unsupported_support_layer",
+      supported_categories: ["analytics", "observability"],
+      guidance: "Choose a supported category or revise the support-layer selection.",
+    },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result), /unknown incident service/u);
+});
+
+test("Agent Mode classifies known support provider names", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      provider_roles: [],
+      support_layers: ["PostHog", "PostHog analytics"],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.deepEqual(result.audit_brief.support_layers.values, ["analytics"]);
+});
+
+test("declared observability intent is applicable but unverified without qualifying evidence", async () => {
+  const fixture = await createInteractionFixture({ providerSignals: false });
+  const result = await completeAudit(
+    fixture,
+    {
+      ...CONFIRMED_ANSWERS,
+      provider_roles: [],
+      support_layers: ["Sentry observability"],
+    },
+    "denied",
+  );
+
+  const check = result.report.results.checks.find(
+    (candidate) => candidate.check_id === "web.baseline.observability",
+  );
+  assert.equal(check.applicability.status, "applicable");
+  assert.equal(check.status, "unverified");
+});
+
+test("Agent Mode requires an explicit Journey array even though an empty array means Skip", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const { core_journeys: _journeys, ...answersWithoutJourneys } = CONFIRMED_ANSWERS;
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify(answersWithoutJourneys),
+  ]);
+
+  assert.equal(result.status, "needs_input");
+  assert.deepEqual(result.request.validation_errors, [
+    { field_id: "core_journeys", code: "required" },
+  ]);
+});
+
+test("skipping public Journeys completes with an unresolved Verification Gap", async () => {
+  const fixture = await createInteractionFixture();
+  const result = await completeAudit(
+    fixture,
+    {
+      ...CONFIRMED_ANSWERS,
+      core_journeys: [],
+      provider_roles: [],
+      support_layers: [],
+    },
+    "denied",
+  );
+
+  assert.equal(result.status, "completed");
+  const journeyCheck = result.report.results.checks.find(
+    (check) => check.check_id === "web.public.core-journeys",
+  );
+  assert.equal(journeyCheck.status, "unverified");
+  assert.match(journeyCheck.summary, /Confirmed core journeys are required/u);
+  assert.ok(result.report.results.verification_gaps.some((gap) =>
+    gap.check_id === "web.public.core-journeys"
+      && gap.reason_code === "applicability_unresolved",
+  ));
+});
+
 test("Agent Mode discloses every read-only public probe before approval", async () => {
   const fixture = await createInteractionFixture();
   const result = await reachConfirmation(fixture);
@@ -187,7 +374,7 @@ test("Agent Mode discloses every read-only public probe before approval", async 
         port: 443,
         path: "/",
         method: "DNS_LOOKUP",
-        purpose: "Resolve the confirmed production host.",
+        purpose: "Resolve the production target host.",
         timeout_ms: 5000,
       },
       {
@@ -198,7 +385,7 @@ test("Agent Mode discloses every read-only public probe before approval", async 
         port: 443,
         path: "/",
         method: "TLS_HANDSHAKE",
-        purpose: "Verify the confirmed production target certificate and TLS handshake.",
+        purpose: "Verify the production target certificate and TLS handshake.",
         timeout_ms: 5000,
       },
       {
@@ -257,6 +444,56 @@ test("Agent Mode discloses every read-only public probe before approval", async 
     targets: result.audit_brief.public_verification.targets,
     probes: result.audit_brief.public_verification.probes,
   });
+});
+
+test("Agent Mode probe purposes use the confirmed intended environment", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({ ...CONFIRMED_ANSWERS, intended_environment: "staging" }),
+  ]);
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.equal(
+    result.audit_brief.public_verification.probes.find((probe) => probe.kind === "dns").purpose,
+    "Resolve the staging target host.",
+  );
+  assert.equal(
+    result.audit_brief.public_verification.probes.find((probe) => probe.kind === "tls").purpose,
+    "Verify the staging target certificate and TLS handshake.",
+  );
+  assert.doesNotMatch(
+    JSON.stringify(result.audit_brief.public_verification.probes),
+    /production target|production host/u,
+  );
+});
+
+test("public probe purposes support custom and unknown environment labels", () => {
+  const answers = {
+    production_targets: ["https://example.com/"],
+    core_journeys: [],
+  };
+  const custom = createPublicVerificationPlan({
+    ...answers,
+    intended_environment: "QA East",
+  });
+  assert.equal(
+    custom.probes.find((probe) => probe.kind === "tls").purpose,
+    "Verify the QA East target certificate and TLS handshake.",
+  );
+
+  const unknown = createPublicVerificationPlan(answers);
+  assert.equal(
+    unknown.probes.find((probe) => probe.kind === "dns").purpose,
+    "Resolve the confirmed target host.",
+  );
+  assert.equal(
+    unknown.probes.find((probe) => probe.kind === "tls").purpose,
+    "Verify the confirmed target certificate and TLS handshake.",
+  );
 });
 
 test("confirmation requests public and Provider permissions as distinct boundaries", async () => {
@@ -408,6 +645,185 @@ test("approved public probes collect fresh read-only evidence through the CLI co
       { method: "GET", url: "/health" },
       { method: "GET", url: "/" },
     ]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("in-flight public HTTP probes abort promptly instead of becoming evidence gaps", async () => {
+  let acceptRequest;
+  const requested = new Promise((resolve) => {
+    acceptRequest = resolve;
+  });
+  const server = createServer(() => acceptRequest());
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const controller = new AbortController();
+  const { port } = server.address();
+  const target = `http://127.0.0.1:${port}/`;
+  const collection = collectPublicEvidence({
+    probes: [{
+      probe_id: "target-1:http",
+      kind: "http",
+      target,
+      host: "127.0.0.1",
+      port,
+      path: "/",
+      method: "GET",
+      purpose: "Verify HTTP reachability without following redirects.",
+      timeout_ms: 5000,
+    }],
+  }, { signal: controller.signal });
+
+  try {
+    await requested;
+    controller.abort();
+    await assert.rejects(
+      Promise.race([
+        collection,
+        new Promise((resolve, reject) => setTimeout(
+          () => reject(new Error("public probe did not abort promptly")),
+          250,
+        )),
+      ]),
+      (error) => error?.name === "AbortError",
+    );
+  } finally {
+    controller.abort();
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("in-flight public DNS probes abort promptly before lookup settles", async (context) => {
+  let announceLookup;
+  let rejectLookup;
+  const lookupStarted = new Promise((resolve) => {
+    announceLookup = resolve;
+  });
+  const pendingLookup = new Promise((resolve, reject) => {
+    rejectLookup = reject;
+  });
+  context.mock.method(dns, "lookup", () => {
+    announceLookup();
+    return pendingLookup;
+  });
+  const controller = new AbortController();
+  const collection = collectPublicEvidence({
+    probes: [{
+      probe_id: "target-1:dns",
+      kind: "dns",
+      target: "https://example.com/",
+      host: "example.com",
+      port: 443,
+      path: "/",
+      method: "DNS_LOOKUP",
+      purpose: "Resolve the production host.",
+      timeout_ms: 5000,
+    }],
+  }, { signal: controller.signal });
+
+  try {
+    await lookupStarted;
+    controller.abort();
+    await assert.rejects(
+      Promise.race([
+        collection,
+        new Promise((resolve, reject) => setTimeout(
+          () => reject(new Error("public DNS probe did not abort promptly")),
+          250,
+        )),
+      ]),
+      (error) => error?.name === "AbortError",
+    );
+  } finally {
+    rejectLookup(new Error("late DNS lookup failure"));
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+});
+
+test("already-aborted public collection starts no probes", async () => {
+  const controller = new AbortController();
+  controller.abort();
+
+  await assert.rejects(
+    collectPublicEvidence({ probes: [] }, { signal: controller.signal }),
+    (error) => error?.name === "AbortError",
+  );
+});
+
+test("a failed public Journey produces one concrete safe targeted Audit action", async () => {
+  const fixture = await createInteractionFixture({ providerSignals: false });
+  const secret = "action-queue-secret-must-not-survive";
+  const server = createServer((request, response) => {
+    if (request.url === "/critical-path") {
+      response.writeHead(500, {
+        "set-cookie": `session=${secret}`,
+        "x-api-key": secret,
+      });
+      response.end(`private response body: ${secret}`);
+      return;
+    }
+    response.writeHead(request.url === "/health" ? 204 : 200);
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+  try {
+    const { port } = server.address();
+    const result = await completeAudit(fixture, {
+      intended_environment: "production",
+      production_targets: [`http://127.0.0.1:${port}/`],
+      core_journeys: [
+        { purpose: "critical path completes", path: "/critical-path", method: "GET" },
+      ],
+      provider_roles: [],
+      support_layers: [],
+    });
+    const action = result.report.results.action_queue.find(
+      (item) => item.check_id === "web.public.core-journeys",
+    );
+
+    assert.equal(result.report.assessment, "no_go");
+    assert.deepEqual({
+      check_id: action.check_id,
+      priority: action.priority,
+      severity: action.severity,
+      gating: action.gating,
+      core_journey_impact: action.core_journey_impact,
+    }, {
+      check_id: "web.public.core-journeys",
+      priority: "p0",
+      severity: "critical",
+      gating: true,
+      core_journey_impact: "direct",
+    });
+    assert.deepEqual(action.observations, [{
+      kind: "public_observation",
+      evidence_digest: action.evidence[0].digest,
+      probe_id: "target-1:journey-1",
+      probe_kind: "journey",
+      method: "GET",
+      path: "/critical-path",
+      outcome: "http_status_failure",
+      status_code: 500,
+    }]);
+    assert.deepEqual(action.targeted_verification, {
+      operation: "verify",
+      scope: "targeted",
+      check_ids: ["web.public.core-journeys"],
+    });
+    assert.equal(action.evidence[0].source, "public-verification/v1");
+    assert.equal(action.evidence[0].target, `http://127.0.0.1:${port}/critical-path`);
+    assert.match(
+      result.report_view.content,
+      /GET \/critical-path — http_status_failure \(HTTP 500\)/u,
+    );
+    assert.match(
+      result.report_view.content,
+      /rally verify --report <saved-report-path> --scope targeted --checks '\["web\.public\.core-journeys"\]' --json --cwd <repository-root>/u,
+    );
+    assert.doesNotMatch(JSON.stringify(result.report.results.action_queue), new RegExp(secret));
+    assert.doesNotMatch(result.report_view.content, new RegExp(secret));
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -787,37 +1203,27 @@ test("resuming cannot change repository scope or an existing permission decision
   );
 });
 
-test("Human Mode explains unknowns and previews the full plan before permission", async () => {
+test("Human Mode previews the full plan before permission without exposing a resume token", async () => {
   const fixture = await createInteractionFixture();
-  const { stdout: initialOutput } = await execFileAsync(
-    process.execPath,
-    [cli, "audit", "--cwd", fixture],
-    { cwd: root },
-  );
-  assert.match(
-    initialOutput,
-    /Audit Brief[\s\S]*Project: interaction-web[\s\S]*Needs input[\s\S]*Which environment[\s\S]*Which public production URLs[\s\S]*Inferred candidates \(not confirmed\):[\s\S]*sentry \(observability\)[\s\S]*Resume token:/,
-  );
+  const confirmation = await reachConfirmation(fixture);
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let confirmationOutput = "";
+  output.on("data", (chunk) => {
+    confirmationOutput += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+  await prompt.start();
+  setTimeout(() => input.write("1\n"), 10);
+  const response = await prompt.respond(confirmation);
+  await prompt.close();
 
-  const initial = await runAudit(fixture);
-  const { stdout: confirmationOutput } = await execFileAsync(
-    process.execPath,
-    [
-      cli,
-      "audit",
-      "--cwd",
-      fixture,
-      "--resume",
-      initial.interaction.resume_token,
-      "--answers",
-      JSON.stringify(CONFIRMED_ANSWERS),
-    ],
-    { cwd: root },
-  );
+  assert.deepEqual(response, { confirmation: "confirm" });
   assert.match(
     confirmationOutput,
-    /Complete plan preview[\s\S]*Environment: production[\s\S]*Target: https:\/\/example\.com\/[\s\S]*Public probe plan:[\s\S]*DNS_LOOKUP example\.com:443\/[\s\S]*TLS_HANDSHAKE example\.com:443\/[\s\S]*GET example\.com:443\/health — Verify the conventional public health endpoint\.[\s\S]*Provider Adapter plan:[\s\S]*vercel: vercel-read\/v1[\s\S]*Target: authenticated_scope_projects[\s\S]*Fields: projects\[\]\.id[\s\S]*Command: vercel project ls --json[\s\S]*web\.public\.availability[\s\S]*provider\.sentry\.metadata[\s\S]*Permission preview[\s\S]*public_verification: PENDING[\s\S]*No public or Provider permission has been granted[\s\S]*Confirm this Audit Brief/,
+    /Audit Brief[\s\S]*Environment: production[\s\S]*https:\/\/example\.com\/[\s\S]*visitor can sign up[\s\S]*sentry:observability[\s\S]*observability[\s\S]*Planned Checks:[\s\S]*web\.public\.availability \[public_verification\][\s\S]*provider\.sentry\.metadata \[provider_read:sentry\][\s\S]*Confirm this Audit Brief/,
   );
+  assert.doesNotMatch(confirmationOutput, /resume token/iu);
 });
 
 test("Agent Mode reports malformed interaction input as a structured execution error", async () => {
@@ -882,6 +1288,25 @@ test("public journeys reject mutating methods and sensitive paths", async () => 
     { field_id: "core_journeys", code: "invalid_public_journey" },
   ]);
   assert.doesNotMatch(JSON.stringify(result), /token=secret/u);
+});
+
+test("public Journey strings cannot disguise a mutating method as a description", async () => {
+  const fixture = await createInteractionFixture();
+  const initial = await runAudit(fixture);
+  const result = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify({
+      ...CONFIRMED_ANSWERS,
+      core_journeys: ["POST /admin — destructive action"],
+    }),
+  ]);
+
+  assert.equal(result.status, "needs_input");
+  assert.deepEqual(result.request.validation_errors, [
+    { field_id: "core_journeys", code: "invalid_public_journey" },
+  ]);
 });
 
 test("public journey paths cannot resolve outside confirmed target origins", async () => {

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { access, chmod, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import {
@@ -131,6 +134,108 @@ test("Cloudflare and Vercel responses become minimized Machine Evidence", async 
       updatedAt: 2,
     }],
   });
+});
+
+test("in-flight Provider commands receive AbortSignal and abort instead of becoming gaps", async () => {
+  const plan = createProviderAdapterPlan([{ provider: "cloudflare", role: "deployment" }]);
+  const controller = new AbortController();
+  let startCommand;
+  const commandStarted = new Promise((resolve) => {
+    startCommand = resolve;
+  });
+  const execution = executeProviderAdapters({
+    cwd: "/tmp/example",
+    plan,
+    authorization_plan: approvals(plan),
+    signal: controller.signal,
+    runner: async (command, cwd, { signal } = {}) => new Promise((resolve, reject) => {
+      startCommand();
+      if (!signal) {
+        setTimeout(() => resolve({ stdout: "[]" }), 300);
+        return;
+      }
+      const abort = () => reject(signal.reason);
+      if (signal.aborted) abort();
+      else signal.addEventListener("abort", abort, { once: true });
+    }),
+  });
+
+  await commandStarted;
+  controller.abort();
+  await assert.rejects(
+    Promise.race([
+      execution,
+      new Promise((resolve, reject) => setTimeout(
+        () => reject(new Error("Provider command did not abort promptly")),
+        100,
+      )),
+    ]),
+    (error) => error?.name === "AbortError",
+  );
+});
+
+test("already-aborted Provider execution starts no command", async () => {
+  const plan = createProviderAdapterPlan([{ provider: "cloudflare", role: "deployment" }]);
+  const controller = new AbortController();
+  controller.abort();
+  let calls = 0;
+
+  await assert.rejects(executeProviderAdapters({
+    cwd: "/tmp/example",
+    plan,
+    authorization_plan: approvals(plan),
+    signal: controller.signal,
+    runner: async () => {
+      calls += 1;
+      return { stdout: "[]" };
+    },
+  }), (error) => error?.name === "AbortError");
+  assert.equal(calls, 0);
+});
+
+test("the default Provider subprocess runner terminates on abort", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-provider-abort-"));
+  const marker = path.join(directory, "started");
+  const executable = path.join(directory, "wrangler");
+  await writeFile(executable, [
+    `#!${process.execPath}`,
+    `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "started");`,
+    "setInterval(() => {}, 1000);",
+    "",
+  ].join("\n"));
+  await chmod(executable, 0o755);
+  const originalPath = process.env.PATH;
+  process.env.PATH = directory;
+  const plan = createProviderAdapterPlan([{ provider: "cloudflare", role: "deployment" }]);
+  const controller = new AbortController();
+  let execution;
+
+  try {
+    execution = executeProviderAdapters({
+      cwd: directory,
+      plan,
+      authorization_plan: approvals(plan),
+      signal: controller.signal,
+    });
+    let started = false;
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      try {
+        await access(marker);
+        started = true;
+        break;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    }
+    controller.abort();
+
+    assert.equal(started, true);
+    await assert.rejects(execution, (error) => error?.name === "AbortError");
+  } finally {
+    controller.abort();
+    await execution?.catch(() => {});
+    process.env.PATH = originalPath;
+  }
 });
 
 test("denied, unsupported, missing-tool, missing-login, and malformed responses are gaps", async () => {

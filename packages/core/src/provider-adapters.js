@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
+
 export const PROVIDER_ADAPTER_CONTRACT = "provider-adapter-contract/v1";
 
 const execFileAsync = promisify(execFile);
@@ -138,13 +140,15 @@ function gap(request, reason_code, reason) {
   };
 }
 
-async function defaultRunner(command, cwd) {
+async function defaultRunner(command, cwd, { signal } = {}) {
+  throwIfAborted(signal);
   return execFileAsync(command.executable, command.arguments, {
     cwd,
     encoding: "utf8",
     maxBuffer: MAX_OUTPUT_BYTES,
     timeout: TIMEOUT_MS,
     killSignal: "SIGTERM",
+    ...(signal ? { signal } : {}),
     env: {
       ...process.env,
       CI: "1",
@@ -179,7 +183,9 @@ export async function executeProviderAdapters({
   authorization_plan = [],
   runner = defaultRunner,
   now = () => new Date(),
+  signal,
 }) {
+  throwIfAborted(signal);
   const decisions = new Map(authorization_plan.map((permission) => [
     permission.permission_id,
     permission.decision,
@@ -189,6 +195,7 @@ export async function executeProviderAdapters({
   const active_adapter_versions = [];
 
   for (const request of plan.requests) {
+    throwIfAborted(signal);
     const decision = decisions.get(request.permission_id);
     if (decision === "denied") {
       verification_gaps.push(gap(
@@ -218,7 +225,8 @@ export async function executeProviderAdapters({
     const adapter = ADAPTERS[request.provider];
     active_adapter_versions.push(request.adapter_version);
     try {
-      const result = await runner(request.command, cwd);
+      const result = await runner(request.command, cwd, { signal });
+      throwIfAborted(signal);
       const normalized = adapter.normalize(JSON.parse(result.stdout));
       const collectedAt = now().toISOString();
       evidence.push({
@@ -240,11 +248,13 @@ export async function executeProviderAdapters({
         },
       });
     } catch (error) {
+      rethrowIfAborted(error, signal);
       const reasonCode = failureKind(error);
       verification_gaps.push(gap(request, reasonCode, failureReason(request, reasonCode)));
     }
   }
 
+  throwIfAborted(signal);
   return {
     evidence,
     verification_gaps,

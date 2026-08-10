@@ -1,6 +1,6 @@
 # Experimental release runbook
 
-This runbook is the human-owned control plane for the first public
+This runbook is the human-owned control plane for a public
 Experimental release. The tagged GitHub Actions workflow is the only approved
 publisher. Do not publish from a workstation, add an npm token to GitHub, or
 create the GitHub prerelease manually ahead of public smoke.
@@ -45,7 +45,7 @@ npm ci --ignore-scripts
 npm run build
 git diff --exit-code
 npm test
-npm run validate:acceptance -- --require-publish-ready
+npm run validate:acceptance -- --require-release-ready
 npm run validate:p0
 npm run validate:release
 ```
@@ -54,8 +54,8 @@ Create a protected annotated tag on that exact `main` commit and push only the
 tag:
 
 ```bash
-git tag --annotate v0.1.0 <approved-main-sha> --message "LaunchRally 0.1.0 Experimental"
-git push origin v0.1.0
+git tag --annotate v0.1.1 <approved-main-sha> --message "LaunchRally 0.1.1 Experimental"
+git push origin v0.1.1
 ```
 
 The release workflow independently rejects a lightweight tag, a tag whose

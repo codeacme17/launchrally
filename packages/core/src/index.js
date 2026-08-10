@@ -11,6 +11,7 @@ import {
   advanceAuditInteraction,
   createInitialAuditInteraction,
 } from "./audit-interaction.js";
+import { throwIfAborted } from "./cancellation.js";
 import { executeWebBaseline } from "./check-catalog.js";
 import { collectPublicEvidence } from "./public-verification.js";
 import { executeProviderAdapters } from "./provider-adapters.js";
@@ -21,8 +22,10 @@ const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
   "Provider Adapter evidence is limited to explicitly disclosed, allowlisted metadata fields.",
 ]);
 
-export async function discoverProject(cwd) {
-  const scan = await scanRepository(cwd);
+export async function discoverProject(cwd, { signal } = {}) {
+  throwIfAborted(signal);
+  const scan = await scanRepository(cwd, { signal });
+  throwIfAborted(signal);
   const packageFact = scan.facts.find(
     (fact) => fact.kind === "package_manifest" && fact.provenance.path === "package.json",
   );
@@ -57,8 +60,10 @@ export async function discoverProject(cwd) {
   return project;
 }
 
-export async function createInitialSnapshot(cwd) {
-  const project = await discoverProject(cwd);
+export async function createInitialSnapshot(cwd, { signal } = {}) {
+  throwIfAborted(signal);
+  const project = await discoverProject(cwd, { signal });
+  throwIfAborted(signal);
 
   return {
     contract: CLI_INTERACTION_CONTRACT,
@@ -79,8 +84,10 @@ export async function createInitialSnapshot(cwd) {
   };
 }
 
-export async function runAudit(cwd, version, interactionOptions = {}) {
-  const snapshot = await createInitialSnapshot(cwd);
+export async function runAudit(cwd, version, interactionOptions = {}, { signal } = {}) {
+  throwIfAborted(signal);
+  const snapshot = await createInitialSnapshot(cwd, { signal });
+  throwIfAborted(signal);
   if (!interactionOptions.resume_token) {
     return createInitialAuditInteraction(snapshot);
   }
@@ -90,13 +97,19 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
     (permission) => permission.permission_id === "public_verification",
   );
   const publicEvidence = publicPermission?.decision === "approved"
-    ? await collectPublicEvidence(interactionResult.audit_brief.public_verification)
+    ? await collectPublicEvidence(
+      interactionResult.audit_brief.public_verification,
+      { signal },
+    )
     : [];
+  throwIfAborted(signal);
   const providerResult = await executeProviderAdapters({
     cwd,
     plan: interactionResult.audit_brief.provider_adapters,
     authorization_plan: interactionResult.authorization_plan,
+    signal,
   });
+  throwIfAborted(signal);
   const baseline = executeWebBaseline({
     project: snapshot.project,
     audit_brief: interactionResult.audit_brief,
@@ -118,6 +131,7 @@ export async function runAudit(cwd, version, interactionOptions = {}) {
     content_changes: interactionOptions.content_changes ?? [],
     repository_digests: snapshot.project.content_digests,
   });
+  throwIfAborted(signal);
 
   return {
     contract: CLI_INTERACTION_CONTRACT,
@@ -143,6 +157,7 @@ export {
   executeProviderAdapters,
   PROVIDER_ADAPTER_CONTRACT,
 } from "./provider-adapters.js";
+export { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
 export {
   createReportPackage,
   renderReportMarkdown,
@@ -153,7 +168,14 @@ export {
   POLICY_ENGINE_VERSION,
 } from "./policy-engine.js";
 export { evaluateReportCurrentness } from "./report-currentness.js";
+export {
+  environmentTargetLabel,
+  reviewedEnvironmentLabel,
+} from "./environment-terminology.js";
 export { runInit } from "./initialization.js";
 export { runPlan } from "./planning.js";
+export { parsePublicJourneyInput } from "./public-journey.js";
+export { parsePublicTargetInput } from "./public-target.js";
 export { runProviderGuidance } from "./provider-guidance.js";
+export { SUPPORT_LAYER_CATEGORIES } from "./support-layers.js";
 export { runVerify } from "./verification.js";

@@ -11,6 +11,7 @@ import { renderReportMarkdown, runAudit, runInit, runVerify } from "../packages/
 import { isOfflineResolutionMiss } from "../packages/core/src/initialization.js";
 import { createHistoryFiles, persistLocalHistory } from "../packages/core/src/local-history.js";
 import { prepareExactToolchainChanges as prepareNpmChanges } from "./helpers/exact-toolchain.js";
+import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
@@ -41,14 +42,14 @@ async function fixture() {
   return directory;
 }
 
-async function fixtureWithCliDependency() {
+async function fixtureWithCliDependency(version = "0.1.0") {
   const directory = await fixture();
   const changes = await prepareNpmChanges({
     package_json: `${JSON.stringify({
       name: "launchrally-toolchain",
       private: true,
       version: "0.0.0",
-      devDependencies: { "@launchrally/cli": "0.1.0" },
+      devDependencies: { "@launchrally/cli": version },
     }, null, 2)}\n`,
     package_path: ".launchrally/toolchain/package.json",
     lockfile: {
@@ -62,7 +63,7 @@ async function fixtureWithCliDependency() {
       }, null, 2)}\n`,
     },
     dependency: "@launchrally/cli",
-    version: "0.1.0",
+    version,
   });
   for (const change of changes) {
     await mkdir(path.dirname(path.join(directory, change.path)), { recursive: true });
@@ -186,6 +187,46 @@ test("Init canonicalizes an existing toolchain without retaining lifecycle scrip
     JSON.parse(lockChange.after).packages["node_modules/@launchrally/cli"].resolved,
     "https://registry.npmjs.org/@launchrally/cli/-/cli-0.1.0.tgz",
   );
+});
+
+test("Init pins the transitive UI closure before npm resolves caret ranges", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const overrides = {
+    "@clack/core": "1.4.3",
+    "fast-string-truncated-width": "3.0.3",
+    "fast-string-width": "3.0.2",
+    "fast-wrap-ansi": "0.2.2",
+    sisteransi: "1.0.5",
+  };
+
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    {
+      prepare_dependency_changes: async (request) => {
+        const changes = await prepareNpmChanges(request);
+        if (!JSON.parse(request.package_json).overrides) {
+          const lockChange = changes.find(
+            ({ path: changedPath }) => changedPath.endsWith("package-lock.json"),
+          );
+          const lockfile = JSON.parse(lockChange.content);
+          const entry = lockfile.packages["node_modules/fast-string-width"];
+          entry.version = "3.0.4";
+          entry.resolved = "https://registry.npmjs.org/fast-string-width/-/fast-string-width-3.0.4.tgz";
+          lockChange.content = `${JSON.stringify(lockfile, null, 2)}\n`;
+        }
+        return changes;
+      },
+    },
+  );
+
+  assert.equal(preview.status, "needs_confirmation");
+  const packageChange = preview.preview.changes.find(
+    ({ path: changedPath }) => changedPath === ".launchrally/toolchain/package.json",
+  );
+  assert.deepEqual(JSON.parse(packageChange.after).overrides, overrides);
 });
 
 test("Init rejects truncated integrity metadata from the exact-toolchain fast path", async () => {
@@ -713,6 +754,29 @@ test("a forged preview token cannot substitute different confirmed contents", as
   assert.doesNotMatch(await readFile(path.join(directory, "package.json"), "utf8"), /forged/u);
 });
 
+test("Init accepts a portable token when mkdtemp preserves its placeholder", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  const portableToken = await simulateExtendedMkdtempSuffix(
+    preview.interaction.resume_token,
+    "init",
+  );
+
+  const result = await runInit(directory, "0.1.0", {
+    resume_token: portableToken,
+    confirmation: "decline",
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.outcome, "initialization_declined");
+});
+
 test("the opaque Init token detects preview-record corruption before applying changes", async () => {
   const directory = await fixture();
   const audit = await completeAudit(directory);
@@ -723,7 +787,7 @@ test("the opaque Init token detects preview-record corruption before applying ch
     { prepare_dependency_changes: prepareNpmChanges },
   );
   const match = preview.interaction.resume_token.match(
-    /^lrinit_([A-Za-z0-9]{6})_([A-Za-z0-9_-]{43})_/u,
+    /^lrinit_([A-Za-z0-9]{6}|[A-Za-z0-9]{12})_([A-Za-z0-9_-]{43})_/u,
   );
   const statePath = path.join(
     os.tmpdir(),
@@ -1590,7 +1654,7 @@ test("unconfirmed Report intent remains reasoned Unknown rather than inferred or
     },
     production_targets: {
       state: "unknown",
-      reason: "The first Report did not confirm production targets.",
+      reason: "The first Report did not confirm targets for the intended environment.",
     },
     core_journeys: {
       state: "unknown",
@@ -1733,6 +1797,8 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
   const directory = await fixture();
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-registry-report-"));
+  const npmCache = await mkdtemp(path.join(os.tmpdir(), "launchrally-empty-npm-cache-"));
+  const isolatedEnvironment = { ...process.env, NPM_CONFIG_CACHE: npmCache };
   const reportPath = path.join(reportDirectory, "audit.json");
   await writeFile(reportPath, JSON.stringify(audit));
 
@@ -1744,7 +1810,7 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
     directory,
     "--report",
     reportPath,
-  ])).stdout);
+  ], { env: isolatedEnvironment })).stdout);
 
   assert.equal(permission.status, "needs_permission");
   assert.equal(permission.request.permissions[0].id, "npm_registry_read");
@@ -1761,7 +1827,7 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
       permission.interaction.resume_token,
       "--permissions",
       JSON.stringify({ npm_registry_read: "denied" }),
-    ]),
+    ], { env: isolatedEnvironment }),
     (error) => {
       const result = JSON.parse(error.stdout);
       assert.equal(result.error, "registry_permission_denied");
@@ -1772,7 +1838,7 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
 });
 
 test("the CLI previews a saved complete Audit and decline applies nothing", async () => {
-  const directory = await fixtureWithCliDependency();
+  const directory = await fixtureWithCliDependency("0.1.1");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-report-file-"));
   const reportPath = path.join(reportDirectory, "audit.json");
@@ -1813,7 +1879,7 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
 });
 
 test("Human Mode renders every exact initialization change before confirmation", async () => {
-  const directory = await fixtureWithCliDependency();
+  const directory = await fixtureWithCliDependency("0.1.1");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-human-report-"));
   const reportPath = path.join(reportDirectory, "audit.json");

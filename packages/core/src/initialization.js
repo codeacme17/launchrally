@@ -36,6 +36,13 @@ import { evaluateReportCurrentness } from "./report-currentness.js";
 export const CLI_DEPENDENCY = "@launchrally/cli";
 export const TOOLCHAIN_PACKAGE_PATH = ".launchrally/toolchain/package.json";
 export const TOOLCHAIN_LOCKFILE_PATH = ".launchrally/toolchain/package-lock.json";
+const TOOLCHAIN_OVERRIDES = Object.freeze({
+  "@clack/core": "1.4.3",
+  "fast-string-truncated-width": "3.0.3",
+  "fast-string-width": "3.0.2",
+  "fast-wrap-ansi": "0.2.2",
+  sisteransi: "1.0.5",
+});
 const APPROVED_PATHS = new Set([
   ".launchrally/.gitignore",
   TOOLCHAIN_LOCKFILE_PATH,
@@ -73,7 +80,7 @@ async function storeState(state) {
 async function loadState(token) {
   if (typeof token !== "string") return null;
   const match = token.match(
-    /^lrinit_([A-Za-z0-9]{6})_([A-Za-z0-9_-]{43})_([A-Za-z0-9_-]{43})$/u,
+    /^lrinit_([A-Za-z0-9]{6}|[A-Za-z0-9]{12})_([A-Za-z0-9_-]{43})_([A-Za-z0-9_-]{43})$/u,
   );
   if (!match) return null;
   const statePath = path.join(
@@ -136,7 +143,10 @@ function createManifest(report) {
         },
       production_targets: release.confirmed
         ? declared(release.production_targets)
-        : { state: "unknown", reason: "The first Report did not confirm production targets." },
+        : {
+            state: "unknown",
+            reason: "The first Report did not confirm targets for the intended environment.",
+          },
       core_journeys: release.confirmed
         ? declared(release.core_journeys)
         : { state: "unknown", reason: "The first Report did not confirm core journeys." },
@@ -295,6 +305,7 @@ function toolchainPackageContent(version) {
     private: true,
     version: "0.0.0",
     devDependencies: { [CLI_DEPENDENCY]: version },
+    overrides: TOOLCHAIN_OVERRIDES,
   }, null, 2)}\n`;
 }
 
@@ -309,6 +320,7 @@ function alreadyExact({ packageJson, lockfile, dependency, version }) {
     JSON.stringify(Object.keys(parsedPackage).sort()) !== JSON.stringify([
       "devDependencies",
       "name",
+      "overrides",
       "private",
       "version",
     ])
@@ -316,14 +328,21 @@ function alreadyExact({ packageJson, lockfile, dependency, version }) {
     || parsedPackage.private !== true
     || parsedPackage.version !== "0.0.0"
     || JSON.stringify(parsedPackage.devDependencies) !== JSON.stringify({ [dependency]: version })
+    || JSON.stringify(parsedPackage.overrides) !== JSON.stringify(TOOLCHAIN_OVERRIDES)
   ) return false;
   try {
     const parsedLock = JSON.parse(lockfile);
     const expectedPackages = [
       "",
+      "node_modules/@clack/core",
+      "node_modules/@clack/prompts",
       "node_modules/@launchrally/cli",
       "node_modules/@launchrally/contracts",
       "node_modules/@launchrally/core",
+      "node_modules/fast-string-truncated-width",
+      "node_modules/fast-string-width",
+      "node_modules/fast-wrap-ansi",
+      "node_modules/sisteransi",
     ];
     const validIntegrity = (integrity) => {
       if (typeof integrity !== "string" || !integrity.startsWith("sha512-")) return false;
@@ -337,20 +356,18 @@ function alreadyExact({ packageJson, lockfile, dependency, version }) {
     };
     const validEntry = (name, expected) => {
       const entry = parsedLock.packages?.[`node_modules/${name}`];
-      const tarballName = name.slice("@launchrally/".length);
-      return entry?.version === version
+      return entry?.version === expected.version
         && entry.dev === true
         && entry.link !== true
         && JSON.stringify(Object.keys(entry).sort())
           === JSON.stringify(Object.keys(expected).sort())
-        && entry.resolved
-          === `https://registry.npmjs.org/${name}/-/${tarballName}-${version}.tgz`
+        && entry.resolved === expected.resolved
         && validIntegrity(entry.integrity)
         && JSON.stringify(entry.dependencies ?? {})
           === JSON.stringify(expected.dependencies ?? {})
         && JSON.stringify(entry.bin ?? {}) === JSON.stringify(expected.bin ?? {})
         && JSON.stringify(entry.engines ?? {}) === JSON.stringify(expected.engines ?? {})
-        && entry.license === "Apache-2.0";
+        && entry.license === expected.license;
     };
     return JSON.stringify(Object.keys(parsedLock).sort()) === JSON.stringify([
       "lockfileVersion",
@@ -373,31 +390,85 @@ function alreadyExact({ packageJson, lockfile, dependency, version }) {
       && parsedLock.packages[""].version === "0.0.0"
       && validEntry("@launchrally/cli", {
         version,
-        resolved: true,
+        resolved: `https://registry.npmjs.org/@launchrally/cli/-/cli-${version}.tgz`,
         integrity: true,
         dev: true,
-        license: true,
+        license: "Apache-2.0",
         dependencies: {
+          "@clack/prompts": "1.7.0",
           "@launchrally/contracts": version,
           "@launchrally/core": version,
         },
         bin: { rally: "bin/rally.js" },
-        engines: { node: ">=20" },
+        engines: { node: ">=20.12.0" },
       })
       && validEntry("@launchrally/contracts", {
         version,
-        resolved: true,
+        resolved: `https://registry.npmjs.org/@launchrally/contracts/-/contracts-${version}.tgz`,
         integrity: true,
         dev: true,
-        license: true,
+        license: "Apache-2.0",
       })
       && validEntry("@launchrally/core", {
         version,
-        resolved: true,
+        resolved: `https://registry.npmjs.org/@launchrally/core/-/core-${version}.tgz`,
         integrity: true,
         dev: true,
-        license: true,
+        license: "Apache-2.0",
         dependencies: { "@launchrally/contracts": version },
+      })
+      && validEntry("@clack/core", {
+        version: "1.4.3",
+        resolved: "https://registry.npmjs.org/@clack/core/-/core-1.4.3.tgz",
+        integrity: true,
+        dev: true,
+        license: "MIT",
+        dependencies: { "fast-wrap-ansi": "^0.2.0", sisteransi: "^1.0.5" },
+        engines: { node: ">= 20.12.0" },
+      })
+      && validEntry("@clack/prompts", {
+        version: "1.7.0",
+        resolved: "https://registry.npmjs.org/@clack/prompts/-/prompts-1.7.0.tgz",
+        integrity: true,
+        dev: true,
+        license: "MIT",
+        dependencies: {
+          "@clack/core": "1.4.3",
+          "fast-string-width": "^3.0.2",
+          "fast-wrap-ansi": "^0.2.0",
+          sisteransi: "^1.0.5",
+        },
+        engines: { node: ">= 20.12.0" },
+      })
+      && validEntry("fast-string-truncated-width", {
+        version: "3.0.3",
+        resolved: "https://registry.npmjs.org/fast-string-truncated-width/-/fast-string-truncated-width-3.0.3.tgz",
+        integrity: true,
+        dev: true,
+        license: "MIT",
+      })
+      && validEntry("fast-string-width", {
+        version: "3.0.2",
+        resolved: "https://registry.npmjs.org/fast-string-width/-/fast-string-width-3.0.2.tgz",
+        integrity: true,
+        dev: true,
+        license: "MIT",
+        dependencies: { "fast-string-truncated-width": "^3.0.2" },
+      })
+      && validEntry("fast-wrap-ansi", {
+        version: "0.2.2",
+        resolved: "https://registry.npmjs.org/fast-wrap-ansi/-/fast-wrap-ansi-0.2.2.tgz",
+        integrity: true,
+        dev: true,
+        license: "MIT",
+        dependencies: { "fast-string-width": "^3.0.2" },
+      })
+      && validEntry("sisteransi", {
+        version: "1.0.5",
+        resolved: "https://registry.npmjs.org/sisteransi/-/sisteransi-1.0.5.tgz",
+        integrity: true,
+        dev: true,
+        license: "MIT",
       });
   } catch {
     return false;

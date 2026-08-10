@@ -4,6 +4,9 @@ import https from "node:https";
 import { isIP } from "node:net";
 import tls from "node:tls";
 
+import { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
+import { environmentTargetLabel } from "./environment-terminology.js";
+
 const COLLECTOR_VERSION = "public-verification/v1";
 const PROBE_TIMEOUT_MS = 5000;
 const MAX_CONCURRENT_PROBES = 4;
@@ -27,6 +30,7 @@ function probe({ id, kind, target, method, purpose, verificationMode }) {
 export function createPublicVerificationPlan(answers) {
   const targets = answers?.production_targets ?? [];
   const journeys = answers?.core_journeys ?? [];
+  const environment = answers?.intended_environment;
   const probes = [];
 
   targets.forEach((target, targetIndex) => {
@@ -37,7 +41,7 @@ export function createPublicVerificationPlan(answers) {
       kind: "dns",
       target,
       method: "DNS_LOOKUP",
-      purpose: "Resolve the confirmed production host.",
+      purpose: `Resolve the ${environmentTargetLabel(environment)} host.`,
     }));
     if (url.protocol === "https:") {
       probes.push(probe({
@@ -45,7 +49,7 @@ export function createPublicVerificationPlan(answers) {
         kind: "tls",
         target,
         method: "TLS_HANDSHAKE",
-        purpose: "Verify the confirmed production target certificate and TLS handshake.",
+        purpose: `Verify the ${environmentTargetLabel(environment)} certificate and TLS handshake.`,
       }));
     }
     probes.push(probe({
@@ -98,17 +102,37 @@ function timeoutError() {
   return error;
 }
 
-function withTimeout(operation, timeoutMs) {
+async function withTimeout(operation, timeoutMs, { signal } = {}) {
+  throwIfAborted(signal);
   let timeout;
-  return Promise.race([
-    operation,
-    new Promise((_, reject) => {
-      timeout = setTimeout(() => reject(timeoutError()), timeoutMs);
-    }),
-  ]).finally(() => clearTimeout(timeout));
+  let handleAbort;
+  const operationPromise = Promise.resolve().then(operation);
+  const abortPromise = signal && new Promise((resolve, reject) => {
+    handleAbort = () => reject(signal.reason);
+    if (signal.aborted) handleAbort();
+    else signal.addEventListener("abort", handleAbort, { once: true });
+  });
+  try {
+    return await Promise.race([
+      operationPromise,
+      ...(abortPromise ? [abortPromise] : []),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(timeoutError()), timeoutMs);
+      }),
+    ]);
+  } catch (error) {
+    if (signal?.aborted) {
+      signal.throwIfAborted();
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    if (handleAbort) signal.removeEventListener("abort", handleAbort);
+  }
 }
 
-function request(probe) {
+function request(probe, { signal } = {}) {
+  throwIfAborted(signal);
   return new Promise((resolve, reject) => {
     const client = new URL(probe.target).protocol === "https:" ? https : http;
     let outgoing;
@@ -120,6 +144,7 @@ function request(probe) {
     try {
       outgoing = client.request(probe.target, {
         method: "GET",
+        ...(signal ? { signal } : {}),
         headers: {
           accept: "*/*",
           "user-agent": `LaunchRally/${COLLECTOR_VERSION}`,
@@ -143,7 +168,8 @@ function request(probe) {
   });
 }
 
-function tlsHandshake(probe) {
+function tlsHandshake(probe, { signal } = {}) {
+  throwIfAborted(signal);
   return new Promise((resolve, reject) => {
     let socket;
     let timeout;
@@ -155,6 +181,7 @@ function tlsHandshake(probe) {
       socket = tls.connect({
         host: probe.host,
         port: probe.port,
+        ...(signal ? { signal } : {}),
         ...(isIP(probe.host) === 0 ? { servername: probe.host } : {}),
         rejectUnauthorized: true,
       });
@@ -213,11 +240,13 @@ function redirectTarget(location, base) {
   }
 }
 
-async function runProbe(probe) {
+async function runProbe(probe, { signal } = {}) {
+  throwIfAborted(signal);
   if (probe.kind === "dns") {
     const addresses = await withTimeout(
-      dns.lookup(probe.host, { all: true, verbatim: true }),
+      () => dns.lookup(probe.host, { all: true, verbatim: true }),
       probe.timeout_ms,
+      { signal },
     );
     return {
       status: "passed",
@@ -231,11 +260,11 @@ async function runProbe(probe) {
     return {
       status: "passed",
       outcome: "secure",
-      details: await tlsHandshake(probe),
+      details: await tlsHandshake(probe, { signal }),
     };
   }
 
-  const response = await request(probe);
+  const response = await request(probe, { signal });
   const statusCode = response.statusCode ?? 0;
   const location = redirectTarget(response.headers.location, probe.target);
   if (statusCode >= 300 && statusCode < 400) {
@@ -265,13 +294,15 @@ async function runProbe(probe) {
   };
 }
 
-async function collectProbe(probe) {
+async function collectProbe(probe, { signal } = {}) {
+  throwIfAborted(signal);
   const startedAt = Date.now();
   const collectedAt = new Date().toISOString();
   let result;
   try {
-    result = await runProbe(probe);
+    result = await runProbe(probe, { signal });
   } catch (error) {
+    rethrowIfAborted(error, signal);
     result = { ...normalizedFailure(error), details: {} };
   }
   return {
@@ -298,14 +329,16 @@ async function collectProbe(probe) {
   };
 }
 
-export async function collectPublicEvidence(plan) {
+export async function collectPublicEvidence(plan, { signal } = {}) {
+  throwIfAborted(signal);
   const evidence = new Array(plan.probes.length);
   let nextIndex = 0;
   async function worker() {
     while (nextIndex < plan.probes.length) {
+      throwIfAborted(signal);
       const index = nextIndex;
       nextIndex += 1;
-      evidence[index] = await collectProbe(plan.probes[index]);
+      evidence[index] = await collectProbe(plan.probes[index], { signal });
     }
   }
   await Promise.all(
@@ -314,5 +347,6 @@ export async function collectPublicEvidence(plan) {
       () => worker(),
     ),
   );
+  throwIfAborted(signal);
   return evidence;
 }

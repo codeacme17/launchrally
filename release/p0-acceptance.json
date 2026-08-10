@@ -1,7 +1,7 @@
 {
   "schema_version": "launchrally.dev/p0-acceptance/v1",
-  "product_status": "incomplete",
-  "release_status": "release_candidate",
+  "product_status": "complete",
+  "release_status": "experimental",
   "requirements": [
     {
       "id": "P0-CONTRACT-01",
@@ -78,7 +78,7 @@
     {
       "id": "P0-CURRENT-01",
       "requirement": "Currentness is reevaluated from clock, Manifest, repository, catalog, support, and applicability evidence",
-      "contracts": ["docs/data-model.md"],
+      "contracts": ["docs/concepts/data-model.md"],
       "implementation": ["packages/core/src/report-currentness.js"],
       "tests": [{"path": "test/plan.test.js", "name": "read-time currentness advances the clock for live Evidence"}],
       "tracking": "#36",
@@ -96,7 +96,7 @@
     {
       "id": "P0-HISTORY-01",
       "requirement": "Initialized full Audit and Verify persist atomic immutable local history",
-      "contracts": ["docs/data-model.md"],
+      "contracts": ["docs/concepts/data-model.md"],
       "implementation": ["packages/core/src/local-history.js", "packages/core/src/initialization.js", "packages/core/src/verification.js"],
       "tests": [{"path": "test/verify.test.js", "name": "completed full Verify atomically persists its new immutable Report history"}],
       "tracking": "#37",
@@ -105,7 +105,7 @@
     {
       "id": "P0-HISTORY-02",
       "requirement": "Historical Records remain immutable and Report/Evidence history is never automatically pruned",
-      "contracts": ["docs/data-model.md"],
+      "contracts": ["docs/concepts/data-model.md"],
       "implementation": ["packages/core/src/local-history.js"],
       "tests": [{"path": "test/verify.test.js", "name": "repeated full Verify retains every historical Report and Evidence object"}],
       "tracking": "#37",
@@ -114,7 +114,7 @@
     {
       "id": "P0-TOOLCHAIN-01",
       "requirement": "Every ecosystem uses an isolated exact LaunchRally npm toolchain without modifying application dependencies",
-      "contracts": ["docs/install.md"],
+      "contracts": ["docs/getting-started/install.md"],
       "implementation": ["packages/core/src/initialization.js"],
       "tests": [{"path": "test/init.test.js", "name": "application package-manager files never control or receive the npm toolchain"}],
       "tracking": "#38",
@@ -123,7 +123,7 @@
     {
       "id": "P0-PERMISSION-01",
       "requirement": "Registry fallback is disclosed and separately approved; lifecycle scripts never execute",
-      "contracts": ["docs/privacy.md"],
+      "contracts": ["docs/concepts/privacy.md"],
       "implementation": ["packages/core/src/initialization.js", "packages/cli/bin/rally.js"],
       "tests": [{"path": "test/init.test.js", "name": "the CLI exposes and honors the isolated toolchain registry permission"}],
       "tracking": "#38",
@@ -132,7 +132,7 @@
     {
       "id": "P0-COVERAGE-01",
       "requirement": "Direct full journey passes for all five representative repositories",
-      "contracts": ["fixtures/coverage/matrix.json", "docs/coverage-acceptance.md"],
+      "contracts": ["fixtures/coverage/matrix.json", "docs/reference/coverage-acceptance.md"],
       "implementation": ["packages/cli/bin/rally.js"],
       "tests": [{"path": "test/reference-journey.test.js", "name": "the direct CLI completes the full Reference Journey for every coverage representative"}],
       "tracking": "#38",
@@ -150,7 +150,7 @@
     {
       "id": "P0-QUALITY-01",
       "requirement": "PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates",
-      "contracts": ["release/p0-acceptance.json", "docs/p0-acceptance.md"],
+      "contracts": ["release/p0-acceptance.json", "docs/maintainers/p0-acceptance.md"],
       "implementation": ["scripts/validate-acceptance.mjs", ".github/workflows/ci.yml", ".github/workflows/release.yml"],
       "tests": [{"path": "test/acceptance-traceability.test.js", "name": "the committed P0 matrix maps every normative requirement to executable evidence"}],
       "tracking": "#39",
@@ -168,38 +168,38 @@
     {
       "id": "P0-RELEASE-01",
       "requirement": "Five exact public packages publish with provenance under the Experimental channel",
-      "contracts": ["release/artifacts.json", "docs/release-runbook.md"],
+      "contracts": ["release/artifacts.json", "docs/maintainers/release-runbook.md"],
       "implementation": ["scripts/publish-release.mjs", ".github/workflows/release.yml"],
       "tests": [{"path": "test/release.test.js", "name": "release CI verifies clean artifacts before OIDC provenance publishing"}],
       "tracking": "#40",
-      "status": "open"
+      "status": "complete"
     },
     {
       "id": "P0-RELEASE-02",
       "requirement": "Exact public CLI and both Plugin paths pass clean external smoke tests before GitHub prerelease creation",
-      "contracts": ["release/artifacts.json", "docs/release-runbook.md"],
+      "contracts": ["release/artifacts.json", "docs/maintainers/release-runbook.md"],
       "implementation": ["scripts/test-release-artifacts.mjs", ".github/workflows/release.yml"],
       "tests": [{"path": "test/release.test.js", "name": "release validation plans exact public CLI and Plugin smoke inputs"}],
       "tracking": "#40",
-      "status": "open"
+      "status": "complete"
     },
     {
       "id": "P0-VALIDATE-01",
       "requirement": "Validation Log remains aggregate, non-identifying, append-only, and reviewed",
-      "contracts": ["docs/phase-0-validation-log.json"],
+      "contracts": ["docs/maintainers/phase-0-validation-log.json"],
       "implementation": ["scripts/validate-p0.mjs"],
       "tests": [{"path": "test/p0-release.test.js", "name": "the Phase 0 Validation Log rejects user-level analytics"}],
       "tracking": "#41",
-      "status": "open"
+      "status": "complete"
     },
     {
       "id": "P0-VALIDATE-02",
       "requirement": "P0 Validated requires a documented qualitative decision while the Quality Floor remains satisfied",
-      "contracts": ["docs/phase-0-validation.md"],
+      "contracts": ["docs/maintainers/phase-0-validation.md"],
       "implementation": ["scripts/validate-p0.mjs"],
-      "tests": [{"path": "test/p0-release.test.js", "name": "the public release kit documents use, data, safety, feedback, and validation"}],
+      "tests": [{"path": "test/p0-release.test.js", "name": "P0 Validated requires a documented qualitative decision basis"}],
       "tracking": "#41",
-      "status": "open"
+      "status": "complete"
     }
   ],
   "release_gates": [

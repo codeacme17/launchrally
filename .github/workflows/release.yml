@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [20, 22, 24]
+        node: [20.12.0, 22, 24]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -72,7 +72,7 @@ jobs:
       - name: Verify generated Plugin bundles are committed
         run: git diff --exit-code
       - run: npm test
-      - run: npm run validate:acceptance -- --require-publish-ready
+      - run: npm run validate:acceptance -- --require-release-ready
       - run: npm run validate:p0
       - run: npm run validate:release -- --tag "$GITHUB_REF_NAME"
       - run: npm run validate:release-ref -- --tag "$GITHUB_REF_NAME"

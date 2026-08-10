@@ -8,6 +8,8 @@ LaunchRally keeps declared intent, conclusions, and supporting observations sepa
 
 A valid legacy `.launchrally/launch-manifest.json` Manifest v1 is readable only for migration. Init previews the canonical YAML creation and legacy JSON deletion together, then applies neither without confirmation. Invalid, ambiguous, symlinked, or unsupported inputs fail closed.
 
+Manifest and Report v2 retain `production_targets` as a compatibility field. Its values are the confirmed public targets for `intended_environment`; the field name does not independently assert that the reviewed environment is production.
+
 ## Isolated toolchain
 
 `.launchrally/toolchain/package.json` and `package-lock.json` are the committed execution dependency boundary for every ecosystem. They contain the exact `@launchrally/cli` version and are previewed and recovered with the other Init-owned files. LaunchRally never adds itself to an application manifest or application lockfile. Toolchain resolution tries npm's offline cache first; only an explicit `npm_registry_read` decision permits the disclosed read from `https://registry.npmjs.org`, and lifecycle scripts remain disabled.
@@ -15,6 +17,8 @@ A valid legacy `.launchrally/launch-manifest.json` Manifest v1 is readable only 
 ## Report Record
 
 Every completed full Audit or Verify produces a new immutable, time-stamped Report v2 Record bound to Check Catalog v2 and its eight Launch Risk Domains. The Record captures confirmed scope, permission decisions, execution disclosure, Check results, Verification Gaps, policy output, provenance references, limitations, and any current whole-release Assessment. A Markdown Report View is derived only from that Record; it is not a second source of truth. Historical Report v1 packages remain readable but are never emitted by a new run.
+
+Each confirmed Failed Finding contributes one structured Action Queue item with its ordering inputs, safe supporting Evidence references, a concrete normalized observation or Check-result summary, and a deterministic targeted Verify selection for that Check. Public observations use a narrower field allowlist. The derived Markdown View renders those same fields. Historical Report v2 actions without the additive detail fields retain their legacy rendering and remain readable. This concise Audit action does not replace `rally plan`, which remains the deeper investigation and remediation model. Unverified Checks remain Verification Gaps and never enter the confirmed-failure Action Queue.
 
 A targeted Verify result covers only selected Checks and never carries a whole-release Assessment. Init, Plan, and Provider guidance re-evaluate Report currentness at read time from the clock, explicit Manifest digest and intent, the complete repository digest set, Check Catalog and support/Profile/Adapter/scan-policy versions, and Not Applicable evidence. A stale or content-invalidated Report is non-current and carries no current Assessment. Full Verify may accept a structurally valid non-current Report as immutable history so it can recollect Evidence into a new Report.
 

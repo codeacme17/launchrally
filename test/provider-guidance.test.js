@@ -11,6 +11,7 @@ import {
   assertValidProviderGuidance,
 } from "../packages/contracts/src/index.js";
 import { runAudit, runProviderGuidance, runVerify } from "../packages/core/src/index.js";
+import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
@@ -292,6 +293,30 @@ test("all six Provider constraints are validated and shown for confirmation befo
   assert.equal(confirmation.interaction.step, "constraint_confirmation");
   assert.equal(JSON.stringify(confirmation).includes("Cloudflare"), false);
   assert.equal(JSON.stringify(confirmation).includes("Vercel"), false);
+});
+
+test("Provider guidance accepts a portable token when mkdtemp preserves its placeholder", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const initial = await startGuidance(directory, audit);
+  const portableToken = await simulateExtendedMkdtempSuffix(
+    initial.interaction.resume_token,
+    "providers",
+  );
+
+  const result = await runCli([
+    "providers",
+    "--cwd",
+    directory,
+    "--resume",
+    portableToken,
+    "--constraints",
+    JSON.stringify({ budget: "cost_sensitive" }),
+    "--json",
+  ]);
+
+  assert.equal(result.status, "needs_input");
+  assert.equal(result.operation, "providers");
 });
 
 test("confirmed constraints produce a small explainable shortlist from versioned Decision Cards", async () => {

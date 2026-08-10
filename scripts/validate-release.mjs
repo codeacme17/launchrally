@@ -85,6 +85,14 @@ async function validateRelease() {
         `forbidden_lifecycle_script: ${packageJson.name} declares ${lifecycleScript}`,
       );
     }
+    if (
+      packageJson.name === "@launchrally/cli"
+      && packageJson.dependencies?.["@clack/prompts"] !== "1.7.0"
+    ) {
+      throw new Error(
+        `release_ui_dependency_drift: @clack/prompts declares ${packageJson.dependencies?.["@clack/prompts"] ?? "missing"}; expected 1.7.0`,
+      );
+    }
     for (const dependencyGroup of [
       packageJson.dependencies,
       packageJson.optionalDependencies,

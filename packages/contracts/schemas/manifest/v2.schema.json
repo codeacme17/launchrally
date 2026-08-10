@@ -21,7 +21,10 @@
       "required": ["intended_environment", "production_targets", "core_journeys"],
       "properties": {
         "intended_environment": { "$ref": "#/$defs/intentState" },
-        "production_targets": { "$ref": "#/$defs/intentState" },
+        "production_targets": {
+          "description": "Compatibility field containing the confirmed public targets for the intended environment.",
+          "$ref": "#/$defs/intentState"
+        },
         "core_journeys": { "$ref": "#/$defs/intentState" }
       },
       "additionalProperties": false

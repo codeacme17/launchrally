@@ -25,6 +25,7 @@ import { createProviderAdapterPlan, executeProviderAdapters } from "./provider-a
 import { matchesProviderDecisionCard } from "./provider-decision-cards.js";
 import { createPublicVerificationPlan, collectPublicEvidence } from "./public-verification.js";
 import { createReportPackage, createVerificationContext } from "./reporting.js";
+import { normalizeSupportLayers } from "./support-layers.js";
 
 const VERIFY_LIMITATIONS = Object.freeze([
   "Verification recollects only normalized, secret-safe repository facts and explicitly authorized live Evidence.",
@@ -56,7 +57,9 @@ async function storeState(state) {
 
 async function loadState(token) {
   if (typeof token !== "string") return null;
-  const match = token.match(/^lrverify_([A-Za-z0-9]{6})_([A-Za-z0-9_-]{43})$/u);
+  const match = token.match(
+    /^lrverify_([A-Za-z0-9]{6}|[A-Za-z0-9]{12})_([A-Za-z0-9_-]{43})$/u,
+  );
   if (!match) return null;
   const statePath = path.join(
     os.tmpdir(),
@@ -77,6 +80,7 @@ async function discardState(statePath) {
 
 function manifestAnswers(manifest, report) {
   const intent = report.scope.release_intent;
+  const supportLayers = manifestValue(manifest.support.layers, intent.support_layers);
   return {
     intended_environment: manifestValue(
       manifest.release.intended_environment,
@@ -85,7 +89,7 @@ function manifestAnswers(manifest, report) {
     production_targets: manifestValue(manifest.release.production_targets, intent.production_targets),
     core_journeys: manifestValue(manifest.release.core_journeys, intent.core_journeys),
     provider_roles: manifestValue(manifest.providers.roles, intent.provider_roles),
-    support_layers: manifestValue(manifest.support.layers, intent.support_layers),
+    support_layers: normalizeSupportLayers(supportLayers) ?? supportLayers,
   };
 }
 
@@ -281,21 +285,8 @@ async function createSnapshot(cwd) {
 }
 
 function auditBrief(state, snapshot) {
-  const sourceIntent = state.source.report.scope.release_intent;
   const manifest = state.manifest;
-  const answers = {
-    intended_environment: manifestValue(
-      manifest.release.intended_environment,
-      sourceIntent.intended_environment,
-    ),
-    production_targets: manifestValue(
-      manifest.release.production_targets,
-      sourceIntent.production_targets,
-    ),
-    core_journeys: manifestValue(manifest.release.core_journeys, sourceIntent.core_journeys),
-    provider_roles: manifestValue(manifest.providers.roles, sourceIntent.provider_roles),
-    support_layers: manifestValue(manifest.support.layers, sourceIntent.support_layers),
-  };
+  const answers = manifestAnswers(manifest, state.source.report);
   const confirmed = confirmedManifestScope(manifest);
   const selection = (value) => ({ values: structuredClone(value), candidates: [], confirmed });
   const providerAdapters = createProviderAdapterPlan(answers.provider_roles);
@@ -387,10 +378,22 @@ function manifestDrift(state, snapshot, brief, providerResult) {
   const manifest = state.manifest;
   const source = state.source.report;
   const drift = [];
-  const compare = (field, manifestState, observedValue, observedSource) => {
+  const compare = (
+    field,
+    manifestState,
+    observedValue,
+    observedSource,
+    normalize = (value) => value,
+  ) => {
     if (!["declared", "not_applicable"].includes(manifestState?.state)) return;
     const effectiveValue = manifestState.state === "declared" ? manifestState.value : [];
-    if (same(effectiveValue, observedValue)) return;
+    const normalizedManifest = normalize(effectiveValue);
+    const normalizedObserved = normalize(observedValue);
+    if (
+      normalizedManifest !== null
+      && normalizedObserved !== null
+      && same(normalizedManifest, normalizedObserved)
+    ) return;
     drift.push({
       field,
       manifest_value: structuredClone(effectiveValue),
@@ -438,7 +441,13 @@ function manifestDrift(state, snapshot, brief, providerResult) {
     historical.core_journeys,
     "source_report",
   );
-  compare("support.layers", manifest.support.layers, historical.support_layers, "source_report");
+  compare(
+    "support.layers",
+    manifest.support.layers,
+    historical.support_layers,
+    "source_report",
+    normalizeSupportLayers,
+  );
   if (!confirmedProviderDecisionMatchesSource(manifest, source)) {
     compare(
       "providers.roles",

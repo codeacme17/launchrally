@@ -47,8 +47,10 @@
         "provider-decision-cards/v1/cloudflare-workers.json",
         "provider-decision-cards/v1/vercel.json",
         "src/audit-interaction.js",
+        "src/cancellation.js",
         "src/check-catalog.js",
         "src/evidence-artifact.js",
+        "src/environment-terminology.js",
         "src/exclusive-lock.js",
         "src/fact-extractors.js",
         "src/gitignore.js",
@@ -63,9 +65,12 @@
         "src/provider-adapters.js",
         "src/provider-decision-cards.js",
         "src/provider-guidance.js",
+        "src/public-journey.js",
+        "src/public-target.js",
         "src/public-verification.js",
         "src/report-currentness.js",
         "src/reporting.js",
+        "src/support-layers.js",
         "src/verification.js"
       ]
     },
@@ -77,7 +82,13 @@
       ],
       "files": [
         "LICENSE",
+        "bin/clack-node20-loader.js",
+        "bin/clack-node20-util.js",
+        "bin/human-audit.js",
+        "bin/prompt-adapters.js",
         "bin/rally.js",
+        "bin/report-destination.js",
+        "bin/system-file-picker.js",
         "package.json"
       ]
     },

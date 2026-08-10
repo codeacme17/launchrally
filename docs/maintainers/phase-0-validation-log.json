@@ -1,0 +1,229 @@
+{
+  "schema_version": "launchrally.dev/phase-0-validation-log/v1",
+  "collection_mode": "telemetry_free",
+  "updated_at": "2026-08-09",
+  "entries": [
+    {
+      "period": "pre-release-quality-baseline",
+      "aggregate_adoption_trends": {
+        "signal": "baseline_not_established",
+        "sources": [
+          "voluntary_github_feedback",
+          "public_aggregate_package_trends"
+        ],
+        "notes": "No public Experimental release exists and no field adoption conclusion is available."
+      },
+      "voluntary_feedback_categories": [],
+      "represented_contexts": {
+        "frameworks": [],
+        "deployments": []
+      },
+      "recurring_p1_requests": [],
+      "product_decisions": [
+        {
+          "decision": "maintain_pre_release_status",
+          "outcome": "not_published",
+          "rationale": "P0 Product Complete and public Experimental release requirements remain open."
+        }
+      ]
+    },
+    {
+      "period": "2026-08-08-01",
+      "aggregate_adoption_trends": {
+        "signal": "validation_started",
+        "sources": [
+          "clean_environment_checks",
+          "public_aggregate_package_trends"
+        ],
+        "notes": "clean_release_verified_field_evidence_pending"
+      },
+      "voluntary_feedback_categories": [],
+      "represented_contexts": {
+        "frameworks": [
+          "astro",
+          "fastapi",
+          "react_go",
+          "custom_web"
+        ],
+        "deployments": [
+          "hosted_web",
+          "container",
+          "edge_monorepo",
+          "self_hosted",
+          "split_stack"
+        ]
+      },
+      "repeated_value_patterns": [
+        {
+          "pattern": "exact_public_install",
+          "signal": "confirmed_in_clean_environment",
+          "notes": "exact_cli_and_plugin_journeys_passed"
+        }
+      ],
+      "repeated_defect_patterns": [],
+      "recurring_p1_requests": [],
+      "product_decisions": [
+        {
+          "decision": "start_telemetry_free_validation",
+          "outcome": "collecting",
+          "rationale": "publication_is_not_field_validation"
+        }
+      ],
+      "quality_floor": {
+        "status": "satisfied",
+        "regressions": []
+      },
+      "validation_decision": {
+        "status": "not_validated",
+        "rationale": "clean_release_verification_is_not_field_validation",
+        "evidence_summary": {
+          "represented_contexts": "representative_clean_contexts_only",
+          "repeated_patterns": "clean_release_value_pattern_only",
+          "recurring_p1_needs": "no_recurring_p1_need_established",
+          "resulting_decisions": "continue_validation_and_block_p1_authority"
+        }
+      },
+      "p1_gate": {
+        "discovery": "allowed",
+        "authority_expanding_implementation": "blocked"
+      }
+    },
+    {
+      "period": "2026-08-09-01",
+      "aggregate_adoption_trends": {
+        "signal": "validation_started",
+        "sources": [
+          "clean_environment_checks",
+          "public_aggregate_package_trends"
+        ],
+        "notes": "clean_release_verified_field_evidence_pending"
+      },
+      "voluntary_feedback_categories": [],
+      "represented_contexts": {
+        "frameworks": [
+          "astro",
+          "fastapi",
+          "react_go",
+          "custom_web"
+        ],
+        "deployments": [
+          "hosted_web",
+          "container",
+          "edge_monorepo",
+          "self_hosted",
+          "split_stack"
+        ]
+      },
+      "repeated_value_patterns": [
+        {
+          "pattern": "exact_public_install",
+          "signal": "confirmed_in_clean_environment",
+          "notes": "exact_cli_and_plugin_journeys_passed"
+        }
+      ],
+      "repeated_defect_patterns": [],
+      "recurring_p1_requests": [],
+      "product_decisions": [
+        {
+          "decision": "start_telemetry_free_validation",
+          "outcome": "collecting",
+          "rationale": "publication_is_not_field_validation"
+        }
+      ],
+      "quality_floor": {
+        "status": "suspended",
+        "regressions": [
+          {
+            "id": "qf-2026-08-09-01",
+            "category": "evidence_integrity",
+            "status": "open",
+            "summary": "evidence_integrity_regression_under_review"
+          }
+        ]
+      },
+      "validation_decision": {
+        "status": "not_validated",
+        "rationale": "quality_floor_regression_suspends_completion",
+        "evidence_summary": {
+          "represented_contexts": "representative_clean_contexts_only",
+          "repeated_patterns": "clean_release_value_pattern_only",
+          "recurring_p1_needs": "no_recurring_p1_need_established",
+          "resulting_decisions": "continue_validation_and_block_p1_authority"
+        }
+      },
+      "p1_gate": {
+        "discovery": "allowed",
+        "authority_expanding_implementation": "blocked"
+      }
+    },
+    {
+      "period": "2026-08-09-02",
+      "aggregate_adoption_trends": {
+        "signal": "validation_started",
+        "sources": [
+          "clean_environment_checks",
+          "opt_in_maintainer_summary",
+          "public_aggregate_package_trends"
+        ],
+        "notes": "clean_release_verified_field_evidence_pending"
+      },
+      "voluntary_feedback_categories": [],
+      "represented_contexts": {
+        "frameworks": [
+          "astro",
+          "fastapi",
+          "react_go",
+          "custom_web"
+        ],
+        "deployments": [
+          "hosted_web",
+          "container",
+          "edge_monorepo",
+          "self_hosted",
+          "split_stack"
+        ]
+      },
+      "repeated_value_patterns": [
+        {
+          "pattern": "exact_public_install",
+          "signal": "confirmed_in_clean_environment",
+          "notes": "exact_cli_and_plugin_journeys_passed"
+        }
+      ],
+      "repeated_defect_patterns": [],
+      "recurring_p1_requests": [],
+      "product_decisions": [
+        {
+          "decision": "start_telemetry_free_validation",
+          "outcome": "collecting",
+          "rationale": "publication_is_not_field_validation"
+        }
+      ],
+      "quality_floor": {
+        "status": "satisfied",
+        "regressions": [
+          {
+            "id": "qf-2026-08-09-01",
+            "category": "evidence_integrity",
+            "status": "verified_fixed",
+            "summary": "evidence_integrity_fix_verified"
+          }
+        ]
+      },
+      "validation_decision": {
+        "status": "not_validated",
+        "rationale": "directional_field_evidence_not_established",
+        "evidence_summary": {
+          "represented_contexts": "represented_contexts_established",
+          "repeated_patterns": "clean_release_value_pattern_only",
+          "recurring_p1_needs": "no_recurring_p1_need_established",
+          "resulting_decisions": "continue_validation_and_block_p1_authority"
+        }
+      },
+      "p1_gate": {
+        "discovery": "allowed",
+        "authority_expanding_implementation": "blocked"
+      }
+    }
+  ]
+}

@@ -148,6 +148,42 @@ test("unknown facts and missing public observations produce reasoned Verificatio
   assert.ok(result.verification_gaps.every((gap) => gap.reason.length > 0));
 });
 
+test("target messages are contract-neutral and Check results use the intended environment", () => {
+  const catalogText = JSON.stringify(describeWebBaselineCatalog());
+  assert.match(catalogText, /confirmed target/u);
+  assert.doesNotMatch(catalogText, /production target/u);
+
+  const stagingResult = execute(project(), auditBrief({
+    intended_environment: { value: "staging", confirmed: true },
+    production_targets: { values: ["http://staging.example.com/"], confirmed: true },
+  }));
+  const transport = stagingResult.checks.find(
+    (check) => check.check_id === "web.public.transport-security",
+  );
+  assert.equal(
+    transport.summary,
+    "Staging targets must use HTTPS: http://staging.example.com/.",
+  );
+  assert.equal(transport.action, "Use HTTPS for every staging target.");
+  assert.doesNotMatch(JSON.stringify(transport), /production target/u);
+
+  for (const [environment, expected] of [
+    ["QA East", "QA East targets must use HTTPS: http://staging.example.com/."],
+    [null, "Confirmed targets must use HTTPS: http://staging.example.com/."],
+  ]) {
+    const result = execute(project(), auditBrief({
+      intended_environment: { value: environment, confirmed: true },
+      production_targets: { values: ["http://staging.example.com/"], confirmed: true },
+    }));
+    assert.equal(
+      result.checks.find(
+        (check) => check.check_id === "web.public.transport-security",
+      ).summary,
+      expected,
+    );
+  }
+});
+
 test("Not Applicable requires a reason and applicability evidence", () => {
   const projectWithNonDataInputs = project({
     facts: [
@@ -168,6 +204,18 @@ test("Not Applicable requires a reason and applicability evidence", () => {
     assert.ok(check.applicability.reason.length > 0);
     assert.ok(check.applicability.evidence.length > 0);
   }
+});
+
+test("observability declarations cannot satisfy the pass-evidence contract", () => {
+  const result = execute();
+  const declaration = result.catalog.checks.find(
+    (check) => check.check_id === "web.baseline.observability",
+  );
+
+  assert.deepEqual(
+    declaration.pass_evidence_requirement.accepted_kinds,
+    ["machine_evidence"],
+  );
 });
 
 test("a complete negative lockfile finding carries provenance-bearing local observation Evidence", () => {
@@ -221,12 +269,13 @@ test("an uncovered root lockfile candidate stays Unverified instead of becoming 
   assert.deepEqual(lockfile.evidence, []);
 });
 
-test("current Provider Machine Evidence resolves the catalog-declared Provider Check", () => {
+test("normalized support intent preserves current Provider Machine Evidence evaluation", () => {
   const brief = auditBrief({
     provider_roles: {
-      values: [{ provider: "vercel", role: "deployment" }],
+      values: [{ provider: "vercel", role: "observability" }],
       confirmed: true,
     },
+    support_layers: { values: ["Sentry observability"], confirmed: true },
   });
   const machineEvidence = {
     kind: "machine_evidence",

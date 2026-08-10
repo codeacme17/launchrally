@@ -1,9 +1,14 @@
 {
   "schema_version": "launchrally.dev/p0-release/v1",
   "phase": "p0",
-  "product_status": "incomplete",
-  "release_status": "release_candidate",
+  "product_status": "complete",
+  "release_status": "experimental",
   "validation_mode": "telemetry_free",
+  "validation_status": "collecting",
+  "p0_validated": false,
+  "quality_floor_status": "satisfied",
+  "p1_discovery": "allowed",
+  "p1_authority": "blocked",
   "license": "Apache-2.0",
   "feedback_channels": [
     "discussions",
@@ -38,7 +43,7 @@
     {
       "path": "README.md",
       "includes": [
-        "Status: Pre-release development",
+        "Status: Experimental P0",
         "github.com/codeacme17/launchrally/issues",
         "github.com/codeacme17/launchrally/discussions",
         "SECURITY.md",
@@ -46,16 +51,16 @@
       ]
     },
     {
-      "path": "docs/quickstart.md",
+      "path": "docs/getting-started/quickstart.md",
       "includes": [
         "Direct CLI Quickstart",
         "Skill Quickstart",
-        "@launchrally/cli@0.1.0",
+        "@launchrally/cli@0.1.1",
         "secret-free"
       ]
     },
     {
-      "path": "docs/data-model.md",
+      "path": "docs/concepts/data-model.md",
       "includes": [
         "Launch Manifest",
         "Report Record",
@@ -63,7 +68,7 @@
       ]
     },
     {
-      "path": "docs/privacy.md",
+      "path": "docs/concepts/privacy.md",
       "includes": [
         "no LaunchRally account",
         "no default telemetry",
@@ -88,15 +93,15 @@
       ]
     },
     {
-      "path": "docs/phase-0-validation.md",
+      "path": "docs/maintainers/phase-0-validation.md",
       "includes": [
-        "P0 is not Product Complete",
-        "no public Experimental release exists",
+        "public Experimental release",
         "P0 Product Complete",
         "Experimental release",
         "Telemetry-Free Validation",
         "P0 Validated",
-        "No hard download quota"
+        "No hard download quota",
+        "authority-expanding P1 implementation remains blocked"
       ]
     },
     {
@@ -108,7 +113,7 @@
       ]
     }
   ],
-  "validation_log": "docs/phase-0-validation-log.json",
+  "validation_log": "docs/maintainers/phase-0-validation-log.json",
   "quality_floor": [
     "reference_journey",
     "coverage_acceptance_matrix",
