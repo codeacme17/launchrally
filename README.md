@@ -11,14 +11,14 @@ LaunchRally is a local-first, open-source launch-readiness audit and verificatio
 
 It needs no LaunchRally account, uses no default telemetry, and makes no repository, deployment, or Provider write during an Audit.
 
-> **Status: Experimental P0.** P0 is Product Complete and `0.2.1` is publicly available on the non-stable `experimental` channel. Telemetry-Free Validation is collecting aggregate directional signals; LaunchRally is not P0 Validated, and authority-expanding P1 implementation remains blocked.
+> **Status: Experimental P0.** P0 is Product Complete and `0.2.2` is publicly available on the non-stable `experimental` channel. Telemetry-Free Validation is collecting aggregate directional signals; LaunchRally is not P0 Validated, and authority-expanding P1 implementation remains blocked.
 
 ## First Audit
 
 Run the exact public Experimental CLI without a global installation:
 
 ```bash
-npm exec --package=@launchrally/cli@0.2.1 -- rally audit --json --cwd .
+npm exec --package=@launchrally/cli@0.2.2 -- rally audit --json --cwd .
 ```
 
 LaunchRally is local-first: the Audit examines supported repository metadata through a boundary-checked Local Safe Scan, requests launch intent when it cannot be established safely, and returns a versioned interaction before any optional public or Provider read. It requires no LaunchRally account and the Audit performs no repository writes.
