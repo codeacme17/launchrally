@@ -8,7 +8,9 @@ The Local Safe Scan reads supported source and configuration metadata inside the
 
 ## Network and Provider reads
 
-Public verification and every Provider Adapter are separate permission boundaries. LaunchRally shows the target, method or executable, exact arguments, and retained fields before access. Denial completes with a reasoned Verification Gap. P0 never installs a Provider CLI, initiates login, accepts credentials, or performs Provider, deployment, or production writes.
+Public verification and every Provider Adapter are separate permission boundaries. LaunchRally shows the target, every method or executable in a compound read, exact arguments, and retained fields before access. One decision covers only the disclosed read sequence for that Provider; every other Provider remains default-denied. Denial completes with a reasoned Verification Gap. P0 never installs a Provider CLI, initiates login, accepts credentials, or performs Provider, deployment, or production writes.
+
+Clerk retains only application and instance environment metadata. Neon retains bounded project, branch, and database metadata from the existing CLI context. Resend retains domain state and transactional-email delivery status without addresses, subjects, message IDs, or DNS records. Sentry retains bounded project columns and release versions. Raw CLI output is never Evidence; only structurally allowlisted normalized facts with exact command provenance can enter the local Evidence Index. Missing tools or authentication, unsupported account context, malformed or oversized output, timeouts, and Provider errors remain Verification Gaps.
 
 Audit actions cite only allowlisted Evidence provenance and normalized failed-observation fields: probe identity, method, safe path, outcome, and status code when present. Response bodies, secret-bearing headers, credentials, raw Provider output, and unallowlisted Evidence fields cannot enter the Action Queue or its derived Markdown View. An HTTP status is reported as an observation, never converted into a guessed internal root cause.
 

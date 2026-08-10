@@ -349,7 +349,7 @@ test("the Plain adapter uses numbered multi-select for Provider roles", async ()
   });
   const prompt = createPlainPromptAdapter({ input, output });
 
-  setTimeout(() => input.write("1,2\n"), 10);
+  setTimeout(() => input.write("1,3\n"), 10);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -374,13 +374,14 @@ test("the Plain adapter uses numbered multi-select for Provider roles", async ()
   assert.deepEqual(response, {
     answers: {
       provider_roles: [
-        { provider: "cloudflare", role: "deployment" },
-        { provider: "netlify", role: "deployment" },
+        { provider: "clerk", role: "authentication" },
+        { provider: "neon", role: "data" },
       ],
     },
   });
   assert.match(rendered, /Vercel — deployment \(detected\)/u);
-  assert.match(rendered, /1\. Cloudflare — deployment/u);
+  assert.match(rendered, /1\. Clerk — authentication/u);
+  assert.match(rendered, /3\. Neon — data/u);
   assert.match(rendered, /Select numbers separated by commas, or press Enter for none:/u);
 });
 
@@ -699,6 +700,54 @@ test("the Plain adapter uses numbered choices and default-deny confirmations wit
   assert.match(rendered, /1\. Confirm[\s\S]*2\. Revise[\s\S]*3\. Cancel/u);
   assert.match(rendered, /Public verification[\s\S]*\[y\/N\]/u);
   assert.doesNotMatch(rendered, /\u001b\[[0-?]*[ -\/]*[@-~]/u);
+});
+
+test("the Plain adapter discloses every command in a compound Provider read", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\n"), 10);
+  const response = await prompt.respond({
+    status: "needs_permission",
+    operation: "audit",
+    request: {
+      permissions: [{
+        permission_id: "provider_read:resend",
+        boundary: "provider_read",
+        scope: {
+          provider: "resend",
+          target: "authenticated_team_domains_and_recent_email_status",
+          requested_fields: ["domains[].status", "emails[].last_event"],
+          command: {
+            executable: "resend",
+            arguments: ["domains", "list", "--limit", "10", "--json"],
+          },
+          commands: [
+            {
+              executable: "resend",
+              arguments: ["domains", "list", "--limit", "10", "--json"],
+            },
+            {
+              executable: "resend",
+              arguments: ["emails", "list", "--limit", "10", "--json"],
+            },
+          ],
+        },
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    permission_decisions: { "provider_read:resend": "denied" },
+  });
+  assert.match(rendered, /Commands:\s+  - resend domains list --limit 10 --json/u);
+  assert.match(rendered, /  - resend emails list --limit 10 --json/u);
 });
 
 test("the Plain adapter labels targets with the intended staging environment", async () => {
@@ -1093,7 +1142,7 @@ test("the Clack adapter uses a multi-select prompt for Provider roles", async ()
   await prompt.close();
 
   assert.deepEqual(response, {
-    answers: { provider_roles: [{ provider: "cloudflare", role: "deployment" }] },
+    answers: { provider_roles: [{ provider: "clerk", role: "authentication" }] },
   });
   const semanticOutput = stripVTControlCharacters(rendered);
   assert.match(semanticOutput, /Vercel — deployment \(detected\)/u);

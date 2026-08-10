@@ -54,7 +54,15 @@ Selecting a Card only previews a canonical `.launchrally/manifest.yaml` intent c
 
 After remediation, run `rally verify --report <path> --scope full`. Verify reads the initialized Manifest, discloses fresh public and Provider permission boundaries, and recollects Evidence instead of reusing live observations. Full verification atomically persists a new immutable Report and Evidence Index with an explicit comparison to the source history; a persistence failure returns recoverable structured output without claiming completion. Use `--scope targeted --checks '["check.id"]'` for selected Checks; targeted results are explicitly limited and never carry a whole-release Launch Assessment. Manifest/observed-state conflicts are reported as Manifest Drift and never update project intent silently.
 
-Cloudflare and Vercel have versioned, read-only Provider Adapters. Before approval, the Audit discloses the existing CLI executable, exact arguments, target, and allowlisted fields for each Provider. Successful reads become provenance-backed Machine Evidence for the catalog-declared Provider Check; missing tools or authentication and Adapter failures leave that Check Unverified. LaunchRally never installs a Provider tool, initiates login, supplies or retains credentials, or performs Provider writes.
+Cloudflare, Clerk, Neon, Resend, Sentry, and Vercel have versioned, read-only Provider Adapters. Before approval, the Audit discloses every existing CLI executable, exact argument sequence, target, and allowlisted retained field for that Provider. Compound reads remain one independently default-denied Provider permission:
+
+- Clerk runs `clerk apps list --json` and retains application IDs, names, and instance environment metadata; publishable and secret keys are discarded.
+- Neon runs JSON `projects list`, `branches list`, and `databases list` commands with analytics disabled. Branch and database reads use the existing linked-project or single-project CLI context; missing context remains a Verification Gap.
+- Resend runs bounded JSON domain and sent-email list commands with telemetry disabled. It retains domain state and email delivery-status metadata, never recipients, senders, subjects, message IDs, DNS records, or credentials.
+- Sentry runs `projects list` and raw `releases list` through the existing CLI organization/project context with update checks disabled. It retains bounded project columns and release versions.
+- Cloudflare and Vercel keep their existing bounded JSON deployment and project reads.
+
+Successful reads become provenance-backed Machine Evidence for the catalog-declared Provider Check. Denial, missing tools or authentication, unsupported account capability or linked context, malformed or oversized output, timeout, and Provider errors leave that Check Unverified without blocking the Web Baseline Audit. LaunchRally never installs a Provider tool, initiates login, supplies or retains credentials, or performs Provider writes.
 
 The Local Safe Scan collects provenance-backed facts from supported source and configuration files without retaining their contents in facts or outputs. It respects repository ignore rules and built-in exclusions for dependencies and build outputs, rejects binary and oversized artifacts, never follows symlinks, and stops at nested repository boundaries. Environment files are the deliberate ignore-rule exception: even a gitignored `.env*` file contributes variable names only. Package scripts likewise contribute script names rather than commands, so secret values cannot flow into snapshots, evidence, reports, terminal output, or errors.
 
@@ -86,7 +94,7 @@ test/
 - Local scan, public verification, and each Provider read are distinct authorization boundaries.
 - Local facts include their repository-relative source path and scanner policy version.
 - Environment values and raw package script commands are never included in Audit output.
-- Approved public probes and Cloudflare/Vercel Adapter reads are bounded, read-only, and retain only normalized evidence.
+- Approved public probes and Provider Adapter reads are bounded, read-only, and retain only structurally allowlisted normalized evidence.
 - Provider guidance reads only the supplied current Report and open local Decision Cards; it contacts no Provider and performs no external mutation.
 - Report Records and Evidence Indexes are unique, frozen in-process, and never overwrite repository files.
 - `init` is available only from a saved completed Audit and always requires preview confirmation; `plan` is deterministic and read-only from a saved current Audit; `providers` requires constraint confirmation and a second confirmation for local Manifest intent; `verify` creates a new immutable full Report or an explicitly limited targeted result.

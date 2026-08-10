@@ -129,7 +129,7 @@
           "type": "object",
           "required": ["contract_version", "requests"],
           "properties": {
-            "contract_version": { "const": "provider-adapter-contract/v1" },
+            "contract_version": { "enum": ["provider-adapter-contract/v1", "provider-adapter-contract/v2"] },
             "requests": {
               "type": "array",
               "items": {
@@ -289,22 +289,39 @@
       "required": ["kind", "provider", "adapter_version", "target", "requested_fields", "facts", "collected_at", "provenance"],
       "properties": {
         "kind": { "const": "machine_evidence" },
-        "provider": { "enum": ["cloudflare", "vercel"] },
-        "adapter_version": { "enum": ["cloudflare-read/v1", "vercel-read/v1"] },
+        "provider": { "enum": ["clerk", "cloudflare", "neon", "resend", "sentry", "vercel"] },
+        "adapter_version": { "enum": ["clerk-read/v1", "cloudflare-read/v1", "neon-read/v1", "resend-read/v1", "sentry-read/v1", "vercel-read/v1"] },
         "target": { "type": "string", "minLength": 1 },
         "requested_fields": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true },
         "facts": { "type": "object" },
         "collected_at": { "type": "string", "format": "date-time" },
         "provenance": {
           "type": "object",
-          "required": ["collector", "provider", "adapter_version", "exact_target", "executable", "arguments", "collected_at"],
+          "required": ["collector", "provider", "adapter_version", "exact_target", "collected_at"],
+          "oneOf": [
+            { "required": ["executable", "arguments"] },
+            { "required": ["commands"] }
+          ],
           "properties": {
-            "collector": { "const": "provider-adapter-contract/v1" },
-            "provider": { "enum": ["cloudflare", "vercel"] },
-            "adapter_version": { "enum": ["cloudflare-read/v1", "vercel-read/v1"] },
+            "collector": { "enum": ["provider-adapter-contract/v1", "provider-adapter-contract/v2"] },
+            "provider": { "enum": ["clerk", "cloudflare", "neon", "resend", "sentry", "vercel"] },
+            "adapter_version": { "enum": ["clerk-read/v1", "cloudflare-read/v1", "neon-read/v1", "resend-read/v1", "sentry-read/v1", "vercel-read/v1"] },
             "exact_target": { "type": "string", "minLength": 1 },
-            "executable": { "enum": ["wrangler", "vercel"] },
+            "executable": { "enum": ["clerk", "neonctl", "resend", "sentry-cli", "wrangler", "vercel"] },
             "arguments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+            "commands": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["executable", "arguments"],
+                "properties": {
+                  "executable": { "enum": ["clerk", "neonctl", "resend", "sentry-cli", "wrangler", "vercel"] },
+                  "arguments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                },
+                "additionalProperties": false
+              }
+            },
             "collected_at": { "type": "string", "format": "date-time" }
           },
           "additionalProperties": false

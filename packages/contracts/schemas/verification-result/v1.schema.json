@@ -322,14 +322,31 @@
         "collected_at": { "type": "string", "format": "date-time" },
         "provenance": {
           "type": "object",
-          "required": ["collector", "provider", "adapter_version", "exact_target", "executable", "arguments", "collected_at"],
+          "required": ["collector", "provider", "adapter_version", "exact_target", "collected_at"],
+          "oneOf": [
+            { "required": ["executable", "arguments"] },
+            { "required": ["commands"] }
+          ],
           "properties": {
-            "collector": { "const": "provider-adapter-contract/v1" },
+            "collector": { "enum": ["provider-adapter-contract/v1", "provider-adapter-contract/v2"] },
             "provider": { "type": "string", "minLength": 1 },
             "adapter_version": { "type": "string", "minLength": 1 },
             "exact_target": { "type": "string", "minLength": 1 },
             "executable": { "type": "string", "minLength": 1 },
             "arguments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+            "commands": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["executable", "arguments"],
+                "properties": {
+                  "executable": { "type": "string", "minLength": 1 },
+                  "arguments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                },
+                "additionalProperties": false
+              }
+            },
             "collected_at": { "type": "string", "format": "date-time" }
           },
           "additionalProperties": false
