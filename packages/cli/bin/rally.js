@@ -22,7 +22,7 @@ import {
 import { inspectReportDestination } from "./report-destination.js";
 import { createSystemFilePicker } from "./system-file-picker.js";
 
-const VERSION = "0.1.1";
+const VERSION = "0.2.0";
 const args = process.argv.slice(2);
 const json = args.includes("--json");
 
