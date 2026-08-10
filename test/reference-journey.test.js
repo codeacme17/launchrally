@@ -823,6 +823,30 @@ test("the packaged JSON journey approves one new Provider read and independently
   }
 });
 
+test("the packaged JSON journey reports missing approved Provider tooling", async () => {
+  const result = await executeReferenceJourney(
+    "provider-missing-tool-reference",
+    directJourney,
+    { ...process.env, PATH: "" },
+    {
+      initialize: false,
+      remediationRequested: false,
+      verifyAfterRemediation: false,
+      providerRoles: [{ provider: "clerk", role: "authentication" }],
+      providerPermissions: { clerk: "approved" },
+      publicPermission: "denied",
+    },
+  );
+
+  assert.equal(
+    result.semantics.audit.report.results.verification_gaps.some(
+      ({ check_id, reason_code }) =>
+        check_id === "provider.clerk.metadata" && reason_code === "missing_provider_tool",
+    ),
+    true,
+  );
+});
+
 test("direct and Skill journeys preserve semantics with complete public-read permission", async () => {
   const requests = [];
   const server = createServer((request, response) => {

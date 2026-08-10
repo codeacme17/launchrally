@@ -737,14 +737,21 @@ test("already-aborted Provider execution starts no command", async () => {
 test("the default Provider subprocess runner terminates on abort", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-provider-abort-"));
   const marker = path.join(directory, "started");
-  const executable = path.join(directory, "wrangler");
-  await writeFile(executable, [
-    "#!/usr/bin/env node",
-    `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "started");`,
-    "setInterval(() => {}, 1000);",
-    "",
-  ].join("\n"));
-  await chmod(executable, 0o755);
+  if (process.platform === "win32") {
+    await writeFile(
+      path.join(directory, "wrangler.cmd"),
+      `@echo off\r\n> "${marker}" echo started\r\nping -n 60 127.0.0.1 >nul\r\n`,
+    );
+  } else {
+    const executable = path.join(directory, "wrangler");
+    await writeFile(executable, [
+      "#!/usr/bin/env node",
+      `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "started");`,
+      "setInterval(() => {}, 1000);",
+      "",
+    ].join("\n"));
+    await chmod(executable, 0o755);
+  }
   const originalPath = process.env.PATH;
   process.env.PATH = `${directory}${path.delimiter}${originalPath ?? ""}`;
   const plan = createProviderAdapterPlan([{ provider: "cloudflare", role: "deployment" }]);

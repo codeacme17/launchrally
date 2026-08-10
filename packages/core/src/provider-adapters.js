@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { access } from "node:fs/promises";
+import path from "node:path";
 import { isDeepStrictEqual, promisify } from "node:util";
 
 import { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
@@ -9,6 +11,12 @@ export const PROVIDER_ADAPTER_CONTRACT = "provider-adapter-contract/v2";
 const execFileAsync = promisify(execFile);
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const TIMEOUT_MS = 10_000;
+const WINDOWS_EXECUTABLE_EXTENSIONS = Object.freeze([
+  ".COM",
+  ".EXE",
+  ".BAT",
+  ".CMD",
+]);
 
 const ADAPTERS = Object.freeze({
   clerk: Object.freeze({
@@ -358,14 +366,61 @@ function gap(request, reason_code, reason) {
   };
 }
 
+function windowsExecutableExtensions(executable, env) {
+  if (path.extname(executable)) return [""];
+  const supported = new Set(WINDOWS_EXECUTABLE_EXTENSIONS);
+  const extensions = (env.PATHEXT ?? WINDOWS_EXECUTABLE_EXTENSIONS.join(";"))
+    .split(";")
+    .map((extension) => extension.trim().toUpperCase())
+    .filter((extension, index, values) =>
+      supported.has(extension) && values.indexOf(extension) === index);
+  return extensions.length > 0 ? extensions : [...WINDOWS_EXECUTABLE_EXTENSIONS];
+}
+
+async function resolveWindowsExecutable(executable, cwd, env) {
+  const searchPath = env.PATH ?? env.Path ?? "";
+  const directories = searchPath.split(path.delimiter);
+  const extensions = windowsExecutableExtensions(executable, env);
+  for (const entry of directories) {
+    const directory = entry.trim().replace(/^"(.*)"$/u, "$1");
+    if (!directory) continue;
+    for (const extension of extensions) {
+      const candidate = path.resolve(cwd, directory, `${executable}${extension}`);
+      try {
+        await access(candidate);
+        return candidate;
+      } catch (error) {
+        if (!["ENOENT", "ENOTDIR"].includes(error?.code)) throw error;
+      }
+    }
+  }
+  const error = new Error("The disclosed Provider executable is not on PATH.");
+  error.code = "ENOENT";
+  throw error;
+}
+
 async function defaultRunner(command, cwd, { signal } = {}) {
   throwIfAborted(signal);
-  const invocation = process.platform === "win32"
-    ? {
-      executable: process.env.ComSpec ?? "cmd.exe",
-      arguments: ["/d", "/s", "/c", command.executable, ...command.arguments],
-    }
-    : command;
+  const env = {
+    ...process.env,
+    CI: "1",
+    NO_COLOR: "1",
+    RESEND_TELEMETRY_DISABLED: "1",
+    SENTRY_DISABLE_UPDATE_CHECK: "true",
+    VERCEL_TELEMETRY_DISABLED: "1",
+    WRANGLER_SEND_METRICS: "false",
+  };
+  let invocation = command;
+  if (process.platform === "win32") {
+    const executable = await resolveWindowsExecutable(command.executable, cwd, env);
+    throwIfAborted(signal);
+    invocation = /\.(?:bat|cmd)$/iu.test(executable)
+      ? {
+        executable: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
+        arguments: ["/d", "/s", "/c", executable, ...command.arguments],
+      }
+      : { executable, arguments: command.arguments };
+  }
   return execFileAsync(invocation.executable, invocation.arguments, {
     cwd,
     encoding: "utf8",
@@ -373,15 +428,7 @@ async function defaultRunner(command, cwd, { signal } = {}) {
     timeout: TIMEOUT_MS,
     killSignal: "SIGTERM",
     ...(signal ? { signal } : {}),
-    env: {
-      ...process.env,
-      CI: "1",
-      NO_COLOR: "1",
-      RESEND_TELEMETRY_DISABLED: "1",
-      SENTRY_DISABLE_UPDATE_CHECK: "true",
-      VERCEL_TELEMETRY_DISABLED: "1",
-      WRANGLER_SEND_METRICS: "false",
-    },
+    env,
   });
 }
 
