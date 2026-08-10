@@ -4,14 +4,14 @@ This package is the LaunchRally Plugin adapter for Codex. It installs Codex Plug
 
 ## Status
 
-LaunchRally 0.2.1 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated. Review every permission request and proposed local change.
+LaunchRally 0.2.2 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated. Review every permission request and proposed local change.
 
 ## Install and use
 
 Codex installs Plugins at user scope. Pin the marketplace to this release tag, then install LaunchRally:
 
 ```sh
-codex plugin marketplace add codeacme17/launchrally --ref v0.2.1
+codex plugin marketplace add codeacme17/launchrally --ref v0.2.2
 codex plugin add launchrally@launchrally
 ```
 

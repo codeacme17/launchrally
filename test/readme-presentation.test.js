@@ -54,7 +54,7 @@ test("the repository README presents a concise first-use journey", async () => {
   );
   assert.match(
     firstAudit,
-    /npm exec --package=@launchrally\/cli@0\.2\.1 -- rally audit --json --cwd \./u,
+    /npm exec --package=@launchrally\/cli@0\.2\.2 -- rally audit --json --cwd \./u,
   );
   assert.match(firstAudit, /local-first/iu);
   assert.match(firstAudit, /no LaunchRally account/iu);

@@ -4,14 +4,14 @@ The LaunchRally CLI audits and verifies whether an existing repository is ready 
 
 ## Status
 
-LaunchRally 0.2.1 is an **Experimental P0** release. P0 is Product Complete, not a stability claim or a P0 Validated decision. Review every disclosed permission and preview before continuing.
+LaunchRally 0.2.2 is an **Experimental P0** release. P0 is Product Complete, not a stability claim or a P0 Validated decision. Review every disclosed permission and preview before continuing.
 
 ## First audit
 
 Run the exact release without a global installation:
 
 ```sh
-npm exec --package=@launchrally/cli@0.2.1 -- rally audit --json --cwd .
+npm exec --package=@launchrally/cli@0.2.2 -- rally audit --json --cwd .
 ```
 
 The initial audit reads safe, allowlisted facts from the repository you select. It does not require an account, add telemetry, change project files, stage or commit changes, provision infrastructure, or deploy. Any optional public or Provider read is disclosed separately for approval.

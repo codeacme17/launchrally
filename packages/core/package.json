@@ -1,6 +1,6 @@
 {
   "name": "@launchrally/core",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Deterministic LaunchRally audit and verification core",
   "keywords": [
     "launchrally",
@@ -18,7 +18,7 @@
     "src/"
   ],
   "dependencies": {
-    "@launchrally/contracts": "0.2.1"
+    "@launchrally/contracts": "0.2.2"
   },
   "repository": {
     "type": "git",

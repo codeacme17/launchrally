@@ -4,7 +4,7 @@ This package is the LaunchRally Plugin adapter for Claude Code. It installs Clau
 
 ## Status
 
-LaunchRally 0.2.1 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated. Review every permission request and proposed local change.
+LaunchRally 0.2.2 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated. Review every permission request and proposed local change.
 
 ## Install and use
 

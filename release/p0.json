@@ -55,7 +55,7 @@
       "includes": [
         "Direct CLI Quickstart",
         "Skill Quickstart",
-        "@launchrally/cli@0.2.1",
+        "@launchrally/cli@0.2.2",
         "secret-free"
       ]
     },
