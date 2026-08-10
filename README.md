@@ -31,7 +31,7 @@ The terminal below uses deterministic synthetic fixture output. Your result will
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/launchrally-terminal-dark.svg">
-  <img src="docs/assets/launchrally-terminal-light.svg" alt="LaunchRally terminal showing an Inconclusive audit with verification gaps and the next init command" width="680">
+  <img src="docs/assets/launchrally-terminal-light.svg" alt="LaunchRally terminal showing an Inconclusive audit with verification gaps and the next init command" width="380">
 </picture>
 
 Continue with the [Quickstart](docs/getting-started/quickstart.md) for the complete interaction flow and safe ways to save the result.
