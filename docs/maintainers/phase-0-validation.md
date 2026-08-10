@@ -7,7 +7,7 @@ LaunchRally uses four deliberately separate states:
 - **Telemetry-Free Validation** is the current learning period. Aggregate trends, voluntary feedback categories, represented framework and deployment contexts, repeated value and defect patterns, recurring P1 requests, and resulting decisions are recorded without default telemetry or mandatory uploads.
 - **P0 Validated** is a future product decision supported by the published Validation Log. It is not implied by publication, passing CI, package downloads, or elapsed time.
 
-P0 is Product Complete and `0.2.0` is a public Experimental release. Telemetry-Free Validation is collecting directional signals, but LaunchRally is not P0 Validated. P1 discovery and design may continue; authority-expanding P1 implementation remains blocked.
+P0 is Product Complete and `0.2.1` is a public Experimental release. Telemetry-Free Validation is collecting directional signals, but LaunchRally is not P0 Validated. P1 discovery and design may continue; authority-expanding P1 implementation remains blocked.
 
 ## Decision method
 

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export function exactToolchainPackage(version = "0.2.0") {
+export function exactToolchainPackage(version = "0.2.1") {
   return {
     name: "launchrally-toolchain",
     private: true,
@@ -17,7 +17,7 @@ export function exactToolchainPackage(version = "0.2.0") {
   };
 }
 
-export function exactToolchainLock(version = "0.2.0") {
+export function exactToolchainLock(version = "0.2.1") {
   const integrity = "sha512-QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQ==";
   return {
     name: "launchrally-toolchain",
@@ -37,6 +37,7 @@ export function exactToolchainLock(version = "0.2.0") {
         dev: true,
         license: "Apache-2.0",
         dependencies: {
+          "@clack/core": "1.4.3",
           "@clack/prompts": "1.7.0",
           "@launchrally/contracts": version,
           "@launchrally/core": version,
@@ -129,7 +130,7 @@ export function prepareExactToolchainChanges({ package_path: packagePath, lockfi
   ];
 }
 
-export async function writeExactToolchain(repository, version = "0.2.0") {
+export async function writeExactToolchain(repository, version = "0.2.1") {
   const directory = path.join(repository, ".launchrally", "toolchain");
   await mkdir(directory, { recursive: true });
   await writeFile(
