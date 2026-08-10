@@ -19,6 +19,10 @@ import {
 
 import { describeWebBaselineCatalog, executeWebBaseline } from "./check-catalog.js";
 import { MANIFEST_RELATIVE_PATH, parseManifest } from "./manifest.js";
+import {
+  currentReportIdentity,
+  manifestSourceReportIdentity,
+} from "./interaction-result.js";
 import { scanRepository } from "./local-safe-scan.js";
 import { persistLocalHistory } from "./local-history.js";
 import { createProviderAdapterPlan, executeProviderAdapters } from "./provider-adapters.js";
@@ -216,6 +220,9 @@ function needsPermission(state, token) {
       interaction_id: state.interaction_id,
       revision: state.revision,
       resume_token: token,
+      source_report: manifestSourceReportIdentity(
+        state.manifest.execution.source_report_id.value,
+      ),
     },
     history: structuredClone(state.history),
   };
@@ -820,6 +827,9 @@ async function resumeVerify(cwd, options, dependencies) {
         schema_version: VERIFY_INTERACTION_SCHEMA,
         interaction_id: state.interaction_id,
         revision: nextState.revision,
+        source_report: manifestSourceReportIdentity(
+          state.manifest.execution.source_report_id.value,
+        ),
       },
       history: {
         ...state.history,
@@ -852,6 +862,9 @@ async function resumeVerify(cwd, options, dependencies) {
       schema_version: VERIFY_INTERACTION_SCHEMA,
       interaction_id: state.interaction_id,
       revision: nextState.revision,
+      source_report: manifestSourceReportIdentity(
+        state.manifest.execution.source_report_id.value,
+      ),
     },
     baseline,
     public_evidence: publicEvidence,
@@ -881,6 +894,10 @@ async function resumeVerify(cwd, options, dependencies) {
       schema_version: VERIFY_INTERACTION_SCHEMA,
       interaction_id: state.interaction_id,
       revision: nextState.revision,
+      source_report: manifestSourceReportIdentity(
+        state.manifest.execution.source_report_id.value,
+      ),
+      current_report: currentReportIdentity(reportPackage.report.report_id),
     },
     history: {
       ...state.history,

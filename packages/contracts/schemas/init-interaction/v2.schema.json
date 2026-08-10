@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/init-interaction/v2",
+  "title": "LaunchRally Initialization Interaction v2",
+  "type": "object",
+  "required": ["schema_version", "resume_token", "source_report"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/init-interaction/v2" },
+    "resume_token": { "type": "string", "minLength": 20 },
+    "source_report": {
+      "type": "object",
+      "required": ["report_id", "role"],
+      "properties": {
+        "report_id": { "type": "string", "minLength": 1 },
+        "role": { "const": "manifest_source" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

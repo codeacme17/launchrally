@@ -8,6 +8,7 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 import {
+  VERIFY_INTERACTION_SCHEMA,
   assertValidReportPackage,
   assertValidVerificationResult,
 } from "../packages/contracts/src/index.js";
@@ -111,6 +112,11 @@ test("full Verify discloses fresh Evidence permissions without mutating history 
   assert.equal(result.contract, "launchrally.dev/cli/v2");
   assert.equal(result.status, "needs_permission");
   assert.equal(result.operation, "verify");
+  assert.equal(VERIFY_INTERACTION_SCHEMA, "launchrally.dev/verify-interaction/v2");
+  assert.deepEqual(result.interaction.source_report, {
+    report_id: source.report.report_id,
+    role: "manifest_source",
+  });
   assert.deepEqual(result.verification_scope, {
     mode: "full",
     whole_release: true,
@@ -324,6 +330,14 @@ test("full Verify recollects Evidence and creates a distinct immutable comparabl
   assert.equal(result.history.current_report_id, result.report.report_id);
   assert.equal(result.comparison.source_report_id, source.report.report_id);
   assert.equal(result.comparison.current_report_id, result.report.report_id);
+  assert.deepEqual(result.interaction.source_report, {
+    report_id: source.report.report_id,
+    role: "manifest_source",
+  });
+  assert.deepEqual(result.interaction.current_report, {
+    report_id: result.report.report_id,
+    role: "current",
+  });
   assert.deepEqual(result.manifest_drift, []);
   assertValidReportPackage(result);
   assertValidVerificationResult(result);
@@ -1661,6 +1675,27 @@ test("Verification Result validation rejects malformed history and drift structu
   );
   assert.throws(
     () => assertValidVerificationResult(malformedEvidence),
+    /incomplete or invalid/u,
+  );
+
+  const fullPermission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const fullResult = await runVerify(directory, "0.1.0", {
+    resume_token: fullPermission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const historicalV2 = structuredClone(fullResult);
+  historicalV2.interaction.schema_version = "launchrally.dev/verify-interaction/v1";
+  delete historicalV2.interaction.source_report;
+  delete historicalV2.interaction.current_report;
+  assert.equal(assertValidVerificationResult(historicalV2), true);
+
+  const malformedCurrentIdentity = structuredClone(fullResult);
+  malformedCurrentIdentity.interaction.current_report.report_id = "different-report";
+  assert.throws(
+    () => assertValidVerificationResult(malformedCurrentIdentity),
     /incomplete or invalid/u,
   );
 });

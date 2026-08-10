@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/verify-interaction/v2",
+  "title": "LaunchRally Verify Interaction v2",
+  "type": "object",
+  "required": ["schema_version", "interaction_id", "revision", "source_report"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/verify-interaction/v2" },
+    "interaction_id": { "type": "string", "minLength": 1 },
+    "revision": { "type": "integer", "minimum": 1 },
+    "resume_token": { "type": "string", "minLength": 20 },
+    "source_report": { "$ref": "#/$defs/sourceReport" },
+    "current_report": { "$ref": "#/$defs/currentReport" }
+  },
+  "$defs": {
+    "sourceReport": {
+      "type": "object",
+      "required": ["report_id", "role"],
+      "properties": {
+        "report_id": { "type": "string", "minLength": 1 },
+        "role": { "const": "manifest_source" }
+      },
+      "additionalProperties": false
+    },
+    "currentReport": {
+      "type": "object",
+      "required": ["report_id", "role"],
+      "properties": {
+        "report_id": { "type": "string", "minLength": 1 },
+        "role": { "const": "current" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
