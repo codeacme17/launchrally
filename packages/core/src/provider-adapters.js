@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
 
 import { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
 import { assertSafeEvidenceArtifact } from "./evidence-artifact.js";
@@ -299,6 +299,15 @@ function groupedRoles(providerRoles) {
   return [...providers.entries()].sort(([left], [right]) => left.localeCompare(right));
 }
 
+function disclosedCommands(request, adapter) {
+  const registered = adapter.commands ?? [adapter.command];
+  const commands = request.commands ?? [request.command];
+  return isDeepStrictEqual(request.command, registered[0])
+    && isDeepStrictEqual(commands, registered)
+    ? commands
+    : null;
+}
+
 export function createProviderAdapterPlan(providerRoles = []) {
   return {
     contract_version: PROVIDER_ADAPTER_CONTRACT,
@@ -351,7 +360,13 @@ function gap(request, reason_code, reason) {
 
 async function defaultRunner(command, cwd, { signal } = {}) {
   throwIfAborted(signal);
-  return execFileAsync(command.executable, command.arguments, {
+  const invocation = process.platform === "win32"
+    ? {
+      executable: process.env.ComSpec ?? "cmd.exe",
+      arguments: ["/d", "/s", "/c", command.executable, ...command.arguments],
+    }
+    : command;
+  return execFileAsync(invocation.executable, invocation.arguments, {
     cwd,
     encoding: "utf8",
     maxBuffer: MAX_OUTPUT_BYTES,
@@ -463,10 +478,19 @@ export async function executeProviderAdapters({
     }
 
     const adapter = ADAPTERS[request.provider];
+    const commands = disclosedCommands(request, adapter);
+    if (!commands) {
+      verification_gaps.push(gap(
+        request,
+        "adapter_error",
+        `The disclosed Provider command sequence for ${request.provider} did not match ${request.adapter_version}; no Provider command was run.`,
+      ));
+      continue;
+    }
     active_adapter_versions.push(request.adapter_version);
     try {
       const commandResults = [];
-      for (const command of request.commands ?? [request.command]) {
+      for (const command of commands) {
         const result = await runner(command, cwd, { signal });
         throwIfAborted(signal);
         if (typeof result?.stdout !== "string") {
@@ -500,7 +524,7 @@ export async function executeProviderAdapters({
           exact_target: request.target,
           ...(adapter.commands
             ? {
-              commands: request.commands.map((command) => ({
+              commands: commands.map((command) => ({
                 executable: command.executable,
                 arguments: [...command.arguments],
               })),

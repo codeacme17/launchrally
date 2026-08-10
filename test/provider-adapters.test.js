@@ -230,6 +230,54 @@ test("Clerk application metadata becomes minimized Machine Evidence", async () =
   assert.doesNotMatch(JSON.stringify(result), /publishable_key|billing_plan/u);
 });
 
+test("a schema-compatible single-command request uses its disclosed command for provenance", async () => {
+  const plan = createProviderAdapterPlan([
+    { provider: "clerk", role: "authentication" },
+  ]);
+  const disclosedCommand = structuredClone(plan.requests[0].command);
+  delete plan.requests[0].commands;
+
+  const result = await executeProviderAdapters({
+    cwd: "/tmp/example",
+    plan,
+    authorization_plan: approvals(plan),
+    runner: async () => ({
+      stdout: JSON.stringify([{
+        application_id: "app_123",
+        name: "Web application",
+        instances: [],
+      }]),
+    }),
+  });
+
+  assert.deepEqual(result.verification_gaps, []);
+  assert.deepEqual(result.evidence[0].provenance.commands, [disclosedCommand]);
+});
+
+test("incomplete or altered command sequences are rejected before Provider execution", async () => {
+  const incomplete = createProviderAdapterPlan([{ provider: "neon", role: "data" }]);
+  delete incomplete.requests[0].commands;
+  const altered = createProviderAdapterPlan([{ provider: "neon", role: "data" }]);
+  altered.requests[0].commands[0].arguments = ["projects", "delete"];
+
+  for (const plan of [incomplete, altered]) {
+    let calls = 0;
+    const result = await executeProviderAdapters({
+      cwd: "/tmp/example",
+      plan,
+      authorization_plan: approvals(plan),
+      runner: async () => {
+        calls += 1;
+        return { stdout: "[]" };
+      },
+    });
+
+    assert.equal(calls, 0);
+    assert.equal(result.evidence.length, 0);
+    assert.equal(result.verification_gaps[0].reason_code, "adapter_error");
+  }
+});
+
 test("Neon project, branch, and database metadata becomes minimized Machine Evidence", async () => {
   const plan = createProviderAdapterPlan([{ provider: "neon", role: "data" }]);
   const secret = "postgresql://secret-connection-string";
@@ -691,14 +739,14 @@ test("the default Provider subprocess runner terminates on abort", async () => {
   const marker = path.join(directory, "started");
   const executable = path.join(directory, "wrangler");
   await writeFile(executable, [
-    `#!${process.execPath}`,
+    "#!/usr/bin/env node",
     `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "started");`,
     "setInterval(() => {}, 1000);",
     "",
   ].join("\n"));
   await chmod(executable, 0o755);
   const originalPath = process.env.PATH;
-  process.env.PATH = directory;
+  process.env.PATH = `${directory}${path.delimiter}${originalPath ?? ""}`;
   const plan = createProviderAdapterPlan([{ provider: "cloudflare", role: "deployment" }]);
   const controller = new AbortController();
   let execution;

@@ -222,7 +222,7 @@ async function createProviderCommandStub(executableName, stdout) {
     );
   } else {
     const executable = path.join(directory, executableName);
-    await writeFile(executable, `#!${process.execPath}\n${await readFile(script, "utf8")}`);
+    await writeFile(executable, `#!/usr/bin/env node\n${await readFile(script, "utf8")}`);
     await chmod(executable, 0o755);
   }
   return directory;
