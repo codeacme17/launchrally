@@ -72,6 +72,24 @@ async function fixtureWithCliDependency(version = "0.1.0") {
   return directory;
 }
 
+async function currentCliPackage() {
+  return JSON.parse(await readFile(
+    path.resolve("packages/cli/package.json"),
+    "utf8",
+  ));
+}
+
+async function prepareNpmChangesWithCliDependencies(request, dependencies) {
+  const changes = await prepareNpmChanges(request);
+  const lockChange = changes.find(
+    ({ path: changedPath }) => changedPath.endsWith("package-lock.json"),
+  );
+  const lockfile = JSON.parse(lockChange.content);
+  lockfile.packages["node_modules/@launchrally/cli"].dependencies = dependencies;
+  lockChange.content = `${JSON.stringify(lockfile, null, 2)}\n`;
+  return changes;
+}
+
 async function completeAudit(directory) {
   const initial = await runAudit(directory, "0.1.0");
   const confirmation = await runAudit(directory, "0.1.0", {
@@ -141,6 +159,51 @@ test("Init adopts every ecosystem through an isolated committed npm toolchain", 
     )).devDependencies,
     { "@launchrally/cli": "0.1.0" },
   );
+});
+
+test("Init accepts the published CLI dependency graph", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const cliPackage = await currentCliPackage();
+
+  const preview = await runInit(
+    directory,
+    cliPackage.version,
+    { report_package: audit },
+    {
+      prepare_dependency_changes: (request) => prepareNpmChangesWithCliDependencies(
+        request,
+        cliPackage.dependencies,
+      ),
+    },
+  );
+
+  assert.equal(preview.status, "needs_confirmation");
+});
+
+test("Init rejects an unexpected direct CLI dependency", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const cliPackage = await currentCliPackage();
+  const dependencies = {
+    ...cliPackage.dependencies,
+    unexpected: "1.0.0",
+  };
+
+  const result = await runInit(
+    directory,
+    cliPackage.version,
+    { report_package: audit },
+    {
+      prepare_dependency_changes: (request) => prepareNpmChangesWithCliDependencies(
+        request,
+        dependencies,
+      ),
+    },
+  );
+
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "invalid_dependency_plan");
 });
 
 test("Init canonicalizes an existing toolchain without retaining lifecycle scripts", async () => {
