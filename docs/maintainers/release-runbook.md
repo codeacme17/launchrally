@@ -54,8 +54,8 @@ Create a protected annotated tag on that exact `main` commit and push only the
 tag:
 
 ```bash
-git tag --annotate v0.1.1 <approved-main-sha> --message "LaunchRally 0.1.1 Experimental"
-git push origin v0.1.1
+git tag --annotate v0.2.0 <approved-main-sha> --message "LaunchRally 0.2.0 Experimental"
+git push origin v0.2.0
 ```
 
 The release workflow independently rejects a lightweight tag, a tag whose

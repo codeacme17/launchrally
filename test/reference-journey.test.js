@@ -55,7 +55,7 @@ const adapters = [
 const directJourney = {
   cli: {
     package: "@launchrally/cli",
-    version: "0.1.1",
+    version: "0.2.0",
     contract: "launchrally.dev/cli/v2",
   },
   invocations: [
@@ -185,9 +185,9 @@ async function json(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
 }
 
-async function createRegistryNpmStub(version = "0.1.1") {
+async function createRegistryNpmStub(version = "0.2.0") {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-stub-"));
-  const lockfile = JSON.stringify(exactToolchainLock()).replaceAll("0.1.1", version);
+  const lockfile = JSON.stringify(exactToolchainLock()).replaceAll("0.2.0", version);
   const script = path.join(directory, "npm-stub.cjs");
   await writeFile(script, [
     'const fs = require("node:fs");',
@@ -205,6 +205,23 @@ async function createRegistryNpmStub(version = "0.1.1") {
     );
   } else {
     const executable = path.join(directory, "npm");
+    await writeFile(executable, `#!/usr/bin/env node\n${await readFile(script, "utf8")}`);
+    await chmod(executable, 0o755);
+  }
+  return directory;
+}
+
+async function createProviderCommandStub(executableName, stdout) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally provider stub-"));
+  const script = path.join(directory, "provider-stub.cjs");
+  await writeFile(script, `process.stdout.write(${JSON.stringify(stdout)});\n`);
+  if (process.platform === "win32") {
+    await writeFile(
+      path.join(directory, `${executableName}.cmd`),
+      `@echo off\r\n"${process.execPath}" "%~dp0provider-stub.cjs" %*\r\n`,
+    );
+  } else {
+    const executable = path.join(directory, executableName);
     await writeFile(executable, `#!/usr/bin/env node\n${await readFile(script, "utf8")}`);
     await chmod(executable, 0o755);
   }
@@ -313,6 +330,7 @@ async function executeReferenceJourney(
     remediationRequested = true,
     verifyAfterRemediation = true,
     publicPermission = "denied",
+    providerPermissions = {},
     productionTarget = "https://example.com",
     fixturePath = null,
     providerRoles = [],
@@ -340,7 +358,7 @@ async function executeReferenceJourney(
       public_verification: publicPermission,
       ...Object.fromEntries(providerRoles.map(({ provider }) => [
         `provider_read:${provider}`,
-        publicPermission,
+        providerPermissions[provider] ?? publicPermission,
       ])),
     }),
   };
@@ -754,6 +772,92 @@ test("the direct CLI completes the full Reference Journey for every coverage rep
   } finally {
     await rm(network.directory, { recursive: true, force: true });
   }
+});
+
+test("the packaged JSON journey approves one new Provider read and independently denies another", async () => {
+  const stub = await createProviderCommandStub("clerk", JSON.stringify([{
+    application_id: "app_reference",
+    name: "Reference app",
+    instances: [{
+      instance_id: "ins_reference",
+      environment_type: "production",
+      secret_key: "must-not-survive",
+    }],
+  }]));
+  const fixture = await createFixture("provider-shadow-source");
+  const shadowScript = path.join(fixture, "shadow-provider.cjs");
+  await writeFile(shadowScript, `process.stdout.write(${JSON.stringify(JSON.stringify([{
+    application_id: "app_shadow",
+    name: "Repository shadow",
+  }]))});\n`);
+  await writeFile(
+    path.join(fixture, "clerk.cmd"),
+    `@echo off\r\n"${process.execPath}" "%~dp0shadow-provider.cjs" %*\r\n`,
+  );
+  try {
+    const result = await executeReferenceJourney(
+      "provider-permission-reference",
+      directJourney,
+      { ...process.env, PATH: `${stub}${path.delimiter}${process.env.PATH ?? ""}` },
+      {
+        providerRoles: [
+          { provider: "clerk", role: "authentication" },
+          { provider: "resend", role: "email" },
+        ],
+        providerPermissions: {
+          clerk: "approved",
+          resend: "denied",
+        },
+        fixturePath: fixture,
+        publicPermission: "denied",
+      },
+    );
+    const requests = result.semantics.audit.report.scope.provider_verification.requests;
+    assert.deepEqual(requests.map(({ provider, decision }) => ({ provider, decision })), [
+      { provider: "clerk", decision: "approved" },
+      { provider: "resend", decision: "denied" },
+    ]);
+    const providerEvidence = result.semantics.audit.evidence_index.entries
+      .filter(({ evidence_kind }) => evidence_kind === "machine_evidence")
+      .map(({ normalized_artifact }) => normalized_artifact);
+    assert.deepEqual(providerEvidence.map(({ provider }) => provider), ["clerk"]);
+    assert.equal(providerEvidence[0].facts.applications[0].application_id, "app_reference");
+    assert.equal(
+      result.semantics.audit.report.results.verification_gaps.some(
+        ({ check_id, reason_code }) =>
+          check_id === "provider.resend.metadata" && reason_code === "permission_denied",
+      ),
+      true,
+    );
+    assert.doesNotMatch(JSON.stringify(result), /must-not-survive/u);
+  } finally {
+    await rm(stub, { recursive: true, force: true });
+    await rm(fixture, { recursive: true, force: true });
+  }
+});
+
+test("the packaged JSON journey reports missing approved Provider tooling", async () => {
+  const result = await executeReferenceJourney(
+    "provider-missing-tool-reference",
+    directJourney,
+    { ...process.env, PATH: "" },
+    {
+      initialize: false,
+      remediationRequested: false,
+      verifyAfterRemediation: false,
+      providerRoles: [{ provider: "clerk", role: "authentication" }],
+      providerPermissions: { clerk: "approved" },
+      publicPermission: "denied",
+    },
+  );
+
+  assert.equal(
+    result.semantics.audit.report.results.verification_gaps.some(
+      ({ check_id, reason_code }) =>
+        check_id === "provider.clerk.metadata" && reason_code === "missing_provider_tool",
+    ),
+    true,
+  );
 });
 
 test("direct and Skill journeys preserve semantics with complete public-read permission", async () => {

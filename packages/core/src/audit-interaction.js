@@ -17,9 +17,12 @@ import {
 } from "./support-layers.js";
 
 const PROVIDER_SIGNALS = Object.freeze([
+  { prefix: "CLERK_", provider: "clerk", role: "authentication" },
   { prefix: "CLOUDFLARE_", provider: "cloudflare", role: "deployment" },
+  { prefix: "NEON_", provider: "neon", role: "data" },
   { prefix: "NETLIFY_", provider: "netlify", role: "deployment" },
   { prefix: "POSTHOG_", provider: "posthog", role: "analytics" },
+  { prefix: "RESEND_", provider: "resend", role: "email" },
   { prefix: "SENTRY_", provider: "sentry", role: "observability" },
   { prefix: "STRIPE_", provider: "stripe", role: "payments" },
   { prefix: "SUPABASE_", provider: "supabase", role: "data" },
@@ -422,6 +425,7 @@ function authorizationPlan(answers) {
           target: request.target,
           requested_fields: request.requested_fields,
           command: request.command,
+          commands: request.commands,
         },
       }),
     ),

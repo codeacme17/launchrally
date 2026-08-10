@@ -31,8 +31,21 @@ const PUBLIC_OUTCOMES = new Set([
   "http_status_failure",
 ]);
 const PROVIDERS = Object.freeze({
+  clerk: {
+    adapter_version: "clerk-read/v1",
+    contract_versions: ["provider-adapter-contract/v2"],
+    target: "authenticated_workspace_applications",
+    commands: [{ executable: "clerk", arguments: ["apps", "list", "--json"] }],
+    requested_fields: [
+      "applications[].application_id",
+      "applications[].name",
+      "applications[].instances[].instance_id",
+      "applications[].instances[].environment_type",
+    ],
+  },
   cloudflare: {
     adapter_version: "cloudflare-read/v1",
+    contract_versions: ["provider-adapter-contract/v1", "provider-adapter-contract/v2"],
     target: "configured_worker_deployments",
     executable: "wrangler",
     arguments: ["deployments", "list", "--json"],
@@ -45,8 +58,85 @@ const PROVIDERS = Object.freeze({
       "deployments[].versions[].percentage",
     ],
   },
+  neon: {
+    adapter_version: "neon-read/v1",
+    contract_versions: ["provider-adapter-contract/v2"],
+    target: "authenticated_scope_and_linked_project_metadata",
+    commands: [
+      {
+        executable: "neonctl",
+        arguments: ["projects", "list", "--output", "json", "--no-analytics"],
+      },
+      {
+        executable: "neonctl",
+        arguments: ["branches", "list", "--output", "json", "--no-analytics"],
+      },
+      {
+        executable: "neonctl",
+        arguments: ["databases", "list", "--output", "json", "--no-analytics"],
+      },
+    ],
+    requested_fields: [
+      "projects[].id",
+      "projects[].name",
+      "projects[].region_id",
+      "projects[].created_at",
+      "branches[].id",
+      "branches[].name",
+      "branches[].current_state",
+      "branches[].created_at",
+      "branches[].expires_at",
+      "databases[].name",
+      "databases[].created_at",
+    ],
+  },
+  resend: {
+    adapter_version: "resend-read/v1",
+    contract_versions: ["provider-adapter-contract/v2"],
+    target: "authenticated_team_domains_and_recent_email_status",
+    commands: [
+      {
+        executable: "resend",
+        arguments: ["domains", "list", "--limit", "10", "--json"],
+      },
+      {
+        executable: "resend",
+        arguments: ["emails", "list", "--limit", "10", "--json"],
+      },
+    ],
+    requested_fields: [
+      "domains[].id",
+      "domains[].name",
+      "domains[].status",
+      "domains[].region",
+      "domains[].created_at",
+      "domains[].capabilities.sending",
+      "domains[].capabilities.receiving",
+      "emails[].id",
+      "emails[].created_at",
+      "emails[].last_event",
+      "emails[].scheduled_at",
+    ],
+  },
+  sentry: {
+    adapter_version: "sentry-read/v1",
+    contract_versions: ["provider-adapter-contract/v2"],
+    target: "configured_organization_projects_and_recent_releases",
+    commands: [
+      { executable: "sentry-cli", arguments: ["projects", "list"] },
+      { executable: "sentry-cli", arguments: ["releases", "list", "--raw"] },
+    ],
+    requested_fields: [
+      "projects[].id",
+      "projects[].slug",
+      "projects[].team",
+      "projects[].name",
+      "releases[].version",
+    ],
+  },
   vercel: {
     adapter_version: "vercel-read/v1",
+    contract_versions: ["provider-adapter-contract/v1", "provider-adapter-contract/v2"],
     target: "authenticated_scope_projects",
     executable: "vercel",
     arguments: ["project", "ls", "--json"],
@@ -90,6 +180,23 @@ function optionalExactKeys(value, required, optional = []) {
 }
 
 function safeProviderFacts(artifact) {
+  if (artifact.provider === "clerk") {
+    return exactKeys(artifact.facts, ["applications"])
+      && Array.isArray(artifact.facts.applications)
+      && artifact.facts.applications.length <= 20
+      && artifact.facts.applications.every((application) =>
+        optionalExactKeys(application, [], ["application_id", "name", "instances"])
+        && (!application.instances || (
+          Array.isArray(application.instances)
+          && application.instances.length <= 10
+          && application.instances.every((instance) =>
+            optionalExactKeys(instance, [], ["instance_id", "environment_type"])
+            && Object.values(instance).every(safeScalar))
+        ))
+        && Object.entries(application)
+          .filter(([key]) => key !== "instances")
+          .every(([, value]) => safeScalar(value)));
+  }
   if (artifact.provider === "cloudflare") {
     return exactKeys(artifact.facts, ["deployments"])
       && Array.isArray(artifact.facts.deployments)
@@ -107,6 +214,63 @@ function safeProviderFacts(artifact) {
             optionalExactKeys(version, [], ["version_id", "percentage"])
             && Object.values(version).every(safeScalar))
         )));
+  }
+  if (artifact.provider === "neon") {
+    return exactKeys(artifact.facts, ["projects", "branches", "databases"])
+      && Array.isArray(artifact.facts.projects)
+      && artifact.facts.projects.length <= 20
+      && artifact.facts.projects.every((project) =>
+        optionalExactKeys(project, [], ["id", "name", "region_id", "created_at"])
+        && Object.values(project).every(safeScalar))
+      && Array.isArray(artifact.facts.branches)
+      && artifact.facts.branches.length <= 20
+      && artifact.facts.branches.every((branch) =>
+        optionalExactKeys(
+          branch,
+          [],
+          ["id", "name", "current_state", "created_at", "expires_at"],
+        ) && Object.values(branch).every(safeScalar))
+      && Array.isArray(artifact.facts.databases)
+      && artifact.facts.databases.length <= 20
+      && artifact.facts.databases.every((database) =>
+        optionalExactKeys(database, [], ["name", "created_at"])
+        && Object.values(database).every(safeScalar));
+  }
+  if (artifact.provider === "resend") {
+    return exactKeys(artifact.facts, ["domains", "emails"])
+      && Array.isArray(artifact.facts.domains)
+      && artifact.facts.domains.length <= 10
+      && artifact.facts.domains.every((domain) =>
+        optionalExactKeys(
+          domain,
+          [],
+          ["id", "name", "status", "region", "created_at", "capabilities"],
+        )
+        && (!domain.capabilities || (
+          optionalExactKeys(domain.capabilities, [], ["sending", "receiving"])
+          && Object.values(domain.capabilities).every(safeScalar)
+        ))
+        && Object.entries(domain)
+          .filter(([key]) => key !== "capabilities")
+          .every(([, value]) => safeScalar(value)))
+      && Array.isArray(artifact.facts.emails)
+      && artifact.facts.emails.length <= 10
+      && artifact.facts.emails.every((email) =>
+        optionalExactKeys(email, [], ["id", "created_at", "last_event", "scheduled_at"])
+        && Object.values(email).every(safeScalar));
+  }
+  if (artifact.provider === "sentry") {
+    return exactKeys(artifact.facts, ["projects", "releases"])
+      && Array.isArray(artifact.facts.projects)
+      && artifact.facts.projects.length <= 20
+      && artifact.facts.projects.every((project) =>
+        optionalExactKeys(project, [], ["id", "slug", "team", "name"])
+        && Object.values(project).every(safeScalar))
+      && Array.isArray(artifact.facts.releases)
+      && artifact.facts.releases.length <= 20
+      && artifact.facts.releases.every((release) =>
+        exactKeys(release, ["version"])
+        && safeScalar(release.version));
   }
   if (artifact.provider === "vercel") {
     return exactKeys(artifact.facts, ["projects"])
@@ -243,6 +407,7 @@ export function isSafeEvidenceArtifact(artifact) {
       && safePublicDetails(artifact);
   }
   if (artifact.kind === "machine_evidence") {
+    const provider = PROVIDERS[artifact.provider];
     return exactKeys(artifact, [
       "kind",
       "provider",
@@ -253,26 +418,40 @@ export function isSafeEvidenceArtifact(artifact) {
       "collected_at",
       "provenance",
     ])
-      && exactKeys(artifact.provenance, [
-        "collector",
-        "provider",
-        "adapter_version",
-        "exact_target",
-        "executable",
-        "arguments",
-        "collected_at",
-      ])
-      && Object.hasOwn(PROVIDERS, artifact.provider)
-      && artifact.adapter_version === PROVIDERS[artifact.provider].adapter_version
-      && artifact.target === PROVIDERS[artifact.provider].target
-      && isDeepStrictEqual(artifact.requested_fields, PROVIDERS[artifact.provider].requested_fields)
+      && provider
+      && exactKeys(
+        artifact.provenance,
+        provider.commands
+          ? [
+            "collector",
+            "provider",
+            "adapter_version",
+            "exact_target",
+            "commands",
+            "collected_at",
+          ]
+          : [
+            "collector",
+            "provider",
+            "adapter_version",
+            "exact_target",
+            "executable",
+            "arguments",
+            "collected_at",
+          ],
+      )
+      && artifact.adapter_version === provider.adapter_version
+      && artifact.target === provider.target
+      && isDeepStrictEqual(artifact.requested_fields, provider.requested_fields)
       && isoTimestamp(artifact.collected_at)
-      && artifact.provenance.collector === "provider-adapter-contract/v1"
+      && provider.contract_versions.includes(artifact.provenance.collector)
       && artifact.provenance.provider === artifact.provider
       && artifact.provenance.adapter_version === artifact.adapter_version
       && artifact.provenance.exact_target === artifact.target
-      && artifact.provenance.executable === PROVIDERS[artifact.provider].executable
-      && isDeepStrictEqual(artifact.provenance.arguments, PROVIDERS[artifact.provider].arguments)
+      && (provider.commands
+        ? isDeepStrictEqual(artifact.provenance.commands, provider.commands)
+        : artifact.provenance.executable === provider.executable
+          && isDeepStrictEqual(artifact.provenance.arguments, provider.arguments))
       && artifact.provenance.collected_at === artifact.collected_at
       && safeProviderFacts(artifact);
   }

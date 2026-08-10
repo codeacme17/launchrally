@@ -65,7 +65,7 @@
       "type": "object",
       "required": ["contract_version", "requests"],
       "properties": {
-        "contract_version": { "const": "provider-adapter-contract/v1" },
+        "contract_version": { "enum": ["provider-adapter-contract/v1", "provider-adapter-contract/v2"] },
         "requests": {
           "type": "array",
           "items": { "$ref": "#/$defs/providerAdapterRequest" }
@@ -153,10 +153,28 @@
               "type": "object",
               "required": ["executable", "arguments"],
               "properties": {
-                "executable": { "enum": ["wrangler", "vercel"] },
+                "executable": { "enum": ["clerk", "neonctl", "resend", "sentry-cli", "wrangler", "vercel"] },
                 "arguments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
               },
               "additionalProperties": false
+            }
+          ]
+        },
+        "commands": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["executable", "arguments"],
+                "properties": {
+                  "executable": { "enum": ["clerk", "neonctl", "resend", "sentry-cli", "wrangler", "vercel"] },
+                  "arguments": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 }
+                },
+                "additionalProperties": false
+              }
             }
           ]
         }

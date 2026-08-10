@@ -34,8 +34,8 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 ## Start safely
 
 1. Resolve the exact repository root without changing files.
-2. Require `@launchrally/cli@0.1.1` and check a project-pinned CLI first.
-3. Before any journey command, invoke that executable with `--version --json` and require `contract: "launchrally.dev/cli/v2"`, `operation: "version"`, `status: "completed"`, and `cli_version: "0.1.1"`; stop on any mismatch.
+2. Require `@launchrally/cli@0.2.0` and check a project-pinned CLI first.
+3. Before any journey command, invoke that executable with `--version --json` and require `contract: "launchrally.dev/cli/v2"`, `operation: "version"`, `status: "completed"`, and `cli_version: "0.2.0"`; stop on any mismatch.
 4. If the executable is absent, disclose the exact package, version, source, and command before proposing `npm exec`.
 5. Preserve the package manager's download confirmation.
 6. Invoke Agent Mode with structured output and handle the returned state.
