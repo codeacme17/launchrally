@@ -1,6 +1,6 @@
 {
   "name": "@launchrally/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Deterministic LaunchRally audit and verification core",
   "license": "Apache-2.0",
   "type": "module",
@@ -10,7 +10,7 @@
     "src/"
   ],
   "dependencies": {
-    "@launchrally/contracts": "0.1.0"
+    "@launchrally/contracts": "0.1.1"
   },
   "repository": {
     "type": "git",

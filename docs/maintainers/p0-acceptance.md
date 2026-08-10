@@ -5,7 +5,7 @@ product-planning sources are intentionally local and ignored under
 `docs/product/`; therefore every release-blocking requirement needed by CI
 must be represented here and in the linked GitHub issues.
 
-P0 is Product Complete and `0.1.0` is publicly available as an Experimental
+P0 is Product Complete and `0.1.1` is publicly available as an Experimental
 release. Telemetry-Free Validation is collecting directional signals and P0
 Validated remains false.
 
@@ -15,12 +15,14 @@ The canonical requirement-ID registry is independently committed in
 versioned contracts, implementation paths, named tests, tracking issue,
 status, and mandatory release gates. CI runs
 `npm run validate:acceptance` so removed requirements, renamed tests, missing
-paths, stale status, and omitted safety gates fail closed. Tagged publication
-also passes `--require-publish-ready`. That transition requires the approved
-Release Candidate identity and every pre-publication requirement to be
-Complete. Before publication, only publication, exact public smoke, and later
-Telemetry-Free Validation requirements could remain Open. The completed matrix
-now passes the stricter `--require-release-ready` gate.
+paths, stale status, and omitted safety gates fail closed. The initial tagged
+publication passed `--require-publish-ready`; that transition required the
+approved Release Candidate identity and every pre-publication requirement to
+be Complete. Before the first publication, only publication, exact public
+smoke, and later Telemetry-Free Validation requirements could remain Open.
+Subsequent tagged releases pass the stricter `--require-release-ready` gate,
+which requires Product Complete status and every requirement to remain
+Complete.
 
 ## Status model
 

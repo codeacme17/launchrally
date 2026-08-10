@@ -2,7 +2,7 @@
   "schema_version": "launchrally.dev/reference-journey/v1",
   "cli": {
     "package": "@launchrally/cli",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "contract": "launchrally.dev/cli/v2"
   },
   "invocations": [

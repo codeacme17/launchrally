@@ -42,14 +42,14 @@ async function fixture() {
   return directory;
 }
 
-async function fixtureWithCliDependency() {
+async function fixtureWithCliDependency(version = "0.1.0") {
   const directory = await fixture();
   const changes = await prepareNpmChanges({
     package_json: `${JSON.stringify({
       name: "launchrally-toolchain",
       private: true,
       version: "0.0.0",
-      devDependencies: { "@launchrally/cli": "0.1.0" },
+      devDependencies: { "@launchrally/cli": version },
     }, null, 2)}\n`,
     package_path: ".launchrally/toolchain/package.json",
     lockfile: {
@@ -63,7 +63,7 @@ async function fixtureWithCliDependency() {
       }, null, 2)}\n`,
     },
     dependency: "@launchrally/cli",
-    version: "0.1.0",
+    version,
   });
   for (const change of changes) {
     await mkdir(path.dirname(path.join(directory, change.path)), { recursive: true });
@@ -1838,7 +1838,7 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
 });
 
 test("the CLI previews a saved complete Audit and decline applies nothing", async () => {
-  const directory = await fixtureWithCliDependency();
+  const directory = await fixtureWithCliDependency("0.1.1");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-report-file-"));
   const reportPath = path.join(reportDirectory, "audit.json");
@@ -1879,7 +1879,7 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
 });
 
 test("Human Mode renders every exact initialization change before confirmation", async () => {
-  const directory = await fixtureWithCliDependency();
+  const directory = await fixtureWithCliDependency("0.1.1");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-human-report-"));
   const reportPath = path.join(reportDirectory, "audit.json");

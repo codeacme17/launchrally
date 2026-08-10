@@ -136,7 +136,7 @@ test("CI runs contract and clean journey gates on every required Node and OS tar
     assert.match(ci, new RegExp(command, "u"), command);
     assert.match(release, new RegExp(command, "u"), command);
   }
-  assert.match(release, /npm run validate:acceptance -- --require-publish-ready/u);
+  assert.match(release, /npm run validate:acceptance -- --require-release-ready/u);
   assert.match(release, /public-smoke:[\s\S]*needs: publish[\s\S]*npm run test:public-release/u);
   assert.match(release, /prerelease:[\s\S]*needs: public-smoke[\s\S]*gh release create/u);
 });
