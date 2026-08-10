@@ -55,7 +55,7 @@ const adapters = [
 const directJourney = {
   cli: {
     package: "@launchrally/cli",
-    version: "0.1.1",
+    version: "0.2.0",
     contract: "launchrally.dev/cli/v2",
   },
   invocations: [
@@ -185,9 +185,9 @@ async function json(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
 }
 
-async function createRegistryNpmStub(version = "0.1.1") {
+async function createRegistryNpmStub(version = "0.2.0") {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-stub-"));
-  const lockfile = JSON.stringify(exactToolchainLock()).replaceAll("0.1.1", version);
+  const lockfile = JSON.stringify(exactToolchainLock()).replaceAll("0.2.0", version);
   const script = path.join(directory, "npm-stub.cjs");
   await writeFile(script, [
     'const fs = require("node:fs");',
