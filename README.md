@@ -1,12 +1,17 @@
 # LaunchRally
 
-LaunchRally is a local-first, open-source launch readiness audit and verification tool for repository-owning AI builders.
+**Know what stands between your repository and a trustworthy launch.**
+
+[![Experimental release](https://img.shields.io/npm/v/@launchrally/cli/experimental?label=experimental)](https://www.npmjs.com/package/@launchrally/cli)
+[![CI](https://github.com/codeacme17/launchrally/actions/workflows/ci.yml/badge.svg)](https://github.com/codeacme17/launchrally/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Node.js 20.12+](https://img.shields.io/badge/node-%3E%3D20.12-339933.svg)](https://nodejs.org/)
+
+LaunchRally is a local-first, open-source launch-readiness audit and verification tool for repository-owning AI builders. It turns repository facts, declared launch intent, and explicitly approved read-only evidence into a deterministic assessment and an ordered path to verification.
+
+It needs no LaunchRally account, uses no default telemetry, and makes no repository, deployment, or Provider write during an Audit.
 
 > **Status: Experimental P0.** P0 is Product Complete and `0.2.1` is publicly available on the non-stable `experimental` channel. Telemetry-Free Validation is collecting aggregate directional signals; LaunchRally is not P0 Validated, and authority-expanding P1 implementation remains blocked.
-
-Use the [Quickstart](docs/getting-started/quickstart.md), browse the [documentation index](docs/README.md), understand the [Manifest, Report, and Evidence model](docs/concepts/data-model.md), and review the [permission and privacy boundaries](docs/concepts/privacy.md). Questions and voluntary field reports belong in [GitHub Discussions](https://github.com/codeacme17/launchrally/discussions); actionable defects belong in [GitHub Issues](https://github.com/codeacme17/launchrally/issues). See [SECURITY.md](SECURITY.md) for private vulnerability reports and [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes.
-
-This repository contains the Phase 0 Audit, post-Report initialization, read-only Launch Plan, bounded Provider guidance, and post-remediation Verify paths. It establishes package boundaries, the CLI interaction contract, shared Agent Skill packaging, a deterministic Web baseline, a policy-driven launch assessment, read-only public verification, approved Provider metadata reads, preview-first local adoption, deterministic remediation guidance, open Provider Decision Cards, and immutable verification history.
 
 ## First Audit
 
@@ -16,98 +21,78 @@ Run the exact public Experimental CLI without a global installation:
 npm exec --package=@launchrally/cli@0.2.1 -- rally audit --json --cwd .
 ```
 
-For repository development, the equivalent source-checkout command is:
+LaunchRally is local-first: the Audit examines supported repository metadata through a boundary-checked Local Safe Scan, requests launch intent when it cannot be established safely, and returns a versioned interaction before any optional public or Provider read. It requires no LaunchRally account and the Audit performs no repository writes.
 
-```bash
-node packages/cli/bin/rally.js audit --json --cwd .
-```
+If npm needs to download the package, review and accept its normal package-manager confirmation. LaunchRally does not bypass that prompt, recommend a global install, or use a pipe-to-shell installer. Public verification and each Provider read remain separate, explicit permission decisions; denying one creates a visible Verification Gap instead of silently weakening the assessment.
 
-Neither path requires global installation or makes a project change. When npm needs to download the package, review and accept its normal package-manager confirmation; LaunchRally never bypasses that prompt. After a completed Audit, optional `rally init` previews an isolated exact npm toolchain under `.launchrally/toolchain` without changing application dependencies or their lockfiles.
+The completed Audit produces an immutable JSON Report Record, a Markdown Report View, and a separately versioned Evidence Index in CLI output. The assessment is `Launch Ready`, `Ready with Warnings`, `No Go`, or `Inconclusive`, depending on policy and the evidence actually collected. Nothing is adopted into the project unless you later save the Report, run `rally init`, inspect its exact preview, and confirm that separate change.
 
-For Codex and Claude Plugin installation, controlled updates, uninstallation, and artifact verification, see the [Install and release guide](docs/getting-started/install.md).
+The terminal below uses deterministic synthetic fixture output. Your result will reflect your repository, confirmed scope, evidence, and permission choices.
 
-For repository development, use the committed workspace lockfile:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/launchrally-terminal-dark.svg">
+  <img src="docs/assets/launchrally-terminal-light.svg" alt="LaunchRally terminal showing an Inconclusive audit with verification gaps and the next init command" width="760">
+</picture>
 
-```bash
-npm ci
-npm run build
-npm test
-```
+Continue with the [Quickstart](docs/getting-started/quickstart.md) for the complete interaction flow and safe ways to save the result.
 
-For runnable cross-ecosystem examples, use the [Coverage Acceptance Matrix](docs/reference/coverage-acceptance.md). Its JavaScript, non-JavaScript, split, multi-app, and custom fixtures are public demonstrations of the universal Baseline entry path, not a framework or Provider support allowlist.
+## How it works
 
-The first Audit invocation performs a Local Safe Scan and returns a versioned Audit Brief interaction. Unknown release intent becomes typed input, inferred values remain candidates until the builder confirms the complete Check plan, and public or Provider permissions are requested as separate boundaries. Resume tokens preserve repository scope and earlier decisions without repository writes.
+1. **Audit** — scan local facts, confirm scope, approve optional reads, and produce a deterministic assessment. See the [Quickstart](docs/getting-started/quickstart.md).
+2. **Plan or remediate** — initialize project-owned history only after preview, then turn confirmed Findings into ordered work. See the [Manifest, Report, and Evidence model](docs/concepts/data-model.md).
+3. **Verify** — recollect evidence after remediation and create a new immutable result without silently changing project intent. See the [permission and privacy boundaries](docs/concepts/privacy.md).
 
-After explicit confirmation and permission decisions, the Audit evaluates every Web Baseline Check against its declared severity, release-gate, evidence, freshness, and remediation-order policies. Critical failures are always gating; Major failures gate only under policy with confirmed scope; Moderate failures remain non-gating in Phase 0. Denied permissions and insufficient evidence become explicit Verification Gaps rather than aborting the Audit.
+## What it checks and produces
 
-The same deterministic policy result drives both the JSON Record and Markdown View. Current reports are `Launch Ready` when all applicable Checks pass, `Ready with Warnings` for non-gating Failed or Unverified results, `No Go` only for a gating failure backed by its qualifying Machine Evidence, and `Inconclusive` for gating Unverified results. Passed and Failed outcomes have distinct Evidence Requirements; a complete negative Local Safe Scan is recorded as provenance-bearing `local_observation` Evidence, while uncovered scope remains Unverified. Report currentness is re-evaluated when it is read from the clock, Manifest and repository digests, catalog and support versions, and Not Applicable evidence. A non-current Report carries no current Launch Assessment. The Action Queue contains only Failed Checks, ordered by severity, dependency-unblocking value, and core-journey impact; Verification Gaps contain only Unverified Checks.
+| Area | What LaunchRally does |
+| --- | --- |
+| Repository and release intent | Discovers supported local facts, then asks you to confirm inferred scope. |
+| Web launch baseline | Evaluates security, reliability, operability, and release-readiness Checks against versioned policy. |
+| Public and Provider evidence | Performs only the bounded, read-only operations you approve; missing evidence stays visible. |
+| Audit output | Returns a JSON Report Record, Markdown Report View, Evidence Index, Findings, and Verification Gaps. |
+| Follow-up work | Produces a deterministic Launch Plan and fresh full or targeted verification results. |
 
-Each completed Audit returns an immutable, time-stamped JSON Report Record with a time-sortable ID, a Markdown Report View generated only from that Record, and a separately versioned Evidence Index. The Record captures its exact scope, permissions, execution disclosure, results, provenance, and limitations. Evidence is content-addressed and referenced by digest and collection metadata; normalized artifacts live in the Index rather than becoming uncontrolled Report content. The complete Audit remains in CLI output and no LaunchRally project file is written until the builder separately previews and confirms `init`.
+The [Coverage Acceptance Matrix](docs/reference/coverage-acceptance.md) contains runnable JavaScript, non-JavaScript, split, multi-app, and custom representatives. It demonstrates the universal Baseline journey, not a framework or Provider support allowlist.
 
-Save a completed Agent Mode Audit and pass it to `rally init --report <path>`. Initialization first resolves the exact CLI into `.launchrally/toolchain/package.json` and `package-lock.json`, attempting npm's offline cache before requesting a separately disclosed read from `https://registry.npmjs.org`; lifecycle scripts remain disabled. It then displays exact before/after contents, digests, and diffs for every authoritative proposed change. Only `--confirm confirm` applies the previewed `.launchrally` Manifest and ignore rules, isolated toolchain, and complete source Report history. Application manifests and lockfiles are never changed. Report bundles become visible only after their canonical Record, View, and Evidence Index are staged completely; allowlisted safe Evidence is stored by SHA-256 address. Init does not write the non-authoritative current-Report cache. Declining, denied registry access, stale previews, and dependency-planning failures write nothing; interrupted partial writes are rolled back or recovered from the ignored ownership-bound transaction journal on the next `init`. Concurrent Init/recovery operations for the same repository fail safely instead of interleaving adoption. LaunchRally never stages or commits these project-owned files and never automatically prunes historical Reports or Evidence.
+## Safety and permissions
 
-Pass the same saved current Audit to `rally plan --report <path>`. The versioned Launch Plan preserves the Report Action Queue order and explains each confirmed Finding, its declared-release impact, investigation locations, remediation guidance, and required Evidence recollection. Verification Gaps remain separate investigation or permission work. Planning performs no source, deployment, Provider, or production mutation. Only an explicit `--handoff` assigns local remediation to the host Agent; it grants no external write authority and directs the builder back to Verify.
+- No LaunchRally account, private service, default telemetry, or mandatory Report upload.
+- Audit performs no repository writes; `init` is preview-first and requires a separate confirmation.
+- Local scan, public verification, and every Provider read are distinct authorization boundaries.
+- Environment values, credentials, raw package scripts, and uncontrolled Provider fields are not retained.
+- LaunchRally never installs Provider tools, initiates login, provisions infrastructure, deploys, stages, or commits changes.
 
-`providers` is a supporting advisory operation. It starts only from a supported Failed Check (`rally providers --report <path> --gap <check-id>`) or an existing confirmed Provider role whose Decision Card conflicts with newly confirmed constraints (`--role <role>`). Before showing recommendation brands, it validates and separately confirms budget, scale, region, existing stack, operational ability, and lock-in preference. The resulting `launchrally.dev/provider-guidance/v2` shortlist is advisory, unranked, and deterministic. Each open, versioned Decision Card records capability scope, fit and non-fit contexts, compatibility, operations, lock-in, cost-model caveats, official sources, review date, and explicit Unknowns; it never claims a universal best Provider or live pricing.
+Read the complete [privacy and permission model](docs/concepts/privacy.md) and [data model](docs/concepts/data-model.md) before using LaunchRally with sensitive repositories.
 
-Selecting a Card only previews a canonical `.launchrally/manifest.yaml` intent change. A second explicit confirmation records that local intent, replacing only the selected capability role and binding the decision to its source Report and versioned Card so Verify can distinguish it from unrelated Manifest Drift. The selection is not Machine Evidence, never marks a Check Passed, performs no account creation, install, login, provisioning, deployment, or Provider write, and always directs the builder to configure outside LaunchRally and return to Verify. A missing initialized Manifest, a declined selection, or a Manifest changed after preview writes nothing.
+## Commands and integrations
 
-After remediation, run `rally verify --report <path> --scope full`. Verify reads the initialized Manifest, discloses fresh public and Provider permission boundaries, and recollects Evidence instead of reusing live observations. Full verification atomically persists a new immutable Report and Evidence Index with an explicit comparison to the source history; a persistence failure returns recoverable structured output without claiming completion. Use `--scope targeted --checks '["check.id"]'` for selected Checks; targeted results are explicitly limited and never carry a whole-release Launch Assessment. Manifest/observed-state conflicts are reported as Manifest Drift and never update project intent silently.
+| Command or integration | Purpose | Guide |
+| --- | --- | --- |
+| `rally audit` | Assess confirmed launch scope from local and approved read-only evidence. | [Quickstart](docs/getting-started/quickstart.md) |
+| `rally init` | Preview and confirm isolated `.launchrally` project adoption. | [Initialization](skills/launchrally/references/init.md) |
+| `rally plan` | Turn current Findings into ordered, read-only remediation guidance. | [Planning](skills/launchrally/references/plan.md) |
+| `rally providers` | Compare advisory Provider Decision Cards after confirming constraints. | [Provider guidance](skills/launchrally/references/plan.md) |
+| `rally verify` | Recollect evidence and record a fresh full or targeted result. | [Verification](skills/launchrally/references/verify.md) |
+| Codex and Claude | Install, update, remove, and validate the Agent adapters. | [Install and release guide](docs/getting-started/install.md) |
 
-Cloudflare, Clerk, Neon, Resend, Sentry, and Vercel have versioned, read-only Provider Adapters. Before approval, the Audit discloses every existing CLI executable, exact argument sequence, target, and allowlisted retained field for that Provider. Compound reads remain one independently default-denied Provider permission:
+## Packages
 
-- Clerk runs `clerk apps list --json` and retains application IDs, names, and instance environment metadata; publishable and secret keys are discarded.
-- Neon runs JSON `projects list`, `branches list`, and `databases list` commands with analytics disabled. Branch and database reads use the existing linked-project or single-project CLI context; missing context remains a Verification Gap.
-- Resend runs bounded JSON domain and sent-email list commands with telemetry disabled. It retains domain state and email delivery-status metadata, never recipients, senders, subjects, message IDs, DNS records, or credentials.
-- Sentry runs `projects list` and raw `releases list` through the existing CLI organization/project context with update checks disabled. It retains bounded project columns and release versions.
-- Cloudflare and Vercel keep their existing bounded JSON deployment and project reads.
+| Package | Audience and purpose |
+| --- | --- |
+| [`@launchrally/cli`](packages/cli/README.md) | Builders running the first Audit and the complete command journey. |
+| [`@launchrally/core`](packages/core/README.md) | Library authors embedding deterministic audit and verification logic. |
+| [`@launchrally/contracts`](packages/contracts/README.md) | Integrators consuming versioned schemas, constants, and protocol contracts. |
+| [`@launchrally/codex-plugin`](adapters/codex/launchrally/README.md) | Codex users installing the canonical LaunchRally Agent Skill adapter. |
+| [`@launchrally/claude-plugin`](adapters/claude/launchrally/README.md) | Claude Code users installing the canonical LaunchRally Agent Skill adapter. |
 
-Successful reads become provenance-backed Machine Evidence for the catalog-declared Provider Check. Denial, missing tools or authentication, unsupported account capability or linked context, malformed or oversized output, timeout, and Provider errors leave that Check Unverified without blocking the Web Baseline Audit. LaunchRally never installs a Provider tool, initiates login, supplies or retains credentials, or performs Provider writes.
+## Documentation and project links
 
-The Local Safe Scan collects provenance-backed facts from supported source and configuration files without retaining their contents in facts or outputs. It respects repository ignore rules and built-in exclusions for dependencies and build outputs, rejects binary and oversized artifacts, never follows symlinks, and stops at nested repository boundaries. Environment files are the deliberate ignore-rule exception: even a gitignored `.env*` file contributes variable names only. Package scripts likewise contribute script names rather than commands, so secret values cannot flow into snapshots, evidence, reports, terminal output, or errors.
-
-## Repository layout
-
-```text
-packages/
-  contracts/       Public protocol and schema constants
-  core/            Framework-neutral discovery, Check Catalog, Decision Cards, and orchestration
-  cli/             The `rally` executable
-skills/
-  launchrally/     Canonical Agent Skill source
-adapters/
-  codex/           Codex Plugin package
-  claude/          Claude Code Plugin package
-scripts/
-  sync-skills.mjs  Keeps both Plugin copies aligned with the canonical Skill
-fixtures/
-  coverage/         Cross-ecosystem acceptance representatives
-test/
-  scaffold.test.js Initial contract and safety tests
-```
-
-## Current safety boundary
-
-- No LaunchRally account or server is used.
-- `audit` performs a boundary-checked Local Safe Scan and deterministic policy evaluation without repository writes.
-- Human Mode explains missing intent and previews the complete plan before permission; Agent Mode exposes versioned typed interaction states.
-- Local scan, public verification, and each Provider read are distinct authorization boundaries.
-- Local facts include their repository-relative source path and scanner policy version.
-- Environment values and raw package script commands are never included in Audit output.
-- Approved public probes and Provider Adapter reads are bounded, read-only, and retain only structurally allowlisted normalized evidence.
-- Provider guidance reads only the supplied current Report and open local Decision Cards; it contacts no Provider and performs no external mutation.
-- Report Records and Evidence Indexes are unique, frozen in-process, and never overwrite repository files.
-- `init` is available only from a saved completed Audit and always requires preview confirmation; `plan` is deterministic and read-only from a saved current Audit; `providers` requires constraint confirmation and a second confirmation for local Manifest intent; `verify` creates a new immutable full Report or an explicitly limited targeted result.
-- Missing P0 coverage is always reported as a Verification Gap and cannot be treated as Passed or `Launch Ready`.
-
-## Contribution flow
-
-- Open feature and fix pull requests against `dev`.
-- Promote releases with a pull request from `dev` to `main`.
-- Pull requests into `main` from any other branch are closed automatically.
-
-`dev` is the repository's default branch so new pull requests target it by default.
-
-## License
-
-LaunchRally source, documentation, and public release artifacts are licensed under [Apache-2.0](LICENSE).
+- [Documentation index](docs/README.md)
+- [Quickstart](docs/getting-started/quickstart.md)
+- [Install and release guide](docs/getting-started/install.md)
+- [Project status and Telemetry-Free Validation](docs/maintainers/phase-0-validation.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
+- [GitHub Discussions](https://github.com/codeacme17/launchrally/discussions)
+- [GitHub Issues](https://github.com/codeacme17/launchrally/issues)
+- [Apache-2.0 license](LICENSE)

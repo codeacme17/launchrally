@@ -2,6 +2,14 @@
   "name": "@launchrally/core",
   "version": "0.2.1",
   "description": "Deterministic LaunchRally audit and verification core",
+  "keywords": [
+    "launchrally",
+    "launch-readiness",
+    "audit",
+    "verification",
+    "local-first",
+    "release"
+  ],
   "license": "Apache-2.0",
   "type": "module",
   "exports": "./src/index.js",

@@ -1,0 +1,15 @@
+$ rally audit --plain --cwd .
+
+LaunchRally Audit
+
+Assessment
+Inconclusive
+
+Failed Findings (0)
+Verification Gaps (3)
+web.public.availability
+web.security.headers
+web.release.rollback
+
+Next command
+rally init --report audit.json

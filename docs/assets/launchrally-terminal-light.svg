@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 440" role="img" aria-labelledby="title description">
+  <title id="title">Representative LaunchRally audit output</title>
+  <desc id="description">An Inconclusive audit with no failed findings, three verification gaps, and rally init as the next command.</desc>
+  <rect width="520" height="440" rx="18" fill="#f8fafc"/>
+  <rect x="1" y="1" width="518" height="438" rx="17" fill="none" stroke="#cbd5e1" stroke-width="2"/>
+  <path d="M18 0h484a18 18 0 0 1 18 18v38H0V18A18 18 0 0 1 18 0Z" fill="#e2e8f0"/>
+  <circle cx="28" cy="28" r="6" fill="#ef4444"/>
+  <circle cx="50" cy="28" r="6" fill="#f59e0b"/>
+  <circle cx="72" cy="28" r="6" fill="#22c55e"/>
+  <style>
+    text { font: 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #0f172a; }
+    .muted { fill: #475569; }
+    .accent { fill: #b45309; font-weight: 700; }
+  </style>
+  <text x="32" y="76" class="text">$ rally audit --plain --cwd .</text>
+  <text x="32" y="100" class="text"> </text>
+  <text x="32" y="124" class="text">LaunchRally Audit</text>
+  <text x="32" y="148" class="text"> </text>
+  <text x="32" y="172" class="text">Assessment</text>
+  <text x="32" y="196" class="accent">Inconclusive</text>
+  <text x="32" y="220" class="text"> </text>
+  <text x="32" y="244" class="text">Failed Findings (0)</text>
+  <text x="32" y="268" class="text">Verification Gaps (3)</text>
+  <text x="32" y="292" class="muted">web.public.availability</text>
+  <text x="32" y="316" class="muted">web.security.headers</text>
+  <text x="32" y="340" class="muted">web.release.rollback</text>
+  <text x="32" y="364" class="text"> </text>
+  <text x="32" y="388" class="text">Next command</text>
+  <text x="32" y="412" class="text">rally init --report audit.json</text>
+</svg>
