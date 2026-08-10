@@ -784,6 +784,16 @@ test("the packaged JSON journey approves one new Provider read and independently
       secret_key: "must-not-survive",
     }],
   }]));
+  const fixture = await createFixture("provider-shadow-source");
+  const shadowScript = path.join(fixture, "shadow-provider.cjs");
+  await writeFile(shadowScript, `process.stdout.write(${JSON.stringify(JSON.stringify([{
+    application_id: "app_shadow",
+    name: "Repository shadow",
+  }]))});\n`);
+  await writeFile(
+    path.join(fixture, "clerk.cmd"),
+    `@echo off\r\n"${process.execPath}" "%~dp0shadow-provider.cjs" %*\r\n`,
+  );
   try {
     const result = await executeReferenceJourney(
       "provider-permission-reference",
@@ -798,6 +808,7 @@ test("the packaged JSON journey approves one new Provider read and independently
           clerk: "approved",
           resend: "denied",
         },
+        fixturePath: fixture,
         publicPermission: "denied",
       },
     );
@@ -810,6 +821,7 @@ test("the packaged JSON journey approves one new Provider read and independently
       .filter(({ evidence_kind }) => evidence_kind === "machine_evidence")
       .map(({ normalized_artifact }) => normalized_artifact);
     assert.deepEqual(providerEvidence.map(({ provider }) => provider), ["clerk"]);
+    assert.equal(providerEvidence[0].facts.applications[0].application_id, "app_reference");
     assert.equal(
       result.semantics.audit.report.results.verification_gaps.some(
         ({ check_id, reason_code }) =>
@@ -820,6 +832,7 @@ test("the packaged JSON journey approves one new Provider read and independently
     assert.doesNotMatch(JSON.stringify(result), /must-not-survive/u);
   } finally {
     await rm(stub, { recursive: true, force: true });
+    await rm(fixture, { recursive: true, force: true });
   }
 });
 

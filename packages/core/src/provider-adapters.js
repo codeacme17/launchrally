@@ -399,6 +399,17 @@ async function resolveWindowsExecutable(executable, cwd, env) {
   throw error;
 }
 
+function windowsBatchCommand(executable, arguments_) {
+  const values = [executable, ...arguments_];
+  if (values.some((value) => /["%\r\n]/u.test(value))) {
+    const error = new Error("The disclosed Provider command cannot be represented safely.");
+    error.code = "unsafe_provider_command";
+    throw error;
+  }
+  const commandLine = values.map((value) => `"${value}"`).join(" ");
+  return `"${commandLine}"`;
+}
+
 async function defaultRunner(command, cwd, { signal } = {}) {
   throwIfAborted(signal);
   const env = {
@@ -417,7 +428,8 @@ async function defaultRunner(command, cwd, { signal } = {}) {
     invocation = /\.(?:bat|cmd)$/iu.test(executable)
       ? {
         executable: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
-        arguments: ["/d", "/s", "/c", command.executable, ...command.arguments],
+        arguments: ["/d", "/s", "/c", windowsBatchCommand(executable, command.arguments)],
+        windowsVerbatimArguments: true,
       }
       : { executable, arguments: command.arguments };
   }
@@ -427,6 +439,7 @@ async function defaultRunner(command, cwd, { signal } = {}) {
     maxBuffer: MAX_OUTPUT_BYTES,
     timeout: TIMEOUT_MS,
     killSignal: "SIGTERM",
+    ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
     ...(signal ? { signal } : {}),
     env,
   });
