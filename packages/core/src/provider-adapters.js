@@ -2,14 +2,32 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
+import { assertSafeEvidenceArtifact } from "./evidence-artifact.js";
 
-export const PROVIDER_ADAPTER_CONTRACT = "provider-adapter-contract/v1";
+export const PROVIDER_ADAPTER_CONTRACT = "provider-adapter-contract/v2";
 
 const execFileAsync = promisify(execFile);
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const TIMEOUT_MS = 10_000;
 
 const ADAPTERS = Object.freeze({
+  clerk: Object.freeze({
+    adapter_version: "clerk-read/v1",
+    target: "authenticated_workspace_applications",
+    requested_fields: Object.freeze([
+      "applications[].application_id",
+      "applications[].name",
+      "applications[].instances[].instance_id",
+      "applications[].instances[].environment_type",
+    ]),
+    commands: Object.freeze([
+      Object.freeze({
+        executable: "clerk",
+        arguments: Object.freeze(["apps", "list", "--json"]),
+      }),
+    ]),
+    normalize: normalizeClerk,
+  }),
   cloudflare: Object.freeze({
     adapter_version: "cloudflare-read/v1",
     target: "configured_worker_deployments",
@@ -26,6 +44,95 @@ const ADAPTERS = Object.freeze({
       arguments: Object.freeze(["deployments", "list", "--json"]),
     }),
     normalize: normalizeCloudflare,
+  }),
+  neon: Object.freeze({
+    adapter_version: "neon-read/v1",
+    target: "authenticated_scope_and_linked_project_metadata",
+    requested_fields: Object.freeze([
+      "projects[].id",
+      "projects[].name",
+      "projects[].region_id",
+      "projects[].created_at",
+      "branches[].id",
+      "branches[].name",
+      "branches[].current_state",
+      "branches[].created_at",
+      "branches[].expires_at",
+      "databases[].name",
+      "databases[].created_at",
+    ]),
+    commands: Object.freeze([
+      Object.freeze({
+        executable: "neonctl",
+        arguments: Object.freeze([
+          "projects", "list", "--output", "json", "--no-analytics",
+        ]),
+      }),
+      Object.freeze({
+        executable: "neonctl",
+        arguments: Object.freeze([
+          "branches", "list", "--output", "json", "--no-analytics",
+        ]),
+      }),
+      Object.freeze({
+        executable: "neonctl",
+        arguments: Object.freeze([
+          "databases", "list", "--output", "json", "--no-analytics",
+        ]),
+      }),
+    ]),
+    normalize: normalizeNeon,
+  }),
+  resend: Object.freeze({
+    adapter_version: "resend-read/v1",
+    target: "authenticated_team_domains_and_recent_email_status",
+    requested_fields: Object.freeze([
+      "domains[].id",
+      "domains[].name",
+      "domains[].status",
+      "domains[].region",
+      "domains[].created_at",
+      "domains[].capabilities.sending",
+      "domains[].capabilities.receiving",
+      "emails[].id",
+      "emails[].created_at",
+      "emails[].last_event",
+      "emails[].scheduled_at",
+    ]),
+    commands: Object.freeze([
+      Object.freeze({
+        executable: "resend",
+        arguments: Object.freeze(["domains", "list", "--limit", "10", "--json"]),
+      }),
+      Object.freeze({
+        executable: "resend",
+        arguments: Object.freeze(["emails", "list", "--limit", "10", "--json"]),
+      }),
+    ]),
+    normalize: normalizeResend,
+  }),
+  sentry: Object.freeze({
+    adapter_version: "sentry-read/v1",
+    target: "configured_organization_projects_and_recent_releases",
+    requested_fields: Object.freeze([
+      "projects[].id",
+      "projects[].slug",
+      "projects[].team",
+      "projects[].name",
+      "releases[].version",
+    ]),
+    commands: Object.freeze([
+      Object.freeze({
+        executable: "sentry-cli",
+        arguments: Object.freeze(["projects", "list"]),
+      }),
+      Object.freeze({
+        executable: "sentry-cli",
+        arguments: Object.freeze(["releases", "list", "--raw"]),
+      }),
+    ]),
+    parse: (stdout) => stdout,
+    normalize: normalizeSentry,
   }),
   vercel: Object.freeze({
     adapter_version: "vercel-read/v1",
@@ -57,6 +164,102 @@ function pick(source, fields) {
     if (value !== undefined) result[field] = value;
   }
   return result;
+}
+
+function normalizeClerk(value) {
+  if (!Array.isArray(value)) throw new Error("invalid_provider_response");
+  return {
+    applications: value.slice(0, 20).map((application) => ({
+      ...pick(application, ["application_id", "name"]),
+      ...(Array.isArray(application?.instances)
+        ? {
+          instances: application.instances.slice(0, 10).map((instance) =>
+            pick(instance, ["instance_id", "environment_type"]),
+          ),
+        }
+        : {}),
+    })),
+  };
+}
+
+function normalizeNeon(value) {
+  if (!Array.isArray(value) || value.length !== 3) {
+    throw new Error("invalid_provider_response");
+  }
+  const [projectResponse, branches, databases] = value;
+  const ownedProjects = Array.isArray(projectResponse)
+    ? projectResponse
+    : projectResponse?.projects;
+  const sharedProjects = Array.isArray(projectResponse?.shared_with_you)
+    ? projectResponse.shared_with_you
+    : [];
+  if (!Array.isArray(ownedProjects) || !Array.isArray(branches) || !Array.isArray(databases)) {
+    throw new Error("invalid_provider_response");
+  }
+  return {
+    projects: [...ownedProjects, ...sharedProjects].slice(0, 20).map((project) =>
+      pick(project, ["id", "name", "region_id", "created_at"]),
+    ),
+    branches: branches.slice(0, 20).map((branch) =>
+      pick(branch, ["id", "name", "current_state", "created_at", "expires_at"]),
+    ),
+    databases: databases.slice(0, 20).map((database) =>
+      pick(database, ["name", "created_at"]),
+    ),
+  };
+}
+
+function normalizeResend(value) {
+  if (!Array.isArray(value) || value.length !== 2) {
+    throw new Error("invalid_provider_response");
+  }
+  const [domainResponse, emailResponse] = value;
+  if (!Array.isArray(domainResponse?.data) || !Array.isArray(emailResponse?.data)) {
+    throw new Error("invalid_provider_response");
+  }
+  return {
+    domains: domainResponse.data.slice(0, 10).map((domain) => ({
+      ...pick(domain, ["id", "name", "status", "region", "created_at"]),
+      ...(domain?.capabilities && typeof domain.capabilities === "object"
+        ? { capabilities: pick(domain.capabilities, ["sending", "receiving"]) }
+        : {}),
+    })),
+    emails: emailResponse.data.slice(0, 10).map((email) =>
+      pick(email, ["id", "created_at", "last_event", "scheduled_at"]),
+    ),
+  };
+}
+
+function sentryTableRows(value) {
+  if (typeof value !== "string") throw new Error("invalid_provider_response");
+  const rows = value
+    .replaceAll(/\u001b\[[0-9;]*m/gu, "")
+    .split(/\r?\n/u)
+    .filter((line) => line.trim().startsWith("|"))
+    .map((line) => line.split("|").slice(1, -1).map((cell) => cell.trim()));
+  if (rows.length === 0) return [];
+  if (rows[0].join("\u0000") !== ["ID", "Slug", "Team", "Name"].join("\u0000")) {
+    throw new Error("invalid_provider_response");
+  }
+  if (rows.slice(1).some((row) => row.length !== 4)) {
+    throw new Error("invalid_provider_response");
+  }
+  return rows.slice(1, 21).map(([id, slug, team, name]) => ({ id, slug, team, name }));
+}
+
+function normalizeSentry(value) {
+  if (!Array.isArray(value) || value.length !== 2 || typeof value[1] !== "string") {
+    throw new Error("invalid_provider_response");
+  }
+  return {
+    projects: sentryTableRows(value[0]),
+    releases: value[1]
+      .split(/\r?\n/u)
+      .map((version) => version.trim())
+      .filter(Boolean)
+      .slice(0, 20)
+      .map((version) => ({ version })),
+  };
 }
 
 function normalizeCloudflare(value) {
@@ -114,9 +317,15 @@ export function createProviderAdapterPlan(providerRoles = []) {
           : roles.map((role) => `${role}.configuration`),
         command: adapter
           ? {
-            executable: adapter.command.executable,
-            arguments: [...adapter.command.arguments],
+            executable: (adapter.command ?? adapter.commands[0]).executable,
+            arguments: [...(adapter.command ?? adapter.commands[0]).arguments],
           }
+          : null,
+        commands: adapter
+          ? (adapter.commands ?? [adapter.command]).map((command) => ({
+            executable: command.executable,
+            arguments: [...command.arguments],
+          }))
           : null,
       };
     }),
@@ -153,6 +362,8 @@ async function defaultRunner(command, cwd, { signal } = {}) {
       ...process.env,
       CI: "1",
       NO_COLOR: "1",
+      RESEND_TELEMETRY_DISABLED: "1",
+      SENTRY_DISABLE_UPDATE_CHECK: "true",
       VERCEL_TELEMETRY_DISABLED: "1",
       WRANGLER_SEND_METRICS: "false",
     },
@@ -161,10 +372,27 @@ async function defaultRunner(command, cwd, { signal } = {}) {
 
 function failureKind(error) {
   if (error?.code === "ENOENT") return "missing_provider_tool";
+  if (["provider_response_too_large", "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"].includes(error?.code)) {
+    return "provider_response_too_large";
+  }
+  if (error?.code === "ETIMEDOUT" || error?.killed && error?.signal === "SIGTERM") {
+    return "provider_timeout";
+  }
+  if (
+    error instanceof SyntaxError
+    || error?.message === "invalid_provider_response"
+    || error?.code === "unsafe_evidence_artifact"
+  ) {
+    return "malformed_provider_response";
+  }
   const message = `${error?.stderr ?? ""} ${error?.message ?? ""}`.toLowerCase();
-  return /not authenticated|not logged in|must be logged in|authentication required|please log in|please login|unauthorized|missing credentials|api token|401/u.test(message)
-    ? "missing_provider_login"
-    : "adapter_error";
+  if (/not authenticated|not logged in|must be logged in|authentication required|please log in|please login|unauthorized|missing credentials|api token|401/u.test(message)) {
+    return "missing_provider_login";
+  }
+  if (/does not have access|insufficient (?:scope|permission)|not linked|org_id is required|project id.*required|unsupported capability|not available on (?:the )?.*plan/u.test(message)) {
+    return "unsupported_provider_capability";
+  }
+  return "adapter_error";
 }
 
 function failureReason(request, reasonCode) {
@@ -173,6 +401,18 @@ function failureReason(request, reasonCode) {
   }
   if (reasonCode === "missing_provider_login") {
     return `${request.provider} verification could not run because the existing CLI session is not authenticated; LaunchRally did not initiate login.`;
+  }
+  if (reasonCode === "malformed_provider_response") {
+    return `${request.provider} returned a malformed or unsupported response; no Provider response data was retained.`;
+  }
+  if (reasonCode === "provider_response_too_large") {
+    return `${request.provider} returned more data than the bounded Adapter limit; no Provider response data was retained.`;
+  }
+  if (reasonCode === "provider_timeout") {
+    return `${request.provider} did not complete within the bounded Adapter timeout; no Provider response data was retained.`;
+  }
+  if (reasonCode === "unsupported_provider_capability") {
+    return `${request.provider} could not expose the disclosed read through the current account capability or linked project context; no Provider response data was retained.`;
   }
   return `${request.provider} verification failed inside ${request.adapter_version}; no Provider response data was retained.`;
 }
@@ -225,11 +465,27 @@ export async function executeProviderAdapters({
     const adapter = ADAPTERS[request.provider];
     active_adapter_versions.push(request.adapter_version);
     try {
-      const result = await runner(request.command, cwd, { signal });
-      throwIfAborted(signal);
-      const normalized = adapter.normalize(JSON.parse(result.stdout));
+      const commandResults = [];
+      for (const command of request.commands ?? [request.command]) {
+        const result = await runner(command, cwd, { signal });
+        throwIfAborted(signal);
+        if (typeof result?.stdout !== "string") {
+          throw new Error("invalid_provider_response");
+        }
+        if (Buffer.byteLength(result.stdout, "utf8") > MAX_OUTPUT_BYTES) {
+          const error = new Error("provider_response_too_large");
+          error.code = "provider_response_too_large";
+          throw error;
+        }
+        commandResults.push(adapter.parse
+          ? adapter.parse(result.stdout)
+          : JSON.parse(result.stdout));
+      }
+      const normalized = adapter.normalize(
+        commandResults.length === 1 ? commandResults[0] : commandResults,
+      );
       const collectedAt = now().toISOString();
-      evidence.push({
+      const artifact = {
         kind: "machine_evidence",
         provider: request.provider,
         adapter_version: request.adapter_version,
@@ -242,11 +498,22 @@ export async function executeProviderAdapters({
           provider: request.provider,
           adapter_version: request.adapter_version,
           exact_target: request.target,
-          executable: request.command.executable,
-          arguments: [...request.command.arguments],
+          ...(adapter.commands
+            ? {
+              commands: request.commands.map((command) => ({
+                executable: command.executable,
+                arguments: [...command.arguments],
+              })),
+            }
+            : {
+              executable: request.command.executable,
+              arguments: [...request.command.arguments],
+            }),
           collected_at: collectedAt,
         },
-      });
+      };
+      assertSafeEvidenceArtifact(artifact);
+      evidence.push(artifact);
     } catch (error) {
       rethrowIfAborted(error, signal);
       const reasonCode = failureKind(error);

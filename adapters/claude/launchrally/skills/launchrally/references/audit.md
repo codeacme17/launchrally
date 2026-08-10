@@ -4,7 +4,7 @@
 2. Run `rally audit --json --cwd <repo>` through the documented package-manager path.
 3. On `needs_input`, ask only the returned fields. Present inferred candidates as unconfirmed.
 4. On `needs_confirmation`, present the entire Audit Brief, planned Checks, and authorization preview before forwarding the builder's decision.
-5. On `needs_permission`, request each public or Provider boundary separately and preserve denials.
+5. On `needs_permission`, request each public or Provider boundary separately, present every disclosed Provider command in order, and preserve denials.
 6. Resume with the returned token; start a new Audit on a token or scope error.
 7. Treat the completed Snapshot, Assessment, Action Queue, gaps, and limitations as canonical. Never describe `Inconclusive` as ready to launch.
 

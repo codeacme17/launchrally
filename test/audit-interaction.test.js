@@ -153,6 +153,27 @@ test("Agent Mode asks only for unknown release intent in a versioned state", asy
   assert.doesNotMatch(JSON.stringify(result), /private-value/);
 });
 
+test("Agent Mode detects Clerk, Neon, and Resend roles from variable names only", async () => {
+  const fixture = await createInteractionFixture({ providerSignals: false });
+  await writeFile(
+    path.join(fixture, ".env"),
+    [
+      "CLERK_SECRET_KEY=clerk-private-value",
+      "NEON_API_KEY=neon-private-value",
+      "RESEND_API_KEY=resend-private-value",
+      "",
+    ].join("\n"),
+  );
+  const result = await runAudit(fixture);
+
+  assert.deepEqual(result.audit_brief.provider_roles.candidates, [
+    { provider: "clerk", role: "authentication" },
+    { provider: "neon", role: "data" },
+    { provider: "resend", role: "email" },
+  ]);
+  assert.doesNotMatch(JSON.stringify(result), /private-value/u);
+});
+
 test("Core offers only safely detected static routes as Journey candidates", async () => {
   const fixture = await createInteractionFixture();
   for (const relativePath of [
@@ -519,11 +540,30 @@ test("confirmation requests public and Provider permissions as distinct boundari
         boundary: "provider_read",
         scope: {
           provider: "sentry",
-          adapter_version: null,
+          adapter_version: "sentry-read/v1",
           operation: "read_only",
-          target: "declared_provider_role_metadata",
-          requested_fields: ["observability.configuration"],
-          command: null,
+          target: "configured_organization_projects_and_recent_releases",
+          requested_fields: [
+            "projects[].id",
+            "projects[].slug",
+            "projects[].team",
+            "projects[].name",
+            "releases[].version",
+          ],
+          command: {
+            executable: "sentry-cli",
+            arguments: ["projects", "list"],
+          },
+          commands: [
+            {
+              executable: "sentry-cli",
+              arguments: ["projects", "list"],
+            },
+            {
+              executable: "sentry-cli",
+              arguments: ["releases", "list", "--raw"],
+            },
+          ],
         },
       },
       {
@@ -546,6 +586,10 @@ test("confirmation requests public and Provider permissions as distinct boundari
             executable: "vercel",
             arguments: ["project", "ls", "--json"],
           },
+          commands: [{
+            executable: "vercel",
+            arguments: ["project", "ls", "--json"],
+          }],
         },
       },
     ],

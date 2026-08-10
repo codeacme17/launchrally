@@ -65,8 +65,16 @@ const FIELD_PRESENTATION = Object.freeze({
     example: "vercel:deployment, sentry:observability",
     options: Object.freeze([
       Object.freeze({
+        label: "Clerk — authentication",
+        value: Object.freeze({ provider: "clerk", role: "authentication" }),
+      }),
+      Object.freeze({
         label: "Cloudflare — deployment",
         value: Object.freeze({ provider: "cloudflare", role: "deployment" }),
+      }),
+      Object.freeze({
+        label: "Neon — data",
+        value: Object.freeze({ provider: "neon", role: "data" }),
       }),
       Object.freeze({
         label: "Netlify — deployment",
@@ -75,6 +83,10 @@ const FIELD_PRESENTATION = Object.freeze({
       Object.freeze({
         label: "PostHog — analytics",
         value: Object.freeze({ provider: "posthog", role: "analytics" }),
+      }),
+      Object.freeze({
+        label: "Resend — email",
+        value: Object.freeze({ provider: "resend", role: "email" }),
       }),
       Object.freeze({
         label: "Sentry — observability",
@@ -261,9 +273,12 @@ function permissionText(permission) {
     `Provider read: ${permission.scope.provider}`,
     `Target: ${permission.scope.target}`,
     `Fields: ${permission.scope.requested_fields.join(", ")}`,
-    `Command: ${permission.scope.command
-      ? [permission.scope.command.executable, ...permission.scope.command.arguments].join(" ")
-      : "none"}`,
+    "Commands:",
+    list(
+      permission.scope.commands
+        ?? (permission.scope.command ? [permission.scope.command] : []),
+      (command) => [command.executable, ...command.arguments].join(" "),
+    ),
     "Allow this Provider read?",
   ].join("\n");
 }

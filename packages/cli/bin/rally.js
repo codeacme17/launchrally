@@ -78,6 +78,21 @@ function providerLabel(role) {
   return `${role.provider} (${role.role})`;
 }
 
+function providerCommands(scope) {
+  return scope.commands ?? (scope.command ? [scope.command] : []);
+}
+
+function providerCommandLines(scope, indent = "    ") {
+  const commands = providerCommands(scope);
+  return commands.length > 0
+    ? [
+      `${indent}Commands:`,
+      ...commands.map((command) =>
+        `${indent}  - ${[command.executable, ...command.arguments].join(" ")}`),
+    ]
+    : [`${indent}Commands: none`];
+}
+
 function renderHumanInteraction(value) {
   const brief = value.audit_brief;
   const lines = [
@@ -136,9 +151,7 @@ function renderHumanInteraction(value) {
           `  - ${request.provider}: ${request.adapter_version ?? "no adapter"}`,
           `    Target: ${request.target}`,
           `    Fields: ${request.requested_fields.join(", ")}`,
-          `    Command: ${request.command
-            ? [request.command.executable, ...request.command.arguments].join(" ")
-            : "none"}`,
+          ...providerCommandLines(request),
         ])
         : ["  - None requested"]),
       "Planned Checks:",
@@ -161,12 +174,13 @@ function renderHumanInteraction(value) {
   } else if (value.status === "needs_permission") {
     lines.push(
       "Permission requested only for these pending boundaries:",
-      ...value.request.permissions.map((permission) =>
+      ...value.request.permissions.flatMap((permission) =>
         permission.boundary === "public_network"
-          ? `  - Public verification: ${permission.scope.targets.join(", ")}`
-          : `  - ${permission.scope.provider}: target ${permission.scope.target}; fields ${permission.scope.requested_fields.join(", ")}; command ${permission.scope.command
-            ? [permission.scope.command.executable, ...permission.scope.command.arguments].join(" ")
-            : "none"}`,
+          ? [`  - Public verification: ${permission.scope.targets.join(", ")}`]
+          : [
+            `  - ${permission.scope.provider}: target ${permission.scope.target}; fields ${permission.scope.requested_fields.join(", ")}`,
+            ...providerCommandLines(permission.scope),
+          ],
       ),
       "Choose approved or denied independently for each permission ID.",
     );
