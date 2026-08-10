@@ -2,6 +2,14 @@
   "name": "@launchrally/cli",
   "version": "0.2.1",
   "description": "LaunchRally local-first audit CLI",
+  "keywords": [
+    "launch-readiness",
+    "audit",
+    "verification",
+    "cli",
+    "local-first",
+    "release"
+  ],
   "license": "Apache-2.0",
   "type": "module",
   "bin": {

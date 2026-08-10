@@ -2,6 +2,14 @@
   "name": "@launchrally/codex-plugin",
   "version": "0.2.1",
   "description": "LaunchRally Plugin adapter for Codex",
+  "keywords": [
+    "launchrally",
+    "codex",
+    "plugin",
+    "agent-skill",
+    "audit",
+    "launch-readiness"
+  ],
   "license": "Apache-2.0",
   "files": [
     ".codex-plugin/",

@@ -98,7 +98,13 @@ async function packArtifacts(temporaryRoot, release) {
   return { cacheDirectory, tarballs };
 }
 
-async function smokeCli(temporaryRoot, installArguments, version, publicPackages = []) {
+async function smokeCli(
+  temporaryRoot,
+  installArguments,
+  version,
+  releasePackages,
+  { verifyProvenance = false } = {},
+) {
   const cleanProject = path.join(temporaryRoot, "clean-install");
   await mkdir(cleanProject, { recursive: true });
   await writeFile(
@@ -121,7 +127,7 @@ async function smokeCli(temporaryRoot, installArguments, version, publicPackages
     );
   }
 
-  if (publicPackages.length > 0) {
+  if (verifyProvenance) {
     const { stdout } = await runNpm([
       "audit",
       "signatures",
@@ -131,7 +137,7 @@ async function smokeCli(temporaryRoot, installArguments, version, publicPackages
       path.join(temporaryRoot, "npm-signature-cache"),
     ], { cwd: cleanProject });
     const signatureAudit = JSON.parse(stdout);
-    for (const artifact of publicPackages) {
+    for (const artifact of releasePackages) {
       const verified = signatureAudit.verified?.find(({ name, version: auditedVersion }) => (
         name === artifact.name && auditedVersion === version
       ));
@@ -148,18 +154,31 @@ async function smokeCli(temporaryRoot, installArguments, version, publicPackages
     }
   }
 
-  for (const artifact of publicPackages) {
-    const installed = await json(path.join(
+  for (const artifact of releasePackages) {
+    const installedPackageRoot = path.join(
       cleanProject,
       "node_modules",
       ...artifact.name.split("/"),
-      "package.json",
-    ));
+    );
+    const installed = await json(path.join(installedPackageRoot, "package.json"));
+    const source = await json(path.join(root, artifact.path, "package.json"));
     if (installed.name !== artifact.name || installed.version !== version) {
       throw new Error(
         `public_artifact_version_drift: ${artifact.name} installed as ${installed.name}@${installed.version}`,
       );
     }
+    assertEqual(
+      installed.keywords,
+      source.keywords,
+      "artifact_keyword_drift",
+      `${artifact.name} packed keywords differ from its source manifest`,
+    );
+    assertEqual(
+      await readFile(path.join(installedPackageRoot, "README.md"), "utf8"),
+      await readFile(path.join(root, artifact.path, "README.md"), "utf8"),
+      "artifact_readme_drift",
+      `${artifact.name} packed README differs from its source README`,
+    );
   }
 
   const rally = path.join(
@@ -643,7 +662,8 @@ async function main() {
       temporaryRoot,
       installArguments,
       rootPackage.version,
-      publicRelease ? release.packages : [],
+      release.packages,
+      { verifyProvenance: publicRelease },
     );
     const nativePlugins = process.argv.includes("--skip-native")
       ? "skipped"
