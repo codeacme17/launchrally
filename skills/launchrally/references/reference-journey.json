@@ -1,8 +1,8 @@
 {
-  "schema_version": "launchrally.dev/reference-journey/v1",
+  "schema_version": "launchrally.dev/reference-journey/v2",
   "cli": {
     "package": "@launchrally/cli",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "contract": "launchrally.dev/cli/v2"
   },
   "invocations": [
@@ -46,11 +46,11 @@
     {
       "id": "init_preview",
       "guard": { "kind": "optional", "intent": "initialize_project" },
-      "arguments": ["init", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      "arguments": ["init", "--json", "--cwd", "{repository_root}", "--report", "{manifest_source_report_path}"],
       "expect": {
         "operation": "init",
         "status": ["needs_confirmation", "needs_permission"],
-        "interaction_schema": "launchrally.dev/init-interaction/v1"
+        "interaction_schema": "launchrally.dev/init-interaction/v2"
       }
     },
     {
@@ -60,7 +60,7 @@
       "expect": {
         "operation": "init",
         "status": "needs_confirmation",
-        "interaction_schema": "launchrally.dev/init-interaction/v1"
+        "interaction_schema": "launchrally.dev/init-interaction/v2"
       }
     },
     {
@@ -72,17 +72,17 @@
     {
       "id": "plan_refresh",
       "guard": { "kind": "when_source_non_current", "intent": "refresh_report" },
-      "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{current_report_path}"],
       "expect": { "operation": "plan", "status": "needs_refresh" }
     },
     {
       "id": "refresh_permission",
       "guard": { "kind": "when_source_non_current", "intent": "refresh_report" },
-      "arguments": ["verify", "--json", "--cwd", "{repository_root}", "--report", "{report_path}", "--scope", "full"],
+      "arguments": ["verify", "--json", "--cwd", "{repository_root}", "--report", "{manifest_source_report_path}", "--scope", "full"],
       "expect": {
         "operation": "verify",
         "status": "needs_permission",
-        "interaction_schema": "launchrally.dev/verify-interaction/v1"
+        "interaction_schema": "launchrally.dev/verify-interaction/v2"
       }
     },
     {
@@ -97,7 +97,7 @@
     },
     {
       "id": "plan",
-      "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}"],
+      "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{current_report_path}"],
       "expect": {
         "operation": "plan",
         "status": "completed",
@@ -110,7 +110,7 @@
         "kind": "requires_explicit_user_request",
         "intent": "local_remediation"
       },
-      "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{report_path}", "--handoff"],
+      "arguments": ["plan", "--json", "--cwd", "{repository_root}", "--report", "{current_report_path}", "--handoff"],
       "expect": {
         "operation": "plan",
         "status": "completed",
@@ -119,11 +119,11 @@
     },
     {
       "id": "verify_permission",
-      "arguments": ["verify", "--json", "--cwd", "{repository_root}", "--report", "{report_path}", "--scope", "full"],
+      "arguments": ["verify", "--json", "--cwd", "{repository_root}", "--report", "{manifest_source_report_path}", "--scope", "full"],
       "expect": {
         "operation": "verify",
         "status": "needs_permission",
-        "interaction_schema": "launchrally.dev/verify-interaction/v1"
+        "interaction_schema": "launchrally.dev/verify-interaction/v2"
       }
     },
     {

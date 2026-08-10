@@ -54,8 +54,8 @@ Create a protected annotated tag on that exact `main` commit and push only the
 tag:
 
 ```bash
-git tag --annotate v0.2.1 <approved-main-sha> --message "LaunchRally 0.2.1 Experimental"
-git push origin v0.2.1
+git tag --annotate v0.2.2 <approved-main-sha> --message "LaunchRally 0.2.2 Experimental"
+git push origin v0.2.2
 ```
 
 The release workflow independently rejects a lightweight tag, a tag whose
@@ -75,6 +75,10 @@ versions with lifecycle scripts disabled, runs `npm audit signatures`, executes
 the direct CLI journeys, strictly validates the Claude Plugin, and installs and
 removes the Codex Plugin in an isolated user scope. The GitHub prerelease is
 created only after this public smoke job succeeds.
+
+npm package pages update only after new package versions are published. Confirm
+that every new page shows its package-specific README and keywords during the
+public smoke check; source changes alone do not update the registry pages.
 
 Attach the successful workflow URL, five public package URLs, attestation
 result, exact CLI result, and both Plugin results to issue #40. Only then may

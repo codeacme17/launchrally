@@ -174,14 +174,46 @@
       "additionalProperties": false
     },
     "interaction": {
-      "type": "object",
-      "required": ["schema_version", "interaction_id", "revision"],
-      "properties": {
-        "schema_version": { "const": "launchrally.dev/verify-interaction/v1" },
-        "interaction_id": { "type": "string", "minLength": 1 },
-        "revision": { "type": "integer", "minimum": 1 }
-      },
-      "additionalProperties": false
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["schema_version", "interaction_id", "revision"],
+          "properties": {
+            "schema_version": { "const": "launchrally.dev/verify-interaction/v1" },
+            "interaction_id": { "type": "string", "minLength": 1 },
+            "revision": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["schema_version", "interaction_id", "revision", "source_report"],
+          "properties": {
+            "schema_version": { "const": "launchrally.dev/verify-interaction/v2" },
+            "interaction_id": { "type": "string", "minLength": 1 },
+            "revision": { "type": "integer", "minimum": 1 },
+            "source_report": {
+              "type": "object",
+              "required": ["report_id", "role"],
+              "properties": {
+                "report_id": { "type": "string", "minLength": 1 },
+                "role": { "const": "manifest_source" }
+              },
+              "additionalProperties": false
+            },
+            "current_report": {
+              "type": "object",
+              "required": ["report_id", "role"],
+              "properties": {
+                "report_id": { "type": "string", "minLength": 1 },
+                "role": { "const": "current" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "targetedResult": {
       "type": "object",

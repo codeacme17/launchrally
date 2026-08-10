@@ -25,8 +25,8 @@ export const REPORT_VIEW_SCHEMA = "launchrally.dev/report-view/v2";
 export const EVIDENCE_INDEX_SCHEMA = "launchrally.dev/evidence-index/v1";
 export const AUDIT_BRIEF_SCHEMA = "launchrally.dev/audit-brief/v1";
 export const AUDIT_INTERACTION_SCHEMA = "launchrally.dev/audit-interaction/v1";
-export const INIT_INTERACTION_SCHEMA = "launchrally.dev/init-interaction/v1";
-export const VERIFY_INTERACTION_SCHEMA = "launchrally.dev/verify-interaction/v1";
+export const INIT_INTERACTION_SCHEMA = "launchrally.dev/init-interaction/v2";
+export const VERIFY_INTERACTION_SCHEMA = "launchrally.dev/verify-interaction/v2";
 export const LAUNCH_PLAN_SCHEMA = "launchrally.dev/launch-plan/v2";
 export const VERIFICATION_RESULT_SCHEMA = "launchrally.dev/verification-result/v2";
 export const PROVIDER_GUIDANCE_INTERACTION_SCHEMA =
@@ -179,6 +179,10 @@ export function assertValidVerificationResult(result) {
     && result?.history?.current_report_id === result?.report?.report_id
     && result?.history?.current_evidence_index_id === result?.evidence_index?.index_id
     && result?.comparison?.current_report_id === result?.report?.report_id
+    && (
+      result?.interaction?.schema_version === "launchrally.dev/verify-interaction/v1"
+      || result?.interaction?.current_report?.report_id === result?.report?.report_id
+    )
     && result?.assessment === result?.report?.assessment;
   const targetedHistory = result?.verification_scope?.whole_release === false
     && result?.history?.current_result_id === result?.targeted_result?.result_id

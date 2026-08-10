@@ -1,7 +1,15 @@
 {
   "name": "@launchrally/contracts",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Versioned LaunchRally CLI and report contracts",
+  "keywords": [
+    "launchrally",
+    "contracts",
+    "schemas",
+    "json-schema",
+    "audit",
+    "verification"
+  ],
   "license": "Apache-2.0",
   "type": "module",
   "exports": "./src/index.js",

@@ -22,7 +22,10 @@ import {
   parseManifest,
   serializeManifest,
 } from "./manifest.js";
-import { createNeedsRefreshResult } from "./interaction-result.js";
+import {
+  createNeedsRefreshResult,
+  manifestSourceReportIdentity,
+} from "./interaction-result.js";
 import { acquireOwnedLock } from "./exclusive-lock.js";
 import {
   createHistoryFiles,
@@ -962,7 +965,7 @@ function initializationError(error, message, extra = {}) {
   };
 }
 
-function registryPermissionRequest(version, resumeToken) {
+function registryPermissionRequest(version, sourceReportId, resumeToken) {
   return {
     contract: CLI_INTERACTION_CONTRACT,
     status: "needs_permission",
@@ -970,6 +973,7 @@ function registryPermissionRequest(version, resumeToken) {
     interaction: {
       schema_version: INIT_INTERACTION_SCHEMA,
       resume_token: resumeToken,
+      source_report: manifestSourceReportIdentity(sourceReportId),
     },
     request: {
       type: "permission",
@@ -1465,6 +1469,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       };
       return registryPermissionRequest(
         version,
+        source.report.report_id,
         await (dependencies.store_state ?? storeState)(permissionState),
       );
     }
@@ -1569,6 +1574,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
     interaction: {
       schema_version: INIT_INTERACTION_SCHEMA,
       resume_token: await (dependencies.store_state ?? storeState)(state),
+      source_report: manifestSourceReportIdentity(source.report.report_id),
     },
     request: {
       type: "confirmation",
