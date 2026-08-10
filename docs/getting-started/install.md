@@ -2,14 +2,14 @@
 
 LaunchRally CLI requires Node.js 20.12.0 or newer.
 
-LaunchRally `0.1.0` is the public Experimental P0 release across the CLI, canonical Skill, Codex Plugin, and Claude Plugin. Package and Plugin metadata, the bundled Skill contract, native marketplace manifests, and internal dependencies are validated against that exact SemVer. Experimental availability is not a stability claim or a P0 Validated decision.
+LaunchRally `0.1.1` is the public Experimental P0 release across the CLI, canonical Skill, Codex Plugin, and Claude Plugin. Package and Plugin metadata, the bundled Skill contract, native marketplace manifests, and internal dependencies are validated against that exact SemVer. Experimental availability is not a stability claim or a P0 Validated decision.
 
 ## Exact-version Audit
 
 Run the exact public CLI version without a global install. Node.js 20.12.0 is the minimum supported CLI runtime and is verified directly alongside Node.js 22 and 24:
 
 ```bash
-npm exec --package=@launchrally/cli@0.1.0 -- rally audit --json --cwd .
+npm exec --package=@launchrally/cli@0.1.1 -- rally audit --json --cwd .
 ```
 
 If npm needs to download the package, review its normal confirmation. Do not bypass that prompt. The first Audit does not modify the project. Optional project adoption happens later through `rally init`, which pins `@launchrally/cli` in the committed `.launchrally/toolchain/package.json` and npm lockfile without changing application dependencies. Init tries npm's offline cache first. A cache miss produces a typed permission request that discloses the exact package, version, registry source, and lifecycle-script-disabled command before any registry read; the file preview and confirmation follow only after resolution succeeds.
@@ -21,7 +21,7 @@ For an interactive TTY wizard, omit `--json`. Add `--plain` for numbered choices
 Codex installs Plugins at user scope. Pin the marketplace checkout to the exact release tag, then install LaunchRally:
 
 ```bash
-codex plugin marketplace add codeacme17/launchrally --ref v0.1.0
+codex plugin marketplace add codeacme17/launchrally --ref v0.1.1
 codex plugin add launchrally@launchrally
 ```
 
@@ -80,6 +80,6 @@ npm test
 
 Release validation rejects version drift, dependency ranges, lifecycle install hooks, stale Skill copies, and unexpected tarball files. Artifact testing packs all public workspaces, installs them together with scripts disabled in a clean offline project, smoke-tests the CLI, runs Claude's strict Plugin validator, and exercises Codex marketplace install and removal in an isolated user scope.
 
-Publishing is performed only by the repository's release workflow on a matching `v0.1.0` tag. npm Trusted Publishing supplies short-lived OIDC credentials and provenance; no long-lived npm token is used.
+Publishing is performed only by the repository's release workflow on a matching `v0.1.1` tag. npm Trusted Publishing supplies short-lived OIDC credentials and provenance; no long-lived npm token is used.
 
 Maintainers use the [Experimental release runbook](../maintainers/release-runbook.md) for the external control checks, protected promotion and tag, public smoke evidence, and partial-publication recovery.
