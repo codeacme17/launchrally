@@ -37,6 +37,7 @@ export function exactToolchainLock(version = "0.2.0") {
         dev: true,
         license: "Apache-2.0",
         dependencies: {
+          "@clack/core": "1.4.3",
           "@clack/prompts": "1.7.0",
           "@launchrally/contracts": version,
           "@launchrally/core": version,
