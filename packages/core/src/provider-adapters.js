@@ -417,7 +417,7 @@ async function defaultRunner(command, cwd, { signal } = {}) {
     invocation = /\.(?:bat|cmd)$/iu.test(executable)
       ? {
         executable: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
-        arguments: ["/d", "/s", "/c", executable, ...command.arguments],
+        arguments: ["/d", "/s", "/c", command.executable, ...command.arguments],
       }
       : { executable, arguments: command.arguments };
   }

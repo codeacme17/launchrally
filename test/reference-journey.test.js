@@ -212,7 +212,7 @@ async function createRegistryNpmStub(version = "0.1.1") {
 }
 
 async function createProviderCommandStub(executableName, stdout) {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-provider-stub-"));
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally provider stub-"));
   const script = path.join(directory, "provider-stub.cjs");
   await writeFile(script, `process.stdout.write(${JSON.stringify(stdout)});\n`);
   if (process.platform === "win32") {
