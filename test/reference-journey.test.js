@@ -56,7 +56,7 @@ const directJourney = {
   schema_version: "launchrally.dev/reference-journey/v3",
   compatibility: {
     launcher: {
-      supported_versions: ["0.2.2", "0.3.0"],
+      supported_versions: ["0.3.0"],
     },
     engine: {
       supported_versions: ["0.2.2", "0.3.0"],
@@ -848,7 +848,7 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
     },
     launcher: {
       package: "@launchrally/cli",
-      supported_versions: ["0.2.2", cliPackage.version],
+      supported_versions: [cliPackage.version],
     },
     execution_authority: {
       supported_contracts: ["launchrally.dev/execution-authority/v1"],
@@ -865,10 +865,10 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
       compatibility: "legacy_adapter",
     }],
   });
-  assert.notEqual(
-    journey.compatibility.plugin.version,
-    journey.compatibility.launcher.supported_versions.at(0),
-    "a supported Plugin/Launcher mismatch is representable",
+  assert.deepEqual(
+    journey.compatibility.launcher.supported_versions,
+    [journey.compatibility.plugin.version],
+    "a pre-authority direct binary cannot be treated as a supported Launcher",
   );
   assert.notEqual(
     journey.compatibility.plugin.version,

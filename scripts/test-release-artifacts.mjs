@@ -1,5 +1,17 @@
 import { execFile } from "node:child_process";
-import { access, chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -9,7 +21,10 @@ import { promisify } from "node:util";
 import { hasClaudeInstalledPlugin } from "./native-plugin-state.mjs";
 import { assertNoConsumerInstallScripts } from "./release-artifact-policy.mjs";
 
-import { exactToolchainLock } from "../test/helpers/exact-toolchain.js";
+import {
+  exactToolchainLock,
+  exactToolchainPackage,
+} from "../test/helpers/exact-toolchain.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
@@ -43,19 +58,33 @@ async function createArtifactNpmStub(
   temporaryRoot,
   cleanProject,
   version,
-  { offlineAvailable = true } = {},
+  {
+    launcherVersion = version,
+    legacyLayout = false,
+    offlineAvailable = true,
+    preparedToolchain = null,
+  } = {},
 ) {
   const directory = path.join(
     temporaryRoot,
-    offlineAvailable ? "artifact-npm-stub" : "artifact-npm-cache-miss-stub",
+    preparedToolchain
+      ? "artifact-npm-public-legacy-stub"
+      : legacyLayout
+      ? "artifact-npm-legacy-stub"
+      : offlineAvailable
+        ? "artifact-npm-stub"
+        : "artifact-npm-cache-miss-stub",
   );
   await mkdir(directory, { recursive: true });
   const script = path.join(directory, "npm-stub.cjs");
-  const lock = exactToolchainLock(version);
+  const sourceRoot = preparedToolchain ?? cleanProject;
+  const lock = preparedToolchain
+    ? await json(path.join(preparedToolchain, "package-lock.json"))
+    : exactToolchainLock(version);
   await writeFile(script, [
     'const fs = require("node:fs");',
     'const path = require("node:path");',
-    `const sourceRoot = ${JSON.stringify(cleanProject)};`,
+    `const sourceRoot = ${JSON.stringify(sourceRoot)};`,
     `const lock = ${JSON.stringify(lock)};`,
     ...(!offlineAvailable ? [
       'if (process.argv.includes("--offline")) {',
@@ -73,6 +102,39 @@ async function createArtifactNpmStub(
     "    { recursive: true },",
     "  );",
     "}",
+    ...(!legacyLayout ? [] : [
+      "for (const [lockedPath, entry] of Object.entries(lock.packages)) {",
+      '  if (!lockedPath.startsWith("node_modules/")) continue;',
+      '  const name = lockedPath.slice("node_modules/".length);',
+      '  const packagePath = path.join(process.cwd(), lockedPath, "package.json");',
+      '  const packageJson = JSON.parse(fs.readFileSync(packagePath, "utf8"));',
+      "  packageJson.version = entry.version;",
+      "  if (entry.dependencies) packageJson.dependencies = entry.dependencies;",
+      "  else delete packageJson.dependencies;",
+      '  if (name === "@launchrally/cli") {',
+      '    packageJson.bin = { rally: "bin/rally.js" };',
+      "    delete packageJson.launchrally;",
+      "  }",
+      '  fs.writeFileSync(packagePath, `${JSON.stringify(packageJson, null, 2)}\\n`);',
+      "}",
+      'const legacyEntrypoint = path.join(process.cwd(), "node_modules/@launchrally/cli/bin/rally.js");',
+      "fs.writeFileSync(legacyEntrypoint, [",
+      '  "const result = {",',
+      '  `  contract: "launchrally.dev/cli/v2",`,',
+      '  `  status: "completed",`,',
+      '  `  operation: "version",`,',
+      `  ${JSON.stringify(`  cli_version: "${version}",`)},`,
+      `  ${JSON.stringify(`  launcher_version: "${launcherVersion}",`)},`,
+      '  `  authority: {`,',
+      '  `    schema_version: "launchrally.dev/execution-authority/v1",`,',
+      '  `    state: "ready",`,',
+      '  `    source: "project_toolchain",`,',
+      `  ${JSON.stringify(`    engine: { package: "@launchrally/cli", version: "${version}", compatibility: "legacy_adapter" },`)},`,
+      '  `  },`,',
+      '  `};`,',
+      '  `process.stdout.write(JSON.stringify(result));`,',
+      '].join("\\n"));',
+    ]),
   ].join("\n"));
   if (process.platform === "win32") {
     await writeFile(
@@ -151,6 +213,34 @@ async function packArtifacts(temporaryRoot, release) {
   return { cacheDirectory, packageTarballs, tarballs };
 }
 
+async function installPublicLegacyToolchain(temporaryRoot) {
+  const toolchain = path.join(temporaryRoot, "public-legacy-0.2.2-toolchain");
+  await mkdir(toolchain);
+  await writeFile(
+    path.join(toolchain, "package.json"),
+    `${JSON.stringify(exactToolchainPackage("0.2.2"), null, 2)}\n`,
+  );
+  await runNpm([
+    "install",
+    "--ignore-scripts",
+    "--no-audit",
+    "--no-fund",
+    "--save-exact",
+  ], { cwd: toolchain });
+  const installed = await json(path.join(
+    toolchain,
+    "node_modules",
+    "@launchrally",
+    "cli",
+    "package.json",
+  ));
+  if (installed.version !== "0.2.2") {
+    throw new Error(`public_legacy_version_drift: ${installed.version}`);
+  }
+  assertNoConsumerInstallScripts(await json(path.join(toolchain, "package-lock.json")));
+  return toolchain;
+}
+
 function prefixExecutable(prefix) {
   return process.platform === "win32"
     ? path.join(prefix, "rally.cmd")
@@ -218,12 +308,30 @@ async function assertMissing(filePath, code) {
   throw new Error(`${code}: ${filePath} exists unexpectedly`);
 }
 
+async function snapshotTree(directory, relative = "") {
+  const entries = await readdir(path.join(directory, relative), { withFileTypes: true });
+  const snapshot = [];
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    const entryRelative = path.join(relative, entry.name);
+    if (entry.isDirectory()) {
+      snapshot.push(...await snapshotTree(directory, entryRelative));
+    } else {
+      snapshot.push([
+        entryRelative.split(path.sep).join("/"),
+        await readFile(path.join(directory, entryRelative), "utf8"),
+      ]);
+    }
+  }
+  return snapshot;
+}
+
 async function runInstallationJourneys({
   temporaryRoot,
   cleanProject,
   version,
   cacheDirectory,
   packageTarballs,
+  publicLegacy,
   publicRelease,
 }) {
   const prefix = path.join(temporaryRoot, "user-npm-prefix");
@@ -616,28 +724,313 @@ async function runInstallationJourneys({
   }
 
   const verifiedRepository = activeRepository;
-  const corruptedRepository = path.join(temporaryRoot, "corrupted authority");
-  await cp(verifiedRepository, corruptedRepository, { recursive: true });
-  activeRepository = corruptedRepository;
-  await writeFile(
-    path.join(activeRepository, ".launchrally", "toolchain", "package-lock.json"),
-    "{}\n",
+  const immutableHistoryBeforeMigration = await Promise.all([
+    snapshotTree(path.join(verifiedRepository, ".launchrally", "reports")),
+    snapshotTree(path.join(verifiedRepository, ".launchrally", "evidence")),
+  ]);
+  const legacyRepository = path.join(temporaryRoot, "legacy 0.2.2 project");
+  await cp(verifiedRepository, legacyRepository, { recursive: true });
+  const legacyToolchain = path.join(legacyRepository, ".launchrally", "toolchain");
+  await Promise.all([
+    writeFile(
+      path.join(legacyToolchain, "package.json"),
+      `${JSON.stringify(exactToolchainPackage("0.2.2"), null, 2)}\n`,
+    ),
+    writeFile(
+      path.join(legacyToolchain, "package-lock.json"),
+      `${JSON.stringify(exactToolchainLock("0.2.2"), null, 2)}\n`,
+    ),
+    rm(path.join(legacyToolchain, "authority.json"), { force: true }),
+    rm(path.join(legacyToolchain, "node_modules"), { recursive: true, force: true }),
+  ]);
+  const publicLegacyToolchain = publicLegacy
+    ? await installPublicLegacyToolchain(temporaryRoot)
+    : null;
+  const legacyNpmStub = await createArtifactNpmStub(
+    temporaryRoot,
+    cleanProject,
+    "0.2.2",
+    {
+      launcherVersion: version,
+      legacyLayout: !publicLegacy,
+      preparedToolchain: publicLegacyToolchain,
+    },
   );
-  const invalidPlanExecution = await invoke("plan", {
-    "{current_report_path}": currentReportPath,
-  }, { includeExitCode: true, validate: false });
-  const invalidPlan = invalidPlanExecution.result;
+  const legacyEnvironment = {
+    ...launcherEnvironment,
+    PATH: [legacyNpmStub, path.dirname(launcher), process.env.PATH ?? ""].join(path.delimiter),
+  };
+  activeRepository = legacyRepository;
+  const legacyRestored = await invoke("toolchain_restore", {}, {
+    environment: legacyEnvironment,
+  });
   if (
-    invalidPlanExecution.exitCode === 0
-    || invalidPlan.status !== "execution_error"
-    || invalidPlan.error !== "invalid_toolchain"
-    || invalidPlan.authority?.source !== "project_toolchain"
-  ) throw new Error("artifact_corruption_did_not_fail_closed");
+    legacyRestored.status !== "completed"
+    || legacyRestored.authority?.engine?.version !== "0.2.2"
+    || legacyRestored.authority?.engine?.compatibility !== "legacy_adapter"
+  ) throw new Error(`artifact_legacy_restore_failed: ${JSON.stringify(legacyRestored)}`);
+  const legacyVersion = await invoke("project_version", {}, {
+    environment: legacyEnvironment,
+    validate: false,
+  });
+  if (
+    legacyVersion.status !== "completed"
+    || legacyVersion.cli_version !== "0.2.2"
+    || (!publicLegacy && legacyVersion.authority?.source !== "project_toolchain")
+  ) throw new Error(`artifact_legacy_delegation_failed: ${JSON.stringify(legacyVersion)}`);
+
+  const upgradePreview = await invoke("toolchain_migrate", {
+    "{target_engine_version}": version,
+  }, { environment: launcherEnvironment });
+  if (upgradePreview.status !== "needs_confirmation") {
+    throw new Error(`artifact_upgrade_preview_failed: ${JSON.stringify(upgradePreview)}`);
+  }
+  const upgraded = await invoke("toolchain_migrate_confirmation", {
+    "{target_engine_version}": version,
+    "{toolchain_resume}": upgradePreview.interaction.resume_token,
+  }, { environment: launcherEnvironment });
+  if (
+    upgraded.status !== "completed"
+    || upgraded.authority?.engine?.version !== version
+    || upgraded.next_action?.reason !== "execution_authority_changed"
+  ) throw new Error(`artifact_legacy_upgrade_failed: ${JSON.stringify(upgraded)}`);
+  const currentPointerPath = path.join(
+    activeRepository,
+    ".launchrally",
+    "cache",
+    "current-report.json",
+  );
+  const upgradePointer = await json(currentPointerPath);
+  if (
+    upgradePointer.currentness?.status !== "non_current"
+    || !upgradePointer.currentness.reasons?.some(
+      ({ reason_code: reasonCode }) => reasonCode === "execution_authority_changed",
+    )
+  ) throw new Error("artifact_upgrade_did_not_invalidate_report_currentness");
+  assertEqual(
+    await Promise.all([
+      snapshotTree(path.join(activeRepository, ".launchrally", "reports")),
+      snapshotTree(path.join(activeRepository, ".launchrally", "evidence")),
+    ]),
+    immutableHistoryBeforeMigration,
+    "artifact_upgrade_mutated_history",
+    "upgrade must preserve every immutable Report and Evidence byte",
+  );
+
+  const downgradePreview = await invoke("toolchain_migrate", {
+    "{target_engine_version}": "0.2.2",
+  }, { environment: legacyEnvironment });
+  if (downgradePreview.status !== "needs_confirmation") {
+    throw new Error(`artifact_downgrade_preview_failed: ${JSON.stringify(downgradePreview)}`);
+  }
+  const downgraded = await invoke("toolchain_migrate_confirmation", {
+    "{target_engine_version}": "0.2.2",
+    "{toolchain_resume}": downgradePreview.interaction.resume_token,
+  }, { environment: legacyEnvironment });
+  if (
+    downgraded.status !== "completed"
+    || downgraded.authority?.engine?.version !== "0.2.2"
+    || downgraded.authority?.engine?.compatibility !== "legacy_adapter"
+  ) throw new Error(`artifact_downgrade_failed: ${JSON.stringify(downgraded)}`);
   assertEqual(
     await readFile(path.join(activeRepository, ".launchrally", "manifest.yaml"), "utf8"),
     manifestContent,
-    "artifact_corruption_mutated_manifest",
-    "invalid project authority must not mutate the Manifest",
+    "artifact_migration_manifest_drift",
+    "upgrade and downgrade must preserve the Manifest byte-for-byte",
+  );
+  assertEqual(
+    await Promise.all([
+      snapshotTree(path.join(activeRepository, ".launchrally", "reports")),
+      snapshotTree(path.join(activeRepository, ".launchrally", "evidence")),
+    ]),
+    immutableHistoryBeforeMigration,
+    "artifact_downgrade_mutated_history",
+    "downgrade must preserve every immutable Report and Evidence byte",
+  );
+
+  const invalidAuthorityCases = [];
+  const assertInvalidAuthority = async ({ name, mutate, status = "execution_error" }) => {
+    const repositoryCopy = path.join(temporaryRoot, `invalid authority ${name}`);
+    await cp(verifiedRepository, repositoryCopy, { recursive: true });
+    activeRepository = repositoryCopy;
+    await mutate(repositoryCopy);
+    const execution = await invoke("plan", {
+      "{current_report_path}": currentReportPath,
+    }, { includeExitCode: true, validate: false });
+    if (
+      execution.exitCode === 0
+      || execution.result.status !== status
+      || execution.result.authority?.source !== "project_toolchain"
+    ) throw new Error(
+      `artifact_${name}_did_not_fail_closed: ${JSON.stringify(execution)}`,
+    );
+    assertEqual(
+      await readFile(path.join(repositoryCopy, ".launchrally", "manifest.yaml"), "utf8"),
+      manifestContent,
+      `artifact_${name}_mutated_manifest`,
+      "invalid or unavailable project authority must not mutate the Manifest",
+    );
+    invalidAuthorityCases.push(name);
+  };
+
+  await assertInvalidAuthority({
+    name: "corrupted_lock",
+    mutate: (repositoryCopy) => writeFile(
+      path.join(repositoryCopy, ".launchrally", "toolchain", "package-lock.json"),
+      "{}\n",
+    ),
+  });
+  await assertInvalidAuthority({
+    name: "unsupported_contract",
+    status: "unavailable",
+    mutate: async (repositoryCopy) => {
+      const descriptorPath = path.join(
+        repositoryCopy,
+        ".launchrally",
+        "toolchain",
+        "authority.json",
+      );
+      const descriptor = await json(descriptorPath);
+      descriptor.contract = "launchrally.dev/execution-authority/v999";
+      await writeFile(descriptorPath, `${JSON.stringify(descriptor)}\n`);
+    },
+  });
+  await assertInvalidAuthority({
+    name: "descriptor_path_escape",
+    mutate: async (repositoryCopy) => {
+      const descriptorPath = path.join(
+        repositoryCopy,
+        ".launchrally",
+        "toolchain",
+        "authority.json",
+      );
+      const descriptor = await json(descriptorPath);
+      descriptor.engine.entrypoint = "../../../../outside.js";
+      await writeFile(descriptorPath, `${JSON.stringify(descriptor)}\n`);
+    },
+  });
+  if (process.platform !== "win32") {
+    await assertInvalidAuthority({
+      name: "symlinked_engine_escape",
+      mutate: async (repositoryCopy) => {
+        const enginePath = path.join(
+          repositoryCopy,
+          ".launchrally",
+          "toolchain",
+          "node_modules",
+          "@launchrally",
+          "cli",
+        );
+        const outsideEngine = path.join(temporaryRoot, "outside symlinked engine");
+        await cp(enginePath, outsideEngine, { recursive: true });
+        await rm(enginePath, { recursive: true });
+        await symlink(outsideEngine, enginePath, "dir");
+      },
+    });
+  }
+  await assertInvalidAuthority({
+    name: "wrong_installed_version",
+    mutate: async (repositoryCopy) => {
+      const packagePath = path.join(
+        repositoryCopy,
+        ".launchrally",
+        "toolchain",
+        "node_modules",
+        "@launchrally",
+        "cli",
+        "package.json",
+      );
+      const installedPackage = await json(packagePath);
+      installedPackage.version = "9.9.9";
+      await writeFile(packagePath, `${JSON.stringify(installedPackage)}\n`);
+    },
+  });
+  await assertInvalidAuthority({
+    name: "missing_materialization",
+    status: "unavailable",
+    mutate: (repositoryCopy) => rm(
+      path.join(repositoryCopy, ".launchrally", "toolchain", "node_modules"),
+      { recursive: true, force: true },
+    ),
+  });
+
+  const migrationRepository = path.join(temporaryRoot, "failed downgrade rollback");
+  await cp(verifiedRepository, migrationRepository, { recursive: true });
+  activeRepository = migrationRepository;
+  const authoritativePaths = [
+    "manifest.yaml",
+    "toolchain/package.json",
+    "toolchain/package-lock.json",
+    "toolchain/authority.json",
+  ];
+  const beforeMigration = await Promise.all(authoritativePaths.map((relativePath) => (
+    readFile(path.join(activeRepository, ".launchrally", relativePath), "utf8")
+  )));
+  const failedMigration = await invoke("toolchain_migrate", {
+    "{target_engine_version}": "0.2.2",
+  }, { includeExitCode: true, validate: false });
+  if (failedMigration.exitCode === 0 || failedMigration.result.status !== "execution_error") {
+    throw new Error("artifact_failed_downgrade_did_not_stop");
+  }
+  assertEqual(
+    await Promise.all(authoritativePaths.map((relativePath) => (
+      readFile(path.join(activeRepository, ".launchrally", relativePath), "utf8")
+    ))),
+    beforeMigration,
+    "artifact_failed_downgrade_authority_drift",
+    "a failed downgrade must roll back every authoritative file",
+  );
+  await access(path.join(activeRepository, ".launchrally", "reports"));
+  await access(path.join(activeRepository, ".launchrally", "evidence"));
+
+  const recoveryRepository = path.join(temporaryRoot, "interrupted migration recovery");
+  await cp(verifiedRepository, recoveryRepository, { recursive: true });
+  const recoveryTransaction = path.join(
+    recoveryRepository,
+    ".launchrally",
+    ".toolchain-transaction",
+  );
+  await mkdir(recoveryTransaction);
+  await cp(legacyToolchain, path.join(recoveryTransaction, "old"), { recursive: true });
+  await writeFile(
+    path.join(recoveryTransaction, "transaction.json"),
+    `${JSON.stringify({
+      schema_version: "launchrally.dev/toolchain-transaction/v1",
+      phase: "prepared",
+      operation: "migrate",
+      had_previous: true,
+      previous_version: "0.2.2",
+      version,
+    })}\n`,
+  );
+  activeRepository = recoveryRepository;
+  const recoveredMigration = await invoke("toolchain_restore");
+  if (
+    recoveredMigration.status !== "completed"
+    || recoveredMigration.outcome !== "already_ready"
+    || recoveredMigration.authority?.engine?.version !== version
+  ) throw new Error(`artifact_migration_recovery_failed: ${JSON.stringify(recoveredMigration)}`);
+  await assertMissing(recoveryTransaction, "artifact_migration_transaction_not_cleaned");
+  const recoveryPointer = await json(path.join(
+    recoveryRepository,
+    ".launchrally",
+    "cache",
+    "current-report.json",
+  ));
+  if (
+    recoveryPointer.currentness?.status !== "non_current"
+    || !recoveryPointer.currentness.reasons?.some(
+      ({ reason_code: reasonCode }) => reasonCode === "execution_authority_changed",
+    )
+  ) throw new Error("artifact_recovery_did_not_invalidate_report_currentness");
+  assertEqual(
+    await Promise.all([
+      snapshotTree(path.join(recoveryRepository, ".launchrally", "reports")),
+      snapshotTree(path.join(recoveryRepository, ".launchrally", "evidence")),
+    ]),
+    immutableHistoryBeforeMigration,
+    "artifact_recovery_mutated_history",
+    "interruption recovery must preserve every immutable Report and Evidence byte",
   );
   activeRepository = verifiedRepository;
 
@@ -667,6 +1060,13 @@ async function runInstallationJourneys({
       fresh_clone: "restored_offline",
       registry_permission: "cache_miss_approved_and_denied",
       invalid_authority: "corruption_failed_closed",
+      invalid_authority_cases: invalidAuthorityCases.sort(),
+      migration_failure: "pre_adoption_failure_preserved_authority",
+      legacy_toolchain: publicLegacy
+        ? "public_0.2.2_restored_and_delegated"
+        : "compatibility_fixture_restored_and_delegated",
+      migration_success: "downgrade_and_upgrade_preserved_immutable_history",
+      transaction_recovery: "interrupted_migration_recovered",
       full_journey: "plan_handoff_verify_completed",
       packaged_skill_fixtures: "codex_and_claude_executed",
       launcher_removal: "project_data_preserved",
@@ -1244,6 +1644,7 @@ async function main() {
   const release = await json(path.join(root, "release", "artifacts.json"));
   const rootPackage = await json(path.join(root, "package.json"));
   const publicRelease = process.argv.includes("--public");
+  const publicLegacy = publicRelease || process.argv.includes("--public-legacy");
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "launchrally-artifacts-"));
   try {
     let installArguments;
@@ -1287,6 +1688,7 @@ async function main() {
       version: rootPackage.version,
       cacheDirectory,
       packageTarballs,
+      publicLegacy,
       publicRelease,
     });
     const nativePlugins = process.argv.includes("--skip-native")

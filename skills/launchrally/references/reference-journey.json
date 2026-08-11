@@ -7,7 +7,7 @@
     },
     "launcher": {
       "package": "@launchrally/cli",
-      "supported_versions": ["0.2.2", "0.3.0"]
+      "supported_versions": ["0.3.0"]
     },
     "execution_authority": {
       "supported_contracts": ["launchrally.dev/execution-authority/v1"]
