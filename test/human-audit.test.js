@@ -108,11 +108,11 @@ test("an npm-exec Human Audit emits a complete exact-version npm-exec Init comma
     outputPath: "/workspace/site with spaces/audit report.json",
     invocationContext,
   });
+  const expectedCommand = process.platform === "win32"
+    ? "& 'npm' 'exec' '--package=@launchrally/cli@0.3.0' '--' 'rally' 'init' '--cwd' '/workspace/site with spaces' '--report' '/workspace/site with spaces/audit report.json'"
+    : "npm exec --package=@launchrally/cli@0.3.0 -- rally init --cwd '/workspace/site with spaces' --report '/workspace/site with spaces/audit report.json'";
 
-  assert.match(
-    summary,
-    /Next command\nnpm exec --package=@launchrally\/cli@0\.3\.0 -- rally init --cwd '\/workspace\/site with spaces' --report '\/workspace\/site with spaces\/audit report\.json'/u,
-  );
+  assert.ok(summary.includes(`Next command\n${expectedCommand}`));
   assert.doesNotMatch(summary, /--yes/u);
 });
 
@@ -133,11 +133,11 @@ test("an unknown Human Audit entry uses and discloses the executable fallback", 
       launcher_version: "0.3.0",
     },
   });
+  const expectedCommand = process.platform === "win32"
+    ? "& 'npm' 'exec' '--package=@launchrally/cli@0.3.0' '--' 'rally' 'init' '--cwd' '/workspace/site' '--report' '/workspace/audit.json'"
+    : "npm exec --package=@launchrally/cli@0.3.0 -- rally init --cwd '/workspace/site' --report '/workspace/audit.json'";
 
-  assert.match(
-    summary,
-    /Next command\nnpm exec --package=@launchrally\/cli@0\.3\.0 -- rally init/u,
-  );
+  assert.ok(summary.includes(`Next command\n${expectedCommand}`));
   assert.match(summary, /Launcher entry\nThe original Launcher entry could not be confirmed/u);
 });
 
