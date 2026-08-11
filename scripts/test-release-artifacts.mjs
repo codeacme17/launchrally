@@ -326,15 +326,20 @@ async function runInstallationJourneys({
     npmExecRepository,
     { recursive: true },
   );
-  const npmExecInput = JSON.parse((await runNpm([
-    ...npmExecArguments,
-    ...fixtureArguments(journey, "audit_input", {
-      "{repository_root}": npmExecRepository,
-    }),
-  ], { cwd: temporaryRoot })).stdout);
-  const npmExecConfirmation = JSON.parse((await runNpm([
-    ...npmExecArguments,
-    ...fixtureArguments(journey, "audit_confirmation", {
+  const invokeNpmExecFixture = async (id, replacements = {}) => {
+    const invocation = findFixtureInvocation(journey, id);
+    const execution = await runNpm([
+      ...npmExecArguments,
+      ...fixtureArguments(journey, id, replacements),
+    ], { cwd: temporaryRoot });
+    const result = JSON.parse(execution.stdout);
+    assertFixtureResult(journey, invocation, result, 0);
+    return result;
+  };
+  const npmExecInput = await invokeNpmExecFixture("audit_input", {
+    "{repository_root}": npmExecRepository,
+  });
+  const npmExecConfirmation = await invokeNpmExecFixture("audit_confirmation", {
       "{repository_root}": npmExecRepository,
       "{audit_resume}": npmExecInput.interaction.resume_token,
       "{answers_json}": JSON.stringify({
@@ -344,8 +349,7 @@ async function runInstallationJourneys({
         provider_roles: [],
         support_layers: [],
       }),
-    }),
-  ], { cwd: temporaryRoot })).stdout);
+  });
   if (
     npmExecInput.status !== "needs_input"
     || npmExecConfirmation.status !== "needs_confirmation"
@@ -385,7 +389,7 @@ async function runInstallationJourneys({
     if (options.validate !== false) {
       assertFixtureResult(journey, invocation, result, exitCode);
     }
-    return result;
+    return options.includeExitCode ? { exitCode, result } : result;
   };
   const fixtureInvocations = [];
   const invokeFixture = async (id, replacements, options) => {
@@ -492,19 +496,62 @@ async function runInstallationJourneys({
   }
 
   activeRepository = deniedRestore;
+  const deniedAuthorityFiles = await Promise.all([
+    "package.json",
+    "package-lock.json",
+    "authority.json",
+  ].map((name) => readFile(
+    path.join(activeRepository, ".launchrally", "toolchain", name),
+    "utf8",
+  )));
   const deniedPermission = await invokeFixture(
     "toolchain_restore",
     {},
     { environment: registryEnvironment },
   );
-  const registryDenied = await invoke("toolchain_restore_permission", {
+  const registryDeniedExecution = await invoke("toolchain_restore_permission", {
     "{toolchain_resume}": deniedPermission.interaction.resume_token,
     "{toolchain_permissions_json}": JSON.stringify({ npm_registry_read: "denied" }),
-  }, { environment: registryEnvironment, validate: false });
+  }, {
+    environment: registryEnvironment,
+    includeExitCode: true,
+    validate: false,
+  });
+  const registryDenied = registryDeniedExecution.result;
   if (
-    registryDenied.status !== "execution_error"
+    registryDeniedExecution.exitCode === 0
+    || registryDenied.status !== "execution_error"
     || registryDenied.error !== "registry_permission_denied"
   ) throw new Error("artifact_registry_permission_denial_failed");
+  await assertMissing(
+    deniedPermission.request.permissions[0].temporary_target,
+    "artifact_registry_denial_retained_preparation",
+  );
+  await assertMissing(
+    path.join(activeRepository, ".launchrally", "toolchain", "node_modules"),
+    "artifact_registry_denial_materialized_engine",
+  );
+  assertEqual(
+    await Promise.all(["package.json", "package-lock.json", "authority.json"].map((name) => (
+      readFile(path.join(activeRepository, ".launchrally", "toolchain", name), "utf8")
+    ))),
+    deniedAuthorityFiles,
+    "artifact_registry_denial_authority_drift",
+    "registry denial must preserve the exact project authority files",
+  );
+  assertEqual(
+    await readFile(path.join(activeRepository, ".launchrally", "manifest.yaml"), "utf8"),
+    manifestContent,
+    "artifact_registry_denial_manifest_drift",
+    "registry denial must preserve the Manifest byte-for-byte",
+  );
+  const deniedStatus = await invoke("toolchain_status", {}, {
+    environment: registryEnvironment,
+  });
+  if (
+    deniedStatus.status !== "unavailable"
+    || deniedStatus.authority?.state !== "needs_toolchain_restore"
+  ) throw new Error("artifact_registry_denial_changed_authority_state");
 
   const freshClone = path.join(temporaryRoot, "fresh clone ü restored");
   await cp(missingMaterialization, freshClone, { recursive: true });
@@ -576,11 +623,13 @@ async function runInstallationJourneys({
     path.join(activeRepository, ".launchrally", "toolchain", "package-lock.json"),
     "{}\n",
   );
-  const invalidPlan = await invoke("plan", {
+  const invalidPlanExecution = await invoke("plan", {
     "{current_report_path}": currentReportPath,
-  }, { validate: false });
+  }, { includeExitCode: true, validate: false });
+  const invalidPlan = invalidPlanExecution.result;
   if (
-    invalidPlan.status !== "execution_error"
+    invalidPlanExecution.exitCode === 0
+    || invalidPlan.status !== "execution_error"
     || invalidPlan.error !== "invalid_toolchain"
     || invalidPlan.authority?.source !== "project_toolchain"
   ) throw new Error("artifact_corruption_did_not_fail_closed");
