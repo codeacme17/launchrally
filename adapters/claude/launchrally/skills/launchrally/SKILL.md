@@ -20,7 +20,9 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 
 ## Preserve these invariants
 
-- Use an exact compatible CLI version. Do not install or upgrade it silently.
+- CLI installation is a user-managed prerequisite separate from Codex or Claude Plugin installation. Installing or removing a Plugin never installs or removes the Launcher or project-owned data.
+- Use only a Launcher and selected Engine declared by the release compatibility matrix. Do not install, update, downgrade, restore, migrate, clean, remove, or substitute either one silently.
+- For an explicitly user-selected exact-version npm-exec trial or CI entry, preserve the package manager's download confirmation.
 - Treat CLI structured output as canonical. Do not scrape human terminal prose.
 - Confirm material release intent before passing it to the CLI.
 - Ask for explicit permission at the boundary requested by the CLI.
@@ -30,13 +32,14 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - Treat a confirmed Provider selection as Manifest intent only. It is not Machine Evidence and remains Unverified until Verify succeeds.
 - If the user explicitly requests local code remediation, state that it is a host-Agent task outside LaunchRally controlled Apply guarantees, then return to `verify`.
 - Present Verify scope, fresh-read permissions, Manifest Drift, and source comparison exactly as returned; only a full current Report can carry a whole-release Assessment.
+- Plugin removal never removes the user-managed Launcher, Project Toolchain, Manifest, Reports, Evidence, or history.
 
 ## Start safely
 
 1. Resolve the exact repository root without changing files.
-2. Require `@launchrally/cli@0.2.2` and check a project-pinned CLI first.
-3. Before any journey command, invoke that executable with `--version --json` and require `contract: "launchrally.dev/cli/v2"`, `operation: "version"`, `status: "completed"`, and `cli_version: "0.2.2"`; stop on any mismatch.
-4. If the executable is absent, disclose the exact package, version, source, and command before proposing `npm exec`.
-5. Preserve the package manager's download confirmation.
-6. Invoke Agent Mode with structured output and handle the returned state.
+2. Make `rally --version --json --cwd <repository-root>` the first discovery operation. Do not probe for or invoke a Project Toolchain Engine directly.
+3. If `rally` is absent, explain that CLI installation and Plugin installation are separate, link to the repository's single Install authority, present exactly `npm install --global @launchrally/cli@0.3.0` and the structured verification command, then stop before Audit and wait for the user. Do not run the install, automatically substitute the separate exact-version npm-exec trial/CI entry, or change npm prefixes or shell profiles.
+4. Validate the complete version response and `launchrally.dev/execution-authority/v1` object through the compatibility matrix and typed authority router in [references/cli-contract.md](references/cli-contract.md). Plugin, Launcher, selected Engine, and project-pin versions are separate facts and need not be equal when each is supported.
+5. For `ready`, invoke every repository operation through `rally` so the Launcher follows the selected Engine. For restore, migrate, or clean, show the exact operation, permissions, targets, and effects and wait for explicit user approval before Agent execution.
+6. Invoke Agent Mode with structured output and handle the returned state. Stop on unknown contracts or versions, invalid descriptors or paths, and malformed output.
 7. Always disclose scaffold limitations and Verification Gaps.

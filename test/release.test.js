@@ -21,7 +21,7 @@ test("Claude public smoke recognizes the installed-list schema", () => {
   const installed = {
     installed: [{
       id: "launchrally@launchrally",
-      version: "0.2.2",
+      version: "0.3.0",
       scope: "user",
       enabled: true,
     }],
@@ -29,16 +29,16 @@ test("Claude public smoke recognizes the installed-list schema", () => {
   };
 
   assert.equal(
-    hasClaudeInstalledPlugin(installed, "launchrally@launchrally", "0.2.2"),
+    hasClaudeInstalledPlugin(installed, "launchrally@launchrally", "0.3.0"),
     true,
   );
   assert.equal(
-    hasClaudeInstalledPlugin(installed, "launchrally@launchrally", "0.2.3"),
+    hasClaudeInstalledPlugin(installed, "launchrally@launchrally", "0.3.1"),
     false,
   );
   assert.equal(hasClaudeInstalledPlugin({
-    installed: [{ pluginId: "launchrally@launchrally", version: "0.2.2" }],
-  }, "launchrally@launchrally", "0.2.2"), false);
+    installed: [{ pluginId: "launchrally@launchrally", version: "0.3.0" }],
+  }, "launchrally@launchrally", "0.3.0"), false);
 });
 
 async function createReleaseFixture() {
@@ -64,7 +64,7 @@ test("release validation proves one SemVer across CLI, Plugins, and bundled Skil
 
   assert.deepEqual(result, {
     status: "completed",
-    version: "0.2.2",
+    version: "0.3.0",
     packages: [
       "@launchrally/claude-plugin",
       "@launchrally/cli",
@@ -84,7 +84,7 @@ test("release validation fails when a Plugin version drifts", async () => {
     "adapters/codex/launchrally/.codex-plugin/plugin.json",
   );
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  manifest.version = "0.2.3";
+  manifest.version = "0.3.1";
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   await assert.rejects(
@@ -95,7 +95,7 @@ test("release validation fails when a Plugin version drifts", async () => {
     ),
     (error) => {
       assert.match(error.stderr, /release_version_drift/u);
-      assert.match(error.stderr, /plugin\.json declares 0\.2\.3; expected 0\.2\.2/u);
+      assert.match(error.stderr, /plugin\.json declares 0\.3\.1; expected 0\.3\.0/u);
       return true;
     },
   );
@@ -108,7 +108,7 @@ test("release validation fails when a bundled Skill command drifts", async () =>
   const skill = await readFile(skillPath, "utf8");
   await writeFile(
     skillPath,
-    skill.replace("@launchrally/cli@0.2.2", "@launchrally/cli@0.2.3"),
+    skill.replace("@launchrally/cli@0.3.0", "@launchrally/cli@0.3.1"),
   );
 
   await assert.rejects(
@@ -244,7 +244,7 @@ test("npm release packages are public, provenance-enabled, and file-allowlisted"
     assert.equal(packageJson.repository?.url, "git+https://github.com/codeacme17/launchrally.git");
     for (const [dependency, version] of Object.entries(packageJson.dependencies ?? {})) {
       if (dependency.startsWith("@launchrally/")) {
-        assert.equal(version, "0.2.2", `${relative}: ${dependency}`);
+        assert.equal(version, "0.3.0", `${relative}: ${dependency}`);
       }
     }
   }
@@ -267,7 +267,24 @@ test("CI and release verification exercise the exact CLI Node runtime floor", as
   assert.match(installGuide, /Node\.js 20\.12\.0 or newer/u);
 });
 
-test("the default first Audit is exact, confirmation-preserving, and non-global", async () => {
+test("Node and OS matrices gate execution authority and platform-safe Launcher behavior", async () => {
+  const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+  assert.match(packageJson.scripts["test:contracts"], /npm run test:authority-contracts/u);
+  assert.match(packageJson.scripts["test:journeys"], /npm run test:authority-contracts/u);
+  for (const testPath of [
+    "test/execution-authority.test.js",
+    "test/invocation-context.test.js",
+    "test/launcher.test.js",
+    "test/toolchain-lifecycle.test.js",
+  ]) {
+    assert.match(
+      packageJson.scripts["test:authority-contracts"],
+      new RegExp(testPath.replace(".", "\\.")),
+    );
+  }
+});
+
+test("the default first Audit uses an exact user-managed Launcher with npm-exec as fallback", async () => {
   const readme = await readFile(path.join(root, "README.md"), "utf8");
   const skill = await readFile(path.join(root, "skills/launchrally/SKILL.md"), "utf8");
   const journey = await readFile(
@@ -275,13 +292,23 @@ test("the default first Audit is exact, confirmation-preserving, and non-global"
     "utf8",
   );
   const publicGuidance = [readme, skill, journey].join("\n");
+  const skillGuidance = [skill, journey].join("\n");
 
   assert.match(
     readme,
-    /npm exec --package=@launchrally\/cli@0\.2\.2 -- rally audit --json --cwd \./u,
+    /npm install --global @launchrally\/cli@0\.3\.0/u,
+  );
+  assert.match(readme, /rally --version --json/u);
+  assert.match(
+    readme,
+    /npm exec --package=@launchrally\/cli@0\.3\.0 -- rally audit --plain --cwd \. --output \.\/launchrally-audit-report\.json/u,
   );
   assert.match(publicGuidance, /preserve the package manager's download confirmation/iu);
-  assert.doesNotMatch(publicGuidance, /npm (?:install|i) (?:--global|-g) @launchrally/u);
+  assert.match(
+    skillGuidance,
+    /npm install --global @launchrally\/cli@0\.3\.0/u,
+  );
+  assert.match(skillGuidance, /stop before Audit/iu);
   assert.doesNotMatch(publicGuidance, /npm exec[^\n]*--(?:yes|y)\b/u);
   assert.doesNotMatch(publicGuidance, /curl[^\n|]*\|\s*(?:ba)?sh/u);
   assert.doesNotMatch(publicGuidance, /(?:copy|cp)[^\n]*skills?\//iu);
@@ -291,7 +318,7 @@ test("release validation rejects internal dependency ranges", async () => {
   const fixture = await createReleaseFixture();
   const packagePath = path.join(fixture, "packages/cli/package.json");
   const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
-  packageJson.dependencies["@launchrally/core"] = "^0.2.2";
+  packageJson.dependencies["@launchrally/core"] = "^0.3.0";
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 
   await assert.rejects(
@@ -302,7 +329,7 @@ test("release validation rejects internal dependency ranges", async () => {
     ),
     (error) => {
       assert.match(error.stderr, /release_dependency_drift/u);
-      assert.match(error.stderr, /@launchrally\/core declares \^0\.2\.2/u);
+      assert.match(error.stderr, /@launchrally\/core declares \^0\.3\.0/u);
       return true;
     },
   );
@@ -315,12 +342,12 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
     { cwd: root },
   );
   const plan = JSON.parse(stdout);
-  const exactPackages = releaseManifest.packages.map(({ name }) => `${name}@0.2.2`);
+  const exactPackages = releaseManifest.packages.map(({ name }) => `${name}@0.3.0`);
 
   assert.deepEqual(plan, {
     status: "planned",
     source: "public_registry",
-    version: "0.2.2",
+    version: "0.3.0",
     exact_packages: exactPackages,
     install: {
       command: "npm",
@@ -336,11 +363,34 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
     registry_verification: releaseManifest.packages.map(({ name }) => ({
       package: name,
       dist_tag: "experimental",
-      expected_version: "0.2.2",
+      expected_version: "0.3.0",
     })),
     provenance_verification: {
       command: "npm",
       arguments: ["audit", "signatures", "--json", "--include-attestations"],
+    },
+    invocation_journeys: {
+      npm_exec: {
+        command: "npm",
+        arguments: [
+          "exec",
+          "--package=@launchrally/cli@0.3.0",
+          "--",
+          "rally",
+        ],
+      },
+      user_prefix: {
+        install: {
+          command: "npm",
+          arguments: [
+            "install",
+            "--global",
+            "--ignore-scripts",
+            "@launchrally/cli@0.3.0",
+          ],
+        },
+        verification: ["--version", "--json"],
+      },
     },
     cli_smoke: true,
     native_plugins: {
@@ -352,13 +402,13 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
       codex: {
         marketplace: "codeacme17/launchrally",
         plugin: "launchrally@launchrally",
-        ref: "v0.2.2",
+        ref: "v0.3.0",
       },
     },
   });
 });
 
-test("public tarballs install together and smoke-test the CLI in a clean project", async () => {
+test("packed artifacts complete installation, delegation, lifecycle, and full verification journeys", async () => {
   const { stdout } = await execFileAsync(
     "npm",
     ["--silent", "run", "test:artifacts", "--", "--json", "--skip-native"],
@@ -368,7 +418,7 @@ test("public tarballs install together and smoke-test the CLI in a clean project
 
   assert.deepEqual(result, {
     status: "completed",
-    version: "0.2.2",
+    version: "0.3.0",
     artifacts: [
       "@launchrally/claude-plugin",
       "@launchrally/cli",
@@ -379,7 +429,7 @@ test("public tarballs install together and smoke-test the CLI in a clean project
     artifact_files_verified: true,
     cli_smoke: {
       operation: "version",
-      cli_version: "0.2.2",
+      cli_version: "0.3.0",
       audit_status: "needs_input",
       coverage_journeys: [
         "astro-hosted-web",
@@ -387,6 +437,55 @@ test("public tarballs install together and smoke-test the CLI in a clean project
         "fastapi-container",
         "pnpm-edge-monorepo",
         "react-go-split",
+      ],
+    },
+    installation_journeys: {
+      no_launcher: "confirmed",
+      npm_exec: "artifact_equivalent_audit_and_follow_up",
+      user_prefix: "installed_and_verified",
+      project_engine: "initialized_and_delegated",
+      fresh_clone: "restored_offline",
+      registry_permission: "cache_miss_approved_and_denied",
+      invalid_authority: "corruption_failed_closed",
+      invalid_authority_cases: [
+        "corrupted_lock",
+        "descriptor_path_escape",
+        "missing_materialization",
+        ...(process.platform === "win32" ? [] : ["symlinked_engine_escape"]),
+        "unsupported_contract",
+        "wrong_installed_version",
+      ],
+      migration_failure: "pre_adoption_failure_preserved_authority",
+      legacy_toolchain: "compatibility_fixture_restored_and_delegated",
+      migration_success: "downgrade_and_upgrade_preserved_immutable_history",
+      transaction_recovery: "interrupted_migration_recovered",
+      full_journey: "plan_handoff_verify_completed",
+      packaged_skill_fixtures: "codex_and_claude_executed",
+      launcher_removal: "project_data_preserved",
+      plugin_removal: "skipped",
+      fixture_invocations: [
+        "version",
+        "audit_input",
+        "audit_confirmation",
+        "audit_permission",
+        "audit_completed",
+        "init_preview",
+        "init_completed",
+        "project_version",
+        "toolchain_clean",
+        "toolchain_restore",
+        "toolchain_restore_permission",
+        "toolchain_restore",
+        "toolchain_status",
+        "toolchain_restore",
+        "project_version",
+        "plan_refresh",
+        "refresh_permission",
+        "refresh_completed",
+        "plan",
+        "handoff",
+        "verify_permission",
+        "verify_completed",
       ],
     },
     native_plugins: "skipped",
@@ -405,6 +504,10 @@ test("packed Plugin adapters pass their native host validation", async () => {
     claude: "strictly_validated",
     codex: "installed_and_removed",
   });
+  assert.equal(
+    result.installation_journeys.plugin_removal,
+    "project_data_preserved",
+  );
 });
 
 test("Codex and Claude marketplaces resolve their native Plugin adapters", async () => {
@@ -428,7 +531,7 @@ test("Codex and Claude marketplaces resolve their native Plugin adapters", async
     source: {
       source: "npm",
       package: "@launchrally/claude-plugin",
-      version: "0.2.2",
+      version: "0.3.0",
     },
   }]);
 });
@@ -469,7 +572,7 @@ test("release docs cover user-scope Plugin install, update, and uninstall", asyn
   assert.match(readme, /\[Install and release guide\]\(docs\/getting-started\/install\.md\)/u);
   assert.match(
     guide,
-    /codex plugin marketplace add codeacme17\/launchrally --ref v0\.2\.2/u,
+    /codex plugin marketplace add codeacme17\/launchrally --ref v0\.3\.0/u,
   );
   assert.match(guide, /codex plugin add launchrally@launchrally/u);
   assert.match(guide, /codex plugin remove launchrally@launchrally/u);
@@ -490,8 +593,9 @@ test("release docs cover user-scope Plugin install, update, and uninstall", asyn
     guide,
     /claude plugin uninstall launchrally@launchrally --scope user/u,
   );
-  assert.match(guide, /project-owned \.launchrally data remains/iu);
-  assert.doesNotMatch(guide, /npm (?:install|i) (?:--global|-g) @launchrally/u);
+  assert.match(guide, /Plugin removal preserves project-owned `?\.launchrally/iu);
+  assert.match(guide, /npm install --global @launchrally\/cli@0\.3\.0/u);
+  assert.doesNotMatch(guide, /sudo npm|npm exec[^\n]*--yes/u);
   assert.doesNotMatch(guide, /curl[^\n|]*\|\s*(?:ba)?sh/u);
   assert.doesNotMatch(guide, /(?:copy|cp)[^\n]*skills?\//iu);
 });
@@ -583,22 +687,22 @@ test("release validation requires an annotated tag on the approved main commit",
   await execFileAsync("git", [
     "-c", "user.name=LaunchRally Tests",
     "-c", "user.email=tests@launchrally.dev",
-    "tag", "--annotate", "v0.2.2", "--message", "LaunchRally 0.2.2",
+    "tag", "--annotate", "v0.3.0", "--message", "LaunchRally 0.3.0",
   ], { cwd: repository });
 
   const { stdout } = await execFileAsync(
     process.execPath,
-    [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.2.2", "--json"],
+    [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.3.0", "--json"],
     { cwd: root },
   );
   assert.equal(JSON.parse(stdout).tag_type, "annotated");
 
-  await execFileAsync("git", ["tag", "--delete", "v0.2.2"], { cwd: repository });
-  await execFileAsync("git", ["tag", "v0.2.2"], { cwd: repository });
+  await execFileAsync("git", ["tag", "--delete", "v0.3.0"], { cwd: repository });
+  await execFileAsync("git", ["tag", "v0.3.0"], { cwd: repository });
   await assert.rejects(
     execFileAsync(
       process.execPath,
-      [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.2.2"],
+      [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.3.0"],
       { cwd: root },
     ),
     (error) => {
@@ -607,11 +711,11 @@ test("release validation requires an annotated tag on the approved main commit",
     },
   );
 
-  await execFileAsync("git", ["tag", "--delete", "v0.2.2"], { cwd: repository });
+  await execFileAsync("git", ["tag", "--delete", "v0.3.0"], { cwd: repository });
   await execFileAsync("git", [
     "-c", "user.name=LaunchRally Tests",
     "-c", "user.email=tests@launchrally.dev",
-    "tag", "--annotate", "v0.2.2", "--message", "LaunchRally 0.2.2",
+    "tag", "--annotate", "v0.3.0", "--message", "LaunchRally 0.3.0",
   ], { cwd: repository });
   await writeFile(path.join(repository, "release.txt"), "different main\n");
   await execFileAsync("git", ["add", "release.txt"], { cwd: repository });
@@ -623,11 +727,11 @@ test("release validation requires an annotated tag on the approved main commit",
   await execFileAsync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], {
     cwd: repository,
   });
-  await execFileAsync("git", ["checkout", "--quiet", "v0.2.2"], { cwd: repository });
+  await execFileAsync("git", ["checkout", "--quiet", "v0.3.0"], { cwd: repository });
   await assert.rejects(
     execFileAsync(
       process.execPath,
-      [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.2.2"],
+      [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.3.0"],
       { cwd: root },
     ),
     (error) => {
@@ -667,7 +771,7 @@ if (args[0] === "publish" && args[2] === "@launchrally/core") {
     }),
     (error) => {
       assert.match(error.stderr, /partial_publication/u);
-      assert.match(error.stderr, /@launchrally\/contracts@0\.2\.2/u);
+      assert.match(error.stderr, /@launchrally\/contracts@0\.3\.0/u);
       assert.match(error.stderr, /new coherent version/iu);
       return true;
     },
@@ -676,7 +780,7 @@ if (args[0] === "publish" && args[2] === "@launchrally/core") {
   const calls = (await readFile(logPath, "utf8")).trim().split("\n").map(JSON.parse);
   assert.deepEqual(calls.slice(0, 5), releaseManifest.packages.map(({ name }) => [
     "view",
-    `${name}@0.2.2`,
+    `${name}@0.3.0`,
     "version",
     "--json",
   ]));
@@ -690,12 +794,12 @@ test("release validation rejects a tag that does not match package SemVer", asyn
   await assert.rejects(
     execFileAsync(
       process.execPath,
-      ["scripts/validate-release.mjs", "--tag", "v0.2.3", "--json"],
+      ["scripts/validate-release.mjs", "--tag", "v0.3.1", "--json"],
       { cwd: root },
     ),
     (error) => {
       assert.match(error.stderr, /release_tag_mismatch/u);
-      assert.match(error.stderr, /v0\.2\.3.*v0\.2\.2/u);
+      assert.match(error.stderr, /v0\.3\.1.*v0\.3\.0/u);
       return true;
     },
   );

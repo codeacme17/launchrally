@@ -37,7 +37,7 @@ test("the committed P0 matrix maps every normative requirement to executable evi
     schema_version: "launchrally.dev/p0-acceptance/v1",
     product_status: "complete",
     release_status: "experimental",
-    requirements: { complete: 22, open: 0, total: 22 },
+    requirements: { complete: 23, open: 0, total: 23 },
     release_gates: 10,
   });
 });
@@ -120,17 +120,18 @@ test("CI runs contract and clean journey gates on every required Node and OS tar
   assert.match(ci, /contracts:[\s\S]*runs-on: ubuntu-latest[\s\S]*node: \[20\.12\.0, 22, 24\]/u);
   assert.match(
     ci,
-    /journeys:[\s\S]*os: \[ubuntu-latest, macos-latest, windows-latest\][\s\S]*node-version: 22/u,
+    /journeys:[\s\S]*include:[\s\S]*os: ubuntu-latest\n\s+node: 20\.12\.0[\s\S]*os: ubuntu-latest\n\s+node: 22[\s\S]*os: ubuntu-latest\n\s+node: 24[\s\S]*os: macos-latest\n\s+node: 22[\s\S]*os: windows-latest\n\s+node: 22[\s\S]*node-version: \$\{\{ matrix\.node \}\}/u,
   );
   assert.match(
     release,
-    /contracts:[\s\S]*node: \[20\.12\.0, 22, 24\][\s\S]*journeys:[\s\S]*os: \[ubuntu-latest, macos-latest, windows-latest\]/u,
+    /contracts:[\s\S]*node: \[20\.12\.0, 22, 24\][\s\S]*journeys:[\s\S]*include:[\s\S]*os: ubuntu-latest\n\s+node: 20\.12\.0[\s\S]*os: ubuntu-latest\n\s+node: 24[\s\S]*os: macos-latest\n\s+node: 22[\s\S]*os: windows-latest\n\s+node: 22[\s\S]*node-version: \$\{\{ matrix\.node \}\}/u,
   );
   assert.match(release, /publish:[\s\S]*needs: \[contracts, journeys\]/u);
   for (const command of [
     "npm run test:contracts",
     "npm run test:journeys",
     "npm run test:artifacts",
+    "npm run test:legacy-public",
     "npm run validate:acceptance",
   ]) {
     assert.match(ci, new RegExp(command, "u"), command);

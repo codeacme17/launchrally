@@ -2,6 +2,7 @@ import path from "node:path";
 
 import { isLaunchRallyDestination } from "./report-destination.js";
 import { DEFAULT_REPORT_FILENAME } from "./system-file-picker.js";
+import { createNextAction } from "./invocation-context.js";
 
 export class PromptCancelledError extends Error {
   constructor() {
@@ -163,6 +164,7 @@ function approvedAuditActivityLabel(result, permissionDecisions) {
 export function renderHumanAuditCompletion(result, {
   cwd,
   outputPath,
+  invocationContext,
   styled = false,
   width = 80,
 } = {}) {
@@ -181,8 +183,17 @@ export function renderHumanAuditCompletion(result, {
   const renderWidth = normalizedWidth(width);
   const failed = result.report.results.checks.filter((check) => check.status === "failed");
   const gaps = result.report.results.verification_gaps;
+  const nextAction = result.next?.type === "init" && invocationContext
+    ? createNextAction(invocationContext, [
+      "init",
+      "--cwd",
+      cwd,
+      "--report",
+      outputPath ?? "<saved-report-path>",
+    ])
+    : null;
   const nextCommand = result.next?.type === "init"
-    ? `rally init --cwd ${shellArgument(cwd)} --report ${
+    ? nextAction?.display ?? `rally init --cwd ${shellArgument(cwd)} --report ${
       outputPath ? shellArgument(outputPath) : "<saved-report-path>"
     }`
     : result.next?.message ?? "No next command is required.";
@@ -214,6 +225,9 @@ export function renderHumanAuditCompletion(result, {
         : "Not saved. Use --output or confirm a save path to write the complete Report JSON.",
     ],
     ["Next command", nextCommand],
+    ...(nextAction?.disclosure
+      ? [["Launcher entry", nextAction.disclosure]]
+      : []),
   ];
   return sections.map(([heading, ...lines], index) => {
     const headingLines = wrapText(heading, renderWidth).map((line) =>

@@ -1,0 +1,277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/toolchain-lifecycle/v1",
+  "title": "LaunchRally Project Toolchain Lifecycle v1",
+  "type": "object",
+  "required": ["contract", "status", "operation"],
+  "properties": {
+    "contract": { "const": "launchrally.dev/toolchain-lifecycle/v1" },
+    "status": {
+      "enum": [
+        "completed",
+        "needs_confirmation",
+        "needs_permission",
+        "unavailable",
+        "execution_error"
+      ]
+    },
+    "operation": {
+      "enum": [
+        "toolchain_status",
+        "toolchain_restore",
+        "toolchain_migrate",
+        "toolchain_clean",
+        "toolchain_unknown"
+      ]
+    },
+    "authority": {
+      "$ref": "../execution-authority/v1.schema.json"
+    },
+    "outcome": {
+      "enum": [
+        "ready",
+        "already_ready",
+        "restored",
+        "cleaned",
+        "already_pinned",
+        "migration_declined",
+        "migrated"
+      ]
+    },
+    "error": { "type": "string", "minLength": 1 },
+    "message": { "type": "string", "minLength": 1 },
+    "recoverable": { "type": "boolean" },
+    "interaction": { "$ref": "#/$defs/interaction" },
+    "request": {
+      "oneOf": [
+        { "$ref": "#/$defs/permissionRequest" },
+        { "$ref": "#/$defs/confirmationRequest" }
+      ]
+    },
+    "preview": { "$ref": "#/$defs/preview" },
+    "changes_applied": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "next_action": { "$ref": "#/$defs/nextAction" }
+  },
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "required": ["outcome", "authority"],
+      "properties": {
+        "status": { "const": "completed" },
+        "operation": { "const": "toolchain_status" },
+        "outcome": { "const": "ready" }
+      }
+    },
+    {
+      "required": ["outcome", "authority"],
+      "properties": {
+        "status": { "const": "completed" },
+        "operation": { "const": "toolchain_restore" },
+        "outcome": { "enum": ["already_ready", "restored"] }
+      }
+    },
+    {
+      "required": ["outcome", "authority"],
+      "properties": {
+        "status": { "const": "completed" },
+        "operation": { "const": "toolchain_clean" },
+        "outcome": { "const": "cleaned" }
+      }
+    },
+    {
+      "required": ["outcome", "authority"],
+      "properties": {
+        "status": { "const": "completed" },
+        "operation": { "const": "toolchain_migrate" },
+        "outcome": { "const": "already_pinned" }
+      }
+    },
+    {
+      "required": ["outcome", "changes_applied"],
+      "properties": {
+        "status": { "const": "completed" },
+        "operation": { "const": "toolchain_migrate" },
+        "outcome": { "const": "migration_declined" }
+      }
+    },
+    {
+      "required": ["outcome", "authority", "next_action"],
+      "properties": {
+        "status": { "const": "completed" },
+        "operation": { "const": "toolchain_migrate" },
+        "outcome": { "const": "migrated" }
+      }
+    },
+    {
+      "required": ["interaction", "request", "preview"],
+      "properties": {
+        "status": { "const": "needs_confirmation" },
+        "operation": { "const": "toolchain_migrate" },
+        "request": { "$ref": "#/$defs/confirmationRequest" }
+      }
+    },
+    {
+      "required": ["interaction", "request"],
+      "properties": {
+        "status": { "const": "needs_permission" },
+        "operation": { "enum": ["toolchain_restore", "toolchain_migrate"] },
+        "request": { "$ref": "#/$defs/permissionRequest" }
+      }
+    },
+    {
+      "required": ["error", "authority"],
+      "properties": { "status": { "const": "unavailable" } }
+    },
+    {
+      "required": ["error"],
+      "properties": { "status": { "const": "execution_error" } }
+    }
+  ],
+  "$defs": {
+    "interaction": {
+      "type": "object",
+      "required": ["schema_version", "resume_token"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/toolchain-lifecycle-state/v1" },
+        "resume_token": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "permissionRequest": {
+      "type": "object",
+      "required": ["type", "permissions"],
+      "properties": {
+        "type": { "const": "permission" },
+        "permissions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "$ref": "#/$defs/permission" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "permission": {
+      "type": "object",
+      "required": [
+        "id",
+        "boundary",
+        "source",
+        "package",
+        "version",
+        "temporary_target",
+        "commands"
+      ],
+      "properties": {
+        "id": { "const": "npm_registry_read" },
+        "boundary": { "const": "public_network" },
+        "source": { "const": "https://registry.npmjs.org" },
+        "package": { "const": "@launchrally/cli" },
+        "version": { "type": "string", "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$" },
+        "temporary_target": { "type": "string", "minLength": 1 },
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": { "$ref": "#/$defs/command" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "command": {
+      "type": "object",
+      "required": ["executable", "arguments", "shell"],
+      "properties": {
+        "executable": { "const": "npm" },
+        "arguments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "shell": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "confirmationRequest": {
+      "type": "object",
+      "required": ["type", "prompt", "choices"],
+      "properties": {
+        "type": { "const": "confirmation" },
+        "prompt": { "type": "string", "minLength": 1 },
+        "choices": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["confirm", "decline"] }
+        }
+      },
+      "additionalProperties": false
+    },
+    "preview": {
+      "type": "object",
+      "required": ["from_version", "to_version", "changes", "materialization"],
+      "properties": {
+        "from_version": { "type": "string", "minLength": 1 },
+        "to_version": { "type": "string", "minLength": 1 },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/change" }
+        },
+        "materialization": { "$ref": "#/$defs/materialization" }
+      },
+      "additionalProperties": false
+    },
+    "change": {
+      "type": "object",
+      "required": [
+        "path",
+        "operation",
+        "before",
+        "after",
+        "before_digest",
+        "after_digest"
+      ],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "operation": { "enum": ["create", "update", "delete"] },
+        "before": { "type": ["string", "null"] },
+        "after": { "type": ["string", "null"] },
+        "before_digest": { "type": ["string", "null"] },
+        "after_digest": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "materialization": {
+      "type": "object",
+      "required": [
+        "package_count",
+        "integrity_digest",
+        "target",
+        "ignored",
+        "authoritative"
+      ],
+      "properties": {
+        "package_count": { "type": "integer", "minimum": 0 },
+        "integrity_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "target": { "const": ".launchrally/toolchain/node_modules" },
+        "ignored": { "const": true },
+        "authoritative": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "nextAction": {
+      "type": "object",
+      "required": ["operation", "scope", "reason"],
+      "properties": {
+        "operation": { "const": "verify" },
+        "scope": { "const": "full" },
+        "reason": { "const": "execution_authority_changed" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export function exactToolchainPackage(version = "0.2.2") {
+export function exactToolchainPackage(version = "0.3.0") {
   return {
     name: "launchrally-toolchain",
     private: true,
@@ -17,7 +17,7 @@ export function exactToolchainPackage(version = "0.2.2") {
   };
 }
 
-export function exactToolchainLock(version = "0.2.2") {
+export function exactToolchainLock(version = "0.3.0") {
   const integrity = "sha512-QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQ==";
   return {
     name: "launchrally-toolchain",
@@ -130,7 +130,7 @@ export function prepareExactToolchainChanges({ package_path: packagePath, lockfi
   ];
 }
 
-export async function writeExactToolchain(repository, version = "0.2.2") {
+export async function writeExactToolchain(repository, version = "0.3.0") {
   const directory = path.join(repository, ".launchrally", "toolchain");
   await mkdir(directory, { recursive: true });
   await writeFile(
@@ -141,4 +141,35 @@ export async function writeExactToolchain(repository, version = "0.2.2") {
     path.join(directory, "package-lock.json"),
     `${JSON.stringify(exactToolchainLock(version), null, 2)}\n`,
   );
+}
+
+export async function materializeExactToolchain(repository, version = "0.3.0") {
+  const toolchain = path.join(repository, ".launchrally", "toolchain");
+  const lock = exactToolchainLock(version);
+  for (const [lockedPath, entry] of Object.entries(lock.packages)) {
+    if (!lockedPath.startsWith("node_modules/")) continue;
+    const name = lockedPath.slice("node_modules/".length);
+    const packageDirectory = path.join(toolchain, lockedPath);
+    await mkdir(packageDirectory, { recursive: true });
+    await writeFile(
+      path.join(packageDirectory, "package.json"),
+      `${JSON.stringify({
+        name,
+        version: entry.version,
+        type: "module",
+        ...(entry.dependencies ? { dependencies: entry.dependencies } : {}),
+        ...(name === "@launchrally/cli" ? {
+          bin: { rally: "./bin/rally.js" },
+          launchrally: {
+            execution_authority: "launchrally.dev/execution-authority/v1",
+            engine: "./bin/engine.js",
+          },
+        } : {}),
+      }, null, 2)}\n`,
+    );
+  }
+  const cliDirectory = path.join(toolchain, "node_modules", "@launchrally", "cli");
+  await mkdir(path.join(cliDirectory, "bin"), { recursive: true });
+  await writeFile(path.join(cliDirectory, "bin", "rally.js"), "export {};\n");
+  await writeFile(path.join(cliDirectory, "bin", "engine.js"), "export {};\n");
 }

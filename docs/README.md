@@ -1,15 +1,17 @@
 # Documentation
 
 LaunchRally documentation is grouped by audience and purpose. Start with the
-Quickstart if you want to run an audit, or use the maintainer section when
+installation-first Quickstart for the complete Launcher → Audit → saved Report
+→ confirmed Init → project Engine path. Use the maintainer section only when
 preparing and validating a release.
 
 ## Getting started
 
-- [Quickstart](getting-started/quickstart.md) — run the CLI or native Skill and
-  try the representative examples.
-- [Install and release guide](getting-started/install.md) — install, update,
-  remove, and verify the CLI and Plugins.
+- [Quickstart](getting-started/quickstart.md) — install the exact Launcher,
+  complete the first Human or Agent journey, and try representative examples.
+- [Install, lifecycle, and troubleshooting](getting-started/install.md) — own
+  npm prefix/PATH setup, structured verification, Plugin separation, toolchain
+  lifecycle, safe uninstall, data retention, and recovery guidance.
 
 ## Concepts
 

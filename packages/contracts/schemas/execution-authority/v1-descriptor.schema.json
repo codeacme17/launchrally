@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/execution-authority/v1/descriptor",
+  "title": "LaunchRally Execution Authority Descriptor v1",
+  "type": "object",
+  "required": ["contract", "engine"],
+  "properties": {
+    "contract": { "const": "launchrally.dev/execution-authority/v1" },
+    "engine": {
+      "type": "object",
+      "required": ["package", "version", "entrypoint"],
+      "properties": {
+        "package": { "const": "@launchrally/cli" },
+        "version": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "entrypoint": {
+          "enum": ["bin/rally.js", "bin/engine.js"]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "entrypoint": { "const": "bin/engine.js" }
+          }
+        },
+        {
+          "properties": {
+            "version": { "const": "0.2.2" },
+            "entrypoint": { "const": "bin/rally.js" }
+          }
+        }
+      ],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

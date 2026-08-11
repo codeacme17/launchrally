@@ -15,6 +15,7 @@ import {
   renderHumanAuditCompletion,
   runHumanAudit,
 } from "../packages/cli/bin/human-audit.js";
+import { createInvocationContext } from "../packages/cli/bin/invocation-context.js";
 import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
 import { runAudit } from "@launchrally/core";
 
@@ -82,6 +83,62 @@ test("the Human Audit completion separates its assessment, work, Report, and nex
     lines[next + 1],
     'rally init --cwd "/workspace/site" --report "/workspace/site/audit.json"',
   );
+});
+
+test("an npm-exec Human Audit emits a complete exact-version npm-exec Init command", () => {
+  const invocationContext = createInvocationContext({
+    argv: ["/usr/bin/node", "/tmp/npm/_npx/hash/node_modules/.bin/rally"],
+    env: {
+      npm_command: "exec",
+      npm_lifecycle_event: "npx",
+      npm_config_package: "@launchrally/cli@0.3.0",
+      PATH: "/tmp/npm/_npx/hash/node_modules/.bin:/usr/bin",
+    },
+    launcherVersion: "0.3.0",
+  });
+  const summary = renderHumanAuditCompletion({
+    outcome: "audit_completed",
+    report: {
+      assessment: "launch_ready",
+      results: { checks: [], verification_gaps: [] },
+    },
+    next: { type: "init" },
+  }, {
+    cwd: "/workspace/site with spaces",
+    outputPath: "/workspace/site with spaces/audit report.json",
+    invocationContext,
+  });
+  const expectedCommand = process.platform === "win32"
+    ? "& 'npm' 'exec' '--package=@launchrally/cli@0.3.0' '--' 'rally' 'init' '--cwd' '/workspace/site with spaces' '--report' '/workspace/site with spaces/audit report.json'"
+    : "npm exec --package=@launchrally/cli@0.3.0 -- rally init --cwd '/workspace/site with spaces' --report '/workspace/site with spaces/audit report.json'";
+
+  assert.ok(summary.includes(`Next command\n${expectedCommand}`));
+  assert.doesNotMatch(summary, /--yes/u);
+});
+
+test("an unknown Human Audit entry uses and discloses the executable fallback", () => {
+  const summary = renderHumanAuditCompletion({
+    outcome: "audit_completed",
+    report: {
+      assessment: "launch_ready",
+      results: { checks: [], verification_gaps: [] },
+    },
+    next: { type: "init" },
+  }, {
+    cwd: "/workspace/site",
+    outputPath: "/workspace/audit.json",
+    invocationContext: {
+      schema_version: "launchrally.dev/invocation-context/v1",
+      source: "unknown",
+      launcher_version: "0.3.0",
+    },
+  });
+  const expectedCommand = process.platform === "win32"
+    ? "& 'npm' 'exec' '--package=@launchrally/cli@0.3.0' '--' 'rally' 'init' '--cwd' '/workspace/site' '--report' '/workspace/audit.json'"
+    : "npm exec --package=@launchrally/cli@0.3.0 -- rally init --cwd '/workspace/site' --report '/workspace/audit.json'";
+
+  assert.ok(summary.includes(`Next command\n${expectedCommand}`));
+  assert.match(summary, /Launcher entry\nThe original Launcher entry could not be confirmed/u);
 });
 
 test("the Human Audit completion labels every assessment without relying on styling", () => {

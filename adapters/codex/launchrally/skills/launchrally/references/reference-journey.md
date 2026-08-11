@@ -2,13 +2,22 @@
 
 Use this flow when the user wants to complete Audit, optional Init, Read-only Plan, explicit Remediation Handoff, and Verify. The same flow applies in the Codex and Claude Plugin adapters; host metadata changes discovery only, never LaunchRally semantics.
 
-## Pin the execution authority
+## Discover the Launcher and execution authority
 
-The required executable is exactly `@launchrally/cli@0.2.2`. Prefer a project-pinned executable. If it is absent, disclose the package, version, registry source, and proposed `npm exec --package=@launchrally/cli@0.2.2 -- rally` command, then preserve the package manager's download confirmation.
+The user-managed `rally` Launcher is a prerequisite separate from the Codex or Claude Plugin. Make `rally --version --json --cwd <repository-root>` the first discovery operation. Never discover or invoke a Project Toolchain Engine directly.
 
-Before Audit or any other journey command, invoke the selected executable as `rally --version --json`. Continue only when the structured response has `contract: "launchrally.dev/cli/v2"`, `operation: "version"`, `status: "completed"`, and `cli_version: "0.2.2"`. Stop and explain a missing executable, invalid structured response, or version mismatch. Do not silently install, upgrade, downgrade, or substitute another CLI.
+If `rally` is absent, present these exact user-managed commands, stop before Audit, and wait:
 
-For every command below, use `--json`, read only the versioned structured interaction, and follow the state router in [cli-contract.md](cli-contract.md). The native adapters ship the exact invocation order and expected structured states in [reference-journey.json](reference-journey.json); treat its arguments as the machine-readable companion to this explanation. Never parse terminal prose.
+```bash
+npm install --global @launchrally/cli@0.3.0
+rally --version --json --cwd <repository-root>
+```
+
+Do not run the installation, automatically switch to npm-exec, use `sudo`, alter the npm prefix, or modify a shell profile. An exact-version npm-exec trial/CI entry remains a separate explicit user choice, never a fallback inferred from missing `rally`. CLI installation grants no Provider, deployment, production, credential, or application-source write authority.
+
+Require `contract: "launchrally.dev/cli/v2"`, keep `launcher_version` separate from the selected `cli_version`, and validate the response against the compatibility matrix and authority router in [cli-contract.md](cli-contract.md). A `ready` authority follows the selected Engine through the Launcher even when the supported Plugin, Launcher, and Engine versions differ. `needs_toolchain_restore` and `needs_toolchain_migration` stop the requested operation until the exact lifecycle action receives explicit user approval. `invalid_toolchain` always stops. Never substitute the Plugin or Launcher version for a valid project pin.
+
+For every command below, use `--json`, read only the versioned structured interaction, and follow the state router in [cli-contract.md](cli-contract.md). The native adapters ship compatibility, installation verification, authority and lifecycle routing, and the exact journey invocation order in [reference-journey.json](reference-journey.json); treat its arguments and guards as the machine-readable companion to this explanation. Never parse terminal prose.
 
 Keep two Report identities separate after Init:
 
@@ -28,6 +37,8 @@ Explain the CLI's Checks, Evidence, policy, Verification Gaps, and final Assessm
 Offer Init only after a complete Audit and only if the user wants project adoption. Run `rally init --json --cwd <repository-root> --report <manifest-source-report-json>`. Require `interaction.source_report.role: "manifest_source"` and preserve the saved Report whose `report.report_id` matches `interaction.source_report.report_id`. Init uses the committed `.launchrally/toolchain` npm package and lockfile for every ecosystem and never changes application dependencies. It attempts offline resolution first. If the result is `needs_permission`, present the exact `npm_registry_read` package, version, `https://registry.npmjs.org` source, and lifecycle-script-disabled command, then resume with the user's explicit decision. Registry approval does not approve file changes. Present every exact local change in `preview.changes`, and apply it only after the user explicitly confirms the returned interaction. Declining Init or denying registry access leaves the repository unchanged and does not block Plan.
 
 Init is the only LaunchRally-controlled mutation in this journey. It is local, bounded to its preview, and grants no deployment, production, or Provider write authority. Its confirmed dependency and Manifest changes make the Manifest-bound source Report historical; follow the typed `needs_refresh` response with full Verify. Retain the source Report for future whole-release Verify runs, and use the new `interaction.current_report` Report only for Plan and Handoff.
+
+After Init, run `rally --version --json --cwd <repository-root>` again and require a `ready` response with `authority.source: "project_toolchain"`. Then invoke Plan, Handoff, and Verify through `rally`; the Launcher delegates to the validated project pin, and the Plugin and bundled Launcher Engine are not substitutes.
 
 ## 3. Read-only Plan
 

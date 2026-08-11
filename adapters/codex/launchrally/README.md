@@ -1,38 +1,50 @@
 # @launchrally/codex-plugin
 
-This package is the LaunchRally Plugin adapter for Codex. It installs Codex Plugin metadata plus a generated copy of the LaunchRally Agent Skill, which guides Codex through the deterministic CLI's Audit → Plan/Remediate → Verify workflow while preserving explicit permission and write boundaries.
+This package installs Codex Plugin metadata plus a generated copy of the LaunchRally Agent Skill. The Skill guides Codex through the deterministic CLI's Audit → Init → Plan/Handoff → Verify journey while preserving explicit permission and write boundaries.
 
 ## Status
 
-LaunchRally 0.2.2 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated. Review every permission request and proposed local change.
+LaunchRally 0.3.0 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated.
 
-## Install and use
+## CLI prerequisite
 
-Codex installs Plugins at user scope. Pin the marketplace to this release tag, then install LaunchRally:
+CLI installation and Plugin installation are separate. Before installing this Plugin, follow the [single CLI installation authority](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/install.md) and require `rally --version --json --cwd .` to return a supported Launcher and Execution Authority. The Plugin never installs, updates, downgrades, restores, migrates, or removes the Launcher or project toolchain silently.
+
+## Plugin installation and use
+
+Codex installs Plugins at user scope. Pin the marketplace to the exact release tag, then install LaunchRally:
 
 ```sh
-codex plugin marketplace add codeacme17/launchrally --ref v0.2.2
+codex plugin marketplace add codeacme17/launchrally --ref v0.3.0
 codex plugin add launchrally@launchrally
+codex plugin list --json
 ```
 
-In Codex, ask: `Audit this repository for production launch readiness.` The Skill will use the exact versioned CLI path and stop for required user input or permission decisions.
+The JSON list must contain the installed `launchrally@launchrally` Plugin. Then ask: `Use LaunchRally to audit this repository for launch readiness. Show the complete scope and every permission before continuing.` The Skill begins by running `rally --version --json --cwd .`; it accepts only a supported Plugin, Launcher, selected Engine, project pin, and contract combination before following the project-pinned Engine through `rally`.
 
 ## Update or remove
 
-For a deliberate update, remove the installed Plugin and marketplace, then add the new exact `vX.Y.Z` release tag:
+Replace the installed Plugin and exact marketplace checkout deliberately:
 
 ```sh
 codex plugin remove launchrally@launchrally
 codex plugin marketplace remove launchrally
-codex plugin marketplace add codeacme17/launchrally --ref vX.Y.Z
+codex plugin marketplace add codeacme17/launchrally --ref v0.3.0
 codex plugin add launchrally@launchrally
 ```
 
-To uninstall, run only the first two removal commands.
+To remove only the Plugin and catalog entry:
+
+```sh
+codex plugin remove launchrally@launchrally
+codex plugin marketplace remove launchrally
+```
+
+Plugin removal preserves project-owned `.launchrally` data, the Project Toolchain, Manifest, Reports, Evidence, immutable history, and the separately installed Launcher.
 
 ## Compatibility and canonical source
 
-This adapter targets Codex installations that support Plugins and Plugin marketplaces. Its CLI workflow requires Node.js 20.12.0 or newer. The bundled Skill is generated from the [canonical Agent Skill](https://github.com/codeacme17/launchrally/blob/main/skills/launchrally/SKILL.md); the adapter changes host discovery metadata, not LaunchRally semantics. See the [install guide](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/install.md) for current verification and lifecycle guidance.
+This adapter targets Codex installations that support Plugins and Plugin marketplaces. Its CLI workflow requires Node.js 20.12.0 or newer. The bundled Skill is generated from the [canonical Agent Skill](https://github.com/codeacme17/launchrally/blob/main/skills/launchrally/SKILL.md); host discovery metadata never changes LaunchRally semantics.
 
 ## Documentation and project
 

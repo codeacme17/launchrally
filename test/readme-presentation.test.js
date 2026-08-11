@@ -54,12 +54,13 @@ test("the repository README presents a concise first-use journey", async () => {
   );
   assert.match(
     firstAudit,
-    /npm exec --package=@launchrally\/cli@0\.2\.2 -- rally audit --json --cwd \./u,
+    /npm install --global @launchrally\/cli@0\.3\.0/u,
   );
-  assert.match(firstAudit, /local-first/iu);
-  assert.match(firstAudit, /no LaunchRally account/iu);
-  assert.match(firstAudit, /does not write|no repository writes/iu);
-  assert.match(firstAudit, /package-manager confirmation/iu);
+  assert.match(firstAudit, /rally --version --json/u);
+  assert.match(firstAudit, /--output \.\/launchrally-audit-report\.json/u);
+  assert.match(firstAudit, /default-denied/iu);
+  assert.match(firstAudit, /Audit does not create `\.launchrally`/iu);
+  assert.match(firstAudit, /user-writable npm prefix|current npm prefix/iu);
 
   for (const packageName of [
     "@launchrally/cli",
@@ -94,7 +95,7 @@ test("the README terminal visual is accessible, responsive, and fixture-derived"
       path.join(root, `docs/assets/launchrally-terminal-${theme}.svg`),
       "utf8",
     );
-    assert.match(svg, /viewBox="0 0 440 440"/u);
+    assert.match(svg, /viewBox="0 0 440 488"/u);
     const fontSize = Number(svg.match(/font: (\d+)px/u)?.[1]);
     const mobileFontSize = fontSize * (320 / 440);
     assert.ok(
