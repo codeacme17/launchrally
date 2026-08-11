@@ -1,41 +1,47 @@
 # @launchrally/claude-plugin
 
-This package is the LaunchRally Plugin adapter for Claude Code. It installs Claude Plugin metadata plus a generated copy of the LaunchRally Agent Skill, which guides Claude through the deterministic CLI's Audit → Plan/Remediate → Verify workflow while preserving explicit permission and write boundaries.
+This package installs Claude Code Plugin metadata plus a generated copy of the LaunchRally Agent Skill. The Skill guides Claude through the deterministic CLI's Audit → Init → Plan/Handoff → Verify journey while preserving explicit permission and write boundaries.
 
 ## Status
 
-LaunchRally 0.2.2 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated. Review every permission request and proposed local change.
+LaunchRally 0.2.2 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated.
 
-## Install and use
+## CLI prerequisite
 
-Add the marketplace and install LaunchRally at explicit user scope:
+CLI installation and Plugin installation are separate. Before installing this Plugin, follow the [single CLI installation authority](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/install.md) and require `rally --version --json --cwd .` to return a supported Launcher and Execution Authority. The Plugin never installs, updates, downgrades, restores, migrates, or removes the Launcher or project toolchain silently.
+
+## Plugin installation and use
+
+The `0.2.2` marketplace catalog pins `@launchrally/claude-plugin@0.2.2`. Add it and install at explicit user scope:
 
 ```sh
 claude plugin marketplace add codeacme17/launchrally --scope user
 claude plugin install launchrally@launchrally --scope user
 ```
 
-In Claude Code, ask: `Audit this repository for production launch readiness.` The Skill will use the exact versioned CLI path and stop for required user input or permission decisions.
+Verify that Claude Code discovers the Plugin, then ask: `Use LaunchRally to audit this repository for launch readiness. Show the complete scope and every permission before continuing.` The Skill begins with structured Launcher discovery and follows the project-pinned Engine through `rally`.
 
 ## Update or remove
 
-After a new release, refresh the marketplace catalog and deliberately update the Plugin:
+Refresh the exact catalog and deliberately update the Plugin:
 
 ```sh
 claude plugin marketplace update launchrally
 claude plugin update launchrally@launchrally --scope user
 ```
 
-To uninstall it and remove the marketplace:
+To remove the Plugin and marketplace entry:
 
 ```sh
 claude plugin uninstall launchrally@launchrally --scope user
 claude plugin marketplace remove launchrally
 ```
 
+Plugin removal preserves project-owned `.launchrally` data, the Project Toolchain, Manifest, Reports, Evidence, immutable history, and the separately installed Launcher.
+
 ## Compatibility and canonical source
 
-This adapter targets Claude Code installations that support Plugins and third-party marketplaces. Its CLI workflow requires Node.js 20.12.0 or newer. The bundled Skill is generated from the [canonical Agent Skill](https://github.com/codeacme17/launchrally/blob/main/skills/launchrally/SKILL.md); the adapter changes host discovery metadata, not LaunchRally semantics. See the [install guide](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/install.md) for current verification and lifecycle guidance.
+This adapter targets Claude Code installations that support Plugins and third-party marketplaces. Its CLI workflow requires Node.js 20.12.0 or newer. The bundled Skill is generated from the [canonical Agent Skill](https://github.com/codeacme17/launchrally/blob/main/skills/launchrally/SKILL.md); host discovery metadata never changes LaunchRally semantics.
 
 ## Documentation and project
 

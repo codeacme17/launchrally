@@ -267,7 +267,7 @@ test("CI and release verification exercise the exact CLI Node runtime floor", as
   assert.match(installGuide, /Node\.js 20\.12\.0 or newer/u);
 });
 
-test("the default first Audit stays exact while the Skill uses a user-managed Launcher prerequisite", async () => {
+test("the default first Audit uses an exact user-managed Launcher with npm-exec as fallback", async () => {
   const readme = await readFile(path.join(root, "README.md"), "utf8");
   const skill = await readFile(path.join(root, "skills/launchrally/SKILL.md"), "utf8");
   const journey = await readFile(
@@ -279,10 +279,14 @@ test("the default first Audit stays exact while the Skill uses a user-managed La
 
   assert.match(
     readme,
-    /npm exec --package=@launchrally\/cli@0\.2\.2 -- rally audit --json --cwd \./u,
+    /npm install --global @launchrally\/cli@0\.2\.2/u,
+  );
+  assert.match(readme, /rally --version --json/u);
+  assert.match(
+    readme,
+    /npm exec --package=@launchrally\/cli@0\.2\.2 -- rally audit --plain --cwd \. --output \.\/launchrally-audit-report\.json/u,
   );
   assert.match(publicGuidance, /preserve the package manager's download confirmation/iu);
-  assert.doesNotMatch(readme, /npm (?:install|i) (?:--global|-g) @launchrally/u);
   assert.match(
     skillGuidance,
     /npm install --global @launchrally\/cli@0\.2\.2/u,
@@ -496,8 +500,9 @@ test("release docs cover user-scope Plugin install, update, and uninstall", asyn
     guide,
     /claude plugin uninstall launchrally@launchrally --scope user/u,
   );
-  assert.match(guide, /project-owned \.launchrally data remains/iu);
-  assert.doesNotMatch(guide, /npm (?:install|i) (?:--global|-g) @launchrally/u);
+  assert.match(guide, /Plugin removal preserves project-owned `?\.launchrally/iu);
+  assert.match(guide, /npm install --global @launchrally\/cli@0\.2\.2/u);
+  assert.doesNotMatch(guide, /sudo npm|npm exec[^\n]*--yes/u);
   assert.doesNotMatch(guide, /curl[^\n|]*\|\s*(?:ba)?sh/u);
   assert.doesNotMatch(guide, /(?:copy|cp)[^\n]*skills?\//iu);
 });

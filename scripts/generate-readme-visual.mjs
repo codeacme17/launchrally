@@ -40,11 +40,11 @@ function render(lines, colors) {
     return `  <text x="32" y="${y}" class="${role}">${escapeXml(line || " ")}</text>`;
   }).join("\n");
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 440" role="img" aria-labelledby="title description">
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 488" role="img" aria-labelledby="title description">
   <title id="title">Representative LaunchRally audit output</title>
   <desc id="description">An Inconclusive audit with no failed findings, three verification gaps, and rally init as the next command.</desc>
-  <rect width="440" height="440" rx="18" fill="${colors.background}"/>
-  <rect x="1" y="1" width="438" height="438" rx="17" fill="none" stroke="${colors.border}" stroke-width="2"/>
+  <rect width="440" height="488" rx="18" fill="${colors.background}"/>
+  <rect x="1" y="1" width="438" height="486" rx="17" fill="none" stroke="${colors.border}" stroke-width="2"/>
   <path d="M18 0h404a18 18 0 0 1 18 18v38H0V18A18 18 0 0 1 18 0Z" fill="${colors.chrome}"/>
   <circle cx="28" cy="28" r="6" fill="#ef4444"/>
   <circle cx="50" cy="28" r="6" fill="#f59e0b"/>

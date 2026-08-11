@@ -4,42 +4,74 @@ LaunchRally `0.2.2` is a public Experimental release. Run it against a repositor
 
 ## Direct CLI Quickstart
 
-Run its exact P0 CLI without a global installation:
+LaunchRally's default interactive journey uses a user-managed PATH installation. Install the exact Launcher through your current npm prefix, then verify structured output before entering a repository:
 
 ```bash
-npm exec --package=@launchrally/cli@0.2.2 -- rally audit --json --cwd .
+npm install --global @launchrally/cli@0.2.2
+rally --version --json
 ```
 
-The first response is a versioned interaction, not a completed assessment. Supply only the requested typed answers, confirm the complete Check plan, and decide public and Provider read permissions separately. Keep the completed JSON unchanged if you later choose `init`, `plan`, or `verify`; the [data-model guide](../concepts/data-model.md) explains those artifacts.
+Do not use `sudo`, a floating tag, a pipe-to-shell installer, or an automatic shell-profile change. If the prefix is not writable or the command is missing, use the [Install guide](install.md) to choose and expose a user-writable prefix.
 
-The v2 JSON contract retains `production_targets` as a compatibility field. Its values are the confirmed public targets for the reviewed `intended_environment`, so a staging Audit stores staging targets in `production_targets`; Human Mode and derived Report Views label them with the reviewed environment.
+## Audit, save, Init, and prove delegation
 
-Omit `--json` in a TTY to run the complete Human Mode wizard in one process. It asks for release intent, plan confirmation, and each public or Provider read separately. Every permission defaults to denied. Use `--plain` for a framework-free numbered interface or when terminal styling is unsuitable; `TERM=dumb` selects it automatically.
+Enter the repository root and run this continuous Human Mode path:
 
-Human Mode prints prompts to stderr and a concise assessment to stdout. Its completion summary gives the explicit assessment, Failed Findings, Verification Gaps, Report destination, and exact next command in separate labeled sections. Styling is enabled only for a compatible TTY; `--plain`, `TERM=dumb`, `NO_COLOR`, and redirected stdout preserve the same labels without ANSI styling. Human Mode does not expose resume tokens or write `.launchrally/**`. Add `--output <path>` or explicitly confirm saving the complete Audit JSON. The interactive save flow suggests `<cwd>/launchrally-audit-report.json` for one-selection acceptance, validates custom paths, and offers a native system file picker when a supported local GUI is available. It discloses the exact resolved destination before writing, rejects `.launchrally/**`, and never silently overwrites an existing file. A cancelled picker returns to the save menu; declining or pressing Ctrl-C writes nothing. Use the saved file with `rally init --report <path>`. Non-TTY callers must use `--json`, which preserves the versioned one-transition Agent/CI protocol.
+```bash
+rally audit --plain --cwd . --output ./launchrally-audit-report.json
+rally init --plain --cwd . --report ./launchrally-audit-report.json
+rally --version --json --cwd .
+```
 
-The exact package-manager command preserves npm's download confirmation, makes no project change, and performs no global install.
+The Audit presents the complete Brief and Check plan before work begins. Local scan, public verification, and every Provider read are independent permissions and default-denied. A denial completes transparently with a Verification Gap; it is never reused as permission for another boundary. The complete Report and Evidence stay local.
+
+Audit does not create `.launchrally`; `--output` saves the complete Report at the explicit path shown above. Confirmed Init is the first project mutation. Review its authoritative preview and any separate `npm_registry_read` request. Init changes only LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
+
+The final version command is read-only. Require `authority.state: "ready"` and, after Init, `authority.source: "project_toolchain"`. The Launcher then delegates repository commands to the project-pinned Engine. A supported same, newer, or older Launcher follows the valid pin; it does not upgrade, downgrade, or replace it.
+
+Init makes the saved Manifest-bound Audit Report historical. Follow the typed `needs_refresh` response with a full Verify, use the new current Report for Plan and Handoff, and retain the original saved Report for future whole-release Verify input. The [Agent reference journey](../../skills/launchrally/references/reference-journey.md) shows that complete typed flow.
+
+## No-install trial and CI fallback
+
+Exact-version npm-exec is a no-install trial and CI fallback. It is not the default Agent prerequisite. Use complete npm-exec follow-ups because the first ephemeral process does not leave `rally` on PATH:
+
+```bash
+npm exec --package=@launchrally/cli@0.2.2 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.2.2 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.2.2 -- rally --version --json --cwd .
+```
+
+npm may show its normal package-download confirmation. LaunchRally does not suppress it or add `--yes`.
 
 ## Skill Quickstart
 
-Install the versioned Codex or Claude Plugin by following the [install guide](install.md), then ask the host Agent:
+CLI installation and Plugin installation are separate prerequisites. After the Launcher works, install the versioned Codex or Claude Plugin from the [single installation authority](install.md), verify host discovery, then ask:
 
 > Use LaunchRally to audit this repository for launch readiness. Show me the complete scope and every permission before continuing.
 
-The Skill is an interaction layer. The local CLI remains the authority for Checks, Evidence, Severity, gates, and Assessments. The Skill cannot manufacture missing Evidence or silently grant permissions.
+The Plugin is an interaction layer. It begins with `rally --version --json --cwd .`, validates Execution Authority, and follows the selected Engine through the Launcher. It cannot manufacture Evidence, silently grant permissions, install or migrate a toolchain, or gain Provider, deployment, production, credential, or application-source write authority.
 
-Optional Init pins the exact CLI in `.launchrally/toolchain` for every ecosystem, without editing application dependency files. It tries offline npm resolution first. If the cache is insufficient, approve or deny the separately disclosed `npm_registry_read` request before Init prepares its file preview; npm lifecycle scripts remain disabled.
+## Lifecycle at a glance
+
+The user-managed **Launcher**, selected **Engine**, repository-owned **Project Toolchain**, versioned **Execution Authority**, and descriptive **Invocation Context** are separate layers. So are their lifecycle actions:
+
+- Update, downgrade, or remove the global Launcher with explicit npm commands.
+- Update or remove the Codex or Claude Plugin with the host's commands.
+- Inspect, restore, migrate, or clean a Project Toolchain with explicit `rally toolchain` operations.
+- Retain or manually delete `.launchrally` project data independently of either uninstall.
+
+See [Install, lifecycle, and troubleshooting](install.md) for exact commands, PATH recovery, offline/cache behavior, legacy `0.2.2`, and safe removal.
 
 ## Secret-free ecosystem examples
 
-The committed coverage fixtures use synthetic configuration and `.env.example` variable names only. They contain no credentials and require no LaunchRally account or private service:
+After installing the Launcher, these committed fixtures exercise the universal Baseline without credentials or private services:
 
 ```bash
-npm exec --package=@launchrally/cli@0.2.2 -- rally audit --json --cwd fixtures/coverage/typescript-astro
-npm exec --package=@launchrally/cli@0.2.2 -- rally audit --json --cwd fixtures/coverage/python-fastapi
-npm exec --package=@launchrally/cli@0.2.2 -- rally audit --json --cwd fixtures/coverage/split-react-go
-npm exec --package=@launchrally/cli@0.2.2 -- rally audit --json --cwd fixtures/coverage/pnpm-edge-monorepo
-npm exec --package=@launchrally/cli@0.2.2 -- rally audit --json --cwd fixtures/coverage/custom-self-hosted
+rally audit --json --cwd fixtures/coverage/typescript-astro
+rally audit --json --cwd fixtures/coverage/python-fastapi
+rally audit --json --cwd fixtures/coverage/split-react-go
+rally audit --json --cwd fixtures/coverage/pnpm-edge-monorepo
+rally audit --json --cwd fixtures/coverage/custom-self-hosted
 ```
 
-These represent an Astro TypeScript app, a FastAPI Python service, a split React and Go system, a pnpm Edge monorepo, and a custom self-hosted deployment. They demonstrate the universal Baseline; they are not a framework or deployment allowlist.
+They represent an Astro TypeScript app, a FastAPI Python service, a split React and Go system, a pnpm Edge monorepo, and a custom self-hosted deployment. They demonstrate the universal Baseline; they are not a framework or deployment allowlist.

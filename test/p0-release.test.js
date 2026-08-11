@@ -114,7 +114,7 @@ test("the public release kit documents use, data, safety, feedback, and validati
 
   assert.match(
     quickstart,
-    /npm exec --package=@launchrally\/cli@0\.2\.2 -- rally audit --json --cwd \./u,
+    /npm install --global @launchrally\/cli@0\.2\.2[\s\S]*rally --version --json[\s\S]*rally audit --plain --cwd \. --output \.\/launchrally-audit-report\.json/u,
   );
   assert.match(quickstart, /Skill Quickstart/iu);
   for (const context of ["Astro", "FastAPI", "React", "Go", "pnpm", "self-hosted"]) {

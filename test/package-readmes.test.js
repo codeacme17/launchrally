@@ -19,7 +19,7 @@ const publishedPackages = [
     requiredContent: [
       "# @launchrally/cli",
       "Experimental P0",
-      "npm exec --package=@launchrally/cli@0.2.2 -- rally audit --json --cwd .",
+      "npm install --global @launchrally/cli@0.2.2",
       "Node.js 20.12.0 or newer",
       "local-first",
       "docs/getting-started/quickstart.md",

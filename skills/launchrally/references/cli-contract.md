@@ -18,12 +18,14 @@ This Skill release uses this explicit compatibility matrix:
 | Layer | Supported value | Meaning |
 | --- | --- | --- |
 | Plugin version | `0.2.2` | Interaction guidance only; never an execution candidate. |
-| Launcher version | `0.2.2` or `0.3.0` | A supported user-managed `rally` dispatcher implementing the contracts below. |
+| Launcher version | `0.2.2` or `0.3.0`, only when the running implementation declares v1 | A supported user-managed `rally` dispatcher implementing the contracts below. Historical published `0.2.2` direct binaries predate v1 interception and do not qualify. |
 | Execution Authority contract | `launchrally.dev/execution-authority/v1` | The only supported Engine-selection contract. |
-| Selected Engine version and contract | `0.2.2` or `0.3.0` with `launchrally.dev/execution-authority/v1`; CLI interaction `launchrally.dev/cli/v2` | The Engine selected by validated authority. |
+| Selected Engine version and contract | `0.2.2` or `0.3.0` with the declared compatibility path and CLI interaction `launchrally.dev/cli/v2` | The Engine selected by validated authority. A descriptor-free `0.2.2` project is accepted only through the legacy row below. |
 | Legacy project pin | `0.2.2`, authority descriptor absent, `compatibility: "legacy_adapter"` | Supported only through the Launcher's allowlisted legacy adapter after explicit restore when materialization is missing. |
 
 Keep the Plugin version, Launcher version, selected Engine version, and project pin as separate facts. Read `launcher_version` from the version result, the selected Engine from `cli_version` and `authority.engine`, and the project pin from the validated `project_toolchain` authority. Do not require these versions to be equal; continue only when each value and contract is explicitly supported by the matrix. Any unknown or malformed version must stop before a journey operation.
+
+The v1 Execution Authority guarantee begins with Launchers that implement `launchrally.dev/execution-authority/v1`. Historical direct binaries and manual Project Toolchain Engine execution cannot be retroactively intercepted and must never be recommended as a bypass.
 
 Require `operation: "version"`, `contract: "launchrally.dev/cli/v2"`, and a complete `authority` with `schema_version: "launchrally.dev/execution-authority/v1"`. Validate the complete structured shape, not just these fields. For `ready`, require `status: "completed"`, require `cli_version` to equal `authority.engine.version`, and accept only `launcher` or `project_toolchain` as the authority source. If the source is `project_toolchain`, always continue through `rally`; never substitute the Plugin version, Launcher version, bundled Engine, or a direct project entrypoint. Stop on malformed structured output.
 

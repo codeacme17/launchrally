@@ -11,5 +11,8 @@ web.public.availability
 web.security.headers
 web.release.rollback
 
+Report
+./audit.json
+
 Next command
-rally init --report audit.json
+rally init --report ./audit.json --cwd .
