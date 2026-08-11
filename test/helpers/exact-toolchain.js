@@ -142,3 +142,32 @@ export async function writeExactToolchain(repository, version = "0.2.2") {
     `${JSON.stringify(exactToolchainLock(version), null, 2)}\n`,
   );
 }
+
+export async function materializeExactToolchain(repository, version = "0.2.2") {
+  const toolchain = path.join(repository, ".launchrally", "toolchain");
+  const lock = exactToolchainLock(version);
+  for (const [lockedPath, entry] of Object.entries(lock.packages)) {
+    if (!lockedPath.startsWith("node_modules/")) continue;
+    const name = lockedPath.slice("node_modules/".length);
+    const packageDirectory = path.join(toolchain, lockedPath);
+    await mkdir(packageDirectory, { recursive: true });
+    await writeFile(
+      path.join(packageDirectory, "package.json"),
+      `${JSON.stringify({
+        name,
+        version: entry.version,
+        type: "module",
+        ...(entry.dependencies ? { dependencies: entry.dependencies } : {}),
+        ...(name === "@launchrally/cli" ? {
+          bin: { rally: "./bin/rally.js" },
+          launchrally: {
+            execution_authority: "launchrally.dev/execution-authority/v1",
+          },
+        } : {}),
+      }, null, 2)}\n`,
+    );
+  }
+  const cliDirectory = path.join(toolchain, "node_modules", "@launchrally", "cli");
+  await mkdir(path.join(cliDirectory, "bin"), { recursive: true });
+  await writeFile(path.join(cliDirectory, "bin", "rally.js"), "export {};\n");
+}

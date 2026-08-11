@@ -6,6 +6,7 @@ const executionAuthoritySchema = require("../schemas/execution-authority/v1.sche
 const executionAuthorityDescriptorSchema = require(
   "../schemas/execution-authority/v1-descriptor.schema.json",
 );
+const toolchainLifecycleSchema = require("../schemas/toolchain-lifecycle/v1.schema.json");
 const reportSchemaV1 = require("../schemas/report/v1.schema.json");
 const reportSchemaV2 = require("../schemas/report/v2.schema.json");
 const reportViewSchemaV1 = require("../schemas/report-view/v1.schema.json");
@@ -22,6 +23,7 @@ const providerGuidanceSchema = require("../schemas/provider-guidance/v2.schema.j
 
 export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v2";
 export const EXECUTION_AUTHORITY_CONTRACT = "launchrally.dev/execution-authority/v1";
+export const TOOLCHAIN_LIFECYCLE_CONTRACT = "launchrally.dev/toolchain-lifecycle/v1";
 export const MANIFEST_SCHEMA = "launchrally.dev/manifest/v2";
 export const REPORT_SCHEMA = "launchrally.dev/report/v2";
 export const MANIFEST_CONTRACT_MAJOR = 2;
@@ -193,6 +195,26 @@ export function assertValidExecutionAuthorityDescriptor(descriptor) {
   if (!validatesSchema(descriptor, executionAuthorityDescriptorSchema)) {
     const error = new Error("The Execution Authority descriptor is incomplete or invalid.");
     error.code = "invalid_execution_authority_descriptor";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidToolchainLifecycle(interaction) {
+  const schema = structuredClone(toolchainLifecycleSchema);
+  schema.properties.authority = {};
+  const validAuthority = !interaction?.authority
+    || (() => {
+      try {
+        assertValidExecutionAuthority(interaction.authority);
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+  if (!validatesSchema(interaction, schema) || !validAuthority) {
+    const error = new Error("The Project Toolchain lifecycle interaction is invalid.");
+    error.code = "invalid_toolchain_lifecycle";
     throw error;
   }
   return true;

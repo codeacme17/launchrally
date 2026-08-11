@@ -21,6 +21,7 @@ export {
   EXECUTION_AUTHORITY_DESCRIPTOR_PATH,
   resolveExecutionAuthority,
 } from "./execution-authority.js";
+export { runToolchainLifecycle } from "./toolchain-lifecycle.js";
 
 const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
   "Local Checks use only normalized, secret-safe repository facts.",

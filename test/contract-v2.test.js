@@ -329,6 +329,12 @@ test("CLI help classifies providers as a supporting advisory operation", async (
 
   assert.deepEqual(help.commands, {
     core: ["audit", "init", "plan", "verify"],
+    bootstrap: [
+      "toolchain status",
+      "toolchain restore",
+      "toolchain migrate --to <exact-version>",
+      "toolchain clean",
+    ],
     supporting: [{ operation: "providers", mode: "advisory" }],
   });
   assert.match(help.message, /Supporting advisory operation:/u);

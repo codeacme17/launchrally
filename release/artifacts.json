@@ -32,6 +32,7 @@
         "schemas/report-view/v2.schema.json",
         "schemas/report/v1.schema.json",
         "schemas/report/v2.schema.json",
+        "schemas/toolchain-lifecycle/v1.schema.json",
         "schemas/verification-result/v1.schema.json",
         "schemas/verification-result/v2.schema.json",
         "schemas/verify-interaction/v1.schema.json",
@@ -78,6 +79,7 @@
         "src/report-currentness.js",
         "src/reporting.js",
         "src/support-layers.js",
+        "src/toolchain-lifecycle.js",
         "src/verification.js"
       ]
     },

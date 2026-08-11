@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, rmdir, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import {
   CLI_INTERACTION_CONTRACT,
+  EXECUTION_AUTHORITY_CONTRACT,
   INIT_INTERACTION_SCHEMA,
   MANIFEST_SCHEMA,
   assertSupportedManifestVersion,
@@ -39,6 +40,7 @@ import { evaluateReportCurrentness } from "./report-currentness.js";
 export const CLI_DEPENDENCY = "@launchrally/cli";
 export const TOOLCHAIN_PACKAGE_PATH = ".launchrally/toolchain/package.json";
 export const TOOLCHAIN_LOCKFILE_PATH = ".launchrally/toolchain/package-lock.json";
+export const TOOLCHAIN_AUTHORITY_PATH = ".launchrally/toolchain/authority.json";
 const TOOLCHAIN_OVERRIDES = Object.freeze({
   "@clack/core": "1.4.3",
   "fast-string-truncated-width": "3.0.3",
@@ -50,6 +52,7 @@ const APPROVED_PATHS = new Set([
   ".launchrally/.gitignore",
   TOOLCHAIN_LOCKFILE_PATH,
   TOOLCHAIN_PACKAGE_PATH,
+  TOOLCHAIN_AUTHORITY_PATH,
   LEGACY_MANIFEST_RELATIVE_PATH,
   MANIFEST_RELATIVE_PATH,
 ]);
@@ -65,11 +68,22 @@ function digest(content) {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
 
+function sameFile(left, right) {
+  return left?.dev === right?.dev && left?.ino === right?.ino;
+}
+
 async function storeState(state) {
   const previewDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-init-preview-"));
   const directoryToken = path.basename(previewDirectory).slice("launchrally-init-preview-".length);
   const fileToken = randomBytes(32).toString("base64url");
-  const content = `${JSON.stringify(state)}\n`;
+  const stored = structuredClone(state);
+  if (stored.materialization?.staging_path) {
+    const original = stored.materialization.staging_path;
+    const target = path.join(previewDirectory, "toolchain");
+    await rename(original, target);
+    stored.materialization.staging_path = target;
+  }
+  const content = `${JSON.stringify(stored)}\n`;
   const stateDigest = createHash("sha256").update(content).digest("base64url");
   const token = `lrinit_${directoryToken}_${fileToken}_${stateDigest}`;
   await writeFile(
@@ -101,8 +115,15 @@ async function loadState(token) {
   }
 }
 
-async function discardState(statePath) {
+async function discardState(statePath, cleanupPath = null) {
   if (statePath) await rm(path.dirname(statePath), { recursive: true, force: true });
+  if (
+    cleanupPath
+    && path.dirname(path.resolve(cleanupPath)) === path.resolve(os.tmpdir())
+    && path.basename(path.resolve(cleanupPath)).startsWith("launchrally-dependency-plan-")
+  ) {
+    await rm(cleanupPath, { recursive: true, force: true });
+  }
 }
 
 function declared(value) {
@@ -302,7 +323,7 @@ function exactDiff(relativePath, before, after) {
   ].join("\n");
 }
 
-function toolchainPackageContent(version) {
+export function toolchainPackageContent(version) {
   return `${JSON.stringify({
     name: "launchrally-toolchain",
     private: true,
@@ -310,6 +331,64 @@ function toolchainPackageContent(version) {
     devDependencies: { [CLI_DEPENDENCY]: version },
     overrides: TOOLCHAIN_OVERRIDES,
   }, null, 2)}\n`;
+}
+
+export function toolchainAuthorityContent(version) {
+  return `${JSON.stringify({
+    contract: EXECUTION_AUTHORITY_CONTRACT,
+    engine: {
+      package: CLI_DEPENDENCY,
+      version,
+      entrypoint: "bin/rally.js",
+    },
+  }, null, 2)}\n`;
+}
+
+export function emptyToolchainLockfileContent() {
+  return `${JSON.stringify({
+    name: "launchrally-toolchain",
+    version: "0.0.0",
+    lockfileVersion: 3,
+    requires: true,
+    packages: { "": {} },
+  }, null, 2)}\n`;
+}
+
+export function toolchainInstallArguments(version, registryAllowed = false) {
+  return [
+    "install",
+    "--ignore-scripts",
+    "--save-dev",
+    "--save-exact",
+    "--no-audit",
+    "--no-fund",
+    ...(registryAllowed
+      ? ["--registry=https://registry.npmjs.org"]
+      : ["--offline"]),
+    `${CLI_DEPENDENCY}@${version}`,
+  ];
+}
+
+export function npmExecFileCommand(
+  npmArguments,
+  {
+    platform = process.platform,
+    command_interpreter: commandInterpreter =
+      process.env.ComSpec ?? process.env.COMSPEC ?? "cmd.exe",
+  } = {},
+) {
+  if (platform === "win32") {
+    return {
+      executable: commandInterpreter,
+      arguments: ["/d", "/s", "/c", "npm", ...npmArguments],
+      shell: false,
+    };
+  }
+  return {
+    executable: "npm",
+    arguments: npmArguments,
+    shell: false,
+  };
 }
 
 export function isExactToolchain({ packageJson, lockfile, dependency, version }) {
@@ -353,7 +432,7 @@ export function isExactToolchain({ packageJson, lockfile, dependency, version })
       try {
         const decoded = Buffer.from(encoded, "base64");
         return decoded.length === 64 && decoded.toString("base64") === encoded;
-      } catch {
+      } catch (error) {
         return false;
       }
     };
@@ -486,6 +565,7 @@ async function defaultPrepareDependencyChanges({
   dependency,
   version,
   registry_allowed: registryAllowed = false,
+  staging_path: stagingPath,
 }) {
   if (isExactToolchain({
     packageJson,
@@ -499,41 +579,53 @@ async function defaultPrepareDependencyChanges({
     ];
   }
   const prepare = async (offline) => {
-    const staging = await mkdtemp(path.join(os.tmpdir(), "launchrally-dependency-plan-"));
+    const staging = stagingPath
+      ?? await mkdtemp(path.join(os.tmpdir(), "launchrally-dependency-plan-"));
     try {
+      await mkdir(staging, { recursive: true });
       await writeFile(path.join(staging, "package.json"), packageJson, "utf8");
       await writeFile(path.join(staging, "package-lock.json"), lockfile.content, "utf8");
-      const npmArguments = [
-        "install",
-        "--package-lock-only",
-        "--ignore-scripts",
-        "--save-dev",
-        "--save-exact",
-        "--no-audit",
-        "--no-fund",
-        ...(offline
-          ? ["--offline"]
-          : ["--registry=https://registry.npmjs.org"]),
-        `${dependency}@${version}`,
-      ];
-      const npmCommand = process.platform === "win32"
-        ? {
-          command: process.env.ComSpec ?? "cmd.exe",
-          arguments: ["/d", "/s", "/c", "npm", ...npmArguments],
-        }
-        : { command: "npm", arguments: npmArguments };
-      await execFileAsync(npmCommand.command, npmCommand.arguments, {
+      const npmArguments = toolchainInstallArguments(version, !offline);
+      const npmCommand = npmExecFileCommand(npmArguments);
+      await execFileAsync(npmCommand.executable, npmCommand.arguments, {
         cwd: staging,
         encoding: "utf8",
         timeout: 120_000,
         maxBuffer: 1024 * 1024,
+        shell: npmCommand.shell,
       });
-      return [
+      const prepared = [
         { path: packagePath, content: await readFile(path.join(staging, "package.json"), "utf8") },
         { path: lockfile.path, content: await readFile(path.join(staging, "package-lock.json"), "utf8") },
       ];
-    } finally {
-      await rm(staging, { recursive: true, force: true });
+      const parsedLock = JSON.parse(prepared[1].content);
+      const packages = Object.entries(parsedLock.packages ?? {})
+        .filter(([lockedPath]) => lockedPath.startsWith("node_modules/"));
+      Object.defineProperty(prepared, "materialization", {
+        enumerable: false,
+        value: {
+          staging_path: staging,
+          package_count: packages.length,
+          integrity_digest: digest(packages
+            .map(([lockedPath, entry]) => `${lockedPath}:${entry.integrity ?? ""}`)
+            .sort()
+            .join("\n")),
+          command: {
+            executable: "npm",
+            arguments: npmArguments,
+            shell: false,
+          },
+        },
+      });
+      return prepared;
+    } catch (error) {
+      error.temporary_target = staging;
+      if (offline && isOfflineResolutionMiss(error)) {
+        error.cleanup_path = staging;
+      } else {
+        await rm(staging, { recursive: true, force: true });
+      }
+      throw error;
     }
   };
   try {
@@ -544,6 +636,8 @@ async function defaultPrepareDependencyChanges({
     if (registryAllowed) return prepare(false);
     const permissionError = new Error("The exact CLI is not available in the offline npm cache.");
     permissionError.code = "registry_permission_required";
+    permissionError.temporary_target = error.temporary_target;
+    permissionError.cleanup_path = error.cleanup_path;
     throw permissionError;
   }
 }
@@ -594,6 +688,52 @@ async function preexistingHistoryIsCurrent(root, state) {
   ) === "valid";
 }
 
+async function preparedMaterializationIsCurrent(state) {
+  if (!state.materialization) return true;
+  try {
+    const packageChange = state.changes.find(
+      (change) => change.path === TOOLCHAIN_PACKAGE_PATH,
+    );
+    const lockChange = state.changes.find(
+      (change) => change.path === TOOLCHAIN_LOCKFILE_PATH,
+    );
+    const packageJson = await readFile(
+      path.join(state.materialization.staging_path, "package.json"),
+      "utf8",
+    );
+    const lockfile = await readFile(
+      path.join(state.materialization.staging_path, "package-lock.json"),
+      "utf8",
+    );
+    const version = JSON.parse(packageJson)?.devDependencies?.[CLI_DEPENDENCY];
+    const nodeModules = await lstat(
+      path.join(state.materialization.staging_path, "node_modules"),
+    );
+    const entrypoint = await lstat(path.join(
+      state.materialization.staging_path,
+      "node_modules",
+      "@launchrally",
+      "cli",
+      "bin",
+      "rally.js",
+    ));
+    return packageChange?.after === packageJson
+      && lockChange?.after === lockfile
+      && nodeModules.isDirectory()
+      && !nodeModules.isSymbolicLink()
+      && entrypoint.isFile()
+      && !entrypoint.isSymbolicLink()
+      && isExactToolchain({
+        packageJson,
+        lockfile,
+        dependency: CLI_DEPENDENCY,
+        version,
+      });
+  } catch {
+    return false;
+  }
+}
+
 function previewChangeIsValid(change) {
   if (!change || typeof change !== "object" || Array.isArray(change)) return false;
   const expectedOperation = change.after === null
@@ -619,23 +759,42 @@ function previewChangeIsValid(change) {
 
 function storedPreviewIsBound(state) {
   try {
+    const expectedKeys = [
+      "changes",
+      "history_preexisting",
+      "manifest",
+      "mode",
+      "report_package",
+      "root",
+      "schema_version",
+      "source_report_id",
+      ...(state.materialization ? ["materialization"] : []),
+    ].sort();
     if (
-      JSON.stringify(Object.keys(state).sort()) !== JSON.stringify([
-        "changes",
-        "history_preexisting",
-        "manifest",
-        "mode",
-        "report_package",
-        "root",
-        "schema_version",
-        "source_report_id",
-      ])
+      JSON.stringify(Object.keys(state).sort()) !== JSON.stringify(expectedKeys)
       || !state.report_package
       || state.source_report_id !== state.report_package.report?.report_id
       || !Array.isArray(state.changes)
       || !Array.isArray(state.history_preexisting)
       || !["initialization", "migration", "update"].includes(state.mode)
     ) return false;
+    if (state.materialization && (
+      JSON.stringify(Object.keys(state.materialization).sort()) !== JSON.stringify([
+        "command",
+        "integrity_digest",
+        "package_count",
+        "staging_path",
+      ])
+      || !Number.isInteger(state.materialization.package_count)
+      || state.materialization.package_count < 1
+      || !/^sha256:[a-f0-9]{64}$/u.test(state.materialization.integrity_digest)
+      || state.materialization.command?.executable !== "npm"
+      || !Array.isArray(state.materialization.command?.arguments)
+      || state.materialization.command?.shell !== false
+      || path.basename(state.materialization.staging_path) !== "toolchain"
+      || !path.basename(path.dirname(state.materialization.staging_path))
+        .startsWith("launchrally-init-preview-")
+    )) return false;
     if (
       state.changes.some((change) => !previewChangeIsValid(change))
       || new Set(state.changes.map(({ path: relative }) => relative)).size !== state.changes.length
@@ -883,12 +1042,18 @@ async function recoverPendingInitialization(root) {
     || JSON.stringify(Object.keys(journal.history).sort()) !== JSON.stringify([
       "commit_token",
       "history_preexisting",
+      ...(journal.history.materialization_path ? ["materialization_path"] : []),
       "mode",
       "record_digest",
       "report_id",
       "report_preexisting",
       "source_report_id",
-    ])
+    ].sort())
+    || (
+      journal.history.materialization_path !== undefined
+      && journal.history.materialization_path
+        !== ".launchrally/toolchain/node_modules"
+    )
     || journal.history.history_preexisting.some((candidate) =>
       JSON.stringify(Object.keys(candidate ?? {}).sort()) !== JSON.stringify(["digest", "path"])
       || !isLocalHistoryPath(candidate.path)
@@ -939,6 +1104,12 @@ async function recoverPendingInitialization(root) {
   );
   if (rollback.conflict) return "conflict";
   if (!rollback.reverted) return false;
+  if (journal.history.materialization_path) {
+    await rm(path.join(root, journal.history.materialization_path), {
+      recursive: true,
+      force: true,
+    });
+  }
   await cleanupEmptyChangeDirectories(root, journal.changes);
   await removeRecoveryJournal(root);
   return { action: "rolled_back" };
@@ -965,7 +1136,8 @@ function initializationError(error, message, extra = {}) {
   };
 }
 
-function registryPermissionRequest(version, sourceReportId, resumeToken) {
+function registryPermissionRequest(version, sourceReportId, temporaryTarget, resumeToken) {
+  const npmArguments = toolchainInstallArguments(version, true);
   return {
     contract: CLI_INTERACTION_CONTRACT,
     status: "needs_permission",
@@ -983,7 +1155,8 @@ function registryPermissionRequest(version, sourceReportId, resumeToken) {
         source: "https://registry.npmjs.org",
         package: CLI_DEPENDENCY,
         version,
-        command: `npm install --package-lock-only --ignore-scripts --save-dev --save-exact --no-audit --no-fund --registry=https://registry.npmjs.org ${CLI_DEPENDENCY}@${version}`,
+        temporary_target: temporaryTarget,
+        commands: [{ executable: "npm", arguments: npmArguments, shell: false }],
       }],
     },
   };
@@ -992,15 +1165,19 @@ function registryPermissionRequest(version, sourceReportId, resumeToken) {
 function registryPermissionStateIsValid(state, root, version) {
   try {
     return JSON.stringify(Object.keys(state).sort()) === JSON.stringify([
+      "cleanup_path",
       "kind",
       "report_package",
       "root",
       "schema_version",
+      "temporary_target",
       "version",
     ])
       && state.kind === "registry_permission"
       && state.root === root
       && state.version === version
+      && typeof state.temporary_target === "string"
+      && typeof state.cleanup_path === "string"
       && state.schema_version === INIT_INTERACTION_SCHEMA
       && (assertValidReportPackage(state.report_package) ?? true);
   } catch {
@@ -1078,7 +1255,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       }
       const decision = options.permission_decisions?.npm_registry_read;
       if (decision === "denied") {
-        await discardState(statePath);
+        await discardState(statePath, state.cleanup_path);
         return initializationError(
           "registry_permission_denied",
           "The npm registry read was denied; no initialization changes were prepared.",
@@ -1093,10 +1270,15 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
         );
       }
       await discardState(statePath);
-      return runInitLocked(cwd, version, {
-        report_package: state.report_package,
-        [REGISTRY_PERMISSION_CAPABILITY]: true,
-      }, dependencies);
+      try {
+        return await runInitLocked(cwd, version, {
+          report_package: state.report_package,
+          [REGISTRY_PERMISSION_CAPABILITY]: true,
+          registry_staging_path: state.cleanup_path,
+        }, dependencies);
+      } finally {
+        await discardState(null, state.cleanup_path);
+      }
     }
     if (state.root !== root) {
       await discardState(statePath);
@@ -1160,6 +1342,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
     if (
       !await previewIsCurrent(state.root, state.changes)
       || !await preexistingHistoryIsCurrent(state.root, state)
+      || !await preparedMaterializationIsCurrent(state)
     ) {
       await discardState(statePath);
       return {
@@ -1187,6 +1370,9 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       report_preexisting: historyPlan.files
         .filter(({ path: relative }) => relative.includes("/reports/"))
         .every((file) => state.history_preexisting.some((item) => item.path === file.path)),
+      ...(state.materialization
+        ? { materialization_path: ".launchrally/toolchain/node_modules" }
+        : {}),
     };
     const applied = await applyChanges(
       state.root,
@@ -1195,8 +1381,8 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       true,
       journalContext,
     );
-    await discardState(statePath);
     if (!applied.applied) {
+      await discardState(statePath);
       return applied.reverted
         ? {
           contract: CLI_INTERACTION_CONTRACT,
@@ -1217,6 +1403,58 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
           changes_applied: [],
         };
     }
+    let materializationApplied = false;
+    const materializationTarget = path.join(
+      state.root,
+      ".launchrally",
+      "toolchain",
+      "node_modules",
+    );
+    if (state.materialization) {
+      let adoptedMaterializationStat = null;
+      try {
+        const transactionMaterialization = path.join(
+          state.root,
+          ".launchrally",
+          ".init-transaction",
+          "materialization",
+        );
+        if (await lstat(materializationTarget).then(() => true).catch((error) => {
+          if (error?.code === "ENOENT") return false;
+          throw error;
+        })) throw new Error("The materialization target changed after preview.");
+        await cp(
+          path.join(state.materialization.staging_path, "node_modules"),
+          transactionMaterialization,
+          { recursive: true, errorOnExist: true },
+        );
+        await rename(transactionMaterialization, materializationTarget);
+        materializationApplied = true;
+        adoptedMaterializationStat = await lstat(materializationTarget);
+      } catch {
+        const rollback = await rollbackChanges(
+          state.root,
+          appliedChanges,
+          fileOperationAdapter(dependencies.file_operations),
+          true,
+        );
+        await cleanupEmptyChangeDirectories(state.root, appliedChanges).catch(() => {});
+        await removeRecoveryJournal(state.root).catch(() => {});
+        await discardState(statePath);
+        return initializationError(
+          rollback.reverted ? "materialization_failed_reverted" : "initialization_recovery_required",
+          rollback.reverted
+            ? "Project Engine materialization failed and every authoritative change was reverted."
+            : "Project Engine materialization failed and initialization recovery is required.",
+          { recoverable: true, changes_applied: [] },
+        );
+      }
+      Object.defineProperty(state, "adopted_materialization_stat", {
+        enumerable: false,
+        value: adoptedMaterializationStat,
+      });
+    }
+    await discardState(statePath);
     let historyCommitted = false;
     try {
       await (dependencies.mark_history_committing
@@ -1250,6 +1488,22 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
         fileOperationAdapter(dependencies.file_operations),
         true,
       );
+      if (materializationApplied) {
+        try {
+          const current = await lstat(materializationTarget);
+          if (sameFile(current, state.adopted_materialization_stat)) {
+            await rm(materializationTarget, { recursive: true, force: true });
+          }
+        } catch (cleanupError) {
+          if (cleanupError?.code !== "ENOENT") {
+            return initializationError(
+              "initialization_recovery_required",
+              "History persistence failed and Project Engine ownership changed during rollback.",
+              { recoverable: true, changes_applied: [] },
+            );
+          }
+        }
+      }
       if (rollback.reverted) {
         try {
           await cleanupEmptyChangeDirectories(state.root, appliedChanges);
@@ -1347,6 +1601,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
     await assertSafeRelativePath(root, ".launchrally/.gitignore");
     await assertSafeRelativePath(root, TOOLCHAIN_PACKAGE_PATH);
     await assertSafeRelativePath(root, TOOLCHAIN_LOCKFILE_PATH);
+    await assertSafeRelativePath(root, TOOLCHAIN_AUTHORITY_PATH);
   } catch (error) {
     if (error?.code === "unsafe_project_path") {
       return initializationError(
@@ -1432,29 +1687,65 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       "Initialization requires a current Report; run full Verify first.",
     );
   }
-  const packageJson = toolchainPackageContent(version);
+  const existingToolchainPackage = await readOptional(path.join(root, TOOLCHAIN_PACKAGE_PATH));
+  const existingToolchainLock = await readOptional(path.join(root, TOOLCHAIN_LOCKFILE_PATH));
+  const existingToolchainAuthority = await readOptional(path.join(root, TOOLCHAIN_AUTHORITY_PATH));
+  const toolchainExists = existingToolchainPackage !== null
+    || existingToolchainLock !== null
+    || existingToolchainAuthority !== null;
+  let toolchainVersion = version;
+  if (toolchainExists) {
+    let parsedToolchainPackage;
+    try {
+      parsedToolchainPackage = JSON.parse(existingToolchainPackage);
+      toolchainVersion = parsedToolchainPackage?.devDependencies?.[CLI_DEPENDENCY];
+    } catch {
+      toolchainVersion = null;
+    }
+    if (
+      typeof toolchainVersion !== "string"
+      || existingToolchainPackage === null
+      || existingToolchainLock === null
+      || !isExactToolchain({
+        packageJson: existingToolchainPackage,
+        lockfile: existingToolchainLock,
+        dependency: CLI_DEPENDENCY,
+        version: toolchainVersion,
+      })
+    ) {
+      return initializationError(
+        "invalid_project_toolchain",
+        "The established Project Toolchain is incomplete or invalid; Init will not replace its pin.",
+        { recoverable: true },
+      );
+    }
+  }
+  const packageJson = toolchainExists
+    ? existingToolchainPackage
+    : toolchainPackageContent(toolchainVersion);
   const lockfilePath = TOOLCHAIN_LOCKFILE_PATH;
-  const lockfileContent = await readOptional(path.join(root, lockfilePath))
-    ?? `${JSON.stringify({
-      name: "launchrally-toolchain",
-      version: "0.0.0",
-      lockfileVersion: 3,
-      requires: true,
-      packages: { "": {} },
-    }, null, 2)}\n`;
-  const prepareDependencyChanges = dependencies.prepare_dependency_changes
-    ?? defaultPrepareDependencyChanges;
+  const lockfileContent = existingToolchainLock ?? emptyToolchainLockfileContent();
   let dependencyChanges;
   try {
-    dependencyChanges = await prepareDependencyChanges({
-      cwd: root,
-      package_json: packageJson,
-      package_path: TOOLCHAIN_PACKAGE_PATH,
-      lockfile: { path: lockfilePath, content: lockfileContent },
-      dependency: CLI_DEPENDENCY,
-      version,
-      registry_allowed: options[REGISTRY_PERMISSION_CAPABILITY] === true,
-    });
+    if (toolchainExists) {
+      dependencyChanges = [
+        { path: TOOLCHAIN_PACKAGE_PATH, content: existingToolchainPackage },
+        { path: TOOLCHAIN_LOCKFILE_PATH, content: existingToolchainLock },
+      ];
+    } else {
+      const prepareDependencyChanges = dependencies.prepare_dependency_changes
+        ?? defaultPrepareDependencyChanges;
+      dependencyChanges = await prepareDependencyChanges({
+        cwd: root,
+        package_json: packageJson,
+        package_path: TOOLCHAIN_PACKAGE_PATH,
+        lockfile: { path: lockfilePath, content: lockfileContent },
+        dependency: CLI_DEPENDENCY,
+        version: toolchainVersion,
+        registry_allowed: options[REGISTRY_PERMISSION_CAPABILITY] === true,
+        staging_path: options.registry_staging_path,
+      });
+    }
   } catch (error) {
     if (
       error?.code === "registry_permission_required"
@@ -1464,12 +1755,21 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
         schema_version: INIT_INTERACTION_SCHEMA,
         kind: "registry_permission",
         root,
-        version,
+        version: toolchainVersion,
+        temporary_target: error.temporary_target,
+        cleanup_path: error.cleanup_path ?? error.temporary_target,
         report_package: structuredClone(source),
       };
+      if (!permissionState.temporary_target || !permissionState.cleanup_path) {
+        return initializationError(
+          "invalid_registry_permission_boundary",
+          "The offline miss did not identify an exact temporary target.",
+        );
+      }
       return registryPermissionRequest(
-        version,
+        toolchainVersion,
         source.report.report_id,
+        permissionState.temporary_target,
         await (dependencies.store_state ?? storeState)(permissionState),
       );
     }
@@ -1498,7 +1798,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       packageJson: plannedPackage?.content,
       lockfile: plannedLockfile?.content,
       dependency: CLI_DEPENDENCY,
-      version,
+      version: toolchainVersion,
     })
   ) {
     return {
@@ -1513,8 +1813,11 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
   const plannedContents = new Map(dependencyChanges.map((change) => [change.path, change.content]));
   plannedContents.set(
     ".launchrally/.gitignore",
-    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n/.init-transaction/\n",
+    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n/toolchain/node_modules/\n/.init-transaction/\n/.toolchain-transaction/\n",
   );
+  if (!toolchainExists) {
+    plannedContents.set(TOOLCHAIN_AUTHORITY_PATH, toolchainAuthorityContent(toolchainVersion));
+  }
   plannedContents.set(
     MANIFEST_RELATIVE_PATH,
     serializeManifest(manifest),
@@ -1562,6 +1865,9 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       .filter((change) => isLocalHistoryPath(change.path) && change.before === change.after)
       .map((change) => ({ path: change.path, digest: change.after_digest })),
     report_package: structuredClone(source),
+    ...(dependencyChanges.materialization
+      ? { materialization: dependencyChanges.materialization }
+      : {}),
   };
   return {
     contract: CLI_INTERACTION_CONTRACT,
@@ -1570,7 +1876,19 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
     source_report_id: source.report.report_id,
     mode,
     manifest,
-    preview: { changes },
+    preview: {
+      changes,
+      ...(dependencyChanges.materialization ? {
+        materialization: {
+          command: dependencyChanges.materialization.command,
+          package_count: dependencyChanges.materialization.package_count,
+          integrity_digest: dependencyChanges.materialization.integrity_digest,
+          target: ".launchrally/toolchain/node_modules",
+          ignored: true,
+          authoritative: false,
+        },
+      } : {}),
+    },
     interaction: {
       schema_version: INIT_INTERACTION_SCHEMA,
       resume_token: await (dependencies.store_state ?? storeState)(state),

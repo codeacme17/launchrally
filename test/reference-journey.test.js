@@ -200,7 +200,8 @@ async function json(relativePath) {
 
 async function createRegistryNpmStub(version = "0.2.2") {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-stub-"));
-  const lockfile = JSON.stringify(exactToolchainLock()).replaceAll("0.2.2", version);
+  const lock = exactToolchainLock(version);
+  const lockfile = JSON.stringify(lock);
   const script = path.join(directory, "npm-stub.cjs");
   await writeFile(script, [
     'const fs = require("node:fs");',
@@ -210,6 +211,26 @@ async function createRegistryNpmStub(version = "0.2.2") {
     "  process.exit(1);",
     "}",
     `fs.writeFileSync(path.join(process.cwd(), "package-lock.json"), ${JSON.stringify(`${lockfile}\n`)});`,
+    `const lock = ${JSON.stringify(lock)};`,
+    "for (const [lockedPath, entry] of Object.entries(lock.packages)) {",
+    '  if (!lockedPath.startsWith("node_modules/")) continue;',
+    '  const name = lockedPath.slice("node_modules/".length);',
+    "  const packageDirectory = path.join(process.cwd(), lockedPath);",
+    "  fs.mkdirSync(packageDirectory, { recursive: true });",
+    "  fs.writeFileSync(path.join(packageDirectory, \"package.json\"), JSON.stringify({",
+    "    name,",
+    "    version: entry.version,",
+    "    type: \"module\",",
+    "    ...(entry.dependencies ? { dependencies: entry.dependencies } : {}),",
+    "    ...(name === \"@launchrally/cli\" ? {",
+    "      bin: { rally: \"./bin/rally.js\" },",
+    "      launchrally: { execution_authority: \"launchrally.dev/execution-authority/v1\" },",
+    "    } : {}),",
+    "  }));",
+    "}",
+    'const cliDirectory = path.join(process.cwd(), "node_modules", "@launchrally", "cli", "bin");',
+    "fs.mkdirSync(cliDirectory, { recursive: true });",
+    'fs.writeFileSync(path.join(cliDirectory, "rally.js"), "export {};\\n");',
   ].join("\n"));
   if (process.platform === "win32") {
     await writeFile(
