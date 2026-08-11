@@ -39,8 +39,16 @@ async function runNpm(arguments_, options = {}) {
     : run("npm", arguments_, options);
 }
 
-async function createArtifactNpmStub(temporaryRoot, cleanProject, version) {
-  const directory = path.join(temporaryRoot, "artifact-npm-stub");
+async function createArtifactNpmStub(
+  temporaryRoot,
+  cleanProject,
+  version,
+  { offlineAvailable = true } = {},
+) {
+  const directory = path.join(
+    temporaryRoot,
+    offlineAvailable ? "artifact-npm-stub" : "artifact-npm-cache-miss-stub",
+  );
   await mkdir(directory, { recursive: true });
   const script = path.join(directory, "npm-stub.cjs");
   const lock = exactToolchainLock(version);
@@ -49,6 +57,12 @@ async function createArtifactNpmStub(temporaryRoot, cleanProject, version) {
     'const path = require("node:path");',
     `const sourceRoot = ${JSON.stringify(cleanProject)};`,
     `const lock = ${JSON.stringify(lock)};`,
+    ...(!offlineAvailable ? [
+      'if (process.argv.includes("--offline")) {',
+      '  process.stderr.write("ENOTCACHED: package is not in the offline cache\\n");',
+      "  process.exit(1);",
+      "}",
+    ] : []),
     'fs.writeFileSync(path.join(process.cwd(), "package-lock.json"), `${JSON.stringify(lock)}\\n`);',
     "for (const lockedPath of Object.keys(lock.packages)) {",
     '  if (!lockedPath.startsWith("node_modules/")) continue;',
@@ -149,11 +163,49 @@ async function invokeLauncher(executable, arguments_, options) {
     : run(executable, arguments_, options);
 }
 
-function fixtureArguments(journey, id, replacements = {}) {
+function findFixtureInvocation(journey, id) {
   const invocation = [...journey.invocations, ...journey.lifecycle_invocations]
     .find((candidate) => candidate.id === id);
   if (!invocation) throw new Error(`missing_reference_journey_invocation: ${id}`);
+  return invocation;
+}
+
+function fixtureArguments(journey, id, replacements = {}) {
+  const invocation = findFixtureInvocation(journey, id);
   return invocation.arguments.map((argument) => replacements[argument] ?? argument);
+}
+
+function assertFixtureResult(journey, invocation, result, exitCode) {
+  const expected = invocation.expect;
+  const expectedContract = expected.contract ?? journey.cli.contract;
+  if (result.contract !== expectedContract || result.operation !== expected.operation) {
+    throw new Error(`reference_journey_contract_drift: ${invocation.id}`);
+  }
+  const expectedStatuses = Array.isArray(expected.status) ? expected.status : [expected.status];
+  if (!expectedStatuses.includes(result.status)) {
+    throw new Error(`reference_journey_status_drift: ${invocation.id}: ${result.status}`);
+  }
+  if (expected.schema_version && result.schema_version !== expected.schema_version) {
+    throw new Error(`reference_journey_schema_drift: ${invocation.id}`);
+  }
+  if (
+    expected.interaction_schema
+    && result.interaction?.schema_version !== expected.interaction_schema
+  ) throw new Error(`reference_journey_interaction_drift: ${invocation.id}`);
+  if (expected.authority_schema) {
+    if (
+      result.authority?.schema_version !== expected.authority_schema
+      || result.authority?.state !== expected.authority_state
+    ) throw new Error(`reference_journey_authority_drift: ${invocation.id}`);
+    const expectedSources = expected.authority_sources ?? [expected.authority_source];
+    if (!expectedSources.includes(result.authority?.source)) {
+      throw new Error(`reference_journey_authority_source_drift: ${invocation.id}`);
+    }
+  }
+  const expectsFailureExit = ["execution_error", "unavailable"].includes(result.status);
+  if ((exitCode !== 0) !== expectsFailureExit) {
+    throw new Error(`reference_journey_exit_drift: ${invocation.id}: ${exitCode}`);
+  }
 }
 
 async function assertMissing(filePath, code) {
@@ -268,6 +320,37 @@ async function runInstallationJourneys({
     "Packaged Skills must stop before Audit and render the exact user-managed Launcher prerequisite",
   );
 
+  const npmExecRepository = path.join(temporaryRoot, "npm exec journey ü space");
+  await cp(
+    path.join(root, "fixtures", "coverage", "typescript-astro"),
+    npmExecRepository,
+    { recursive: true },
+  );
+  const npmExecInput = JSON.parse((await runNpm([
+    ...npmExecArguments,
+    ...fixtureArguments(journey, "audit_input", {
+      "{repository_root}": npmExecRepository,
+    }),
+  ], { cwd: temporaryRoot })).stdout);
+  const npmExecConfirmation = JSON.parse((await runNpm([
+    ...npmExecArguments,
+    ...fixtureArguments(journey, "audit_confirmation", {
+      "{repository_root}": npmExecRepository,
+      "{audit_resume}": npmExecInput.interaction.resume_token,
+      "{answers_json}": JSON.stringify({
+        intended_environment: "production",
+        production_targets: ["https://example.com"],
+        core_journeys: [{ method: "GET", path: "/", purpose: "npm-exec follow-up" }],
+        provider_roles: [],
+        support_layers: [],
+      }),
+    }),
+  ], { cwd: temporaryRoot })).stdout);
+  if (
+    npmExecInput.status !== "needs_input"
+    || npmExecConfirmation.status !== "needs_confirmation"
+  ) throw new Error("npm_exec_artifact_follow_up_failed");
+
   const repository = path.join(temporaryRoot, "installation journey ü space");
   await cp(
     path.join(root, "fixtures", "coverage", "typescript-astro"),
@@ -280,25 +363,33 @@ async function runInstallationJourneys({
     PATH: [npmStub, path.dirname(launcher), process.env.PATH ?? ""].join(path.delimiter),
   };
   let activeRepository = repository;
-  const invoke = async (id, replacements = {}) => {
+  const invoke = async (id, replacements = {}, options = {}) => {
+    const invocation = findFixtureInvocation(journey, id);
     const arguments_ = fixtureArguments(journey, id, {
       "{repository_root}": activeRepository,
       ...replacements,
     });
+    let result;
+    let exitCode = 0;
     try {
-      const result = await invokeLauncher(launcher, arguments_, {
+      const execution = await invokeLauncher("rally", arguments_, {
         cwd: temporaryRoot,
-        env: launcherEnvironment,
+        env: options.environment ?? launcherEnvironment,
       });
-      return JSON.parse(result.stdout);
+      result = JSON.parse(execution.stdout);
     } catch (error) {
       if (typeof error.stdout !== "string" || error.stdout.trim() === "") throw error;
-      return JSON.parse(error.stdout);
+      result = JSON.parse(error.stdout);
+      exitCode = Number.isInteger(error.code) ? error.code : 1;
     }
+    if (options.validate !== false) {
+      assertFixtureResult(journey, invocation, result, exitCode);
+    }
+    return result;
   };
   const fixtureInvocations = [];
-  const invokeFixture = async (id, replacements) => {
-    const result = await invoke(id, replacements);
+  const invokeFixture = async (id, replacements, options) => {
+    const result = await invoke(id, replacements, options);
     fixtureInvocations.push(id);
     return result;
   };
@@ -365,8 +456,58 @@ async function runInstallationJourneys({
     || cleaned.authority?.state !== "needs_toolchain_restore"
   ) throw new Error("artifact_toolchain_clean_failed");
 
+  const missingMaterialization = activeRepository;
+  const registryStub = await createArtifactNpmStub(
+    temporaryRoot,
+    cleanProject,
+    version,
+    { offlineAvailable: false },
+  );
+  const registryEnvironment = {
+    ...launcherEnvironment,
+    PATH: [registryStub, path.dirname(launcher), process.env.PATH ?? ""].join(path.delimiter),
+  };
+  const approvedRestore = path.join(temporaryRoot, "registry restore approved");
+  const deniedRestore = path.join(temporaryRoot, "registry restore denied");
+  await Promise.all([
+    cp(missingMaterialization, approvedRestore, { recursive: true }),
+    cp(missingMaterialization, deniedRestore, { recursive: true }),
+  ]);
+
+  activeRepository = approvedRestore;
+  const registryPermission = await invokeFixture(
+    "toolchain_restore",
+    {},
+    { environment: registryEnvironment },
+  );
+  if (registryPermission.status !== "needs_permission") {
+    throw new Error("artifact_registry_permission_not_requested");
+  }
+  const registryApproved = await invokeFixture("toolchain_restore_permission", {
+    "{toolchain_resume}": registryPermission.interaction.resume_token,
+    "{toolchain_permissions_json}": JSON.stringify({ npm_registry_read: "approved" }),
+  }, { environment: registryEnvironment });
+  if (registryApproved.status !== "completed" || registryApproved.authority?.state !== "ready") {
+    throw new Error("artifact_registry_permission_approval_failed");
+  }
+
+  activeRepository = deniedRestore;
+  const deniedPermission = await invokeFixture(
+    "toolchain_restore",
+    {},
+    { environment: registryEnvironment },
+  );
+  const registryDenied = await invoke("toolchain_restore_permission", {
+    "{toolchain_resume}": deniedPermission.interaction.resume_token,
+    "{toolchain_permissions_json}": JSON.stringify({ npm_registry_read: "denied" }),
+  }, { environment: registryEnvironment, validate: false });
+  if (
+    registryDenied.status !== "execution_error"
+    || registryDenied.error !== "registry_permission_denied"
+  ) throw new Error("artifact_registry_permission_denial_failed");
+
   const freshClone = path.join(temporaryRoot, "fresh clone ü restored");
-  await cp(activeRepository, freshClone, { recursive: true });
+  await cp(missingMaterialization, freshClone, { recursive: true });
   activeRepository = freshClone;
   const missingStatus = await invokeFixture("toolchain_status");
   if (
@@ -427,6 +568,30 @@ async function runInstallationJourneys({
     throw new Error("installation_journey_full_verify_failed");
   }
 
+  const verifiedRepository = activeRepository;
+  const corruptedRepository = path.join(temporaryRoot, "corrupted authority");
+  await cp(verifiedRepository, corruptedRepository, { recursive: true });
+  activeRepository = corruptedRepository;
+  await writeFile(
+    path.join(activeRepository, ".launchrally", "toolchain", "package-lock.json"),
+    "{}\n",
+  );
+  const invalidPlan = await invoke("plan", {
+    "{current_report_path}": currentReportPath,
+  }, { validate: false });
+  if (
+    invalidPlan.status !== "execution_error"
+    || invalidPlan.error !== "invalid_toolchain"
+    || invalidPlan.authority?.source !== "project_toolchain"
+  ) throw new Error("artifact_corruption_did_not_fail_closed");
+  assertEqual(
+    await readFile(path.join(activeRepository, ".launchrally", "manifest.yaml"), "utf8"),
+    manifestContent,
+    "artifact_corruption_mutated_manifest",
+    "invalid project authority must not mutate the Manifest",
+  );
+  activeRepository = verifiedRepository;
+
   const projectData = path.join(activeRepository, ".launchrally");
   await access(path.join(projectData, "manifest.yaml"));
   await runNpm([
@@ -445,12 +610,16 @@ async function runInstallationJourneys({
     projectData,
     result: {
       no_launcher: "confirmed",
-      npm_exec: publicRelease ? "exact_version" : "artifact_equivalent",
+      npm_exec: publicRelease
+        ? "exact_version_audit_and_follow_up"
+        : "artifact_equivalent_audit_and_follow_up",
       user_prefix: "installed_and_verified",
       project_engine: "initialized_and_delegated",
       fresh_clone: "restored_offline",
+      registry_permission: "cache_miss_approved_and_denied",
+      invalid_authority: "corruption_failed_closed",
       full_journey: "plan_handoff_verify_completed",
-      packaged_skills: "codex_and_claude_reference_executed",
+      packaged_skill_fixtures: "codex_and_claude_executed",
       launcher_removal: "project_data_preserved",
       fixture_invocations: fixtureInvocations,
     },

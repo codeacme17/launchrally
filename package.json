@@ -24,7 +24,7 @@
     "test:authority-contracts": "node --test test/execution-authority.test.js test/invocation-context.test.js test/launcher.test.js test/toolchain-lifecycle.test.js",
     "test:release-contracts": "node --test --test-name-pattern=\"^(?:release validation|release artifact policy|npm release packages|the default first Audit|Codex and Claude marketplaces|native Plugin validators|release docs|release CI)\" test/release.test.js",
     "test:contracts": "npm run test:contract-core && npm run test:authority-contracts && npm run test:release-contracts",
-    "test:journeys": "node --test test/coverage-acceptance.test.js test/execution-authority.test.js test/human-audit.test.js test/invocation-context.test.js test/launcher.test.js test/prompt-adapters.test.js test/reference-journey.test.js test/report-destination.test.js test/system-file-picker.test.js test/toolchain-lifecycle.test.js",
+    "test:journeys": "npm run test:authority-contracts && node --test test/coverage-acceptance.test.js test/human-audit.test.js test/prompt-adapters.test.js test/reference-journey.test.js test/report-destination.test.js test/system-file-picker.test.js",
     "test:artifacts": "node scripts/test-release-artifacts.mjs",
     "test:public-release": "node scripts/test-release-artifacts.mjs --public",
     "rally": "node packages/cli/bin/rally.js",

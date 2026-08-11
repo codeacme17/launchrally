@@ -257,28 +257,30 @@ test("npm release packages are public, provenance-enabled, and file-allowlisted"
 });
 
 test("CI and release verification exercise the exact CLI Node runtime floor", async () => {
-  const [ci, release, installGuide, packageJson] = await Promise.all([
+  const [ci, release, installGuide] = await Promise.all([
     readFile(path.join(root, ".github/workflows/ci.yml"), "utf8"),
     readFile(path.join(root, ".github/workflows/release.yml"), "utf8"),
     readFile(path.join(root, "docs/getting-started/install.md"), "utf8"),
-    readFile(path.join(root, "package.json"), "utf8").then(JSON.parse),
   ]);
   assert.match(ci, /node: \[20\.12\.0, 22, 24\]/u);
   assert.match(release, /node: \[20\.12\.0, 22, 24\]/u);
   assert.match(installGuide, /Node\.js 20\.12\.0 or newer/u);
+});
+
+test("Node and OS matrices gate execution authority and platform-safe Launcher behavior", async () => {
+  const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   assert.match(packageJson.scripts["test:contracts"], /npm run test:authority-contracts/u);
-  const contractMatrix = [
-    packageJson.scripts["test:contracts"],
-    packageJson.scripts["test:authority-contracts"],
-  ].join(" ");
+  assert.match(packageJson.scripts["test:journeys"], /npm run test:authority-contracts/u);
   for (const testPath of [
     "test/execution-authority.test.js",
     "test/invocation-context.test.js",
     "test/launcher.test.js",
     "test/toolchain-lifecycle.test.js",
   ]) {
-    assert.match(contractMatrix, new RegExp(testPath.replace(".", "\\.")));
-    assert.match(packageJson.scripts["test:journeys"], new RegExp(testPath.replace(".", "\\.")));
+    assert.match(
+      packageJson.scripts["test:authority-contracts"],
+      new RegExp(testPath.replace(".", "\\.")),
+    );
   }
 });
 
@@ -406,7 +408,7 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
   });
 });
 
-test("public tarballs install together and smoke-test the CLI in a clean project", async () => {
+test("packed artifacts complete installation, delegation, lifecycle, and full verification journeys", async () => {
   const { stdout } = await execFileAsync(
     "npm",
     ["--silent", "run", "test:artifacts", "--", "--json", "--skip-native"],
@@ -439,12 +441,14 @@ test("public tarballs install together and smoke-test the CLI in a clean project
     },
     installation_journeys: {
       no_launcher: "confirmed",
-      npm_exec: "artifact_equivalent",
+      npm_exec: "artifact_equivalent_audit_and_follow_up",
       user_prefix: "installed_and_verified",
       project_engine: "initialized_and_delegated",
       fresh_clone: "restored_offline",
+      registry_permission: "cache_miss_approved_and_denied",
+      invalid_authority: "corruption_failed_closed",
       full_journey: "plan_handoff_verify_completed",
-      packaged_skills: "codex_and_claude_reference_executed",
+      packaged_skill_fixtures: "codex_and_claude_executed",
       launcher_removal: "project_data_preserved",
       plugin_removal: "skipped",
       fixture_invocations: [
@@ -457,6 +461,9 @@ test("public tarballs install together and smoke-test the CLI in a clean project
         "init_completed",
         "project_version",
         "toolchain_clean",
+        "toolchain_restore",
+        "toolchain_restore_permission",
+        "toolchain_restore",
         "toolchain_status",
         "toolchain_restore",
         "project_version",
