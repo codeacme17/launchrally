@@ -340,15 +340,15 @@ async function runInstallationJourneys({
     "{repository_root}": npmExecRepository,
   });
   const npmExecConfirmation = await invokeNpmExecFixture("audit_confirmation", {
-      "{repository_root}": npmExecRepository,
-      "{audit_resume}": npmExecInput.interaction.resume_token,
-      "{answers_json}": JSON.stringify({
-        intended_environment: "production",
-        production_targets: ["https://example.com"],
-        core_journeys: [{ method: "GET", path: "/", purpose: "npm-exec follow-up" }],
-        provider_roles: [],
-        support_layers: [],
-      }),
+    "{repository_root}": npmExecRepository,
+    "{audit_resume}": npmExecInput.interaction.resume_token,
+    "{answers_json}": JSON.stringify({
+      intended_environment: "production",
+      production_targets: ["https://example.com"],
+      core_journeys: [{ method: "GET", path: "/", purpose: "npm-exec follow-up" }],
+      provider_roles: [],
+      support_layers: [],
+    }),
   });
   if (
     npmExecInput.status !== "needs_input"
