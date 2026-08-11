@@ -25,6 +25,7 @@ import { acquireOwnedLock } from "./exclusive-lock.js";
 import {
   emptyToolchainLockfileContent,
   isOfflineResolutionMiss,
+  npmExecFileCommand,
   toolchainAuthorityContent,
   toolchainInstallArguments,
   toolchainPackageContent,
@@ -321,12 +322,13 @@ async function defaultPrepareToolchain(request) {
           ? ["--registry=https://registry.npmjs.org"]
           : ["--offline"]),
       ];
-    await execFileAsync(process.platform === "win32" ? "npm.cmd" : "npm", npmArguments, {
+    const npmCommand = npmExecFileCommand(npmArguments);
+    await execFileAsync(npmCommand.executable, npmCommand.arguments, {
       cwd: toolchainPath,
       encoding: "utf8",
       timeout: 120_000,
       maxBuffer: 1024 * 1024,
-      shell: false,
+      shell: npmCommand.shell,
     });
     return { toolchain_path: toolchainPath, cleanup_path: stagingRoot };
   } catch (error) {

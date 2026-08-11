@@ -14,7 +14,10 @@ import {
   runInit,
   runVerify,
 } from "../packages/core/src/index.js";
-import { isOfflineResolutionMiss } from "../packages/core/src/initialization.js";
+import {
+  isOfflineResolutionMiss,
+  npmExecFileCommand,
+} from "../packages/core/src/initialization.js";
 import { createHistoryFiles, persistLocalHistory } from "../packages/core/src/local-history.js";
 import {
   materializeExactToolchain,
@@ -26,6 +29,20 @@ import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.j
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
 const SECRET_SENTINEL = "manifest-secret-must-not-survive";
+
+test("Windows npm execution uses an explicit command interpreter without shell mode", () => {
+  assert.deepEqual(
+    npmExecFileCommand(["ci", "--ignore-scripts"], {
+      platform: "win32",
+      command_interpreter: "C:\\Windows\\System32\\cmd.exe",
+    }),
+    {
+      executable: "C:\\Windows\\System32\\cmd.exe",
+      arguments: ["/d", "/s", "/c", "npm", "ci", "--ignore-scripts"],
+      shell: false,
+    },
+  );
+});
 
 const ANSWERS = Object.freeze({
   intended_environment: "production",

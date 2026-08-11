@@ -369,6 +369,28 @@ export function toolchainInstallArguments(version, registryAllowed = false) {
   ];
 }
 
+export function npmExecFileCommand(
+  npmArguments,
+  {
+    platform = process.platform,
+    command_interpreter: commandInterpreter =
+      process.env.ComSpec ?? process.env.COMSPEC ?? "cmd.exe",
+  } = {},
+) {
+  if (platform === "win32") {
+    return {
+      executable: commandInterpreter,
+      arguments: ["/d", "/s", "/c", "npm", ...npmArguments],
+      shell: false,
+    };
+  }
+  return {
+    executable: "npm",
+    arguments: npmArguments,
+    shell: false,
+  };
+}
+
 export function isExactToolchain({ packageJson, lockfile, dependency, version }) {
   let parsedPackage;
   try {
@@ -564,12 +586,13 @@ async function defaultPrepareDependencyChanges({
       await writeFile(path.join(staging, "package.json"), packageJson, "utf8");
       await writeFile(path.join(staging, "package-lock.json"), lockfile.content, "utf8");
       const npmArguments = toolchainInstallArguments(version, !offline);
-      await execFileAsync(process.platform === "win32" ? "npm.cmd" : "npm", npmArguments, {
+      const npmCommand = npmExecFileCommand(npmArguments);
+      await execFileAsync(npmCommand.executable, npmCommand.arguments, {
         cwd: staging,
         encoding: "utf8",
         timeout: 120_000,
         maxBuffer: 1024 * 1024,
-        shell: false,
+        shell: npmCommand.shell,
       });
       const prepared = [
         { path: packagePath, content: await readFile(path.join(staging, "package.json"), "utf8") },
