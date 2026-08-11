@@ -324,7 +324,7 @@ test("the Launcher replaces an inherited internal context before delegation", as
   });
 });
 
-test("Ctrl-C reaches the delegated Engine and preserves cancellation status", async () => {
+test("Launcher termination preserves platform cancellation semantics", async () => {
   const repository = await projectWithEngine([
     "const timer = setTimeout(() => process.exit(99), 2000);",
     "process.on(\"SIGINT\", () => {",
@@ -358,12 +358,19 @@ test("Ctrl-C reaches the delegated Engine and preserves cancellation status", as
     child.once("close", (code, signal) => resolve({ code, signal, stdout, stderr }));
   });
 
-  assert.deepEqual(outcome, {
-    code: 130,
-    signal: null,
-    stdout: "Engine ready\n",
-    stderr: "Engine cancelled\n",
-  });
+  assert.deepEqual(outcome, process.platform === "win32"
+    ? {
+      code: null,
+      signal: "SIGINT",
+      stdout: "Engine ready\n",
+      stderr: "",
+    }
+    : {
+      code: 130,
+      signal: null,
+      stdout: "Engine ready\n",
+      stderr: "Engine cancelled\n",
+    });
 });
 
 test("delegation preserves stdin, stdout, stderr, and a non-zero Engine exit", async () => {

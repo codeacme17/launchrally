@@ -260,7 +260,7 @@ test("process cwd discovers a ready project Engine from a repository subdirector
       ".launchrally/toolchain/node_modules/@launchrally/cli/bin/engine.js",
     ),
   );
-  assert.doesNotMatch(JSON.stringify(authority), new RegExp(repository, "u"));
+  assert.equal(JSON.stringify(authority).includes(repository), false);
 });
 
 test("an incomplete installed dependency closure requires explicit restore", async () => {

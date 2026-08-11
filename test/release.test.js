@@ -267,6 +267,23 @@ test("CI and release verification exercise the exact CLI Node runtime floor", as
   assert.match(installGuide, /Node\.js 20\.12\.0 or newer/u);
 });
 
+test("Node and OS matrices gate execution authority and platform-safe Launcher behavior", async () => {
+  const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+  assert.match(packageJson.scripts["test:contracts"], /npm run test:authority-contracts/u);
+  assert.match(packageJson.scripts["test:journeys"], /npm run test:authority-contracts/u);
+  for (const testPath of [
+    "test/execution-authority.test.js",
+    "test/invocation-context.test.js",
+    "test/launcher.test.js",
+    "test/toolchain-lifecycle.test.js",
+  ]) {
+    assert.match(
+      packageJson.scripts["test:authority-contracts"],
+      new RegExp(testPath.replace(".", "\\.")),
+    );
+  }
+});
+
 test("the default first Audit uses an exact user-managed Launcher with npm-exec as fallback", async () => {
   const readme = await readFile(path.join(root, "README.md"), "utf8");
   const skill = await readFile(path.join(root, "skills/launchrally/SKILL.md"), "utf8");
@@ -352,6 +369,29 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
       command: "npm",
       arguments: ["audit", "signatures", "--json", "--include-attestations"],
     },
+    invocation_journeys: {
+      npm_exec: {
+        command: "npm",
+        arguments: [
+          "exec",
+          "--package=@launchrally/cli@0.3.0",
+          "--",
+          "rally",
+        ],
+      },
+      user_prefix: {
+        install: {
+          command: "npm",
+          arguments: [
+            "install",
+            "--global",
+            "--ignore-scripts",
+            "@launchrally/cli@0.3.0",
+          ],
+        },
+        verification: ["--version", "--json"],
+      },
+    },
     cli_smoke: true,
     native_plugins: {
       claude: {
@@ -368,7 +408,7 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
   });
 });
 
-test("public tarballs install together and smoke-test the CLI in a clean project", async () => {
+test("packed artifacts complete installation, delegation, lifecycle, and full verification journeys", async () => {
   const { stdout } = await execFileAsync(
     "npm",
     ["--silent", "run", "test:artifacts", "--", "--json", "--skip-native"],
@@ -399,6 +439,43 @@ test("public tarballs install together and smoke-test the CLI in a clean project
         "react-go-split",
       ],
     },
+    installation_journeys: {
+      no_launcher: "confirmed",
+      npm_exec: "artifact_equivalent_audit_and_follow_up",
+      user_prefix: "installed_and_verified",
+      project_engine: "initialized_and_delegated",
+      fresh_clone: "restored_offline",
+      registry_permission: "cache_miss_approved_and_denied",
+      invalid_authority: "corruption_failed_closed",
+      full_journey: "plan_handoff_verify_completed",
+      packaged_skill_fixtures: "codex_and_claude_executed",
+      launcher_removal: "project_data_preserved",
+      plugin_removal: "skipped",
+      fixture_invocations: [
+        "version",
+        "audit_input",
+        "audit_confirmation",
+        "audit_permission",
+        "audit_completed",
+        "init_preview",
+        "init_completed",
+        "project_version",
+        "toolchain_clean",
+        "toolchain_restore",
+        "toolchain_restore_permission",
+        "toolchain_restore",
+        "toolchain_status",
+        "toolchain_restore",
+        "project_version",
+        "plan_refresh",
+        "refresh_permission",
+        "refresh_completed",
+        "plan",
+        "handoff",
+        "verify_permission",
+        "verify_completed",
+      ],
+    },
     native_plugins: "skipped",
   });
 });
@@ -415,6 +492,10 @@ test("packed Plugin adapters pass their native host validation", async () => {
     claude: "strictly_validated",
     codex: "installed_and_removed",
   });
+  assert.equal(
+    result.installation_journeys.plugin_removal,
+    "project_data_preserved",
+  );
 });
 
 test("Codex and Claude marketplaces resolve their native Plugin adapters", async () => {
