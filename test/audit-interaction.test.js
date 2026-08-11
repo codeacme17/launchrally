@@ -1075,10 +1075,14 @@ test("public probe concurrency is bounded per Audit", async () => {
 
 test("public probes stop after response headers and never consume streaming bodies", async () => {
   const fixture = await createInteractionFixture();
+  let bodyCompleted = false;
   const server = createServer((_request, response) => {
     response.writeHead(200);
     const stream = setInterval(() => response.write("ignored-public-body"), 20);
-    const finish = setTimeout(() => response.end(), 1500);
+    const finish = setTimeout(() => {
+      bodyCompleted = true;
+      response.end();
+    }, 1500);
     response.once("close", () => {
       clearInterval(stream);
       clearTimeout(finish);
@@ -1088,7 +1092,6 @@ test("public probes stop after response headers and never consume streaming bodi
 
   try {
     const { port } = server.address();
-    const startedAt = Date.now();
     const result = await completeAudit(fixture, {
       intended_environment: "production",
       production_targets: [`http://127.0.0.1:${port}/`],
@@ -1096,10 +1099,9 @@ test("public probes stop after response headers and never consume streaming bodi
       provider_roles: [],
       support_layers: [],
     });
-    const elapsed = Date.now() - startedAt;
 
     assert.equal(result.status, "completed");
-    assert.ok(elapsed < 1000, `Audit consumed response bodies for ${elapsed}ms`);
+    assert.equal(bodyCompleted, false, "Audit consumed the streaming response body.");
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

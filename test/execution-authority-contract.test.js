@@ -38,11 +38,26 @@ test("the static authority descriptor names only the exact Engine interface", ()
     engine: {
       package: "@launchrally/cli",
       version: "0.3.0",
-      entrypoint: "bin/rally.js",
+      entrypoint: "bin/engine.js",
     },
   };
 
   assert.equal(assertValidExecutionAuthorityDescriptor(descriptor), true);
+  assert.equal(assertValidExecutionAuthorityDescriptor({
+    ...descriptor,
+    engine: {
+      ...descriptor.engine,
+      version: "0.2.2",
+      entrypoint: "bin/rally.js",
+    },
+  }), true);
+  assert.throws(
+    () => assertValidExecutionAuthorityDescriptor({
+      ...descriptor,
+      engine: { ...descriptor.engine, entrypoint: "bin/rally.js" },
+    }),
+    (error) => error.code === "invalid_execution_authority_descriptor",
+  );
   assert.throws(
     () => assertValidExecutionAuthorityDescriptor({
       ...descriptor,

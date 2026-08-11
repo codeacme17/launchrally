@@ -5,10 +5,10 @@ import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
-import { exactToolchainLock, writeExactToolchain } from "./helpers/exact-toolchain.js";
+import { exactToolchainLock } from "./helpers/exact-toolchain.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(root, "packages", "cli", "bin", "rally.js");
@@ -198,7 +198,10 @@ async function json(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
 }
 
-async function createRegistryNpmStub(version = "0.2.2") {
+async function createRegistryNpmStub(
+  version = "0.2.2",
+  { offlineAvailable = false } = {},
+) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-stub-"));
   const lock = exactToolchainLock(version);
   const lockfile = JSON.stringify(lock);
@@ -206,10 +209,12 @@ async function createRegistryNpmStub(version = "0.2.2") {
   await writeFile(script, [
     'const fs = require("node:fs");',
     'const path = require("node:path");',
-    'if (process.argv.includes("--offline")) {',
-    '  process.stderr.write("ENOTCACHED: package is not in the offline cache\\n");',
-    "  process.exit(1);",
-    "}",
+    ...(!offlineAvailable ? [
+      'if (process.argv.includes("--offline")) {',
+      '  process.stderr.write("ENOTCACHED: package is not in the offline cache\\n");',
+      "  process.exit(1);",
+      "}",
+    ] : []),
     `fs.writeFileSync(path.join(process.cwd(), "package-lock.json"), ${JSON.stringify(`${lockfile}\n`)});`,
     `const lock = ${JSON.stringify(lock)};`,
     "for (const [lockedPath, entry] of Object.entries(lock.packages)) {",
@@ -224,13 +229,21 @@ async function createRegistryNpmStub(version = "0.2.2") {
     "    ...(entry.dependencies ? { dependencies: entry.dependencies } : {}),",
     "    ...(name === \"@launchrally/cli\" ? {",
     "      bin: { rally: \"./bin/rally.js\" },",
-    "      launchrally: { execution_authority: \"launchrally.dev/execution-authority/v1\" },",
+    "      launchrally: {",
+    "        execution_authority: \"launchrally.dev/execution-authority/v1\",",
+    "        engine: \"./bin/engine.js\",",
+    "      },",
     "    } : {}),",
     "  }));",
     "}",
     'const cliDirectory = path.join(process.cwd(), "node_modules", "@launchrally", "cli", "bin");',
     "fs.mkdirSync(cliDirectory, { recursive: true });",
     'fs.writeFileSync(path.join(cliDirectory, "rally.js"), "export {};\\n");',
+    `fs.writeFileSync(path.join(cliDirectory, "engine.js"), ${JSON.stringify(
+      `await import(${JSON.stringify(pathToFileURL(
+        path.join(root, "packages", "cli", "bin", "engine.js"),
+      ).href)});\n`,
+    )});`,
   ].join("\n"));
   if (process.platform === "win32") {
     await writeFile(
@@ -262,7 +275,7 @@ async function createProviderCommandStub(executableName, stdout) {
   return directory;
 }
 
-async function createFixture(host, sourceFixture = null, { preseedToolchain = true } = {}) {
+async function createFixture(host, sourceFixture = null) {
   const directory = await mkdtemp(path.join(os.tmpdir(), `launchrally-${host}-journey-`));
   if (sourceFixture) {
     await cp(sourceFixture, directory, { recursive: true });
@@ -277,7 +290,6 @@ async function createFixture(host, sourceFixture = null, { preseedToolchain = tr
       packages: { "": {} },
     }, null, 2)}\n`);
   }
-  if (preseedToolchain) await writeExactToolchain(directory);
   return directory;
 }
 
@@ -371,13 +383,14 @@ async function executeReferenceJourney(
     exerciseRegistryPermission = false,
   } = {},
 ) {
-  const directory = await createFixture(label, fixturePath, {
-    preseedToolchain: !exerciseRegistryPermission,
+  const directory = await createFixture(label, fixturePath);
+  const registryStub = await createRegistryNpmStub("0.2.2", {
+    offlineAvailable: !exerciseRegistryPermission,
   });
-  const registryStub = exerciseRegistryPermission ? await createRegistryNpmStub() : null;
-  const journeyEnv = registryStub
-    ? { ...env, PATH: `${registryStub}${path.delimiter}${env.PATH ?? ""}` }
-    : env;
+  const journeyEnv = {
+    ...env,
+    PATH: `${registryStub}${path.delimiter}${env.PATH ?? ""}`,
+  };
   const savedDirectory = await mkdtemp(path.join(os.tmpdir(), `launchrally-${label}-reports-`));
   const values = {
     repository_root: directory,

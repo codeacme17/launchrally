@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -9,7 +9,7 @@ import { promisify } from "node:util";
 import { hasClaudeInstalledPlugin } from "./native-plugin-state.mjs";
 import { assertNoConsumerInstallScripts } from "./release-artifact-policy.mjs";
 
-import { writeExactToolchain } from "../test/helpers/exact-toolchain.js";
+import { exactToolchainLock } from "../test/helpers/exact-toolchain.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
@@ -37,6 +37,40 @@ async function runNpm(arguments_, options = {}) {
   return process.platform === "win32"
     ? run(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", "npm", ...arguments_], options)
     : run("npm", arguments_, options);
+}
+
+async function createArtifactNpmStub(temporaryRoot, cleanProject, version) {
+  const directory = path.join(temporaryRoot, "artifact-npm-stub");
+  await mkdir(directory, { recursive: true });
+  const script = path.join(directory, "npm-stub.cjs");
+  const lock = exactToolchainLock(version);
+  await writeFile(script, [
+    'const fs = require("node:fs");',
+    'const path = require("node:path");',
+    `const sourceRoot = ${JSON.stringify(cleanProject)};`,
+    `const lock = ${JSON.stringify(lock)};`,
+    'fs.writeFileSync(path.join(process.cwd(), "package-lock.json"), `${JSON.stringify(lock)}\\n`);',
+    "for (const lockedPath of Object.keys(lock.packages)) {",
+    '  if (!lockedPath.startsWith("node_modules/")) continue;',
+    '  const name = lockedPath.slice("node_modules/".length);',
+    "  fs.cpSync(",
+    '    path.join(sourceRoot, "node_modules", ...name.split("/")),',
+    "    path.join(process.cwd(), lockedPath),",
+    "    { recursive: true },",
+    "  );",
+    "}",
+  ].join("\n"));
+  if (process.platform === "win32") {
+    await writeFile(
+      path.join(directory, "npm.cmd"),
+      `@echo off\r\n"${process.execPath}" "%~dp0npm-stub.cjs" %*\r\n`,
+    );
+  } else {
+    const executable = path.join(directory, "npm");
+    await writeFile(executable, `#!/usr/bin/env node\n${await readFile(script, "utf8")}`);
+    await chmod(executable, 0o755);
+  }
+  return directory;
 }
 
 function assertEqual(actual, expected, code, detail) {
@@ -222,9 +256,15 @@ async function smokeCli(
   const matrix = await json(path.join(root, "fixtures", "coverage", "matrix.json"));
   const networkGuard = path.join(temporaryRoot, "deny-network.cjs");
   await cp(path.join(root, "fixtures", "coverage", "deny-network.cjs"), networkGuard);
+  const npmStub = await createArtifactNpmStub(
+    temporaryRoot,
+    cleanProject,
+    version,
+  );
   const coverageEnvironment = {
     ...process.env,
     NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require=${networkGuard}`.trim(),
+    PATH: `${npmStub}${path.delimiter}${process.env.PATH ?? ""}`,
   };
   const coverageJourneys = [];
   for (const representative of matrix.fixtures) {
@@ -234,11 +274,17 @@ async function smokeCli(
       repository,
       { recursive: true },
     );
-    const invoke = async (arguments_) => JSON.parse((await invokeRally(
-      arguments_,
-      { cwd: cleanProject, env: coverageEnvironment },
-    )).stdout);
-    await writeExactToolchain(repository, version);
+    const invoke = async (arguments_) => {
+      try {
+        return JSON.parse((await invokeRally(
+          arguments_,
+          { cwd: cleanProject, env: coverageEnvironment },
+        )).stdout);
+      } catch (error) {
+        error.message += `\nstdout:\n${error.stdout ?? ""}\nstderr:\n${error.stderr ?? ""}`;
+        throw error;
+      }
+    };
     const input = await invoke(["audit", "--json", "--cwd", repository]);
     const confirmation = await invoke([
       "audit", "--json", "--cwd", repository,

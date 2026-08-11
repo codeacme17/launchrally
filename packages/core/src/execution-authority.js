@@ -2,6 +2,7 @@ import process from "node:process";
 import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import {
   EXECUTION_AUTHORITY_CONTRACT,
@@ -187,11 +188,20 @@ function recognizableDescriptor(descriptor) {
       === JSON.stringify(["entrypoint", "package", "version"])
     && descriptor.engine.package === ENGINE_PACKAGE
     && EXACT_VERSION.test(descriptor.engine.version)
-    && descriptor.engine.entrypoint === "bin/rally.js";
+    && ["bin/engine.js", "bin/rally.js"].includes(descriptor.engine.entrypoint);
+}
+
+function descriptorCompatibility(descriptor) {
+  if (descriptor.engine.entrypoint === "bin/engine.js") return "native";
+  const adapter = LEGACY_ADAPTERS.get(descriptor.engine.version);
+  return adapter?.contract === descriptor.contract
+    && adapter.entrypoint === descriptor.engine.entrypoint
+    ? "legacy_adapter"
+    : null;
 }
 
 function sameObject(left, right) {
-  return JSON.stringify(left ?? {}) === JSON.stringify(right ?? {});
+  return isDeepStrictEqual(left ?? {}, right ?? {});
 }
 
 async function inspectMaterialization(
@@ -230,14 +240,26 @@ async function inspectMaterialization(
       || installedPackage?.version !== lockedPackage.version
       || !sameObject(installedPackage.dependencies, lockedPackage.dependencies)
     ) return { state: "invalid" };
-    if (name === ENGINE_PACKAGE && (
-      ![descriptor.engine.entrypoint, `./${descriptor.engine.entrypoint}`]
-        .includes(installedPackage?.bin?.rally)
-      || (
+    if (name === ENGINE_PACKAGE) {
+      const expectedEntrypoints = [
+        descriptor.engine.entrypoint,
+        `./${descriptor.engine.entrypoint}`,
+      ];
+      if (
         compatibility === "native"
-        && installedPackage?.launchrally?.execution_authority !== descriptor.contract
-      )
-    )) return { state: "invalid" };
+        && (
+          installedPackage?.launchrally?.execution_authority !== descriptor.contract
+          || !expectedEntrypoints.includes(installedPackage?.launchrally?.engine)
+        )
+      ) return { state: "invalid" };
+      if (
+        compatibility === "legacy_adapter"
+        && (
+          !expectedEntrypoints.includes(installedPackage?.bin?.rally)
+          || installedPackage?.launchrally?.engine !== undefined
+        )
+      ) return { state: "invalid" };
+    }
   }
   if (incomplete) return { state: "incomplete" };
 
@@ -278,7 +300,10 @@ export async function validateToolchainDirectory(toolchainPath) {
   } else {
     descriptor = JSON.parse(descriptorContent);
     assertValidExecutionAuthorityDescriptor(descriptor);
-    compatibility = "native";
+    compatibility = descriptorCompatibility(descriptor);
+    if (compatibility === null) {
+      return { valid: false, reason: "unsupported_legacy_descriptor" };
+    }
   }
   if (!isExactToolchain({
     packageJson,
@@ -338,7 +363,13 @@ async function inspectProject(project, launcherVersion, operationCwd) {
       descriptor = JSON.parse(descriptorContent);
       if (descriptor.contract === EXECUTION_AUTHORITY_CONTRACT) {
         assertValidExecutionAuthorityDescriptor(descriptor);
-        compatibility = "native";
+        compatibility = descriptorCompatibility(descriptor);
+        if (compatibility === null) {
+          return invalidAuthority(launcherVersion, "unsupported_legacy_descriptor", {
+            version: descriptor.engine.version,
+            contract: descriptor.contract,
+          });
+        }
       } else if (recognizableDescriptor(descriptor)) {
         compatibility = "migration_required";
       } else {

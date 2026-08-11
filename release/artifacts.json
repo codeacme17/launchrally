@@ -92,13 +92,17 @@
       "files": [
         "LICENSE",
         "README.md",
+        "bin/cli-arguments.js",
         "bin/clack-node20-loader.js",
         "bin/clack-node20-util.js",
+        "bin/engine.js",
         "bin/human-audit.js",
+        "bin/invocation-context.js",
         "bin/prompt-adapters.js",
         "bin/rally.js",
         "bin/report-destination.js",
         "bin/system-file-picker.js",
+        "bin/version.js",
         "package.json"
       ]
     },

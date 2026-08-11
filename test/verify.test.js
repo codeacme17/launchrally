@@ -20,7 +20,7 @@ import {
 import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
-const cli = path.resolve("packages/cli/bin/rally.js");
+const cli = path.resolve("packages/cli/bin/engine.js");
 
 const ANSWERS = Object.freeze({
   intended_environment: "production",
