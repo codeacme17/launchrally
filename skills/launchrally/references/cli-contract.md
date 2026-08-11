@@ -2,6 +2,52 @@
 
 Invoke Agent Mode with `--json`. Require `contract: "launchrally.dev/cli/v2"`, then read `status` and `operation` before interpreting any payload. When `interaction` is present, read `interaction.schema_version` before its state payload and require the exact supported schema for that operation. Stop on an unknown contract, operation, status, or schema version. Never parse or branch on Human Mode terminal prose.
 
+## Discovery and compatibility
+
+CLI installation is a prerequisite separate from Plugin installation. Invoke `rally --version --json --cwd <repository-root>` as the first discovery operation. If spawning `rally` reports that the executable is missing, present the exact user-managed PATH installation and verification commands below, then stop before Audit and wait:
+
+```bash
+npm install --global @launchrally/cli@0.2.2
+rally --version --json --cwd <repository-root>
+```
+
+Do not execute the install, invoke a Project Toolchain Engine directly, silently use npm-exec, change an npm prefix, or edit a shell profile. The supported exact-version npm-exec trial/CI entry remains a separate explicit user choice; never infer it as a fallback for a missing PATH Launcher.
+
+This Skill release uses this explicit compatibility matrix:
+
+| Layer | Supported value | Meaning |
+| --- | --- | --- |
+| Plugin version | `0.2.2` | Interaction guidance only; never an execution candidate. |
+| Launcher version | `0.2.2` or `0.3.0` | A supported user-managed `rally` dispatcher implementing the contracts below. |
+| Execution Authority contract | `launchrally.dev/execution-authority/v1` | The only supported Engine-selection contract. |
+| Selected Engine version and contract | `0.2.2` or `0.3.0` with `launchrally.dev/execution-authority/v1`; CLI interaction `launchrally.dev/cli/v2` | The Engine selected by validated authority. |
+| Legacy project pin | `0.2.2`, authority descriptor absent, `compatibility: "legacy_adapter"` | Supported only through the Launcher's allowlisted legacy adapter after explicit restore when materialization is missing. |
+
+Keep the Plugin version, Launcher version, selected Engine version, and project pin as separate facts. Read `launcher_version` from the version result, the selected Engine from `cli_version` and `authority.engine`, and the project pin from the validated `project_toolchain` authority. Do not require these versions to be equal; continue only when each value and contract is explicitly supported by the matrix. Any unknown or malformed version must stop before a journey operation.
+
+Require `operation: "version"`, `contract: "launchrally.dev/cli/v2"`, and a complete `authority` with `schema_version: "launchrally.dev/execution-authority/v1"`. Validate the complete structured shape, not just these fields. For `ready`, require `status: "completed"`, require `cli_version` to equal `authority.engine.version`, and accept only `launcher` or `project_toolchain` as the authority source. If the source is `project_toolchain`, always continue through `rally`; never substitute the Plugin version, Launcher version, bundled Engine, or a direct project entrypoint. Stop on malformed structured output.
+
+Route authority states before the CLI interaction state router:
+
+| `authority.state` | Required handling |
+| --- | --- |
+| `ready` | Follow the selected Engine through `rally`. Accept a supported version mismatch as provenance, not an error or permission to repin. |
+| `needs_toolchain_restore` | Stop the requested operation. Present the exact restore operation, permissions, target, and effects, then wait for explicit user approval before Agent execution. |
+| `needs_toolchain_migration` | Stop the requested operation. Present the exact target version, operation, permissions, changed pin and files, and effects, then wait for explicit user approval before Agent execution. |
+| `invalid_toolchain` | Stop. Present the typed reason and `inspect_toolchain` next action; never fall back to another Engine. |
+
+Unknown authority contracts, states, sources, compatibility values, versions, or reasons stop. Invalid descriptors, `unsafe_project_path` or any other path escape, invalid lock or materialization, transaction recovery state, and malformed structured output also stop without fallback.
+
+## Project Toolchain lifecycle router
+
+Read lifecycle responses only as `launchrally.dev/toolchain-lifecycle/v1`. `toolchain status` is a read-only bootstrap operation. It does not authorize another action.
+
+- Before `toolchain restore`, show `rally toolchain restore --json --cwd <repository-root>`, the established exact pin, the `.launchrally/toolchain/node_modules` target, and that only rebuildable materialization may change. Wait for explicit user approval before invoking it. If it returns `needs_permission`, present the exact `npm_registry_read` request and preserve `interaction.resume_token`; resume only with the user's explicit permission decision.
+- Before `toolchain migrate --to <exact-version>`, show the exact command, current and target pins, registry permission possibility, authoritative file preview, materialization target, Report-currentness effect, and final full-Verify next action. Wait for explicit user approval before invoking it. Preserve `needs_permission` and `needs_confirmation` as separate typed states, preserve each resume token verbatim, and never infer either decision.
+- Before `toolchain clean`, show `rally toolchain clean --json --cwd <repository-root>`, the rebuildable materialization and temporary lifecycle targets, and that the Manifest, Reports, Evidence, history, and established pin remain. Wait for explicit user approval before invoking it.
+
+Never install, update, downgrade, restore, migrate, clean, remove, or retry a lifecycle action silently. Plugin removal never removes the Launcher, Project Toolchain, Manifest, Reports, Evidence, or history.
+
 ## State router
 
 Use this router for every operation. Operation-specific sections below constrain which fields and response values are valid.

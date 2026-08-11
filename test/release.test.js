@@ -267,7 +267,7 @@ test("CI and release verification exercise the exact CLI Node runtime floor", as
   assert.match(installGuide, /Node\.js 20\.12\.0 or newer/u);
 });
 
-test("the default first Audit is exact, confirmation-preserving, and non-global", async () => {
+test("the default first Audit stays exact while the Skill uses a user-managed Launcher prerequisite", async () => {
   const readme = await readFile(path.join(root, "README.md"), "utf8");
   const skill = await readFile(path.join(root, "skills/launchrally/SKILL.md"), "utf8");
   const journey = await readFile(
@@ -275,13 +275,19 @@ test("the default first Audit is exact, confirmation-preserving, and non-global"
     "utf8",
   );
   const publicGuidance = [readme, skill, journey].join("\n");
+  const skillGuidance = [skill, journey].join("\n");
 
   assert.match(
     readme,
     /npm exec --package=@launchrally\/cli@0\.2\.2 -- rally audit --json --cwd \./u,
   );
   assert.match(publicGuidance, /preserve the package manager's download confirmation/iu);
-  assert.doesNotMatch(publicGuidance, /npm (?:install|i) (?:--global|-g) @launchrally/u);
+  assert.doesNotMatch(readme, /npm (?:install|i) (?:--global|-g) @launchrally/u);
+  assert.match(
+    skillGuidance,
+    /npm install --global @launchrally\/cli@0\.2\.2/u,
+  );
+  assert.match(skillGuidance, /stop before Audit/iu);
   assert.doesNotMatch(publicGuidance, /npm exec[^\n]*--(?:yes|y)\b/u);
   assert.doesNotMatch(publicGuidance, /curl[^\n|]*\|\s*(?:ba)?sh/u);
   assert.doesNotMatch(publicGuidance, /(?:copy|cp)[^\n]*skills?\//iu);
