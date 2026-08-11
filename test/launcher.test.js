@@ -216,7 +216,7 @@ test("a missing project Engine returns the Audit authority state and executable 
       executable: "npm",
       arguments: [
         "exec",
-        "--package=@launchrally/cli@0.2.2",
+        "--package=@launchrally/cli@0.3.0",
         "--",
         "rally",
         "toolchain",
@@ -279,7 +279,7 @@ test("migration and invalid authority return exact bootstrap actions without run
         "toolchain",
         "migrate",
         "--to",
-        "0.2.2",
+        "0.3.0",
         "--cwd",
         migrationRepository,
       ],
@@ -320,7 +320,7 @@ test("the Launcher replaces an inherited internal context before delegation", as
   assert.deepEqual(context, {
     schema_version: "launchrally.dev/invocation-context/v1",
     source: "unknown",
-    launcher_version: "0.2.2",
+    launcher_version: "0.3.0",
   });
 });
 
@@ -554,7 +554,7 @@ test("version and toolchain status remain Launcher bootstrap operations", async 
   }, {
     version: {
       cli: "0.3.0",
-      launcher: "0.2.2",
+      launcher: "0.3.0",
       source: "project_toolchain",
     },
     status: {

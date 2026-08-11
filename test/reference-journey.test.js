@@ -64,7 +64,7 @@ const directJourney = {
   },
   cli: {
     package: "@launchrally/cli",
-    version: "0.2.2",
+    version: "0.3.0",
     contract: "launchrally.dev/cli/v2",
   },
   invocations: [
@@ -230,7 +230,7 @@ async function json(relativePath) {
 }
 
 async function createRegistryNpmStub(
-  version = "0.2.2",
+  version = "0.3.0",
   { offlineAvailable = false } = {},
 ) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-stub-"));
@@ -415,7 +415,7 @@ async function executeReferenceJourney(
   } = {},
 ) {
   const directory = await createFixture(label, fixturePath);
-  const registryStub = await createRegistryNpmStub("0.2.2", {
+  const registryStub = await createRegistryNpmStub("0.3.0", {
     offlineAvailable: !exerciseRegistryPermission,
   });
   const journeyEnv = {
@@ -848,14 +848,14 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
     },
     launcher: {
       package: "@launchrally/cli",
-      supported_versions: [cliPackage.version, "0.3.0"],
+      supported_versions: ["0.2.2", cliPackage.version],
     },
     execution_authority: {
       supported_contracts: ["launchrally.dev/execution-authority/v1"],
     },
     engine: {
       package: "@launchrally/cli",
-      supported_versions: [cliPackage.version, "0.3.0"],
+      supported_versions: ["0.2.2", cliPackage.version],
       authority_contracts: ["launchrally.dev/execution-authority/v1"],
       interaction_contracts: ["launchrally.dev/cli/v2"],
     },
@@ -867,12 +867,12 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
   });
   assert.notEqual(
     journey.compatibility.plugin.version,
-    journey.compatibility.launcher.supported_versions.at(-1),
+    journey.compatibility.launcher.supported_versions.at(0),
     "a supported Plugin/Launcher mismatch is representable",
   );
   assert.notEqual(
     journey.compatibility.plugin.version,
-    journey.compatibility.engine.supported_versions.at(-1),
+    journey.compatibility.engine.supported_versions.at(0),
     "a supported Plugin/Engine mismatch is representable",
   );
   assert.deepEqual(journey.launcher_prerequisite, {

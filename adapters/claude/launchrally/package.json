@@ -1,6 +1,6 @@
 {
   "name": "@launchrally/claude-plugin",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "LaunchRally Plugin adapter for Claude Code",
   "keywords": [
     "launchrally",

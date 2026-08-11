@@ -1,33 +1,44 @@
 # @launchrally/cli
 
-The LaunchRally CLI audits and verifies whether an existing repository is ready for a production launch. It provides the `rally` command and keeps the first audit local-first, account-free, and output-only.
+The LaunchRally CLI provides the `rally` Launcher and deterministic Engine for auditing and verifying an existing repository while keeping the first Audit local-first, account-free, and output-only.
 
 ## Status
 
-LaunchRally 0.2.2 is an **Experimental P0** release. P0 is Product Complete, not a stability claim or a P0 Validated decision. Review every disclosed permission and preview before continuing.
+LaunchRally 0.3.0 is an **Experimental P0** release. P0 is Product Complete, not a stability claim or a P0 Validated decision. Review every disclosed permission and preview before continuing.
 
-## First audit
+## Install and complete the first journey
 
-Run the exact release without a global installation:
+Install the exact Launcher through your current user-writable npm prefix and verify it before entering a repository:
 
 ```sh
-npm exec --package=@launchrally/cli@0.2.2 -- rally audit --json --cwd .
+npm install --global @launchrally/cli@0.3.0
+rally --version --json
 ```
 
-The initial audit reads safe, allowlisted facts from the repository you select. It does not require an account, add telemetry, change project files, stage or commit changes, provision infrastructure, or deploy. Any optional public or Provider read is disclosed separately for approval.
+From the repository root, save the complete Human Audit Report, separately confirm Init, and verify that the Launcher selected the project-pinned Engine:
 
-See the [Quickstart](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/quickstart.md) for the Audit → Plan/Remediate → Verify journey and the [privacy boundary](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/privacy.md) for the complete read/write policy.
+```sh
+rally audit --plain --cwd . --output ./launchrally-audit-report.json
+rally init --plain --cwd . --report ./launchrally-audit-report.json
+rally --version --json --cwd .
+```
 
-## Compatibility
+Audit performs no repository write and does not create `.launchrally`. Public and Provider reads are independent and default-denied. Confirmed Init is the first project mutation, stays under LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
 
-The CLI requires Node.js 20.12.0 or newer and is verified on Node.js 20, 22, and 24. Use the package-manager command above so npm can show its normal confirmation; do not bypass that confirmation or use a global installation.
+Exact-version npm-exec remains a no-install trial and CI fallback. Keep its full prefix on every follow-up; see the [Quickstart](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/quickstart.md) for the directly executable sequence.
+
+## Compatibility and boundaries
+
+The CLI requires Node.js 20.12.0 or newer and is verified on Node.js 20, 22, and 24. A supported Launcher follows a valid project Engine through versioned Execution Authority and never silently falls back when project authority is unavailable or invalid.
+
+LaunchRally requires no account or default telemetry. CLI installation grants no Provider, deployment, production, credential, or application-source write authority. Reports and Evidence remain local. Codex and Claude Plugin installation is separate from this package.
 
 ## Documentation
 
-- [Install and release guide](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/install.md)
+- [Install, lifecycle, and troubleshooting](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/install.md)
 - [Quickstart](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/quickstart.md)
-- [Data model](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/data-model.md)
-- [Privacy and permissions](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/privacy.md)
+- [Privacy boundary](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/privacy.md)
+- [Project data model](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/data-model.md)
 
 ## Project
 

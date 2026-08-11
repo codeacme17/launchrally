@@ -406,8 +406,8 @@ test("structured version reports the effective Engine and separate Launcher auth
   assert.equal(result.contract, "launchrally.dev/cli/v2");
   assert.equal(result.status, "completed");
   assert.equal(result.operation, "version");
-  assert.equal(result.cli_version, "0.2.2");
-  assert.equal(result.launcher_version, "0.2.2");
+  assert.equal(result.cli_version, "0.3.0");
+  assert.equal(result.launcher_version, "0.3.0");
   assert.equal(result.authority.schema_version, "launchrally.dev/execution-authority/v1");
   assert.equal(result.authority.source, "launcher");
   assert.equal(result.authority.materialization.state, "bundled");

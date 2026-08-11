@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 440" role="img" aria-labelledby="title description">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 488" role="img" aria-labelledby="title description">
   <title id="title">Representative LaunchRally audit output</title>
   <desc id="description">An Inconclusive audit with no failed findings, three verification gaps, and rally init as the next command.</desc>
-  <rect width="440" height="440" rx="18" fill="#f8fafc"/>
-  <rect x="1" y="1" width="438" height="438" rx="17" fill="none" stroke="#cbd5e1" stroke-width="2"/>
+  <rect width="440" height="488" rx="18" fill="#f8fafc"/>
+  <rect x="1" y="1" width="438" height="486" rx="17" fill="none" stroke="#cbd5e1" stroke-width="2"/>
   <path d="M18 0h404a18 18 0 0 1 18 18v38H0V18A18 18 0 0 1 18 0Z" fill="#e2e8f0"/>
   <circle cx="28" cy="28" r="6" fill="#ef4444"/>
   <circle cx="50" cy="28" r="6" fill="#f59e0b"/>
@@ -25,6 +25,9 @@
   <text x="32" y="316" class="muted">web.security.headers</text>
   <text x="32" y="340" class="muted">web.release.rollback</text>
   <text x="32" y="364" class="text"> </text>
-  <text x="32" y="388" class="text">Next command</text>
-  <text x="32" y="412" class="text">rally init --report audit.json</text>
+  <text x="32" y="388" class="text">Report</text>
+  <text x="32" y="412" class="text">./audit.json</text>
+  <text x="32" y="436" class="text"> </text>
+  <text x="32" y="460" class="text">Next command</text>
+  <text x="32" y="484" class="text">rally init --report ./audit.json --cwd .</text>
 </svg>

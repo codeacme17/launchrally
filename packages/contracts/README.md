@@ -4,12 +4,12 @@
 
 ## Status
 
-LaunchRally 0.2.2 is an **Experimental P0** release. Its public contracts are versioned, but Experimental availability is not a general stability claim or a P0 Validated decision. Consumers should reject unsupported contract major versions and pin the package version they have tested.
+LaunchRally 0.3.0 is an **Experimental P0** release. Its public contracts are versioned, but Experimental availability is not a general stability claim or a P0 Validated decision. Consumers should reject unsupported contract major versions and pin the package version they have tested.
 
 ## Install and import
 
 ```sh
-npm install @launchrally/contracts@0.2.2
+npm install @launchrally/contracts@0.3.0
 ```
 
 ```js

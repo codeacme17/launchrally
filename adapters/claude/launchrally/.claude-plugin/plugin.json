@@ -1,7 +1,7 @@
 {
   "name": "launchrally",
   "description": "Audit and verify production launch readiness from an existing repository.",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "author": {
     "name": "codeacme17"
   }
