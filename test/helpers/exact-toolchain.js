@@ -162,6 +162,7 @@ export async function materializeExactToolchain(repository, version = "0.2.2") {
           bin: { rally: "./bin/rally.js" },
           launchrally: {
             execution_authority: "launchrally.dev/execution-authority/v1",
+            engine: "./bin/engine.js",
           },
         } : {}),
       }, null, 2)}\n`,
@@ -170,4 +171,5 @@ export async function materializeExactToolchain(repository, version = "0.2.2") {
   const cliDirectory = path.join(toolchain, "node_modules", "@launchrally", "cli");
   await mkdir(path.join(cliDirectory, "bin"), { recursive: true });
   await writeFile(path.join(cliDirectory, "bin", "rally.js"), "export {};\n");
+  await writeFile(path.join(cliDirectory, "bin", "engine.js"), "export {};\n");
 }

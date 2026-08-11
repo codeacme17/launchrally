@@ -71,7 +71,7 @@ async function writeConfirmedProject(repository, version = "0.3.0") {
       engine: {
         package: "@launchrally/cli",
         version,
-        entrypoint: "bin/rally.js",
+        entrypoint: "bin/engine.js",
       },
     }, null, 2)}\n`,
   );
@@ -110,6 +110,7 @@ async function materializeEngine(repository, version = "0.3.0") {
         bin: { rally: "./bin/rally.js" },
         launchrally: {
           execution_authority: "launchrally.dev/execution-authority/v1",
+          engine: "./bin/engine.js",
         },
       } : {}),
     };
@@ -124,6 +125,34 @@ async function materializeEngine(repository, version = "0.3.0") {
   );
   await mkdir(path.join(cliDirectory, "bin"), { recursive: true });
   await writeFile(path.join(cliDirectory, "bin", "rally.js"), "export {};\n");
+  await writeFile(path.join(cliDirectory, "bin", "engine.js"), "export {};\n");
+}
+
+async function removeNativeEngineMarker(repository) {
+  const cliPackagePath = path.join(
+    repository,
+    ".launchrally/toolchain/node_modules/@launchrally/cli/package.json",
+  );
+  const cliPackage = JSON.parse(await readFile(cliPackagePath, "utf8"));
+  delete cliPackage.launchrally.engine;
+  await writeFile(cliPackagePath, `${JSON.stringify(cliPackage, null, 2)}\n`);
+}
+
+async function writePreLauncherSplitProject(repository, version = "0.2.2") {
+  await writeConfirmedProject(repository, version);
+  await writeFile(
+    path.join(repository, EXECUTION_AUTHORITY_DESCRIPTOR_PATH),
+    `${JSON.stringify({
+      contract: "launchrally.dev/execution-authority/v1",
+      engine: {
+        package: "@launchrally/cli",
+        version,
+        entrypoint: "bin/rally.js",
+      },
+    }, null, 2)}\n`,
+  );
+  await materializeEngine(repository, version);
+  await removeNativeEngineMarker(repository);
 }
 
 test("an uninitialized repository uses the Launcher Engine", async () => {
@@ -228,7 +257,7 @@ test("process cwd discovers a ready project Engine from a repository subdirector
     authority.selection.engine_entrypoint,
     path.join(
       canonicalRepository,
-      ".launchrally/toolchain/node_modules/@launchrally/cli/bin/rally.js",
+      ".launchrally/toolchain/node_modules/@launchrally/cli/bin/engine.js",
     ),
   );
   assert.doesNotMatch(JSON.stringify(authority), new RegExp(repository, "u"));
@@ -270,6 +299,62 @@ test("the allowlisted 0.2.2 legacy layout has explicit restore authority", async
   assert.deepEqual(authority.next_action, { operation: "toolchain_restore" });
 });
 
+test("an existing v1 rally Engine descriptor remains a validated compatibility path", async () => {
+  const repository = await repositoryFixture();
+  await writePreLauncherSplitProject(repository);
+
+  const authority = await resolveExecutionAuthority({
+    cwd: repository,
+    launcher_version: "0.3.0",
+  });
+
+  assert.equal(authority.state, "ready");
+  assert.equal(authority.engine.compatibility, "legacy_adapter");
+  assert.equal(authority.reason, "legacy_project_engine_validated");
+  assert.equal(
+    authority.selection.engine_entrypoint,
+    path.join(
+      await realpath(repository),
+      ".launchrally/toolchain/node_modules/@launchrally/cli/bin/rally.js",
+    ),
+  );
+});
+
+test("a non-allowlisted v1 rally entrypoint cannot recurse through a native Launcher", async () => {
+  const repository = await repositoryFixture();
+  await writePreLauncherSplitProject(repository, "0.3.0");
+
+  const authority = await resolveExecutionAuthority({
+    cwd: repository,
+    launcher_version: "0.2.2",
+  });
+
+  assert.equal(authority.state, "invalid_toolchain");
+  assert.equal(authority.reason, "partial_project_state");
+  assert.equal(authority.selection, undefined);
+});
+
+test("an allowlisted rally descriptor rejects a split Launcher materialization", async () => {
+  const repository = await repositoryFixture();
+  await writePreLauncherSplitProject(repository);
+  const cliPackagePath = path.join(
+    repository,
+    ".launchrally/toolchain/node_modules/@launchrally/cli/package.json",
+  );
+  const cliPackage = JSON.parse(await readFile(cliPackagePath, "utf8"));
+  cliPackage.launchrally.engine = "./bin/engine.js";
+  await writeFile(cliPackagePath, `${JSON.stringify(cliPackage, null, 2)}\n`);
+
+  const authority = await resolveExecutionAuthority({
+    cwd: repository,
+    launcher_version: "0.2.2",
+  });
+
+  assert.equal(authority.state, "invalid_toolchain");
+  assert.equal(authority.reason, "invalid_engine_materialization");
+  assert.equal(authority.selection, undefined);
+});
+
 test("a recognizable unsupported Engine contract requires explicit migration", async () => {
   const repository = await repositoryFixture();
   await writeConfirmedProject(repository, "0.3.0");
@@ -280,7 +365,7 @@ test("a recognizable unsupported Engine contract requires explicit migration", a
       engine: {
         package: "@launchrally/cli",
         version: "0.3.0",
-        entrypoint: "bin/rally.js",
+        entrypoint: "bin/engine.js",
       },
     })}\n`,
   );
@@ -362,6 +447,7 @@ test("the legacy adapter validates an executable 0.2.2 materialization", async (
   const repository = await repositoryFixture();
   await writeLegacyProject(repository, "0.2.2");
   await materializeEngine(repository, "0.2.2");
+  await removeNativeEngineMarker(repository);
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
@@ -484,7 +570,7 @@ test("version failure states are structured, non-zero, and omit cli_version", as
       engine: {
         package: "@launchrally/cli",
         version: "0.3.0",
-        entrypoint: "bin/rally.js",
+        entrypoint: "bin/engine.js",
       },
     })}\n`,
   );

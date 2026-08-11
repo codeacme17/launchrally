@@ -71,7 +71,7 @@ async function writeProject(repository, version = "0.2.2") {
       engine: {
         package: "@launchrally/cli",
         version,
-        entrypoint: "bin/rally.js",
+        entrypoint: "bin/engine.js",
       },
     }, null, 2)}\n`,
   );
@@ -88,7 +88,7 @@ async function preparedToolchain(version) {
       engine: {
         package: "@launchrally/cli",
         version,
-        entrypoint: "bin/rally.js",
+        entrypoint: "bin/engine.js",
       },
     }, null, 2)}\n`,
   );
@@ -196,6 +196,16 @@ test("toolchain restore preserves the supported legacy 0.2.2 pin without auto-mi
   await rm(authorityPath);
   const legacyPrepared = await preparedToolchain("0.2.2");
   await rm(path.join(legacyPrepared, "authority.json"));
+  const legacyCliPackagePath = path.join(
+    legacyPrepared,
+    "node_modules/@launchrally/cli/package.json",
+  );
+  const legacyCliPackage = JSON.parse(await readFile(legacyCliPackagePath, "utf8"));
+  delete legacyCliPackage.launchrally.engine;
+  await writeFile(
+    legacyCliPackagePath,
+    `${JSON.stringify(legacyCliPackage, null, 2)}\n`,
+  );
 
   const restored = await runToolchainLifecycle(
     repository,

@@ -339,7 +339,7 @@ export function toolchainAuthorityContent(version) {
     engine: {
       package: CLI_DEPENDENCY,
       version,
-      entrypoint: "bin/rally.js",
+      entrypoint: "bin/engine.js",
     },
   }, null, 2)}\n`;
 }
@@ -715,7 +715,7 @@ async function preparedMaterializationIsCurrent(state) {
       "@launchrally",
       "cli",
       "bin",
-      "rally.js",
+      "engine.js",
     ));
     return packageChange?.after === packageJson
       && lockChange?.after === lockfile

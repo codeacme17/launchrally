@@ -16,7 +16,8 @@
     "rally": "./bin/rally.js"
   },
   "launchrally": {
-    "execution_authority": "launchrally.dev/execution-authority/v1"
+    "execution_authority": "launchrally.dev/execution-authority/v1",
+    "engine": "./bin/engine.js"
   },
   "files": [
     "bin/"

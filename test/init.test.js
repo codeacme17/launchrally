@@ -28,6 +28,7 @@ import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.j
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
+const engine = path.resolve("packages/cli/bin/engine.js");
 const SECRET_SENTINEL = "manifest-secret-must-not-survive";
 
 test("Windows npm execution uses an explicit command interpreter without shell mode", () => {
@@ -1049,7 +1050,7 @@ test("confirming applies exactly the previewed initialization files", async () =
       engine: {
         package: "@launchrally/cli",
         version: "0.1.0",
-        entrypoint: "bin/rally.js",
+        entrypoint: "bin/engine.js",
       },
     },
   );
@@ -2077,7 +2078,7 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
   await writeFile(reportPath, JSON.stringify(audit));
 
   const previewProcess = await execFileAsync(process.execPath, [
-    cli,
+    engine,
     "init",
     "--json",
     "--cwd",
@@ -2096,7 +2097,7 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
   assert.deepEqual(await readdir(directory), [".launchrally", "package-lock.json", "package.json"]);
 
   const declineProcess = await execFileAsync(process.execPath, [
-    cli,
+    engine,
     "init",
     "--json",
     "--cwd",
@@ -2118,7 +2119,7 @@ test("Human Mode renders every exact initialization change before confirmation",
   await writeFile(reportPath, JSON.stringify(audit));
 
   const processResult = await execFileAsync(process.execPath, [
-    cli,
+    engine,
     "init",
     "--cwd",
     directory,
