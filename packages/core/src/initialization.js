@@ -312,7 +312,7 @@ function toolchainPackageContent(version) {
   }, null, 2)}\n`;
 }
 
-function alreadyExact({ packageJson, lockfile, dependency, version }) {
+export function isExactToolchain({ packageJson, lockfile, dependency, version }) {
   let parsedPackage;
   try {
     parsedPackage = JSON.parse(packageJson);
@@ -487,7 +487,7 @@ async function defaultPrepareDependencyChanges({
   version,
   registry_allowed: registryAllowed = false,
 }) {
-  if (alreadyExact({
+  if (isExactToolchain({
     packageJson,
     lockfile: lockfile.content,
     dependency,
@@ -1494,7 +1494,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
     !Array.isArray(dependencyChanges)
     || JSON.stringify(dependencyPaths) !== JSON.stringify(exactDependencyPaths)
     || dependencyChanges.some((change) => typeof change.content !== "string")
-    || !alreadyExact({
+    || !isExactToolchain({
       packageJson: plannedPackage?.content,
       lockfile: plannedLockfile?.content,
       dependency: CLI_DEPENDENCY,

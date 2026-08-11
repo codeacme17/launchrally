@@ -35,3 +35,23 @@ _Avoid_: P1 implementation
 **Authority-Expanding P1 Implementation**:
 P1 product work that adds write authority or otherwise expands LaunchRally's authority and remains blocked until P0 Validated.
 _Avoid_: P1 discovery
+
+**Launcher**:
+The dispatcher entered through the user-managed `rally` command or a supported exact-version npm-exec invocation.
+_Avoid_: Global CLI, current CLI
+
+**Engine**:
+The selected LaunchRally CLI implementation that executes repository operations.
+_Avoid_: Project CLI, effective CLI
+
+**Project Toolchain**:
+The repository-owned exact Engine pin, authority descriptor, and rebuildable materialization.
+_Avoid_: Local install, project dependencies
+
+**Execution Authority**:
+The versioned rule and result that select and validate the Engine for a repository.
+_Avoid_: CLI precedence, version preference
+
+**Invocation Context**:
+The non-authoritative description of how a user entered the Launcher.
+_Avoid_: Execution Authority, reconstructed command

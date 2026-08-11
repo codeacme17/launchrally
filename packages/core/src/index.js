@@ -17,6 +17,11 @@ import { collectPublicEvidence } from "./public-verification.js";
 import { executeProviderAdapters } from "./provider-adapters.js";
 import { createReportPackage } from "./reporting.js";
 
+export {
+  EXECUTION_AUTHORITY_DESCRIPTOR_PATH,
+  resolveExecutionAuthority,
+} from "./execution-authority.js";
+
 const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
   "Local Checks use only normalized, secret-safe repository facts.",
   "Provider Adapter evidence is limited to explicitly disclosed, allowlisted metadata fields.",

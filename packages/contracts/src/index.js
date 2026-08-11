@@ -2,6 +2,10 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const cliInteractionSchema = require("../schemas/cli/v2.schema.json");
+const executionAuthoritySchema = require("../schemas/execution-authority/v1.schema.json");
+const executionAuthorityDescriptorSchema = require(
+  "../schemas/execution-authority/v1-descriptor.schema.json",
+);
 const reportSchemaV1 = require("../schemas/report/v1.schema.json");
 const reportSchemaV2 = require("../schemas/report/v2.schema.json");
 const reportViewSchemaV1 = require("../schemas/report-view/v1.schema.json");
@@ -17,6 +21,7 @@ const providerDecisionCardSchema = require(
 const providerGuidanceSchema = require("../schemas/provider-guidance/v2.schema.json");
 
 export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v2";
+export const EXECUTION_AUTHORITY_CONTRACT = "launchrally.dev/execution-authority/v1";
 export const MANIFEST_SCHEMA = "launchrally.dev/manifest/v2";
 export const REPORT_SCHEMA = "launchrally.dev/report/v2";
 export const MANIFEST_CONTRACT_MAJOR = 2;
@@ -159,6 +164,35 @@ export function assertValidCliInteraction(interaction) {
   if (!validatesSchema(interaction, cliInteractionSchema)) {
     const error = new Error("The CLI interaction is incomplete or invalid.");
     error.code = "invalid_cli_interaction";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidExecutionAuthority(authority) {
+  const validLauncherVersion = authority?.source !== "launcher"
+    || authority?.engine?.version === authority?.launcher_version;
+  const validMigrationContract = authority?.state !== "needs_toolchain_migration"
+    || (
+      typeof authority?.engine?.contract === "string"
+      && authority.engine.contract !== EXECUTION_AUTHORITY_CONTRACT
+    );
+  if (
+    !validatesSchema(authority, executionAuthoritySchema)
+    || !validLauncherVersion
+    || !validMigrationContract
+  ) {
+    const error = new Error("The Execution Authority result is incomplete or invalid.");
+    error.code = "invalid_execution_authority";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidExecutionAuthorityDescriptor(descriptor) {
+  if (!validatesSchema(descriptor, executionAuthorityDescriptorSchema)) {
+    const error = new Error("The Execution Authority descriptor is incomplete or invalid.");
+    error.code = "invalid_execution_authority_descriptor";
     throw error;
   }
   return true;
