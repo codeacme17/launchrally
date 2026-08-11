@@ -13,6 +13,7 @@ import {
   runInit,
   runPlan,
   runProviderGuidance,
+  runToolchainLifecycle,
   runVerify,
 } from "@launchrally/core";
 import {
@@ -43,6 +44,7 @@ function commandName() {
     "--resume",
     "--scope",
     "--select",
+    "--to",
   ]);
   for (let index = 0; index < args.length; index += 1) {
     if (optionsWithValues.has(args[index])) {
@@ -206,6 +208,18 @@ function renderHumanInit(value) {
       change.diff,
       "After content:",
       change.after,
+    );
+  }
+  if (value.preview.materialization) {
+    const materialization = value.preview.materialization;
+    lines.push(
+      "Rebuildable Project Engine materialization:",
+      `Command: ${[materialization.command.executable, ...materialization.command.arguments].join(" ")}`,
+      `Package closure: ${materialization.package_count} packages`,
+      `Integrity summary: ${materialization.integrity_digest}`,
+      `Target: ${materialization.target}`,
+      `Ignored: ${materialization.ignored ? "yes" : "no"}`,
+      `Authoritative: ${materialization.authoritative ? "yes" : "no"}`,
     );
   }
   lines.push(
@@ -408,11 +422,13 @@ function print(value) {
     }
     if (value.status === "needs_permission") {
       const permission = value.request.permissions[0];
+      const command = permission.commands[0];
       process.stdout.write([
         "LaunchRally Init requires an npm registry read after the offline cache attempt failed.",
         `Source: ${permission.source}`,
         `Package: ${permission.package}@${permission.version}`,
-        `Command: ${permission.command}`,
+        `Temporary target: ${permission.temporary_target}`,
+        `Command: ${[command.executable, ...command.arguments].join(" ")}`,
         "Lifecycle scripts remain disabled. Choose approved or denied for npm_registry_read.",
         `Resume token: ${value.interaction.resume_token}`,
       ].join("\n") + "\n");
@@ -475,6 +491,12 @@ function help() {
     operation: "help",
     commands: {
       core: ["audit", "init", "plan", "verify"],
+      bootstrap: [
+        "toolchain status",
+        "toolchain restore",
+        "toolchain migrate --to <exact-version>",
+        "toolchain clean",
+      ],
       supporting: [{ operation: "providers", mode: "advisory" }],
     },
     message: [
@@ -485,6 +507,12 @@ function help() {
       "  init     Preview and confirm local adoption after a complete Audit Report",
       "  plan     Build a deterministic read-only Launch Plan from a current Report",
       "  verify   Recollect fresh Evidence for full or targeted verification",
+      "",
+      "Project Toolchain bootstrap commands:",
+      "  toolchain status                 Inspect project execution authority",
+      "  toolchain restore                Rebuild the established exact pin",
+      "  toolchain migrate --to <version> Replace the pin after confirmation",
+      "  toolchain clean                  Remove only rebuildable materialization",
       "",
       "Supporting advisory operation:",
       "  providers Guide a Provider choice from an evidenced gap or constraint mismatch",
@@ -654,6 +682,24 @@ async function main() {
       permission_decisions: permissionDecisions.value,
       report_package: reportPackage,
     });
+    print(result);
+    return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+  }
+
+  if (command === "toolchain") {
+    const toolchainIndex = args.indexOf("toolchain");
+    const operation = args[toolchainIndex + 1];
+    const result = await runToolchainLifecycle(
+      optionValue("--cwd") ?? process.cwd(),
+      VERSION,
+      {
+        operation,
+        to: optionValue("--to"),
+        resume_token: optionValue("--resume"),
+        confirmation: optionValue("--confirm"),
+        permission_decisions: jsonOption("--permissions").value,
+      },
+    );
     print(result);
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
   }

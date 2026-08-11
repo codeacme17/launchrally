@@ -7,10 +7,20 @@ import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 
-import { renderReportMarkdown, runAudit, runInit, runVerify } from "../packages/core/src/index.js";
+import {
+  renderReportMarkdown,
+  resolveExecutionAuthority,
+  runAudit,
+  runInit,
+  runVerify,
+} from "../packages/core/src/index.js";
 import { isOfflineResolutionMiss } from "../packages/core/src/initialization.js";
 import { createHistoryFiles, persistLocalHistory } from "../packages/core/src/local-history.js";
-import { prepareExactToolchainChanges as prepareNpmChanges } from "./helpers/exact-toolchain.js";
+import {
+  materializeExactToolchain,
+  prepareExactToolchainChanges as prepareNpmChanges,
+  writeExactToolchain,
+} from "./helpers/exact-toolchain.js";
 import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
@@ -77,6 +87,37 @@ async function currentCliPackage() {
     path.resolve("packages/cli/package.json"),
     "utf8",
   ));
+}
+
+async function prepareMaterializedToolchain(request) {
+  const changes = prepareNpmChanges(request);
+  const stagingRoot = await mkdtemp(path.join(os.tmpdir(), "launchrally-init-materialized-"));
+  await mkdir(path.join(stagingRoot, ".launchrally"));
+  await writeExactToolchain(stagingRoot, request.version);
+  await materializeExactToolchain(stagingRoot, request.version);
+  Object.defineProperty(changes, "materialization", {
+    enumerable: false,
+    value: {
+      staging_path: path.join(stagingRoot, ".launchrally", "toolchain"),
+      package_count: 9,
+      integrity_digest: `sha256:${"a".repeat(64)}`,
+      command: {
+        executable: "npm",
+        arguments: [
+          "install",
+          "--ignore-scripts",
+          "--save-dev",
+          "--save-exact",
+          "--no-audit",
+          "--no-fund",
+          "--offline",
+          `@launchrally/cli@${request.version}`,
+        ],
+        shell: false,
+      },
+    },
+  });
+  return changes;
 }
 
 async function prepareNpmChangesWithCliDependencies(request, dependencies) {
@@ -206,7 +247,7 @@ test("Init rejects an unexpected direct CLI dependency", async () => {
   assert.equal(result.error, "invalid_dependency_plan");
 });
 
-test("Init canonicalizes an existing toolchain without retaining lifecycle scripts", async () => {
+test("Init refuses to rewrite an established invalid toolchain", async () => {
   const directory = await fixture();
   const toolchain = path.join(directory, ".launchrally", "toolchain");
   await mkdir(toolchain, { recursive: true });
@@ -231,25 +272,16 @@ test("Init canonicalizes an existing toolchain without retaining lifecycle scrip
   })}\n`);
   const audit = await completeAudit(directory);
 
-  const preview = await runInit(
+  const result = await runInit(
     directory,
     "0.1.0",
     { report_package: audit },
     { prepare_dependency_changes: prepareNpmChanges },
   );
 
-  assert.equal(preview.status, "needs_confirmation");
-  const packageChange = preview.preview.changes.find(
-    (change) => change.path === ".launchrally/toolchain/package.json",
-  );
-  assert.equal(JSON.parse(packageChange.after).scripts, undefined);
-  const lockChange = preview.preview.changes.find(
-    (change) => change.path === ".launchrally/toolchain/package-lock.json",
-  );
-  assert.equal(
-    JSON.parse(lockChange.after).packages["node_modules/@launchrally/cli"].resolved,
-    "https://registry.npmjs.org/@launchrally/cli/-/cli-0.1.0.tgz",
-  );
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "invalid_project_toolchain");
+  assert.match(await readFile(path.join(toolchain, "package.json"), "utf8"), /must-not-run/u);
 });
 
 test("Init pins the transitive UI closure before npm resolves caret ranges", async () => {
@@ -292,7 +324,7 @@ test("Init pins the transitive UI closure before npm resolves caret ranges", asy
   assert.deepEqual(JSON.parse(packageChange.after).overrides, overrides);
 });
 
-test("Init rejects truncated integrity metadata from the exact-toolchain fast path", async () => {
+test("Init never repairs a truncated established toolchain integrity pin", async () => {
   const directory = await fixtureWithCliDependency();
   const lockPath = path.join(directory, ".launchrally", "toolchain", "package-lock.json");
   const lockfile = JSON.parse(await readFile(lockPath, "utf8"));
@@ -313,8 +345,9 @@ test("Init rejects truncated integrity metadata from the exact-toolchain fast pa
     },
   );
 
-  assert.equal(result.status, "needs_confirmation");
-  assert.equal(resolutions, 1);
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "invalid_project_toolchain");
+  assert.equal(resolutions, 0);
 });
 
 test("Init cannot bypass registry disclosure through public API options", async () => {
@@ -325,6 +358,7 @@ test("Init cannot bypass registry disclosure through public API options", async 
     attempts.push(request.registry_allowed);
     const error = new Error("offline cache miss");
     error.code = "registry_permission_required";
+    error.temporary_target = path.join(os.tmpdir(), "launchrally-dependency-plan-bypass");
     throw error;
   };
 
@@ -348,6 +382,7 @@ test("Init attempts offline toolchain resolution before disclosing registry perm
     if (!request.registry_allowed) {
       const error = new Error("offline cache miss");
       error.code = "registry_permission_required";
+      error.temporary_target = path.join(os.tmpdir(), "launchrally-dependency-plan-offline");
       throw error;
     }
     return prepareNpmChanges(request);
@@ -368,7 +403,21 @@ test("Init attempts offline toolchain resolution before disclosing registry perm
     source: "https://registry.npmjs.org",
     package: "@launchrally/cli",
     version: "0.1.0",
-    command: "npm install --package-lock-only --ignore-scripts --save-dev --save-exact --no-audit --no-fund --registry=https://registry.npmjs.org @launchrally/cli@0.1.0",
+    temporary_target: permission.request.permissions[0].temporary_target,
+    commands: [{
+      executable: "npm",
+      arguments: [
+        "install",
+        "--ignore-scripts",
+        "--save-dev",
+        "--save-exact",
+        "--no-audit",
+        "--no-fund",
+        "--registry=https://registry.npmjs.org",
+        "@launchrally/cli@0.1.0",
+      ],
+      shell: false,
+    }],
   }]);
 
   const denied = await runInit(
@@ -737,6 +786,7 @@ test("a complete Report produces an exact secret-free preview without repository
   for (const expected of [
     { path: ".launchrally/.gitignore", operation: "create" },
     { path: ".launchrally/manifest.yaml", operation: "create" },
+    { path: ".launchrally/toolchain/authority.json", operation: "create" },
     { path: ".launchrally/toolchain/package-lock.json", operation: "create" },
     { path: ".launchrally/toolchain/package.json", operation: "create" },
   ]) assert.ok(previewChanges.some((change) =>
@@ -747,7 +797,7 @@ test("a complete Report produces an exact secret-free preview without repository
   assert.ok(result.preview.changes.every((change) => change.after_digest.startsWith("sha256:")));
   assert.equal(
     result.preview.changes.find((change) => change.path === ".launchrally/.gitignore").after,
-    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n/.init-transaction/\n",
+    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n/toolchain/node_modules/\n/.init-transaction/\n/.toolchain-transaction/\n",
   );
   assert.deepEqual(await readdir(directory), ["package-lock.json", "package.json"]);
   assert.equal(await readFile(path.join(directory, "package.json"), "utf8"), packageBefore);
@@ -836,7 +886,7 @@ test("Init accepts a portable token when mkdtemp preserves its placeholder", asy
     confirmation: "decline",
   });
 
-  assert.equal(result.status, "completed");
+  assert.equal(result.status, "completed", JSON.stringify(result));
   assert.equal(result.outcome, "initialization_declined");
 });
 
@@ -971,8 +1021,107 @@ test("confirming applies exactly the previewed initialization files", async () =
     { "@launchrally/cli": "0.1.0" },
   );
   assert.deepEqual(
+    JSON.parse(await readFile(path.join(
+      directory,
+      ".launchrally",
+      "toolchain",
+      "authority.json",
+    ), "utf8")),
+    {
+      contract: "launchrally.dev/execution-authority/v1",
+      engine: {
+        package: "@launchrally/cli",
+        version: "0.1.0",
+        entrypoint: "bin/rally.js",
+      },
+    },
+  );
+  assert.deepEqual(
     (await readdir(path.join(directory, ".launchrally"))).sort(),
     [".gitignore", "evidence", "locks", "manifest.yaml", "reports", "toolchain", "transactions"],
+  );
+});
+
+test("confirmed Init adopts a validated immediately executable project Engine", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepareMaterializedToolchain },
+  );
+
+  assert.deepEqual(preview.preview.materialization, {
+    command: {
+      executable: "npm",
+      arguments: [
+        "install",
+        "--ignore-scripts",
+        "--save-dev",
+        "--save-exact",
+        "--no-audit",
+        "--no-fund",
+        "--offline",
+        "@launchrally/cli@0.1.0",
+      ],
+      shell: false,
+    },
+    package_count: 9,
+    integrity_digest: `sha256:${"a".repeat(64)}`,
+    target: ".launchrally/toolchain/node_modules",
+    ignored: true,
+    authoritative: false,
+  });
+
+  const result = await runInit(directory, "0.1.0", {
+    resume_token: preview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const authority = await resolveExecutionAuthority({
+    cwd: directory,
+    launcher_version: "0.1.0",
+  });
+
+  assert.equal(result.status, "completed", JSON.stringify(result));
+  assert.equal(authority.state, "ready");
+  assert.equal(authority.engine.version, "0.1.0");
+});
+
+test("re-running Init preserves the established project Engine pin", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(directory, "0.1.0", {
+    resume_token: preview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+
+  const rerun = await runInit(
+    directory,
+    "9.9.9",
+    { report_package: audit },
+    {
+      prepare_dependency_changes: async () => {
+        assert.fail("Init must not resolve a different Engine after project authority exists.");
+      },
+    },
+  );
+
+  assert.equal(rerun.status, "needs_refresh");
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(
+      directory,
+      ".launchrally",
+      "toolchain",
+      "package.json",
+    ), "utf8")).devDependencies,
+    { "@launchrally/cli": "0.1.0" },
   );
 });
 
@@ -1877,8 +2026,11 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
 
   assert.equal(permission.status, "needs_permission");
   assert.equal(permission.request.permissions[0].id, "npm_registry_read");
-  assert.match(permission.request.permissions[0].command, /--ignore-scripts/u);
-  assert.match(permission.request.permissions[0].command, /registry\.npmjs\.org/u);
+  assert.ok(permission.request.permissions[0].commands[0].arguments.includes("--ignore-scripts"));
+  assert.ok(permission.request.permissions[0].commands[0].arguments.some(
+    (argument) => argument.includes("registry.npmjs.org"),
+  ));
+  assert.equal(permission.request.permissions[0].commands[0].shell, false);
   await assert.rejects(
     execFileAsync(process.execPath, [
       cli,
@@ -1961,7 +2113,7 @@ test("Human Mode renders every exact initialization change before confirmation",
   assert.match(processResult.stdout, /CREATE \.launchrally\/\.gitignore/u);
   assert.match(
     processResult.stdout,
-    /\/reports\/\n\/evidence\/\n\/cache\/\n\/transactions\/\n\/locks\/\n\/\.init-transaction\//u,
+    /\/reports\/\n\/evidence\/\n\/cache\/\n\/transactions\/\n\/locks\/\n\/toolchain\/node_modules\/\n\/\.init-transaction\/\n\/\.toolchain-transaction\//u,
   );
   assert.match(processResult.stdout, /CREATE \.launchrally\/manifest\.yaml/u);
   assert.match(processResult.stdout, /Apply exactly these local initialization changes\?/u);

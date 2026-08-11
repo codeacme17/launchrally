@@ -194,12 +194,18 @@ function sameObject(left, right) {
   return JSON.stringify(left ?? {}) === JSON.stringify(right ?? {});
 }
 
-async function inspectMaterialization(root, lock, descriptor, compatibility) {
+async function inspectMaterialization(
+  root,
+  lock,
+  descriptor,
+  compatibility,
+  toolchainRelative = ".launchrally/toolchain",
+) {
   let incomplete = false;
   for (const [lockedPath, lockedPackage] of Object.entries(lock.packages)) {
     if (!lockedPath.startsWith("node_modules/")) continue;
     const name = lockedPath.slice("node_modules/".length);
-    const packageDirectory = `.launchrally/toolchain/${lockedPath}`;
+    const packageDirectory = `${toolchainRelative}/${lockedPath}`;
     if (!await optionalStat(path.join(root, packageDirectory))) {
       incomplete = true;
       continue;
@@ -236,7 +242,7 @@ async function inspectMaterialization(root, lock, descriptor, compatibility) {
   if (incomplete) return { state: "incomplete" };
 
   const entrypointRelative =
-    `.launchrally/toolchain/node_modules/@launchrally/cli/${descriptor.engine.entrypoint}`;
+    `${toolchainRelative}/node_modules/@launchrally/cli/${descriptor.engine.entrypoint}`;
   const entrypoint = await readOptionalContainedFile(root, entrypointRelative);
   if (entrypoint === null) return { state: "incomplete" };
   return {
@@ -245,11 +251,61 @@ async function inspectMaterialization(root, lock, descriptor, compatibility) {
   };
 }
 
+export async function validateToolchainDirectory(toolchainPath) {
+  const selected = path.resolve(toolchainPath);
+  const root = await realpath(path.dirname(selected));
+  const canonicalSelected = await realpath(selected);
+  if (!isInside(root, canonicalSelected)) {
+    return { valid: false, reason: "unsafe_project_path" };
+  }
+  const relative = path.relative(root, canonicalSelected).split(path.sep).join("/");
+  await assertContainedDirectories(root, relative);
+  const packageJson = await readContainedFile(root, `${relative}/package.json`);
+  const lockfile = await readContainedFile(root, `${relative}/package-lock.json`);
+  const parsedPackage = JSON.parse(packageJson);
+  const descriptorContent = await readOptionalContainedFile(root, `${relative}/authority.json`);
+  let descriptor;
+  let compatibility;
+  if (descriptorContent === null) {
+    const version = parsedPackage?.devDependencies?.[ENGINE_PACKAGE];
+    const adapter = LEGACY_ADAPTERS.get(version);
+    if (!adapter) return { valid: false, reason: "unknown_legacy_toolchain" };
+    descriptor = {
+      contract: adapter.contract,
+      engine: { package: ENGINE_PACKAGE, version, entrypoint: adapter.entrypoint },
+    };
+    compatibility = "legacy_adapter";
+  } else {
+    descriptor = JSON.parse(descriptorContent);
+    assertValidExecutionAuthorityDescriptor(descriptor);
+    compatibility = "native";
+  }
+  if (!isExactToolchain({
+    packageJson,
+    lockfile,
+    dependency: ENGINE_PACKAGE,
+    version: descriptor.engine.version,
+  })) return { valid: false, reason: "invalid_toolchain_lock" };
+  const materialization = await inspectMaterialization(
+    root,
+    JSON.parse(lockfile),
+    descriptor,
+    compatibility,
+    relative,
+  );
+  return materialization.state === "ready"
+    ? { valid: true, version: descriptor.engine.version, compatibility }
+    : { valid: false, reason: `materialization_${materialization.state}` };
+}
+
 async function inspectProject(project, launcherVersion, operationCwd) {
   if (!project.stat.isDirectory() || project.stat.isSymbolicLink()) {
     return invalidAuthority(launcherVersion, "unsafe_project_path");
   }
-  if (await optionalStat(path.join(project.launchRallyPath, ".init-transaction"))) {
+  if (
+    await optionalStat(path.join(project.launchRallyPath, ".init-transaction"))
+    || await optionalStat(path.join(project.launchRallyPath, ".toolchain-transaction"))
+  ) {
     return invalidAuthority(launcherVersion, "transaction_recovery_required");
   }
   try {
