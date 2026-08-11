@@ -8,6 +8,7 @@ import { CLI_INTERACTION_CONTRACT } from "@launchrally/contracts";
 import {
   environmentTargetLabel,
   reviewedEnvironmentLabel,
+  resolveExecutionAuthority,
   runAudit,
   runInit,
   runPlan,
@@ -501,13 +502,27 @@ async function main() {
   }
 
   if (command === "version") {
+    const authority = await resolveExecutionAuthority({
+      cwd: optionValue("--cwd"),
+      launcher_version: VERSION,
+    });
+    const ready = authority.state === "ready";
+    const invalid = authority.state === "invalid_toolchain";
     print({
       contract: CLI_INTERACTION_CONTRACT,
-      status: "completed",
+      status: ready ? "completed" : invalid ? "execution_error" : "unavailable",
       operation: "version",
-      cli_version: VERSION,
+      ...(ready ? { cli_version: authority.engine.version } : {}),
+      launcher_version: VERSION,
+      authority,
+      ...(!ready ? {
+        error: authority.state,
+        message: invalid
+          ? "The project Execution Authority is invalid; the Launcher did not fall back."
+          : "The project Engine is not executable; complete the explicit toolchain action.",
+      } : {}),
     });
-    return 0;
+    return ready ? 0 : 1;
   }
 
   if (command === "audit") {

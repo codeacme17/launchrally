@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/execution-authority/v1",
+  "title": "LaunchRally Execution Authority Contract v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "state",
+    "source",
+    "launcher_version",
+    "engine",
+    "materialization",
+    "reason",
+    "next_action"
+  ],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/execution-authority/v1" },
+    "state": {
+      "enum": [
+        "ready",
+        "needs_toolchain_restore",
+        "needs_toolchain_migration",
+        "invalid_toolchain"
+      ]
+    },
+    "source": { "enum": ["launcher", "project_toolchain"] },
+    "launcher_version": { "$ref": "#/$defs/exactVersion" },
+    "engine": {
+      "type": "object",
+      "required": ["package", "version", "contract", "compatibility"],
+      "properties": {
+        "package": { "const": "@launchrally/cli" },
+        "version": {
+          "oneOf": [
+            { "$ref": "#/$defs/exactVersion" },
+            { "type": "null" }
+          ]
+        },
+        "contract": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^launchrally\\.dev/execution-authority/v[0-9]+$"
+            },
+            { "type": "null" }
+          ]
+        },
+        "compatibility": {
+          "enum": ["native", "legacy_adapter", "migration_required", "incompatible"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "materialization": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["bundled", "ready", "missing", "migration_required", "invalid"] }
+      },
+      "additionalProperties": false
+    },
+    "reason": {
+      "enum": [
+        "invalid_authority_descriptor",
+        "invalid_engine_materialization",
+        "invalid_toolchain_lock",
+        "launcher_selected",
+        "legacy_materialization_incomplete",
+        "legacy_materialization_missing",
+        "legacy_project_engine_validated",
+        "materialization_incomplete",
+        "materialization_missing",
+        "partial_project_state",
+        "project_engine_validated",
+        "transaction_recovery_required",
+        "unknown_legacy_toolchain",
+        "unsafe_project_path",
+        "unsupported_engine_contract"
+      ]
+    },
+    "next_action": {
+      "type": "object",
+      "required": ["operation"],
+      "properties": {
+        "operation": {
+          "enum": ["none", "toolchain_restore", "toolchain_migrate", "inspect_toolchain"]
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "oneOf": [
+    {
+      "properties": {
+        "state": { "const": "ready" },
+        "source": { "const": "launcher" },
+        "engine": {
+          "properties": {
+            "version": { "$ref": "#/$defs/exactVersion" },
+            "contract": { "const": "launchrally.dev/execution-authority/v1" },
+            "compatibility": { "const": "native" }
+          }
+        },
+        "materialization": {
+          "properties": { "state": { "const": "bundled" } }
+        },
+        "reason": { "const": "launcher_selected" },
+        "next_action": { "properties": { "operation": { "const": "none" } } }
+      }
+    },
+    {
+      "properties": {
+        "state": { "const": "ready" },
+        "source": { "const": "project_toolchain" },
+        "engine": {
+          "properties": {
+            "version": { "$ref": "#/$defs/exactVersion" },
+            "contract": { "const": "launchrally.dev/execution-authority/v1" },
+            "compatibility": { "const": "native" }
+          }
+        },
+        "materialization": { "properties": { "state": { "const": "ready" } } },
+        "reason": { "const": "project_engine_validated" },
+        "next_action": { "properties": { "operation": { "const": "none" } } }
+      }
+    },
+    {
+      "properties": {
+        "state": { "const": "ready" },
+        "source": { "const": "project_toolchain" },
+        "engine": {
+          "properties": {
+            "version": { "$ref": "#/$defs/exactVersion" },
+            "contract": { "const": "launchrally.dev/execution-authority/v1" },
+            "compatibility": { "const": "legacy_adapter" }
+          }
+        },
+        "materialization": { "properties": { "state": { "const": "ready" } } },
+        "reason": { "const": "legacy_project_engine_validated" },
+        "next_action": { "properties": { "operation": { "const": "none" } } }
+      }
+    },
+    {
+      "properties": {
+        "state": { "const": "needs_toolchain_restore" },
+        "source": { "const": "project_toolchain" },
+        "engine": {
+          "properties": {
+            "version": { "$ref": "#/$defs/exactVersion" },
+            "contract": { "const": "launchrally.dev/execution-authority/v1" },
+            "compatibility": { "const": "native" }
+          }
+        },
+        "materialization": { "properties": { "state": { "const": "missing" } } },
+        "reason": {
+          "enum": ["materialization_incomplete", "materialization_missing"]
+        },
+        "next_action": {
+          "properties": { "operation": { "const": "toolchain_restore" } }
+        }
+      }
+    },
+    {
+      "properties": {
+        "state": { "const": "needs_toolchain_restore" },
+        "source": { "const": "project_toolchain" },
+        "engine": {
+          "properties": {
+            "version": { "$ref": "#/$defs/exactVersion" },
+            "contract": { "const": "launchrally.dev/execution-authority/v1" },
+            "compatibility": { "const": "legacy_adapter" }
+          }
+        },
+        "materialization": { "properties": { "state": { "const": "missing" } } },
+        "reason": {
+          "enum": ["legacy_materialization_incomplete", "legacy_materialization_missing"]
+        },
+        "next_action": {
+          "properties": { "operation": { "const": "toolchain_restore" } }
+        }
+      }
+    },
+    {
+      "properties": {
+        "state": { "const": "needs_toolchain_migration" },
+        "source": { "const": "project_toolchain" },
+        "engine": {
+          "properties": {
+            "version": { "$ref": "#/$defs/exactVersion" },
+            "contract": {
+              "type": "string",
+              "pattern": "^launchrally\\.dev/execution-authority/v[0-9]+$"
+            },
+            "compatibility": { "const": "migration_required" }
+          }
+        },
+        "materialization": {
+          "properties": { "state": { "const": "migration_required" } }
+        },
+        "reason": { "const": "unsupported_engine_contract" },
+        "next_action": {
+          "properties": { "operation": { "const": "toolchain_migrate" } }
+        }
+      }
+    },
+    {
+      "properties": {
+        "state": { "const": "invalid_toolchain" },
+        "source": { "const": "project_toolchain" },
+        "engine": {
+          "properties": { "compatibility": { "const": "incompatible" } }
+        },
+        "materialization": { "properties": { "state": { "const": "invalid" } } },
+        "reason": {
+          "enum": [
+            "invalid_authority_descriptor",
+            "invalid_engine_materialization",
+            "invalid_toolchain_lock",
+            "partial_project_state",
+            "transaction_recovery_required",
+            "unknown_legacy_toolchain",
+            "unsafe_project_path"
+          ]
+        },
+        "next_action": {
+          "properties": { "operation": { "const": "inspect_toolchain" } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "exactVersion": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+    }
+  }
+}
