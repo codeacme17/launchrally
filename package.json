@@ -26,6 +26,7 @@
     "test:contracts": "npm run test:contract-core && npm run test:authority-contracts && npm run test:release-contracts",
     "test:journeys": "npm run test:authority-contracts && node --test test/coverage-acceptance.test.js test/human-audit.test.js test/prompt-adapters.test.js test/reference-journey.test.js test/report-destination.test.js test/system-file-picker.test.js",
     "test:artifacts": "node scripts/test-release-artifacts.mjs",
+    "test:legacy-public": "node scripts/test-release-artifacts.mjs --public-legacy --skip-native",
     "test:public-release": "node scripts/test-release-artifacts.mjs --public",
     "rally": "node packages/cli/bin/rally.js",
     "test": "npm run check:skills && node --test",
