@@ -2,6 +2,10 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import {
+  invalidStablePromotionEvidence,
+  stablePromotionBlockers,
+} from "./stable-promotion-policy.mjs";
 
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootOption = process.argv.indexOf("--root");
@@ -232,22 +236,23 @@ async function validate() {
     if (blockers.length > 0) fail("acceptance_release_blocked", blockers.join(", "));
   }
   if (process.argv.includes("--require-stable-ready")) {
-    const blockers = [...requirements.values()]
-      .filter(({ status }) => status !== "complete")
-      .map(({ id }) => id);
-    if (matrix.product_status !== "complete") blockers.unshift("product_status");
-    if (matrix.release_status !== "stable") blockers.unshift("release_status");
-    if (p0.validation_status !== "validated") blockers.unshift("validation_status");
-    if (p0.p0_validated !== true) blockers.unshift("p0_validated");
-    if (p0.quality_floor_status !== "satisfied") blockers.unshift("quality_floor_status");
-    if (p0.stable_promotion?.status !== "approved") {
-      blockers.unshift("stable_promotion.status");
-    }
-    if (p0.stable_promotion?.maintainer_e2e_status !== "complete") {
-      blockers.unshift("stable_promotion.maintainer_e2e_status");
-    }
-    if (p0.stable_promotion?.approved_tag !== `v${packageJson.version}`) {
-      blockers.unshift("stable_promotion.approved_tag");
+    const release = await readJson("release/artifacts.json");
+    const blockers = stablePromotionBlockers({
+      acceptance: matrix,
+      contract: p0,
+      release,
+      tag: p0.stable_promotion?.approved_tag,
+      version: packageJson.version,
+    });
+    const invalidEvidence = await invalidStablePromotionEvidence({
+      promotion: p0.stable_promotion,
+      root,
+    });
+    if (
+      invalidEvidence.length > 0
+      && !blockers.includes("stable_promotion.maintainer_e2e_evidence")
+    ) {
+      blockers.push("stable_promotion.maintainer_e2e_evidence");
     }
     if (blockers.length > 0) fail("acceptance_stable_blocked", blockers.join(", "));
   }

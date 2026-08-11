@@ -1640,15 +1640,20 @@ async function waitForPublicRelease(release, version, distTag) {
   }
 }
 
+function publicDistTag() {
+  const option = process.argv.indexOf("--dist-tag");
+  const distTag = option === -1 ? "experimental" : process.argv[option + 1];
+  if (!new Set(["experimental", "latest"]).has(distTag)) {
+    throw new Error(`public_dist_tag_invalid: ${distTag ?? "missing"}`);
+  }
+  return distTag;
+}
+
 async function main() {
   const release = await json(path.join(root, "release", "artifacts.json"));
   const rootPackage = await json(path.join(root, "package.json"));
   const publicRelease = process.argv.includes("--public");
-  const distTagOption = process.argv.indexOf("--dist-tag");
-  const distTag = distTagOption === -1 ? "experimental" : process.argv[distTagOption + 1];
-  if (!new Set(["experimental", "latest"]).has(distTag)) {
-    throw new Error(`public_dist_tag_invalid: ${distTag ?? "missing"}`);
-  }
+  const distTag = publicDistTag();
   const publicLegacy = publicRelease || process.argv.includes("--public-legacy");
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "launchrally-artifacts-"));
   try {
@@ -1742,11 +1747,7 @@ async function main() {
 if (process.argv.includes("--public") && process.argv.includes("--dry-run")) {
   const release = await json(path.join(root, "release", "artifacts.json"));
   const rootPackage = await json(path.join(root, "package.json"));
-  const distTagOption = process.argv.indexOf("--dist-tag");
-  const distTag = distTagOption === -1 ? "experimental" : process.argv[distTagOption + 1];
-  if (!new Set(["experimental", "latest"]).has(distTag)) {
-    throw new Error(`public_dist_tag_invalid: ${distTag ?? "missing"}`);
-  }
+  const distTag = publicDistTag();
   const plan = publicReleasePlan(release, rootPackage.version, distTag);
   process.stdout.write(
     process.argv.includes("--json")

@@ -13,6 +13,10 @@ import {
   assertReviewedAggregateTaxonomy,
   assertValidationAuthorityState,
 } from "./validation-log-contract.mjs";
+import {
+  invalidStablePromotionEvidence,
+  stablePromotionBlockers,
+} from "./stable-promotion-policy.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,20 +40,16 @@ const stablePromotion = contract.stable_promotion;
 const stablePromotionKeys = Object.keys(stablePromotion ?? {}).sort();
 const hasStablePromotionShape = JSON.stringify(stablePromotionKeys) === JSON.stringify([
   "approved_tag",
+  "maintainer_e2e_evidence",
   "maintainer_e2e_status",
   "status",
 ]);
 const isExperimentalState = contract.release_status === "experimental"
   && stablePromotion?.status === "not_approved"
+  && stablePromotion.maintainer_e2e_status === "pending"
+  && Object.keys(stablePromotion.maintainer_e2e_evidence ?? {}).length === 0
   && stablePromotion.approved_tag === null;
-const isStableState = contract.release_status === "stable"
-  && contract.product_status === "complete"
-  && contract.validation_status === "validated"
-  && contract.p0_validated === true
-  && contract.quality_floor_status === "satisfied"
-  && stablePromotion?.status === "approved"
-  && stablePromotion.maintainer_e2e_status === "complete"
-  && /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(stablePromotion.approved_tag ?? "");
+const isStableState = contract.release_status === "stable";
 
 if (
   contract.schema_version !== "launchrally.dev/p0-release/v1"
@@ -91,6 +91,24 @@ const artifacts = JSON.parse(await readFile(
   path.join(root, "release/artifacts.json"),
   "utf8",
 ));
+if (isStableState) {
+  const blockers = stablePromotionBlockers({
+    contract,
+    release: artifacts,
+    tag: stablePromotion.approved_tag,
+    version: rootPackage.version,
+  });
+  if (blockers.length > 0) {
+    throw new Error(`stable_promotion_blocked: ${blockers.join(", ")}`);
+  }
+  const invalidEvidence = await invalidStablePromotionEvidence({
+    promotion: stablePromotion,
+    root,
+  });
+  if (invalidEvidence.length > 0) {
+    throw new Error(`stable_promotion_e2e_evidence_invalid: ${invalidEvidence.join(", ")}`);
+  }
+}
 for (const artifact of artifacts.packages) {
   const packageJson = JSON.parse(await readFile(
     path.join(root, artifact.path, "package.json"),

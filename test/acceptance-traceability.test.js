@@ -221,9 +221,20 @@ test("Stable readiness requires the separately approved promotion state", async 
     stable_promotion: {
       status: "approved",
       maintainer_e2e_status: "complete",
+      maintainer_e2e_evidence: {
+        approved_permission: "docs/maintainers/stable-e2e-evidence.md",
+        claude_plugin: "docs/maintainers/stable-e2e-evidence.md",
+        codex_plugin: "docs/maintainers/stable-e2e-evidence.md",
+        denied_permission: "docs/maintainers/stable-e2e-evidence.md",
+        direct_cli: "docs/maintainers/stable-e2e-evidence.md",
+      },
       approved_tag: "v0.3.0",
     },
   });
+  await writeFile(
+    path.join(fixture, "docs/maintainers/stable-e2e-evidence.md"),
+    "# Stable E2E evidence\n\nAll required journeys completed.\n",
+  );
   await Promise.all([
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),

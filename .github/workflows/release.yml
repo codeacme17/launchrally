@@ -10,6 +10,10 @@ on:
         description: Protected annotated Stable release tag
         required: true
         type: string
+      promotion_pr:
+        description: Open Stable promotion PR targeting main
+        required: true
+        type: number
 
 permissions:
   contents: read
@@ -149,8 +153,10 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      pull-requests: write
     env:
       PROMOTION_TAG: ${{ inputs.tag }}
+      PROMOTION_PR: ${{ inputs.promotion_pr }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -171,9 +177,31 @@ jobs:
       - run: npm run validate:acceptance -- --require-stable-ready
       - run: npm run validate:p0
       - run: npm run validate:release -- --tag "$PROMOTION_TAG"
-      - run: npm run validate:release-ref -- --tag "$PROMOTION_TAG"
+      - run: npm run validate:release-ref -- --tag "$PROMOTION_TAG" --allow-promotion-head
       - run: npm run test:artifacts
-      - name: Publish and verify the approved Stable release
+      - name: Verify the unmerged Stable promotion PR
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/promote-stable.mjs --tag "$PROMOTION_TAG"
+        run: |
+          test "$(gh pr view "$PROMOTION_PR" --json baseRefName --jq .baseRefName)" = "main"
+          test "$(gh pr view "$PROMOTION_PR" --json headRefOid --jq .headRefOid)" = "$(git rev-parse HEAD)"
+          test "$(gh pr view "$PROMOTION_PR" --json state --jq .state)" = "OPEN"
+          test "$(gh pr view "$PROMOTION_PR" --json mergeable --jq .mergeable)" = "MERGEABLE"
+          test "$(gh pr view "$PROMOTION_PR" --json mergeStateStatus --jq .mergeStateStatus)" = "CLEAN"
+          test "$(gh pr view "$PROMOTION_PR" --json reviewDecision --jq .reviewDecision)" = "APPROVED"
+      - name: Publish and verify the approved Stable artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/promote-stable.mjs --tag "$PROMOTION_TAG" --phase publish
+      - name: Merge Stable claims only after public verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(gh pr view "$PROMOTION_PR" --json state --jq .state)" = "OPEN" ]; then
+            gh pr merge "$PROMOTION_PR" --merge --match-head-commit "$(git rev-parse HEAD)"
+          fi
+          test "$(gh pr view "$PROMOTION_PR" --json state --jq .state)" = "MERGED"
+      - name: Announce the verified Stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/promote-stable.mjs --tag "$PROMOTION_TAG" --phase announce

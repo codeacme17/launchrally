@@ -10,6 +10,7 @@
   "stable_promotion": {
     "status": "not_approved",
     "maintainer_e2e_status": "pending",
+    "maintainer_e2e_evidence": {},
     "approved_tag": null
   },
   "release_status_documents": [

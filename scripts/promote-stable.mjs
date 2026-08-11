@@ -4,6 +4,10 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+  invalidStablePromotionEvidence,
+  stablePromotionBlockers,
+} from "./stable-promotion-policy.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,6 +18,8 @@ const root = rootOption === -1
   : path.resolve(process.argv[rootOption + 1] ?? "");
 const tagOption = process.argv.indexOf("--tag");
 const tag = tagOption === -1 ? null : process.argv[tagOption + 1];
+const phaseOption = process.argv.indexOf("--phase");
+const phase = phaseOption === -1 ? "all" : process.argv[phaseOption + 1];
 
 async function readJson(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
@@ -23,29 +29,17 @@ function fail(code, detail) {
   throw new Error(`${code}: ${detail}`);
 }
 
-function assertEligible(contract, acceptance, version) {
-  const promotion = contract.stable_promotion;
-  const blockers = [];
-  if (contract.product_status !== "complete") blockers.push("product_status");
-  if (contract.release_status !== "stable") blockers.push("release_status");
-  if (contract.validation_status !== "validated") blockers.push("validation_status");
-  if (contract.p0_validated !== true) blockers.push("p0_validated");
-  if (contract.quality_floor_status !== "satisfied") blockers.push("quality_floor_status");
-  if (promotion?.status !== "approved") blockers.push("stable_promotion.status");
-  if (promotion?.maintainer_e2e_status !== "complete") {
-    blockers.push("stable_promotion.maintainer_e2e_status");
-  }
-  if (!tag || promotion?.approved_tag !== tag || tag !== `v${version}`) {
-    blockers.push("stable_promotion.approved_tag");
-  }
+async function assertEligible(contract, acceptance, release, version) {
+  const blockers = stablePromotionBlockers({ acceptance, contract, release, tag, version });
+  const invalidEvidence = await invalidStablePromotionEvidence({
+    promotion: contract.stable_promotion,
+    root,
+  });
   if (
-    acceptance.product_status !== contract.product_status
-    || acceptance.release_status !== contract.release_status
+    invalidEvidence.length > 0
+    && !blockers.includes("stable_promotion.maintainer_e2e_evidence")
   ) {
-    blockers.push("acceptance.status");
-  }
-  if (acceptance.requirements?.some(({ status }) => status !== "complete")) {
-    blockers.push("acceptance.requirements");
+    blockers.push("stable_promotion.maintainer_e2e_evidence");
   }
   if (blockers.length > 0) fail("stable_promotion_blocked", blockers.join(", "));
 }
@@ -166,7 +160,10 @@ function githubReleaseEditCommand(plan) {
 
 async function promote(plan) {
   const state = await publicationState(plan);
-  if (state === "unpublished") {
+  if (phase === "announce" && state !== "published") {
+    fail("stable_announcement_blocked", "all five exact versions must be public");
+  }
+  if (phase !== "announce" && state === "unpublished") {
     const published = [];
     for (const command of plan.publish) {
       try {
@@ -183,28 +180,38 @@ async function promote(plan) {
       }
     }
   }
-  await run(plan.smoke);
-  const releaseExists = await githubReleaseExists(plan);
-  await run(releaseExists ? githubReleaseEditCommand(plan) : plan.github_release);
+  if (phase !== "announce") await run(plan.smoke);
+  let releaseExists = false;
+  if (phase !== "publish") {
+    releaseExists = await githubReleaseExists(plan);
+    await run(releaseExists ? githubReleaseEditCommand(plan) : plan.github_release);
+  }
   return {
     status: "completed",
     strategy: plan.strategy,
     tag: plan.tag,
     version: plan.version,
     publication: state === "published" ? "resumed" : "published",
-    smoke: "verified",
-    github_release: releaseExists ? "reconciled" : "created",
+    smoke: phase === "announce" ? "previously_verified" : "verified",
+    github_release: phase === "publish"
+      ? "pending"
+      : releaseExists
+        ? "reconciled"
+        : "created",
   };
 }
 
 try {
+  if (!["all", "announce", "publish"].includes(phase)) {
+    fail("stable_promotion_phase_invalid", phase ?? "missing");
+  }
   const [contract, acceptance, release, rootPackage] = await Promise.all([
     readJson("release/p0.json"),
     readJson("release/p0-acceptance.json"),
     readJson("release/artifacts.json"),
     readJson("package.json"),
   ]);
-  assertEligible(contract, acceptance, rootPackage.version);
+  await assertEligible(contract, acceptance, release, rootPackage.version);
   const plan = createPlan(release, rootPackage.version);
   const result = process.argv.includes("--dry-run") ? plan : await promote(plan);
   process.stdout.write(

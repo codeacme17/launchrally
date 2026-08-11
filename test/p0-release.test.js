@@ -78,6 +78,7 @@ test("the P0 release contract keeps Product Complete, Experimental, and validati
     stable_promotion: {
       status: "not_approved",
       maintainer_e2e_status: "pending",
+      maintainer_e2e_evidence: {},
       approved_tag: null,
     },
     license: "Apache-2.0",
@@ -1178,6 +1179,13 @@ test("a reviewed Stable promotion remains distinct from the P0 Validated decisio
     stable_promotion: {
       status: "approved",
       maintainer_e2e_status: "complete",
+      maintainer_e2e_evidence: {
+        approved_permission: "docs/maintainers/stable-e2e-evidence.md",
+        claude_plugin: "docs/maintainers/stable-e2e-evidence.md",
+        codex_plugin: "docs/maintainers/stable-e2e-evidence.md",
+        denied_permission: "docs/maintainers/stable-e2e-evidence.md",
+        direct_cli: "docs/maintainers/stable-e2e-evidence.md",
+      },
       approved_tag: "v0.3.0",
     },
     p1_discovery: "allowed",
@@ -1190,6 +1198,10 @@ test("a reviewed Stable promotion remains distinct from the P0 Validated decisio
     assert.notEqual(updated, content, `${document.path} must contain the Experimental claim`);
     await writeFile(documentPath, updated);
   }
+  await writeFile(
+    path.join(fixture, "docs/maintainers/stable-e2e-evidence.md"),
+    "# Stable E2E evidence\n\nAll required journeys completed.\n",
+  );
   await Promise.all([
     writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`),
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
