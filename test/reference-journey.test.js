@@ -53,14 +53,26 @@ const adapters = [
 ];
 
 const directJourney = {
-  schema_version: "launchrally.dev/reference-journey/v2",
+  schema_version: "launchrally.dev/reference-journey/v3",
+  compatibility: {
+    launcher: {
+      supported_versions: ["0.2.2", "0.3.0"],
+    },
+    engine: {
+      supported_versions: ["0.2.2", "0.3.0"],
+    },
+  },
   cli: {
     package: "@launchrally/cli",
     version: "0.2.2",
     contract: "launchrally.dev/cli/v2",
   },
   invocations: [
-    ["version", ["--version", "--json"], ["version", "completed"]],
+    [
+      "version",
+      ["--version", "--json", "--cwd", "{repository_root}"],
+      ["version", "completed"],
+    ],
     [
       "audit_input",
       ["audit", "--json", "--cwd", "{repository_root}"],
@@ -113,6 +125,11 @@ const directJourney = {
         "--confirm", "confirm",
       ],
       ["init", "completed"],
+    ],
+    [
+      "project_version",
+      ["--version", "--json", "--cwd", "{repository_root}"],
+      ["version", "completed"],
     ],
     [
       "plan_refresh",
@@ -175,7 +192,9 @@ const directJourney = {
     ],
   ].map(([id, args, [operation, status]]) => ({
     id,
-    ...(id === "init_registry_permission"
+    ...(id === "project_version"
+      ? { guard: { kind: "after_initialized", intent: "verify_project_delegation" } }
+      : id === "init_registry_permission"
       ? { guard: { kind: "when_registry_permission_requested", intent: "resolve_toolchain" } }
       : id.startsWith("init_")
       ? { guard: { kind: "optional", intent: "initialize_project" } }
@@ -190,7 +209,19 @@ const directJourney = {
         }
         : {}),
     arguments: args,
-    expect: { operation, status },
+    expect: {
+      operation,
+      status,
+      ...(["version", "project_version"].includes(id)
+        ? {
+          authority_schema: "launchrally.dev/execution-authority/v1",
+          authority_state: "ready",
+          ...(id === "version"
+            ? { authority_sources: ["launcher", "project_toolchain"] }
+            : { authority_source: "project_toolchain" }),
+        }
+        : {}),
+    },
   })),
 };
 
@@ -434,6 +465,30 @@ async function executeReferenceJourney(
         `${id} interaction schema`,
       );
     }
+    if (invocation.expect.authority_schema) {
+      assert.equal(
+        result.authority?.schema_version,
+        invocation.expect.authority_schema,
+        `${id} authority schema`,
+      );
+      assert.equal(
+        result.authority?.state,
+        invocation.expect.authority_state,
+        `${id} authority state`,
+      );
+      if (invocation.expect.authority_sources) {
+        assert.ok(
+          invocation.expect.authority_sources.includes(result.authority?.source),
+          `${id} authority source`,
+        );
+      } else {
+        assert.equal(
+          result.authority?.source,
+          invocation.expect.authority_source,
+          `${id} authority source`,
+        );
+      }
+    }
     operations.push(result.operation);
     return result;
   };
@@ -444,7 +499,19 @@ async function executeReferenceJourney(
 
   try {
     const version = await invoke("version");
-    assert.equal(version.cli_version, journey.cli.version, "version cli_version");
+    assert.equal(
+      version.cli_version,
+      version.authority.engine.version,
+      "version selected Engine",
+    );
+    assert.ok(
+      journey.compatibility.engine.supported_versions.includes(version.cli_version),
+      "version selected Engine is supported",
+    );
+    assert.ok(
+      journey.compatibility.launcher.supported_versions.includes(version.launcher_version),
+      "version Launcher is supported",
+    );
 
     const auditInput = await invoke("audit_input");
     values.audit_resume = auditInput.interaction.resume_token;
@@ -489,6 +556,11 @@ async function executeReferenceJourney(
       values.init_resume = initPreview.interaction.resume_token;
       init = await invoke("init_completed");
       initStates.push(init.status);
+      requireGuard("project_version", {
+        kind: "after_initialized",
+        intent: "verify_project_delegation",
+      });
+      await invoke("project_version");
       requireGuard("plan_refresh", {
         kind: "when_source_non_current",
         intent: "refresh_report",
@@ -640,6 +712,7 @@ test("native adapters ship the canonical Reference Journey for the exact CLI ver
       "init_preview",
       "init_registry_permission",
       "init_completed",
+      "project_version",
       "plan_refresh",
       "refresh_permission",
       "refresh_completed",
@@ -649,6 +722,15 @@ test("native adapters ship the canonical Reference Journey for the exact CLI ver
       "verify_completed",
     ],
   );
+  assert.deepEqual(journeyContract.coverage, [
+    "installation_verification",
+    "first_audit",
+    "init_materialization",
+    "project_delegation",
+    "read_only_plan",
+    "explicit_handoff",
+    "final_full_verify",
+  ]);
   const invocationById = new Map(
     journeyContract.invocations.map((invocation) => [invocation.id, invocation]),
   );
@@ -683,6 +765,28 @@ test("native adapters ship the canonical Reference Journey for the exact CLI ver
   assert.deepEqual(invocationById.get("init_registry_permission").guard, {
     kind: "when_registry_permission_requested",
     intent: "resolve_toolchain",
+  });
+  assert.deepEqual(invocationById.get("version").expect, {
+    operation: "version",
+    status: "completed",
+    authority_schema: "launchrally.dev/execution-authority/v1",
+    authority_state: "ready",
+    authority_sources: ["launcher", "project_toolchain"],
+  });
+  assert.deepEqual(invocationById.get("project_version"), {
+    id: "project_version",
+    guard: {
+      kind: "after_initialized",
+      intent: "verify_project_delegation",
+    },
+    arguments: ["--version", "--json", "--cwd", "{repository_root}"],
+    expect: {
+      operation: "version",
+      status: "completed",
+      authority_schema: "launchrally.dev/execution-authority/v1",
+      authority_state: "ready",
+      authority_source: "project_toolchain",
+    },
   });
   assert.deepEqual(invocationById.get("handoff").guard, {
     kind: "requires_explicit_user_request",
@@ -720,6 +824,211 @@ test("native adapters ship the canonical Reference Journey for the exact CLI ver
   );
   assert.match(codexMetadata, /allow_implicit_invocation: false/u);
   assert.match(claudeSkill, /disable-model-invocation: true/u);
+});
+
+test("the canonical Skill declares Launcher compatibility and typed authority lifecycle routing", async () => {
+  const cliPackage = await json("packages/cli/package.json");
+  const journey = await json(
+    "skills/launchrally/references/reference-journey.json",
+  );
+  const skill = await readFile(
+    path.join(root, "skills", "launchrally", "SKILL.md"),
+    "utf8",
+  );
+  const contract = await readFile(
+    path.join(root, "skills", "launchrally", "references", "cli-contract.md"),
+    "utf8",
+  );
+
+  assert.equal(journey.schema_version, "launchrally.dev/reference-journey/v3");
+  assert.deepEqual(journey.compatibility, {
+    plugin: {
+      version: cliPackage.version,
+      role: "interaction_only",
+    },
+    launcher: {
+      package: "@launchrally/cli",
+      supported_versions: [cliPackage.version, "0.3.0"],
+    },
+    execution_authority: {
+      supported_contracts: ["launchrally.dev/execution-authority/v1"],
+    },
+    engine: {
+      package: "@launchrally/cli",
+      supported_versions: [cliPackage.version, "0.3.0"],
+      authority_contracts: ["launchrally.dev/execution-authority/v1"],
+      interaction_contracts: ["launchrally.dev/cli/v2"],
+    },
+    legacy: [{
+      engine_version: "0.2.2",
+      authority_descriptor: "absent",
+      compatibility: "legacy_adapter",
+    }],
+  });
+  assert.notEqual(
+    journey.compatibility.plugin.version,
+    journey.compatibility.launcher.supported_versions.at(-1),
+    "a supported Plugin/Launcher mismatch is representable",
+  );
+  assert.notEqual(
+    journey.compatibility.plugin.version,
+    journey.compatibility.engine.supported_versions.at(-1),
+    "a supported Plugin/Engine mismatch is representable",
+  );
+  assert.deepEqual(journey.launcher_prerequisite, {
+    executable: "rally",
+    installation: {
+      owner: "user",
+      executable: "npm",
+      arguments: [
+        "install",
+        "--global",
+        `@launchrally/cli@${cliPackage.version}`,
+      ],
+    },
+    verification: {
+      arguments: ["--version", "--json", "--cwd", "{repository_root}"],
+    },
+    missing_action: "stop_before_audit",
+  });
+  assert.deepEqual(journey.authority_router, {
+    ready: {
+      action: "follow_selected_engine",
+    },
+    needs_toolchain_restore: {
+      action: "request_explicit_user_approval",
+      operation: "toolchain_restore",
+    },
+    needs_toolchain_migration: {
+      action: "request_explicit_user_approval",
+      operation: "toolchain_migrate",
+    },
+    invalid_toolchain: {
+      action: "stop",
+      operation: "inspect_toolchain",
+    },
+  });
+  assert.deepEqual(
+    journey.lifecycle_invocations.map(({ id, guard }) => [id, guard]),
+    [
+      ["toolchain_status", {
+        kind: "when_authority_not_ready_or_user_requests",
+      }],
+      ["toolchain_restore", {
+        kind: "requires_explicit_user_approval",
+        intent: "restore_exact_project_pin",
+      }],
+      ["toolchain_restore_permission", {
+        kind: "when_registry_permission_requested",
+        intent: "restore_exact_project_pin",
+      }],
+      ["toolchain_migrate", {
+        kind: "requires_explicit_user_approval",
+        intent: "change_project_pin",
+      }],
+      ["toolchain_migrate_permission", {
+        kind: "when_registry_permission_requested",
+        intent: "change_project_pin",
+      }],
+      ["toolchain_migrate_confirmation", {
+        kind: "when_migration_confirmation_requested",
+        intent: "change_project_pin",
+      }],
+      ["toolchain_clean", {
+        kind: "requires_explicit_user_approval",
+        intent: "remove_rebuildable_materialization",
+      }],
+    ],
+  );
+  const lifecycleById = new Map(
+    journey.lifecycle_invocations.map((invocation) => [invocation.id, invocation]),
+  );
+  assert.deepEqual(lifecycleById.get("toolchain_status").arguments, [
+    "toolchain", "status", "--json", "--cwd", "{repository_root}",
+  ]);
+  assert.deepEqual(lifecycleById.get("toolchain_restore").arguments, [
+    "toolchain", "restore", "--json", "--cwd", "{repository_root}",
+  ]);
+  assert.deepEqual(lifecycleById.get("toolchain_restore_permission").arguments, [
+    "toolchain", "restore", "--json", "--cwd", "{repository_root}",
+    "--resume", "{toolchain_resume}", "--permissions", "{toolchain_permissions_json}",
+  ]);
+  assert.deepEqual(lifecycleById.get("toolchain_migrate").arguments, [
+    "toolchain", "migrate", "--to", "{target_engine_version}",
+    "--json", "--cwd", "{repository_root}",
+  ]);
+  assert.deepEqual(lifecycleById.get("toolchain_migrate_permission").arguments, [
+    "toolchain", "migrate", "--to", "{target_engine_version}",
+    "--json", "--cwd", "{repository_root}", "--resume", "{toolchain_resume}",
+    "--permissions", "{toolchain_permissions_json}",
+  ]);
+  assert.deepEqual(lifecycleById.get("toolchain_migrate_confirmation").arguments, [
+    "toolchain", "migrate", "--to", "{target_engine_version}",
+    "--json", "--cwd", "{repository_root}", "--resume", "{toolchain_resume}",
+    "--confirm", "confirm",
+  ]);
+  assert.deepEqual(lifecycleById.get("toolchain_clean").arguments, [
+    "toolchain", "clean", "--json", "--cwd", "{repository_root}",
+  ]);
+  assert.deepEqual(
+    journey.lifecycle_invocations.map(({ expect }) => expect),
+    [
+      {
+        contract: "launchrally.dev/toolchain-lifecycle/v1",
+        operation: "toolchain_status",
+        status: ["completed", "unavailable", "execution_error"],
+      },
+      {
+        contract: "launchrally.dev/toolchain-lifecycle/v1",
+        operation: "toolchain_restore",
+        status: ["completed", "needs_permission", "unavailable", "execution_error"],
+      },
+      {
+        contract: "launchrally.dev/toolchain-lifecycle/v1",
+        operation: "toolchain_restore",
+        status: "completed",
+      },
+      {
+        contract: "launchrally.dev/toolchain-lifecycle/v1",
+        operation: "toolchain_migrate",
+        status: [
+          "completed",
+          "needs_permission",
+          "needs_confirmation",
+          "unavailable",
+          "execution_error",
+        ],
+      },
+      {
+        contract: "launchrally.dev/toolchain-lifecycle/v1",
+        operation: "toolchain_migrate",
+        status: "needs_confirmation",
+      },
+      {
+        contract: "launchrally.dev/toolchain-lifecycle/v1",
+        operation: "toolchain_migrate",
+        status: "completed",
+      },
+      {
+        contract: "launchrally.dev/toolchain-lifecycle/v1",
+        operation: "toolchain_clean",
+        status: ["completed", "unavailable", "execution_error"],
+      },
+    ],
+  );
+
+  assert.match(skill, /CLI installation.*Plugin installation/su);
+  assert.match(skill, /npm install --global @launchrally\/cli@/u);
+  assert.match(skill, /stop before Audit/u);
+  assert.match(contract, /Plugin version.*Launcher version.*selected Engine version.*project pin/su);
+  assert.match(contract, /Do not require these versions to be equal/u);
+  assert.match(contract, /unknown.*version.*stop/isu);
+  assert.match(contract, /launchrally\.dev\/execution-authority\/v1/u);
+  assert.match(contract, /needs_toolchain_restore.*explicit user approval/su);
+  assert.match(contract, /needs_toolchain_migration.*explicit user approval/su);
+  assert.match(contract, /invalid_toolchain.*stop/su);
+  assert.match(contract, /path escape|unsafe_project_path/u);
+  assert.match(contract, /malformed structured output/u);
 });
 
 test("the canonical Skill routes every structured CLI interaction state without prose parsing", async () => {

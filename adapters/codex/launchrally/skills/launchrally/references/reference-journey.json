@@ -1,5 +1,60 @@
 {
-  "schema_version": "launchrally.dev/reference-journey/v2",
+  "schema_version": "launchrally.dev/reference-journey/v3",
+  "compatibility": {
+    "plugin": {
+      "version": "0.2.2",
+      "role": "interaction_only"
+    },
+    "launcher": {
+      "package": "@launchrally/cli",
+      "supported_versions": ["0.2.2", "0.3.0"]
+    },
+    "execution_authority": {
+      "supported_contracts": ["launchrally.dev/execution-authority/v1"]
+    },
+    "engine": {
+      "package": "@launchrally/cli",
+      "supported_versions": ["0.2.2", "0.3.0"],
+      "authority_contracts": ["launchrally.dev/execution-authority/v1"],
+      "interaction_contracts": ["launchrally.dev/cli/v2"]
+    },
+    "legacy": [
+      {
+        "engine_version": "0.2.2",
+        "authority_descriptor": "absent",
+        "compatibility": "legacy_adapter"
+      }
+    ]
+  },
+  "launcher_prerequisite": {
+    "executable": "rally",
+    "installation": {
+      "owner": "user",
+      "executable": "npm",
+      "arguments": ["install", "--global", "@launchrally/cli@0.2.2"]
+    },
+    "verification": {
+      "arguments": ["--version", "--json", "--cwd", "{repository_root}"]
+    },
+    "missing_action": "stop_before_audit"
+  },
+  "authority_router": {
+    "ready": {
+      "action": "follow_selected_engine"
+    },
+    "needs_toolchain_restore": {
+      "action": "request_explicit_user_approval",
+      "operation": "toolchain_restore"
+    },
+    "needs_toolchain_migration": {
+      "action": "request_explicit_user_approval",
+      "operation": "toolchain_migrate"
+    },
+    "invalid_toolchain": {
+      "action": "stop",
+      "operation": "inspect_toolchain"
+    }
+  },
   "cli": {
     "package": "@launchrally/cli",
     "version": "0.2.2",
@@ -8,8 +63,14 @@
   "invocations": [
     {
       "id": "version",
-      "arguments": ["--version", "--json"],
-      "expect": { "operation": "version", "status": "completed" }
+      "arguments": ["--version", "--json", "--cwd", "{repository_root}"],
+      "expect": {
+        "operation": "version",
+        "status": "completed",
+        "authority_schema": "launchrally.dev/execution-authority/v1",
+        "authority_state": "ready",
+        "authority_sources": ["launcher", "project_toolchain"]
+      }
     },
     {
       "id": "audit_input",
@@ -68,6 +129,21 @@
       "guard": { "kind": "optional", "intent": "initialize_project" },
       "arguments": ["init", "--json", "--cwd", "{repository_root}", "--resume", "{init_resume}", "--confirm", "confirm"],
       "expect": { "operation": "init", "status": "completed" }
+    },
+    {
+      "id": "project_version",
+      "guard": {
+        "kind": "after_initialized",
+        "intent": "verify_project_delegation"
+      },
+      "arguments": ["--version", "--json", "--cwd", "{repository_root}"],
+      "expect": {
+        "operation": "version",
+        "status": "completed",
+        "authority_schema": "launchrally.dev/execution-authority/v1",
+        "authority_state": "ready",
+        "authority_source": "project_toolchain"
+      }
     },
     {
       "id": "plan_refresh",
@@ -135,6 +211,105 @@
         "schema_version": "launchrally.dev/verification-result/v2"
       }
     }
+  ],
+  "lifecycle_invocations": [
+    {
+      "id": "toolchain_status",
+      "guard": { "kind": "when_authority_not_ready_or_user_requests" },
+      "arguments": ["toolchain", "status", "--json", "--cwd", "{repository_root}"],
+      "expect": {
+        "contract": "launchrally.dev/toolchain-lifecycle/v1",
+        "operation": "toolchain_status",
+        "status": ["completed", "unavailable", "execution_error"]
+      }
+    },
+    {
+      "id": "toolchain_restore",
+      "guard": {
+        "kind": "requires_explicit_user_approval",
+        "intent": "restore_exact_project_pin"
+      },
+      "arguments": ["toolchain", "restore", "--json", "--cwd", "{repository_root}"],
+      "expect": {
+        "contract": "launchrally.dev/toolchain-lifecycle/v1",
+        "operation": "toolchain_restore",
+        "status": ["completed", "needs_permission", "unavailable", "execution_error"]
+      }
+    },
+    {
+      "id": "toolchain_restore_permission",
+      "guard": {
+        "kind": "when_registry_permission_requested",
+        "intent": "restore_exact_project_pin"
+      },
+      "arguments": ["toolchain", "restore", "--json", "--cwd", "{repository_root}", "--resume", "{toolchain_resume}", "--permissions", "{toolchain_permissions_json}"],
+      "expect": {
+        "contract": "launchrally.dev/toolchain-lifecycle/v1",
+        "operation": "toolchain_restore",
+        "status": "completed"
+      }
+    },
+    {
+      "id": "toolchain_migrate",
+      "guard": {
+        "kind": "requires_explicit_user_approval",
+        "intent": "change_project_pin"
+      },
+      "arguments": ["toolchain", "migrate", "--to", "{target_engine_version}", "--json", "--cwd", "{repository_root}"],
+      "expect": {
+        "contract": "launchrally.dev/toolchain-lifecycle/v1",
+        "operation": "toolchain_migrate",
+        "status": ["completed", "needs_permission", "needs_confirmation", "unavailable", "execution_error"]
+      }
+    },
+    {
+      "id": "toolchain_migrate_permission",
+      "guard": {
+        "kind": "when_registry_permission_requested",
+        "intent": "change_project_pin"
+      },
+      "arguments": ["toolchain", "migrate", "--to", "{target_engine_version}", "--json", "--cwd", "{repository_root}", "--resume", "{toolchain_resume}", "--permissions", "{toolchain_permissions_json}"],
+      "expect": {
+        "contract": "launchrally.dev/toolchain-lifecycle/v1",
+        "operation": "toolchain_migrate",
+        "status": "needs_confirmation"
+      }
+    },
+    {
+      "id": "toolchain_migrate_confirmation",
+      "guard": {
+        "kind": "when_migration_confirmation_requested",
+        "intent": "change_project_pin"
+      },
+      "arguments": ["toolchain", "migrate", "--to", "{target_engine_version}", "--json", "--cwd", "{repository_root}", "--resume", "{toolchain_resume}", "--confirm", "confirm"],
+      "expect": {
+        "contract": "launchrally.dev/toolchain-lifecycle/v1",
+        "operation": "toolchain_migrate",
+        "status": "completed"
+      }
+    },
+    {
+      "id": "toolchain_clean",
+      "guard": {
+        "kind": "requires_explicit_user_approval",
+        "intent": "remove_rebuildable_materialization"
+      },
+      "arguments": ["toolchain", "clean", "--json", "--cwd", "{repository_root}"],
+      "expect": {
+        "contract": "launchrally.dev/toolchain-lifecycle/v1",
+        "operation": "toolchain_clean",
+        "status": ["completed", "unavailable", "execution_error"]
+      }
+    }
+  ],
+  "coverage": [
+    "installation_verification",
+    "first_audit",
+    "init_materialization",
+    "project_delegation",
+    "read_only_plan",
+    "explicit_handoff",
+    "final_full_verify"
   ],
   "account_required": false,
   "private_service_required": false
