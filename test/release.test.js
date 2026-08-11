@@ -257,14 +257,29 @@ test("npm release packages are public, provenance-enabled, and file-allowlisted"
 });
 
 test("CI and release verification exercise the exact CLI Node runtime floor", async () => {
-  const [ci, release, installGuide] = await Promise.all([
+  const [ci, release, installGuide, packageJson] = await Promise.all([
     readFile(path.join(root, ".github/workflows/ci.yml"), "utf8"),
     readFile(path.join(root, ".github/workflows/release.yml"), "utf8"),
     readFile(path.join(root, "docs/getting-started/install.md"), "utf8"),
+    readFile(path.join(root, "package.json"), "utf8").then(JSON.parse),
   ]);
   assert.match(ci, /node: \[20\.12\.0, 22, 24\]/u);
   assert.match(release, /node: \[20\.12\.0, 22, 24\]/u);
   assert.match(installGuide, /Node\.js 20\.12\.0 or newer/u);
+  assert.match(packageJson.scripts["test:contracts"], /npm run test:authority-contracts/u);
+  const contractMatrix = [
+    packageJson.scripts["test:contracts"],
+    packageJson.scripts["test:authority-contracts"],
+  ].join(" ");
+  for (const testPath of [
+    "test/execution-authority.test.js",
+    "test/invocation-context.test.js",
+    "test/launcher.test.js",
+    "test/toolchain-lifecycle.test.js",
+  ]) {
+    assert.match(contractMatrix, new RegExp(testPath.replace(".", "\\.")));
+    assert.match(packageJson.scripts["test:journeys"], new RegExp(testPath.replace(".", "\\.")));
+  }
 });
 
 test("the default first Audit uses an exact user-managed Launcher with npm-exec as fallback", async () => {
@@ -352,6 +367,29 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
       command: "npm",
       arguments: ["audit", "signatures", "--json", "--include-attestations"],
     },
+    invocation_journeys: {
+      npm_exec: {
+        command: "npm",
+        arguments: [
+          "exec",
+          "--package=@launchrally/cli@0.3.0",
+          "--",
+          "rally",
+        ],
+      },
+      user_prefix: {
+        install: {
+          command: "npm",
+          arguments: [
+            "install",
+            "--global",
+            "--ignore-scripts",
+            "@launchrally/cli@0.3.0",
+          ],
+        },
+        verification: ["--version", "--json"],
+      },
+    },
     cli_smoke: true,
     native_plugins: {
       claude: {
@@ -399,6 +437,38 @@ test("public tarballs install together and smoke-test the CLI in a clean project
         "react-go-split",
       ],
     },
+    installation_journeys: {
+      no_launcher: "confirmed",
+      npm_exec: "artifact_equivalent",
+      user_prefix: "installed_and_verified",
+      project_engine: "initialized_and_delegated",
+      fresh_clone: "restored_offline",
+      full_journey: "plan_handoff_verify_completed",
+      packaged_skills: "codex_and_claude_reference_executed",
+      launcher_removal: "project_data_preserved",
+      plugin_removal: "skipped",
+      fixture_invocations: [
+        "version",
+        "audit_input",
+        "audit_confirmation",
+        "audit_permission",
+        "audit_completed",
+        "init_preview",
+        "init_completed",
+        "project_version",
+        "toolchain_clean",
+        "toolchain_status",
+        "toolchain_restore",
+        "project_version",
+        "plan_refresh",
+        "refresh_permission",
+        "refresh_completed",
+        "plan",
+        "handoff",
+        "verify_permission",
+        "verify_completed",
+      ],
+    },
     native_plugins: "skipped",
   });
 });
@@ -415,6 +485,10 @@ test("packed Plugin adapters pass their native host validation", async () => {
     claude: "strictly_validated",
     codex: "installed_and_removed",
   });
+  assert.equal(
+    result.installation_journeys.plugin_removal,
+    "project_data_preserved",
+  );
 });
 
 test("Codex and Claude marketplaces resolve their native Plugin adapters", async () => {

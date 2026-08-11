@@ -84,6 +84,7 @@ async function packArtifacts(temporaryRoot, release) {
   const cacheDirectory = path.join(temporaryRoot, "npm-cache");
   await mkdir(packDirectory, { recursive: true });
   const tarballs = [];
+  const packageTarballs = {};
 
   for (const artifact of release.packages) {
     const { stdout } = await runNpm([
@@ -106,7 +107,9 @@ async function packArtifacts(temporaryRoot, release) {
       "undeclared_artifact_file",
       `${artifact.name} packed files differ from release/artifacts.json`,
     );
-    tarballs.push(path.join(packDirectory, packed.filename));
+    const tarball = path.join(packDirectory, packed.filename);
+    tarballs.push(tarball);
+    packageTarballs[artifact.name] = tarball;
   }
 
   for (const [packageName, version] of Object.entries(consumerRuntimePackages)) {
@@ -126,10 +129,332 @@ async function packArtifacts(temporaryRoot, release) {
         `consumer_runtime_dependency_drift: ${packageName} packed as ${packed.name}@${packed.version}; expected ${version}`,
       );
     }
-    tarballs.push(path.join(packDirectory, packed.filename));
+    const tarball = path.join(packDirectory, packed.filename);
+    tarballs.push(tarball);
+    packageTarballs[packageName] = tarball;
   }
 
-  return { cacheDirectory, tarballs };
+  return { cacheDirectory, packageTarballs, tarballs };
+}
+
+function prefixExecutable(prefix) {
+  return process.platform === "win32"
+    ? path.join(prefix, "rally.cmd")
+    : path.join(prefix, "bin", "rally");
+}
+
+async function invokeLauncher(executable, arguments_, options) {
+  return process.platform === "win32"
+    ? run(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", executable, ...arguments_], options)
+    : run(executable, arguments_, options);
+}
+
+function fixtureArguments(journey, id, replacements = {}) {
+  const invocation = [...journey.invocations, ...journey.lifecycle_invocations]
+    .find((candidate) => candidate.id === id);
+  if (!invocation) throw new Error(`missing_reference_journey_invocation: ${id}`);
+  return invocation.arguments.map((argument) => replacements[argument] ?? argument);
+}
+
+async function assertMissing(filePath, code) {
+  try {
+    await access(filePath);
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+  throw new Error(`${code}: ${filePath} exists unexpectedly`);
+}
+
+async function runInstallationJourneys({
+  temporaryRoot,
+  cleanProject,
+  version,
+  cacheDirectory,
+  packageTarballs,
+  publicRelease,
+}) {
+  const prefix = path.join(temporaryRoot, "user-npm-prefix");
+  const launcher = prefixExecutable(prefix);
+  await assertMissing(launcher, "isolated_prefix_not_clean");
+
+  const cliTarballs = [
+    packageTarballs?.["@launchrally/contracts"],
+    packageTarballs?.["@launchrally/core"],
+    packageTarballs?.["@launchrally/cli"],
+    ...Object.keys(consumerRuntimePackages).map((name) => packageTarballs?.[name]),
+  ].filter(Boolean);
+  const npmExecArguments = publicRelease
+    ? ["exec", `--package=@launchrally/cli@${version}`, "--", "rally"]
+    : [
+      "exec",
+      "--offline",
+      "--cache",
+      cacheDirectory,
+      ...cliTarballs.map((tarball) => `--package=${tarball}`),
+      "--",
+      "rally",
+    ];
+  const npmExecVersion = JSON.parse((await runNpm(
+    [...npmExecArguments, "--version", "--json"],
+    { cwd: temporaryRoot },
+  )).stdout);
+  if (npmExecVersion.cli_version !== version) {
+    throw new Error("npm_exec_artifact_version_drift");
+  }
+
+  const globalPackageSpecs = publicRelease
+    ? [`@launchrally/cli@${version}`]
+    : cliTarballs;
+  const globalInstallArguments = [
+    "install",
+    "--global",
+    "--prefix",
+    prefix,
+    "--ignore-scripts",
+    "--no-audit",
+    "--no-fund",
+    ...(publicRelease ? [] : ["--offline", "--cache", cacheDirectory]),
+    ...globalPackageSpecs,
+  ];
+  await runNpm(globalInstallArguments, { cwd: temporaryRoot });
+  await access(launcher);
+
+  const packagedJourneyPath = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "codex-plugin",
+    "skills",
+    "launchrally",
+    "references",
+    "reference-journey.json",
+  );
+  const claudeJourneyPath = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "claude-plugin",
+    "skills",
+    "launchrally",
+    "references",
+    "reference-journey.json",
+  );
+  const [journey, claudeJourney] = await Promise.all([
+    json(packagedJourneyPath),
+    json(claudeJourneyPath),
+  ]);
+  assertEqual(
+    claudeJourney,
+    journey,
+    "packaged_skill_journey_drift",
+    "Codex and Claude packaged Skills must ship the same reference journey",
+  );
+  assertEqual(
+    journey.launcher_prerequisite,
+    {
+      executable: "rally",
+      installation: {
+        owner: "user",
+        executable: "npm",
+        arguments: ["install", "--global", `@launchrally/cli@${version}`],
+      },
+      verification: {
+        arguments: ["--version", "--json", "--cwd", "{repository_root}"],
+      },
+      missing_action: "stop_before_audit",
+    },
+    "packaged_skill_launcher_prerequisite_drift",
+    "Packaged Skills must stop before Audit and render the exact user-managed Launcher prerequisite",
+  );
+
+  const repository = path.join(temporaryRoot, "installation journey ü space");
+  await cp(
+    path.join(root, "fixtures", "coverage", "typescript-astro"),
+    repository,
+    { recursive: true },
+  );
+  const npmStub = await createArtifactNpmStub(temporaryRoot, cleanProject, version);
+  const launcherEnvironment = {
+    ...process.env,
+    PATH: [npmStub, path.dirname(launcher), process.env.PATH ?? ""].join(path.delimiter),
+  };
+  let activeRepository = repository;
+  const invoke = async (id, replacements = {}) => {
+    const arguments_ = fixtureArguments(journey, id, {
+      "{repository_root}": activeRepository,
+      ...replacements,
+    });
+    try {
+      const result = await invokeLauncher(launcher, arguments_, {
+        cwd: temporaryRoot,
+        env: launcherEnvironment,
+      });
+      return JSON.parse(result.stdout);
+    } catch (error) {
+      if (typeof error.stdout !== "string" || error.stdout.trim() === "") throw error;
+      return JSON.parse(error.stdout);
+    }
+  };
+  const fixtureInvocations = [];
+  const invokeFixture = async (id, replacements) => {
+    const result = await invoke(id, replacements);
+    fixtureInvocations.push(id);
+    return result;
+  };
+
+  const versionResult = await invokeFixture("version");
+  if (
+    versionResult.status !== "completed"
+    || versionResult.cli_version !== version
+    || versionResult.authority?.source !== "launcher"
+  ) throw new Error("isolated_prefix_version_verification_failed");
+
+  const auditInput = await invokeFixture("audit_input");
+  const answers = JSON.stringify({
+    intended_environment: "production",
+    production_targets: ["https://example.com"],
+    core_journeys: [{ method: "GET", path: "/", purpose: "artifact journey" }],
+    provider_roles: [],
+    support_layers: [],
+  });
+  const auditConfirmation = await invokeFixture("audit_confirmation", {
+    "{audit_resume}": auditInput.interaction.resume_token,
+    "{answers_json}": answers,
+  });
+  const auditPermission = await invokeFixture("audit_permission", {
+    "{audit_resume}": auditConfirmation.interaction.resume_token,
+  });
+  const permissions = JSON.stringify({ public_verification: "denied" });
+  const auditCompleted = await invokeFixture("audit_completed", {
+    "{audit_resume}": auditPermission.interaction.resume_token,
+    "{permissions_json}": permissions,
+  });
+  if (auditCompleted.status !== "completed" || !auditCompleted.report) {
+    throw new Error("installation_journey_audit_failed");
+  }
+  const reportPath = path.join(temporaryRoot, "installation-journey-report.json");
+  await writeFile(reportPath, JSON.stringify(auditCompleted));
+
+  const initPreview = await invokeFixture("init_preview", {
+    "{manifest_source_report_path}": reportPath,
+  });
+  if (initPreview.status !== "needs_confirmation") {
+    throw new Error(`installation_journey_init_preview_failed: ${initPreview.status}`);
+  }
+  const initialized = await invokeFixture("init_completed", {
+    "{init_resume}": initPreview.interaction.resume_token,
+  });
+  if (initialized.status !== "completed") {
+    throw new Error("installation_journey_init_failed");
+  }
+  const projectVersion = await invokeFixture("project_version");
+  if (
+    projectVersion.status !== "completed"
+    || projectVersion.cli_version !== version
+    || projectVersion.authority?.source !== "project_toolchain"
+  ) throw new Error("project_engine_delegation_failed");
+
+  const manifestContent = await readFile(
+    path.join(activeRepository, ".launchrally", "manifest.yaml"),
+    "utf8",
+  );
+  const cleaned = await invokeFixture("toolchain_clean");
+  if (
+    cleaned.status !== "completed"
+    || cleaned.authority?.state !== "needs_toolchain_restore"
+  ) throw new Error("artifact_toolchain_clean_failed");
+
+  const freshClone = path.join(temporaryRoot, "fresh clone ü restored");
+  await cp(activeRepository, freshClone, { recursive: true });
+  activeRepository = freshClone;
+  const missingStatus = await invokeFixture("toolchain_status");
+  if (
+    missingStatus.status !== "unavailable"
+    || missingStatus.error !== "needs_toolchain_restore"
+  ) throw new Error("fresh_clone_missing_materialization_not_detected");
+  const restored = await invokeFixture("toolchain_restore");
+  if (restored.status !== "completed" || restored.authority?.state !== "ready") {
+    throw new Error(`fresh_clone_offline_restore_failed: ${restored.status}`);
+  }
+  const restoredVersion = await invokeFixture("project_version");
+  if (
+    restoredVersion.status !== "completed"
+    || restoredVersion.authority?.source !== "project_toolchain"
+  ) throw new Error("restored_project_engine_delegation_failed");
+  assertEqual(
+    await readFile(path.join(activeRepository, ".launchrally", "manifest.yaml"), "utf8"),
+    manifestContent,
+    "fresh_clone_manifest_drift",
+    "clean and restore must preserve the project Manifest byte-for-byte",
+  );
+
+  const planRefresh = await invokeFixture("plan_refresh", {
+    "{current_report_path}": reportPath,
+  });
+  if (planRefresh.status !== "needs_refresh") {
+    throw new Error("installation_journey_stale_plan_not_detected");
+  }
+  const refreshPermission = await invokeFixture("refresh_permission", {
+    "{manifest_source_report_path}": reportPath,
+  });
+  const refreshed = await invokeFixture("refresh_completed", {
+    "{refresh_resume}": refreshPermission.interaction.resume_token,
+    "{permissions_json}": permissions,
+  });
+  if (refreshed.status !== "completed") {
+    throw new Error("installation_journey_refresh_failed");
+  }
+  const currentReportPath = path.join(temporaryRoot, "installation-journey-current.json");
+  await writeFile(currentReportPath, JSON.stringify(refreshed));
+  const plan = await invokeFixture("plan", {
+    "{current_report_path}": currentReportPath,
+  });
+  const handoff = await invokeFixture("handoff", {
+    "{current_report_path}": currentReportPath,
+  });
+  if (plan.status !== "completed" || handoff.status !== "completed") {
+    throw new Error("installation_journey_plan_handoff_failed");
+  }
+  const verifyPermission = await invokeFixture("verify_permission", {
+    "{manifest_source_report_path}": reportPath,
+  });
+  const verified = await invokeFixture("verify_completed", {
+    "{verify_resume}": verifyPermission.interaction.resume_token,
+    "{permissions_json}": permissions,
+  });
+  if (verified.status !== "completed" || !verified.report) {
+    throw new Error("installation_journey_full_verify_failed");
+  }
+
+  const projectData = path.join(activeRepository, ".launchrally");
+  await access(path.join(projectData, "manifest.yaml"));
+  await runNpm([
+    "uninstall",
+    "--global",
+    "--prefix",
+    prefix,
+    "--ignore-scripts",
+    "@launchrally/cli",
+  ], { cwd: temporaryRoot });
+  await assertMissing(launcher, "launcher_removal_failed");
+  await access(path.join(projectData, "manifest.yaml"));
+  await access(path.join(projectData, "toolchain", "authority.json"));
+
+  return {
+    projectData,
+    result: {
+      no_launcher: "confirmed",
+      npm_exec: publicRelease ? "exact_version" : "artifact_equivalent",
+      user_prefix: "installed_and_verified",
+      project_engine: "initialized_and_delegated",
+      fresh_clone: "restored_offline",
+      full_journey: "plan_handoff_verify_completed",
+      packaged_skills: "codex_and_claude_reference_executed",
+      launcher_removal: "project_data_preserved",
+      fixture_invocations: fixtureInvocations,
+    },
+  };
 }
 
 async function smokeCli(
@@ -617,6 +942,29 @@ function publicReleasePlan(release, version) {
       command: "npm",
       arguments: ["audit", "signatures", "--json", "--include-attestations"],
     },
+    invocation_journeys: {
+      npm_exec: {
+        command: "npm",
+        arguments: [
+          "exec",
+          `--package=@launchrally/cli@${version}`,
+          "--",
+          "rally",
+        ],
+      },
+      user_prefix: {
+        install: {
+          command: "npm",
+          arguments: [
+            "install",
+            "--global",
+            "--ignore-scripts",
+            `@launchrally/cli@${version}`,
+          ],
+        },
+        verification: ["--version", "--json"],
+      },
+    },
     cli_smoke: true,
     native_plugins: {
       claude: {
@@ -681,17 +1029,21 @@ async function main() {
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "launchrally-artifacts-"));
   try {
     let installArguments;
+    let cacheDirectory;
+    let packageTarballs;
     if (publicRelease) {
       await waitForPublicRelease(release, rootPackage.version);
       installArguments = publicReleasePlan(release, rootPackage.version).install.arguments;
+      cacheDirectory = path.join(temporaryRoot, "npm-install-cache");
       installArguments.splice(
         installArguments.indexOf("--save-exact") + 1,
         0,
         "--cache",
-        path.join(temporaryRoot, "npm-install-cache"),
+        cacheDirectory,
       );
     } else {
-      const { cacheDirectory, tarballs } = await packArtifacts(temporaryRoot, release);
+      const packed = await packArtifacts(temporaryRoot, release);
+      ({ cacheDirectory, packageTarballs } = packed);
       installArguments = [
         "install",
         "--ignore-scripts",
@@ -701,7 +1053,7 @@ async function main() {
         "--save-exact",
         "--cache",
         cacheDirectory,
-        ...tarballs,
+        ...packed.tarballs,
       ];
     }
     const cliSmoke = await smokeCli(
@@ -711,6 +1063,14 @@ async function main() {
       release.packages,
       { verifyProvenance: publicRelease },
     );
+    const installationJourneys = await runInstallationJourneys({
+      temporaryRoot,
+      cleanProject: cliSmoke.cleanProject,
+      version: rootPackage.version,
+      cacheDirectory,
+      packageTarballs,
+      publicRelease,
+    });
     const nativePlugins = process.argv.includes("--skip-native")
       ? "skipped"
       : publicRelease
@@ -720,10 +1080,22 @@ async function main() {
           rootPackage.version,
         )
         : await validatePackedNativePlugins(temporaryRoot, cliSmoke.cleanProject);
+    if (nativePlugins === "skipped") {
+      installationJourneys.result.plugin_removal = "skipped";
+    } else {
+      await access(path.join(installationJourneys.projectData, "manifest.yaml"));
+      await access(path.join(
+        installationJourneys.projectData,
+        "toolchain",
+        "authority.json",
+      ));
+      installationJourneys.result.plugin_removal = "project_data_preserved";
+    }
     const result = {
       status: "completed",
       version: rootPackage.version,
       cli_smoke: cliSmoke.result,
+      installation_journeys: installationJourneys.result,
       native_plugins: nativePlugins,
     };
     return publicRelease
