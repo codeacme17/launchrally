@@ -1,6 +1,6 @@
 # Install, lifecycle, and troubleshooting
 
-LaunchRally `0.2.2` is the exact Experimental P0 release used by this guide. Experimental availability is not a stability claim or a P0 Validated decision.
+LaunchRally `0.3.0` is the exact Experimental P0 release used by this guide. Experimental availability is not a stability claim or a P0 Validated decision.
 
 ## Supported environments
 
@@ -23,7 +23,7 @@ The Launcher, Plugin, Project Toolchain, and project-owned `.launchrally` data h
 Before entering a repository, install through the current npm prefix and verify structured version output:
 
 ```bash
-npm install --global @launchrally/cli@0.2.2
+npm install --global @launchrally/cli@0.3.0
 rally --version --json
 ```
 
@@ -58,9 +58,9 @@ After Init, `rally --version --json --cwd .` must report `authority.state: "read
 Exact-version npm-exec is a no-install trial and CI fallback. It is useful in disposable evaluation or CI environments, but it is not the default interactive or Agent prerequisite. Because the process is ephemeral, every follow-up must retain the complete prefix:
 
 ```bash
-npm exec --package=@launchrally/cli@0.2.2 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
-npm exec --package=@launchrally/cli@0.2.2 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
-npm exec --package=@launchrally/cli@0.2.2 -- rally --version --json --cwd .
+npm exec --package=@launchrally/cli@0.3.0 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.3.0 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.3.0 -- rally --version --json --cwd .
 ```
 
 npm may show its normal download confirmation. LaunchRally does not bypass it. In Agent Mode, use `--json` and follow each returned typed state rather than Human Mode prose.
@@ -85,18 +85,19 @@ CLI installation is a prerequisite separate from Plugin installation. First requ
 Pin the marketplace checkout to the exact release tag and install at user scope:
 
 ```bash
-codex plugin marketplace add codeacme17/launchrally --ref v0.2.2
+codex plugin marketplace add codeacme17/launchrally --ref v0.3.0
 codex plugin add launchrally@launchrally
+codex plugin list --json
 ```
 
-Verify that Codex lists the Plugin, then ask it to use LaunchRally in a repository. The Skill must begin with structured Launcher discovery and stop for all missing prerequisites, permissions, and lifecycle approvals.
+The JSON list must contain the installed `launchrally@launchrally` Plugin. Then ask Codex to use LaunchRally in a repository. Its first compatibility check must run `rally --version --json --cwd .` and accept only a supported Launcher, Plugin, selected Engine, project pin, and contract combination. The Skill must stop for all missing prerequisites, permissions, and lifecycle approvals.
 
 Update deliberately by replacing the installed Plugin and exact marketplace checkout:
 
 ```bash
 codex plugin remove launchrally@launchrally
 codex plugin marketplace remove launchrally
-codex plugin marketplace add codeacme17/launchrally --ref v0.2.2
+codex plugin marketplace add codeacme17/launchrally --ref v0.3.0
 codex plugin add launchrally@launchrally
 ```
 
@@ -109,14 +110,15 @@ codex plugin marketplace remove launchrally
 
 ### Claude Plugin
 
-The `0.2.2` marketplace catalog pins `@launchrally/claude-plugin@0.2.2`. Add it and install at explicit user scope:
+The `0.3.0` marketplace catalog pins `@launchrally/claude-plugin@0.3.0`. Add it and install at explicit user scope:
 
 ```bash
 claude plugin marketplace add codeacme17/launchrally --scope user
 claude plugin install launchrally@launchrally --scope user
+claude plugin list --json
 ```
 
-Verify that Claude Code lists the Plugin, then ask it to use LaunchRally. It must perform the same structured Launcher and compatibility discovery as Codex.
+The JSON list must contain the installed and enabled `launchrally@launchrally` Plugin. Then ask Claude Code to use LaunchRally. Its first compatibility check must run `rally --version --json --cwd .` and accept only the same supported Launcher, Plugin, selected Engine, project pin, and contract combination as Codex.
 
 Refresh and update deliberately:
 
@@ -139,18 +141,18 @@ Plugin removal preserves project-owned `.launchrally` data, the Project Toolchai
 Reinstall the exact current Launcher to update or repair the user-managed PATH entry:
 
 ```bash
-npm install --global @launchrally/cli@0.2.2
+npm install --global @launchrally/cli@0.3.0
 rally --version --json
 ```
 
 An explicit downgrade to the historical release is:
 
 ```bash
-npm install --global @launchrally/cli@0.2.1
+npm install --global @launchrally/cli@0.2.2
 rally --version --json
 ```
 
-Published pre-v1 Launchers, including `0.2.1` and the historical direct `0.2.2` binary, predate the interception guarantee. The older command is documented only as an explicit Launcher downgrade, not as a safe way to bypass project authority.
+Published pre-v1 Launchers, including the historical direct `0.2.2` binary and earlier releases, predate the interception guarantee. The older command is documented only as an explicit Launcher downgrade, not as a safe way to bypass project authority.
 
 Remove the global Launcher independently:
 
@@ -199,15 +201,65 @@ Neither command removes an external Report saved outside `.launchrally`. Review 
 
 ### `command not found: rally` or a missing PATH entry
 
-Run `npm prefix --global`, inspect `<prefix>/bin` on macOS/Linux or `<prefix>` on Windows, and add that exact directory to your `PATH` yourself. Open a new shell if needed, then run `rally --version --json`. Do not invoke a Project Toolchain Engine directly as a workaround.
+Expose the active prefix only in the current shell, then verify the Launcher. On macOS or Linux (POSIX shell):
+
+```bash
+export PATH="$(npm prefix --global)/bin:$PATH"
+rally --version --json
+```
+
+In PowerShell:
+
+```powershell
+$env:Path = "$(npm prefix --global);$env:Path"
+rally --version --json
+```
+
+At an interactive `cmd.exe` prompt:
+
+```batch
+for /f "delims=" %i in ('npm prefix --global') do set "PATH=%i;%PATH%"
+rally --version --json
+```
+
+These commands do not persist a profile change. If verification succeeds, configure that same directory through your own shell or operating-system policy. Do not invoke a Project Toolchain Engine directly as a workaround.
 
 ### npm prefix permission errors
 
-A prefix permission failure means the active global prefix is not user-writable. Choose a Node version manager or deliberately configure a user-writable npm prefix, then repeat the exact `0.2.2` installation. LaunchRally does not perform either configuration and does not recommend elevated npm installation.
+A prefix permission failure means the active global prefix is not user-writable. Prefer a Node version manager. If you deliberately choose npm's per-user prefix fallback, run the matching commands yourself; the prefix setting persists in your npm user configuration while the PATH change affects only the current shell.
+
+On macOS or Linux (POSIX shell):
+
+```bash
+npm config set prefix "$HOME/.local"
+export PATH="$HOME/.local/bin:$PATH"
+npm install --global @launchrally/cli@0.3.0
+rally --version --json
+```
+
+In PowerShell:
+
+```powershell
+npm config set prefix "$env:LOCALAPPDATA\npm"
+$env:Path = "$env:LOCALAPPDATA\npm;$env:Path"
+npm install --global @launchrally/cli@0.3.0
+rally --version --json
+```
+
+At an interactive `cmd.exe` prompt:
+
+```batch
+npm config set prefix "%LOCALAPPDATA%\npm"
+set "PATH=%LOCALAPPDATA%\npm;%PATH%"
+npm install --global @launchrally/cli@0.3.0
+rally --version --json
+```
+
+LaunchRally never performs this configuration and does not recommend elevated npm installation.
 
 ### Node version-manager changes
 
-A Node version manager may keep separate global prefixes for each Node version. After switching Node versions, confirm `node --version` and `npm prefix --global`, reinstall `@launchrally/cli@0.2.2` under the active user-writable prefix when necessary, and re-run structured verification.
+A Node version manager may keep separate global prefixes for each Node version. After switching Node versions, confirm `node --version` and `npm prefix --global`, reinstall `@launchrally/cli@0.3.0` under the active user-writable prefix when necessary, and re-run structured verification.
 
 ### Project mismatch or lifecycle state
 
@@ -215,7 +267,29 @@ Run `rally toolchain status --json --cwd .` in the intended repository. `needs_t
 
 ### Unavailable materialization, offline cache, or registry denial
 
-Init and restore try the npm offline cache first. A cache miss produces one bounded `npm_registry_read` request for the exact package and official registry with lifecycle scripts disabled. A registry denial leaves the project pin and adopted state unchanged. Populate the cache in an authorized environment or retry the same explicit Init/restore operation and approve that read; never copy an unvalidated Engine into the toolchain.
+Init and restore try the npm offline cache first. A cache miss produces one bounded `npm_registry_read` request for the exact package and official registry with lifecycle scripts disabled. A registry denial leaves the project pin and adopted state unchanged.
+
+In an environment authorized to read the registry, populate and verify npm's cache for the exact Engine required by the typed permission. For a `0.2.2` pin:
+
+```bash
+npm cache add @launchrally/cli@0.2.2
+npm cache verify
+```
+
+For a `0.3.0` pin:
+
+```bash
+npm cache add @launchrally/cli@0.3.0
+npm cache verify
+```
+
+Make that authorized npm cache available through your organization's normal cache-transfer mechanism, then retry the original operation without changing its version:
+
+```bash
+rally toolchain restore --cwd .
+```
+
+For an uninitialized repository, retry the exact `rally init --plain --cwd . --report ./launchrally-audit-report.json` command instead. Otherwise approve the disclosed bounded registry read. Never copy an unvalidated Engine into the toolchain.
 
 ### Invalid toolchains and interrupted migration
 
@@ -247,4 +321,4 @@ npm run test:artifacts
 npm test
 ```
 
-Release validation rejects version drift, dependency ranges, lifecycle install hooks, stale Skill copies, and unexpected tarball files. Publishing is performed only by the protected release workflow for the matching exact `v0.2.2` tag. Maintainers use the [Experimental release runbook](../maintainers/release-runbook.md) for external control checks and public smoke evidence.
+Release validation rejects version drift, dependency ranges, lifecycle install hooks, stale Skill copies, and unexpected tarball files. Publishing is performed only by the protected release workflow for the matching exact `v0.3.0` tag. Maintainers use the [Experimental release runbook](../maintainers/release-runbook.md) for external control checks and public smoke evidence.

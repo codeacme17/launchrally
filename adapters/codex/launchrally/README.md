@@ -4,7 +4,7 @@ This package installs Codex Plugin metadata plus a generated copy of the LaunchR
 
 ## Status
 
-LaunchRally 0.2.2 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated.
+LaunchRally 0.3.0 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated.
 
 ## CLI prerequisite
 
@@ -15,11 +15,12 @@ CLI installation and Plugin installation are separate. Before installing this Pl
 Codex installs Plugins at user scope. Pin the marketplace to the exact release tag, then install LaunchRally:
 
 ```sh
-codex plugin marketplace add codeacme17/launchrally --ref v0.2.2
+codex plugin marketplace add codeacme17/launchrally --ref v0.3.0
 codex plugin add launchrally@launchrally
+codex plugin list --json
 ```
 
-Verify that Codex discovers the Plugin, then ask: `Use LaunchRally to audit this repository for launch readiness. Show the complete scope and every permission before continuing.` The Skill begins with structured Launcher discovery and follows the project-pinned Engine through `rally`.
+The JSON list must contain the installed `launchrally@launchrally` Plugin. Then ask: `Use LaunchRally to audit this repository for launch readiness. Show the complete scope and every permission before continuing.` The Skill begins by running `rally --version --json --cwd .`; it accepts only a supported Plugin, Launcher, selected Engine, project pin, and contract combination before following the project-pinned Engine through `rally`.
 
 ## Update or remove
 
@@ -28,7 +29,7 @@ Replace the installed Plugin and exact marketplace checkout deliberately:
 ```sh
 codex plugin remove launchrally@launchrally
 codex plugin marketplace remove launchrally
-codex plugin marketplace add codeacme17/launchrally --ref v0.2.2
+codex plugin marketplace add codeacme17/launchrally --ref v0.3.0
 codex plugin add launchrally@launchrally
 ```
 

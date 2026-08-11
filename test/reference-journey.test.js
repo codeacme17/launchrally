@@ -13,7 +13,6 @@ import { exactToolchainLock } from "./helpers/exact-toolchain.js";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(root, "packages", "cli", "bin", "rally.js");
 const execFileAsync = promisify(execFile);
-const publicVersion = "0.2.2";
 const volatileKeys = new Set([
   "resume_token",
   "content",
@@ -65,7 +64,7 @@ const directJourney = {
   },
   cli: {
     package: "@launchrally/cli",
-    version: publicVersion,
+    version: "0.3.0",
     contract: "launchrally.dev/cli/v2",
   },
   invocations: [
@@ -231,7 +230,7 @@ async function json(relativePath) {
 }
 
 async function createRegistryNpmStub(
-  version = "0.2.2",
+  version = "0.3.0",
   { offlineAvailable = false } = {},
 ) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-stub-"));
@@ -416,7 +415,7 @@ async function executeReferenceJourney(
   } = {},
 ) {
   const directory = await createFixture(label, fixturePath);
-  const registryStub = await createRegistryNpmStub("0.2.2", {
+  const registryStub = await createRegistryNpmStub("0.3.0", {
     offlineAvailable: !exerciseRegistryPermission,
   });
   const journeyEnv = {
@@ -662,7 +661,7 @@ async function executeReferenceJourney(
   }
 }
 
-test("native adapters ship the canonical Reference Journey for the exact public CLI version", async () => {
+test("native adapters ship the canonical Reference Journey for the exact CLI version", async () => {
   const cliPackage = await json("packages/cli/package.json");
   const journeyContract = await json(
     "skills/launchrally/references/reference-journey.json",
@@ -678,7 +677,7 @@ test("native adapters ship the canonical Reference Journey for the exact public 
   );
   assert.match(
     canonicalJourney,
-    new RegExp(`@launchrally/cli@${publicVersion.replaceAll(".", "\\.")}`, "u"),
+    new RegExp(`@launchrally/cli@${cliPackage.version.replaceAll(".", "\\.")}`, "u"),
   );
   assert.match(canonicalJourney, /--version --json/u);
   assert.match(canonicalJourney, /contract: "launchrally\.dev\/cli\/v2"/u);
@@ -699,7 +698,7 @@ test("native adapters ship the canonical Reference Journey for the exact public 
   );
   assert.deepEqual(journeyContract.cli, {
     package: "@launchrally/cli",
-    version: publicVersion,
+    version: cliPackage.version,
     contract: "launchrally.dev/cli/v2",
   });
   assert.deepEqual(
@@ -844,19 +843,19 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
   assert.equal(journey.schema_version, "launchrally.dev/reference-journey/v3");
   assert.deepEqual(journey.compatibility, {
     plugin: {
-      version: publicVersion,
+      version: cliPackage.version,
       role: "interaction_only",
     },
     launcher: {
       package: "@launchrally/cli",
-      supported_versions: [publicVersion, "0.3.0"],
+      supported_versions: ["0.2.2", cliPackage.version],
     },
     execution_authority: {
       supported_contracts: ["launchrally.dev/execution-authority/v1"],
     },
     engine: {
       package: "@launchrally/cli",
-      supported_versions: [publicVersion, "0.3.0"],
+      supported_versions: ["0.2.2", cliPackage.version],
       authority_contracts: ["launchrally.dev/execution-authority/v1"],
       interaction_contracts: ["launchrally.dev/cli/v2"],
     },
@@ -868,7 +867,12 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
   });
   assert.notEqual(
     journey.compatibility.plugin.version,
-    journey.compatibility.engine.supported_versions.at(-1),
+    journey.compatibility.launcher.supported_versions.at(0),
+    "a supported Plugin/Launcher mismatch is representable",
+  );
+  assert.notEqual(
+    journey.compatibility.plugin.version,
+    journey.compatibility.engine.supported_versions.at(0),
     "a supported Plugin/Engine mismatch is representable",
   );
   assert.deepEqual(journey.launcher_prerequisite, {
@@ -879,7 +883,7 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
       arguments: [
         "install",
         "--global",
-        `@launchrally/cli@${publicVersion}`,
+        `@launchrally/cli@${cliPackage.version}`,
       ],
     },
     verification: {

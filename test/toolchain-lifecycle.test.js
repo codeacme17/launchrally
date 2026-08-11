@@ -226,7 +226,7 @@ test("toolchain restore preserves the supported legacy 0.2.2 pin without auto-mi
 test("toolchain clean removes only rebuildable lifecycle state", async () => {
   const repository = await repositoryFixture();
   await writeProject(repository);
-  await materializeExactToolchain(repository);
+  await materializeExactToolchain(repository, "0.2.2");
   const manifestPath = path.join(repository, ".launchrally", "manifest.yaml");
   const packagePath = path.join(repository, ".launchrally", "toolchain", "package.json");
   const before = await Promise.all([

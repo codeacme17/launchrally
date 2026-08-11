@@ -12,8 +12,8 @@ const execFileAsync = promisify(execFile);
 const COMPLETION_CLAIMS = [
   {
     path: "README.md",
-    complete: "P0 is Product Complete and `0.2.2` is publicly available",
-    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.2.2` remains publicly available",
+    complete: "P0 is Product Complete and `0.3.0` is publicly available",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.3.0` remains publicly available",
   },
   {
     path: "CONTRIBUTING.md",
@@ -22,13 +22,13 @@ const COMPLETION_CLAIMS = [
   },
   {
     path: "docs/maintainers/phase-0-validation.md",
-    complete: "P0 is Product Complete and `0.2.2` is a public Experimental release.",
-    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.2.2` remains a public Experimental release.",
+    complete: "P0 is Product Complete and `0.3.0` is a public Experimental release.",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.3.0` remains a public Experimental release.",
   },
   {
     path: "docs/maintainers/p0-acceptance.md",
-    complete: "P0 is Product Complete and `0.2.2` is publicly available as an Experimental\nrelease.",
-    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression\nis reviewed; `0.2.2` remains publicly available as an Experimental release.",
+    complete: "P0 is Product Complete and `0.3.0` is publicly available as an Experimental\nrelease.",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression\nis reviewed; `0.3.0` remains publicly available as an Experimental release.",
   },
 ];
 
@@ -114,7 +114,7 @@ test("the public release kit documents use, data, safety, feedback, and validati
 
   assert.match(
     quickstart,
-    /npm install --global @launchrally\/cli@0\.2\.2[\s\S]*rally --version --json[\s\S]*rally audit --plain --cwd \. --output \.\/launchrally-audit-report\.json/u,
+    /npm install --global @launchrally\/cli@0\.3\.0[\s\S]*rally --version --json[\s\S]*rally audit --plain --cwd \. --output \.\/launchrally-audit-report\.json/u,
   );
   assert.match(quickstart, /Skill Quickstart/iu);
   for (const context of ["Astro", "FastAPI", "React", "Go", "pnpm", "self-hosted"]) {

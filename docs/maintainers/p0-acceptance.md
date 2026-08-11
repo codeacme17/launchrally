@@ -5,7 +5,7 @@ product-planning sources are intentionally local and ignored under
 `docs/product/`; therefore every release-blocking requirement needed by CI
 must be represented here and in the linked GitHub issues.
 
-P0 is Product Complete and `0.2.2` is publicly available as an Experimental
+P0 is Product Complete and `0.3.0` is publicly available as an Experimental
 release. Telemetry-Free Validation is collecting directional signals and P0
 Validated remains false.
 

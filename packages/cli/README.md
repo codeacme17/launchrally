@@ -4,14 +4,14 @@ The LaunchRally CLI provides the `rally` Launcher and deterministic Engine for a
 
 ## Status
 
-LaunchRally 0.2.2 is an **Experimental P0** release. P0 is Product Complete, not a stability claim or a P0 Validated decision. Review every disclosed permission and preview before continuing.
+LaunchRally 0.3.0 is an **Experimental P0** release. P0 is Product Complete, not a stability claim or a P0 Validated decision. Review every disclosed permission and preview before continuing.
 
 ## Install and complete the first journey
 
 Install the exact Launcher through your current user-writable npm prefix and verify it before entering a repository:
 
 ```sh
-npm install --global @launchrally/cli@0.2.2
+npm install --global @launchrally/cli@0.3.0
 rally --version --json
 ```
 
