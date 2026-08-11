@@ -32,16 +32,37 @@ const contract = JSON.parse(await readFile(
   path.join(root, "release/p0.json"),
   "utf8",
 ));
+const stablePromotion = contract.stable_promotion;
+const stablePromotionKeys = Object.keys(stablePromotion ?? {}).sort();
+const hasStablePromotionShape = JSON.stringify(stablePromotionKeys) === JSON.stringify([
+  "approved_tag",
+  "maintainer_e2e_status",
+  "status",
+]);
+const isExperimentalState = contract.release_status === "experimental"
+  && stablePromotion?.status === "not_approved"
+  && stablePromotion.approved_tag === null;
+const isStableState = contract.release_status === "stable"
+  && contract.product_status === "complete"
+  && contract.validation_status === "validated"
+  && contract.p0_validated === true
+  && contract.quality_floor_status === "satisfied"
+  && stablePromotion?.status === "approved"
+  && stablePromotion.maintainer_e2e_status === "complete"
+  && /^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(stablePromotion.approved_tag ?? "");
 
 if (
   contract.schema_version !== "launchrally.dev/p0-release/v1"
   || contract.phase !== "p0"
   || !["complete", "suspended"].includes(contract.product_status)
-  || contract.release_status !== "experimental"
+  || (!isExperimentalState && !isStableState)
   || contract.validation_mode !== "telemetry_free"
   || !["collecting", "suspended", "validated"].includes(contract.validation_status)
   || typeof contract.p0_validated !== "boolean"
   || !["satisfied", "suspended"].includes(contract.quality_floor_status)
+  || !hasStablePromotionShape
+  || !["not_approved", "approved"].includes(stablePromotion.status)
+  || !["pending", "complete"].includes(stablePromotion.maintainer_e2e_status)
   || contract.p1_discovery !== "allowed"
   || !["allowed", "blocked"].includes(contract.p1_authority)
   || contract.license !== "Apache-2.0"
@@ -53,6 +74,14 @@ if (
 
 const rootLicense = await readFile(path.join(root, "LICENSE"), "utf8");
 const rootPackage = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+if (
+  contract.release_status === "stable"
+  && stablePromotion.approved_tag !== `v${rootPackage.version}`
+) {
+  throw new Error(
+    `stable_promotion_tag_drift: ${stablePromotion.approved_tag}; expected v${rootPackage.version}`,
+  );
+}
 if (rootPackage.license !== contract.license) {
   throw new Error(
     `p0_license_drift: ${rootPackage.name} declares ${rootPackage.license}; expected ${contract.license}`,
@@ -84,6 +113,27 @@ for (const document of contract.required_documents ?? []) {
     if (!content.toLocaleLowerCase("en-US").includes(phrase.toLocaleLowerCase("en-US"))) {
       throw new Error(`p0_release_incomplete: ${document.path} must include ${phrase}`);
     }
+  }
+}
+
+if (!Array.isArray(contract.release_status_documents) || contract.release_status_documents.length === 0) {
+  throw new Error("p0_release_status_claim_drift: release_status_documents");
+}
+for (const document of contract.release_status_documents) {
+  const expected = document?.[contract.release_status];
+  const keys = Object.keys(document ?? {}).sort();
+  if (
+    JSON.stringify(keys) !== JSON.stringify(["experimental", "path", "stable"])
+    || typeof expected !== "string"
+    || expected.length === 0
+  ) {
+    throw new Error(`p0_release_status_claim_drift: ${document?.path ?? "invalid path"}`);
+  }
+  const content = await readFile(path.join(root, document.path), "utf8");
+  if (!content.includes(expected)) {
+    throw new Error(
+      `p0_release_status_claim_drift: ${document.path} must include ${expected}`,
+    );
   }
 }
 
@@ -193,6 +243,7 @@ const result = {
   p1_discovery: contract.p1_discovery,
   p1_authority: contract.p1_authority,
   quality_floor_status: contract.quality_floor_status,
+  stable_promotion: stablePromotion,
   license: contract.license,
   feedback_channels: contract.feedback_channels,
   quality_floor: contract.quality_floor,

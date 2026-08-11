@@ -1533,7 +1533,7 @@ async function validatePublicNativePlugins(temporaryRoot, cleanProject, version)
   };
 }
 
-function publicReleasePlan(release, version) {
+function publicReleasePlan(release, version, distTag = "experimental") {
   const exactPackages = release.packages.map(({ name }) => `${name}@${version}`);
   return {
     status: "planned",
@@ -1553,7 +1553,7 @@ function publicReleasePlan(release, version) {
     },
     registry_verification: release.packages.map(({ name }) => ({
       package: name,
-      dist_tag: "experimental",
+      dist_tag: distTag,
       expected_version: version,
     })),
     provenance_verification: {
@@ -1599,7 +1599,7 @@ function publicReleasePlan(release, version) {
   };
 }
 
-async function waitForPublicRelease(release, version) {
+async function waitForPublicRelease(release, version, distTag) {
   const attempts = 18;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     let unavailable = null;
@@ -1607,14 +1607,14 @@ async function waitForPublicRelease(release, version) {
       try {
         const { stdout } = await runNpm([
           "view",
-          `${name}@experimental`,
+          `${name}@${distTag}`,
           "version",
           "--json",
         ], { cwd: root });
         const publishedVersion = JSON.parse(stdout);
         if (publishedVersion !== version) {
           throw new Error(
-            `public_dist_tag_drift: ${name}@experimental resolves to ${publishedVersion}; expected ${version}`,
+            `public_dist_tag_drift: ${name}@${distTag} resolves to ${publishedVersion}; expected ${version}`,
           );
         }
       } catch (error) {
@@ -1644,6 +1644,11 @@ async function main() {
   const release = await json(path.join(root, "release", "artifacts.json"));
   const rootPackage = await json(path.join(root, "package.json"));
   const publicRelease = process.argv.includes("--public");
+  const distTagOption = process.argv.indexOf("--dist-tag");
+  const distTag = distTagOption === -1 ? "experimental" : process.argv[distTagOption + 1];
+  if (!new Set(["experimental", "latest"]).has(distTag)) {
+    throw new Error(`public_dist_tag_invalid: ${distTag ?? "missing"}`);
+  }
   const publicLegacy = publicRelease || process.argv.includes("--public-legacy");
   const temporaryRoot = await mkdtemp(path.join(os.tmpdir(), "launchrally-artifacts-"));
   try {
@@ -1651,8 +1656,8 @@ async function main() {
     let cacheDirectory;
     let packageTarballs;
     if (publicRelease) {
-      await waitForPublicRelease(release, rootPackage.version);
-      installArguments = publicReleasePlan(release, rootPackage.version).install.arguments;
+      await waitForPublicRelease(release, rootPackage.version, distTag);
+      installArguments = publicReleasePlan(release, rootPackage.version, distTag).install.arguments;
       cacheDirectory = path.join(temporaryRoot, "npm-install-cache");
       installArguments.splice(
         installArguments.indexOf("--save-exact") + 1,
@@ -1722,7 +1727,7 @@ async function main() {
       ? {
         ...result,
         source: "public_registry",
-        exact_packages: publicReleasePlan(release, rootPackage.version).exact_packages,
+        exact_packages: publicReleasePlan(release, rootPackage.version, distTag).exact_packages,
       }
       : {
         ...result,
@@ -1737,7 +1742,12 @@ async function main() {
 if (process.argv.includes("--public") && process.argv.includes("--dry-run")) {
   const release = await json(path.join(root, "release", "artifacts.json"));
   const rootPackage = await json(path.join(root, "package.json"));
-  const plan = publicReleasePlan(release, rootPackage.version);
+  const distTagOption = process.argv.indexOf("--dist-tag");
+  const distTag = distTagOption === -1 ? "experimental" : process.argv[distTagOption + 1];
+  if (!new Set(["experimental", "latest"]).has(distTag)) {
+    throw new Error(`public_dist_tag_invalid: ${distTag ?? "missing"}`);
+  }
+  const plan = publicReleasePlan(release, rootPackage.version, distTag);
   process.stdout.write(
     process.argv.includes("--json")
       ? `${JSON.stringify(plan)}\n`

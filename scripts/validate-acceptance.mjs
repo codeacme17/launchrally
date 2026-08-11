@@ -18,6 +18,7 @@ const requiredReleaseGates = [
   "permission_boundaries",
   "persistence_recovery",
   "secret_safety",
+  "stable_promotion",
   "traceability",
 ];
 const postPublicationRequirementIds = new Set([
@@ -106,7 +107,7 @@ async function validate() {
   if (
     matrix.schema_version !== "launchrally.dev/p0-acceptance/v1"
     || !new Set(["complete", "incomplete", "suspended"]).has(matrix.product_status)
-    || !new Set(["experimental", "not_published", "release_candidate"])
+    || !new Set(["experimental", "not_published", "release_candidate", "stable"])
       .has(matrix.release_status)
     || !Array.isArray(matrix.requirements)
     || !Array.isArray(matrix.release_gates)
@@ -229,6 +230,26 @@ async function validate() {
       blockers.unshift(`release_status=${matrix.release_status}`);
     }
     if (blockers.length > 0) fail("acceptance_release_blocked", blockers.join(", "));
+  }
+  if (process.argv.includes("--require-stable-ready")) {
+    const blockers = [...requirements.values()]
+      .filter(({ status }) => status !== "complete")
+      .map(({ id }) => id);
+    if (matrix.product_status !== "complete") blockers.unshift("product_status");
+    if (matrix.release_status !== "stable") blockers.unshift("release_status");
+    if (p0.validation_status !== "validated") blockers.unshift("validation_status");
+    if (p0.p0_validated !== true) blockers.unshift("p0_validated");
+    if (p0.quality_floor_status !== "satisfied") blockers.unshift("quality_floor_status");
+    if (p0.stable_promotion?.status !== "approved") {
+      blockers.unshift("stable_promotion.status");
+    }
+    if (p0.stable_promotion?.maintainer_e2e_status !== "complete") {
+      blockers.unshift("stable_promotion.maintainer_e2e_status");
+    }
+    if (p0.stable_promotion?.approved_tag !== `v${packageJson.version}`) {
+      blockers.unshift("stable_promotion.approved_tag");
+    }
+    if (blockers.length > 0) fail("acceptance_stable_blocked", blockers.join(", "));
   }
   if (process.argv.includes("--require-publish-ready")) {
     const blockers = [...requirements.values()]

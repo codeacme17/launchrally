@@ -75,6 +75,11 @@ test("the P0 release contract keeps Product Complete, Experimental, and validati
     p1_discovery: "allowed",
     p1_authority: "blocked",
     quality_floor_status: "satisfied",
+    stable_promotion: {
+      status: "not_approved",
+      maintainer_e2e_status: "pending",
+      approved_tag: null,
+    },
     license: "Apache-2.0",
     feedback_channels: ["discussions", "issues", "security"],
     quality_floor: [
@@ -239,6 +244,29 @@ test("P0 validation rejects a public package with license drift", async () => {
     (error) => {
       assert.match(error.stderr, /p0_license_drift/u);
       assert.match(error.stderr, /@launchrally\/cli.*UNLICENSED.*Apache-2\.0/u);
+      return true;
+    },
+  );
+});
+
+test("public release status documents change atomically with the machine state", async () => {
+  const fixture = await createP0Fixture();
+  const readmePath = path.join(fixture, "packages/core/README.md");
+  const readme = await readFile(readmePath, "utf8");
+  await writeFile(
+    readmePath,
+    readme.replace("**Experimental P0** release", "**Stable** release"),
+  );
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["scripts/validate-p0.mjs", "--root", fixture, "--json"],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /p0_release_status_claim_drift/u);
+      assert.match(error.stderr, /packages\/core\/README\.md/u);
       return true;
     },
   );
@@ -1117,4 +1145,63 @@ test("a complete qualitative decision can advance the P0 release contract", asyn
     { cwd: root },
   );
   assert.equal(JSON.parse(stdout).p0_validated, true);
+});
+
+test("a reviewed Stable promotion remains distinct from the P0 Validated decision", async () => {
+  const fixture = await createP0Fixture();
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
+  const contractPath = path.join(fixture, "release/p0.json");
+  const log = JSON.parse(await readFile(logPath, "utf8"));
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  Object.assign(log.entries.at(-1), {
+    validation_decision: {
+      status: "validated",
+      rationale: "consistent_directional_evidence",
+      evidence_summary: {
+        represented_contexts: "represented_contexts_established",
+        repeated_patterns: "repeated_patterns_established",
+        recurring_p1_needs: "recurring_p1_needs_reviewed",
+        resulting_decisions: "explicit_p0_validation_decision",
+      },
+    },
+    p1_gate: {
+      discovery: "allowed",
+      authority_expanding_implementation: "allowed",
+    },
+  });
+  Object.assign(contract, {
+    product_status: "complete",
+    release_status: "stable",
+    validation_status: "validated",
+    p0_validated: true,
+    quality_floor_status: "satisfied",
+    stable_promotion: {
+      status: "approved",
+      maintainer_e2e_status: "complete",
+      approved_tag: "v0.3.0",
+    },
+    p1_discovery: "allowed",
+    p1_authority: "allowed",
+  });
+  for (const document of contract.release_status_documents) {
+    const documentPath = path.join(fixture, document.path);
+    const content = await readFile(documentPath, "utf8");
+    const updated = content.replace(document.experimental, document.stable);
+    assert.notEqual(updated, content, `${document.path} must contain the Experimental claim`);
+    await writeFile(documentPath, updated);
+  }
+  await Promise.all([
+    writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`),
+    writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
+  ]);
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["scripts/validate-p0.mjs", "--root", fixture, "--json"],
+    { cwd: root },
+  );
+  const result = JSON.parse(stdout);
+  assert.equal(result.release_status, "stable");
+  assert.equal(result.p0_validated, true);
+  assert.deepEqual(result.stable_promotion, contract.stable_promotion);
 });

@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Protected annotated Stable release tag
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,7 +19,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  release_state:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      release_status: ${{ steps.contract.outputs.release_status }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: contract
+        run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT, 'release_status=' + require('./release/p0.json').release_status + '\n')"
+
   contracts:
+    needs: release_state
+    if: github.event_name == 'push' && needs.release_state.outputs.release_status == 'experimental'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -32,6 +50,8 @@ jobs:
       - run: npm run validate:acceptance
 
   journeys:
+    needs: release_state
+    if: github.event_name == 'push' && needs.release_state.outputs.release_status == 'experimental'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -121,3 +141,39 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease --generate-notes --title "LaunchRally $GITHUB_REF_NAME (Experimental)"
+
+  stable-promotion:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    env:
+      PROMOTION_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Pin npm Trusted Publishing client
+        run: npm install --global npm@11.17.0
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Verify generated Plugin bundles are committed
+        run: git diff --exit-code
+      - run: npm test
+      - run: npm run validate:acceptance -- --require-stable-ready
+      - run: npm run validate:p0
+      - run: npm run validate:release -- --tag "$PROMOTION_TAG"
+      - run: npm run validate:release-ref -- --tag "$PROMOTION_TAG"
+      - run: npm run test:artifacts
+      - name: Publish and verify the approved Stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/promote-stable.mjs --tag "$PROMOTION_TAG"
