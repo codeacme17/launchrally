@@ -91,10 +91,10 @@ test("an npm-exec Human Audit emits a complete exact-version npm-exec Init comma
     env: {
       npm_command: "exec",
       npm_lifecycle_event: "npx",
-      npm_config_package: "@launchrally/cli@0.3.1",
+      npm_config_package: "@launchrally/cli@0.3.2",
       PATH: "/tmp/npm/_npx/hash/node_modules/.bin:/usr/bin",
     },
-    launcherVersion: "0.3.1",
+    launcherVersion: "0.3.2",
   });
   const summary = renderHumanAuditCompletion({
     outcome: "audit_completed",
@@ -109,8 +109,8 @@ test("an npm-exec Human Audit emits a complete exact-version npm-exec Init comma
     invocationContext,
   });
   const expectedCommand = process.platform === "win32"
-    ? "& 'npm' 'exec' '--package=@launchrally/cli@0.3.1' '--' 'rally' 'init' '--cwd' '/workspace/site with spaces' '--report' '/workspace/site with spaces/audit report.json'"
-    : "npm exec --package=@launchrally/cli@0.3.1 -- rally init --cwd '/workspace/site with spaces' --report '/workspace/site with spaces/audit report.json'";
+    ? "& 'npm' 'exec' '--package=@launchrally/cli@0.3.2' '--' 'rally' 'init' '--cwd' '/workspace/site with spaces' '--report' '/workspace/site with spaces/audit report.json'"
+    : "npm exec --package=@launchrally/cli@0.3.2 -- rally init --cwd '/workspace/site with spaces' --report '/workspace/site with spaces/audit report.json'";
 
   assert.ok(summary.includes(`Next command\n${expectedCommand}`));
   assert.doesNotMatch(summary, /--yes/u);
@@ -130,12 +130,12 @@ test("an unknown Human Audit entry uses and discloses the executable fallback", 
     invocationContext: {
       schema_version: "launchrally.dev/invocation-context/v1",
       source: "unknown",
-      launcher_version: "0.3.1",
+      launcher_version: "0.3.2",
     },
   });
   const expectedCommand = process.platform === "win32"
-    ? "& 'npm' 'exec' '--package=@launchrally/cli@0.3.1' '--' 'rally' 'init' '--cwd' '/workspace/site' '--report' '/workspace/audit.json'"
-    : "npm exec --package=@launchrally/cli@0.3.1 -- rally init --cwd '/workspace/site' --report '/workspace/audit.json'";
+    ? "& 'npm' 'exec' '--package=@launchrally/cli@0.3.2' '--' 'rally' 'init' '--cwd' '/workspace/site' '--report' '/workspace/audit.json'"
+    : "npm exec --package=@launchrally/cli@0.3.2 -- rally init --cwd '/workspace/site' --report '/workspace/audit.json'";
 
   assert.ok(summary.includes(`Next command\n${expectedCommand}`));
   assert.match(summary, /Launcher entry\nThe original Launcher entry could not be confirmed/u);

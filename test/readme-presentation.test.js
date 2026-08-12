@@ -54,7 +54,7 @@ test("the repository README presents a concise first-use journey", async () => {
   );
   assert.match(
     firstAudit,
-    /npm install --global @launchrally\/cli@0\.3\.1/u,
+    /npm install --global @launchrally\/cli@0\.3\.2/u,
   );
   assert.match(firstAudit, /rally --version --json/u);
   assert.match(firstAudit, /--output \.\/launchrally-audit-report\.json/u);

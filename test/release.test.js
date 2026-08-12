@@ -16,19 +16,11 @@ const releaseManifest = JSON.parse(await readFile(
   path.join(root, "release/artifacts.json"),
   "utf8",
 ));
-const stableE2eEvidence = {
-  approved_permission: "docs/maintainers/stable-e2e-evidence.md",
-  claude_plugin: "docs/maintainers/stable-e2e-evidence.md",
-  codex_plugin: "docs/maintainers/stable-e2e-evidence.md",
-  denied_permission: "docs/maintainers/stable-e2e-evidence.md",
-  direct_cli: "docs/maintainers/stable-e2e-evidence.md",
-};
-
 test("Claude public smoke recognizes the installed-list schema", () => {
   const installed = {
     installed: [{
       id: "launchrally@launchrally",
-      version: "0.3.1",
+      version: "0.3.2",
       scope: "user",
       enabled: true,
     }],
@@ -36,16 +28,16 @@ test("Claude public smoke recognizes the installed-list schema", () => {
   };
 
   assert.equal(
-    hasClaudeInstalledPlugin(installed, "launchrally@launchrally", "0.3.1"),
+    hasClaudeInstalledPlugin(installed, "launchrally@launchrally", "0.3.2"),
     true,
   );
   assert.equal(
-    hasClaudeInstalledPlugin(installed, "launchrally@launchrally", "0.3.2"),
+    hasClaudeInstalledPlugin(installed, "launchrally@launchrally", "0.3.1"),
     false,
   );
   assert.equal(hasClaudeInstalledPlugin({
-    installed: [{ pluginId: "launchrally@launchrally", version: "0.3.1" }],
-  }, "launchrally@launchrally", "0.3.1"), false);
+    installed: [{ pluginId: "launchrally@launchrally", version: "0.3.2" }],
+  }, "launchrally@launchrally", "0.3.2"), false);
 });
 
 async function createReleaseFixture() {
@@ -76,7 +68,7 @@ async function assertReleaseValidationFailure(fixture, pattern) {
 }
 
 async function createStablePromotionFixture() {
-  const fixture = await copyRepositoryFixture(root, "launchrally-stable-promotion-", [
+  return copyRepositoryFixture(root, "launchrally-stable-promotion-", [
     ".agents",
     ".claude-plugin",
     ".github",
@@ -94,58 +86,6 @@ async function createStablePromotionFixture() {
     "skills",
     "test",
   ]);
-  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
-  const contractPath = path.join(fixture, "release/p0.json");
-  const acceptancePath = path.join(fixture, "release/p0-acceptance.json");
-  const log = JSON.parse(await readFile(logPath, "utf8"));
-  const contract = JSON.parse(await readFile(contractPath, "utf8"));
-  const acceptance = JSON.parse(await readFile(acceptancePath, "utf8"));
-  Object.assign(log.entries.at(-1), {
-    validation_decision: {
-      status: "validated",
-      rationale: "consistent_directional_evidence",
-      evidence_summary: {
-        represented_contexts: "represented_contexts_established",
-        repeated_patterns: "repeated_patterns_established",
-        recurring_p1_needs: "recurring_p1_needs_reviewed",
-        resulting_decisions: "explicit_p0_validation_decision",
-      },
-    },
-    p1_gate: {
-      discovery: "allowed",
-      authority_expanding_implementation: "allowed",
-    },
-  });
-  Object.assign(contract, {
-    release_status: "stable",
-    validation_status: "validated",
-    p0_validated: true,
-    stable_promotion: {
-      status: "approved",
-      maintainer_e2e_status: "complete",
-      maintainer_e2e_evidence: stableE2eEvidence,
-      approved_tag: "v0.3.1",
-    },
-    p1_authority: "allowed",
-  });
-  acceptance.release_status = "stable";
-  await writeFile(
-    path.join(fixture, "docs/maintainers/stable-e2e-evidence.md"),
-    "# Stable E2E evidence\n\nAll required journeys completed.\n",
-  );
-  for (const document of contract.release_status_documents) {
-    const documentPath = path.join(fixture, document.path);
-    const content = await readFile(documentPath, "utf8");
-    const updated = content.replace(document.experimental, document.stable);
-    assert.notEqual(updated, content, `${document.path} must contain the Experimental claim`);
-    await writeFile(documentPath, updated);
-  }
-  await Promise.all([
-    writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`),
-    writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
-    writeFile(acceptancePath, `${JSON.stringify(acceptance, null, 2)}\n`),
-  ]);
-  return fixture;
 }
 
 async function createStablePromotionCommandStubs() {
@@ -215,7 +155,7 @@ test("release validation proves one SemVer across CLI, Plugins, and bundled Skil
 
   assert.deepEqual(result, {
     status: "completed",
-    version: "0.3.1",
+    version: "0.3.2",
     packages: [
       "@launchrally/claude-plugin",
       "@launchrally/cli",
@@ -235,7 +175,7 @@ test("release validation fails when a Plugin version drifts", async () => {
     "adapters/codex/launchrally/.codex-plugin/plugin.json",
   );
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
-  manifest.version = "0.3.2";
+  manifest.version = "0.3.1";
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
   await assert.rejects(
@@ -246,7 +186,7 @@ test("release validation fails when a Plugin version drifts", async () => {
     ),
     (error) => {
       assert.match(error.stderr, /release_version_drift/u);
-      assert.match(error.stderr, /plugin\.json declares 0\.3\.2; expected 0\.3\.1/u);
+      assert.match(error.stderr, /plugin\.json declares 0\.3\.1; expected 0\.3\.2/u);
       return true;
     },
   );
@@ -259,7 +199,7 @@ test("release validation fails when a bundled Skill command drifts", async () =>
   const skill = await readFile(skillPath, "utf8");
   await writeFile(
     skillPath,
-    skill.replace("@launchrally/cli@0.3.1", "@launchrally/cli@0.3.2"),
+    skill.replace("@launchrally/cli@0.3.2", "@launchrally/cli@0.3.1"),
   );
 
   await assert.rejects(
@@ -469,7 +409,7 @@ test("npm release packages are public, provenance-enabled, and file-allowlisted"
     assert.equal(packageJson.repository?.url, "git+https://github.com/codeacme17/launchrally.git");
     for (const [dependency, version] of Object.entries(packageJson.dependencies ?? {})) {
       if (dependency.startsWith("@launchrally/")) {
-        assert.equal(version, "0.3.1", `${relative}: ${dependency}`);
+        assert.equal(version, "0.3.2", `${relative}: ${dependency}`);
       }
     }
   }
@@ -521,17 +461,17 @@ test("the default first Audit uses an exact user-managed Launcher with npm-exec 
 
   assert.match(
     readme,
-    /npm install --global @launchrally\/cli@0\.3\.1/u,
+    /npm install --global @launchrally\/cli@0\.3\.2/u,
   );
   assert.match(readme, /rally --version --json/u);
   assert.match(
     readme,
-    /npm exec --package=@launchrally\/cli@0\.3\.1 -- rally audit --plain --cwd \. --output \.\/launchrally-audit-report\.json/u,
+    /npm exec --package=@launchrally\/cli@0\.3\.2 -- rally audit --plain --cwd \. --output \.\/launchrally-audit-report\.json/u,
   );
   assert.match(publicGuidance, /preserve the package manager's download confirmation/iu);
   assert.match(
     skillGuidance,
-    /npm install --global @launchrally\/cli@0\.3\.1/u,
+    /npm install --global @launchrally\/cli@0\.3\.2/u,
   );
   assert.match(skillGuidance, /stop before Audit/iu);
   assert.doesNotMatch(publicGuidance, /npm exec[^\n]*--(?:yes|y)\b/u);
@@ -543,7 +483,7 @@ test("release validation rejects internal dependency ranges", async () => {
   const fixture = await createReleaseFixture();
   const packagePath = path.join(fixture, "packages/cli/package.json");
   const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
-  packageJson.dependencies["@launchrally/core"] = "^0.3.1";
+  packageJson.dependencies["@launchrally/core"] = "^0.3.2";
   await writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`);
 
   await assert.rejects(
@@ -554,7 +494,7 @@ test("release validation rejects internal dependency ranges", async () => {
     ),
     (error) => {
       assert.match(error.stderr, /release_dependency_drift/u);
-      assert.match(error.stderr, /@launchrally\/core declares \^0\.3\.1/u);
+      assert.match(error.stderr, /@launchrally\/core declares \^0\.3\.2/u);
       return true;
     },
   );
@@ -567,12 +507,12 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
     { cwd: root },
   );
   const plan = JSON.parse(stdout);
-  const exactPackages = releaseManifest.packages.map(({ name }) => `${name}@0.3.1`);
+  const exactPackages = releaseManifest.packages.map(({ name }) => `${name}@0.3.2`);
 
   assert.deepEqual(plan, {
     status: "planned",
     source: "public_registry",
-    version: "0.3.1",
+    version: "0.3.2",
     exact_packages: exactPackages,
     install: {
       command: "npm",
@@ -588,7 +528,7 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
     registry_verification: releaseManifest.packages.map(({ name }) => ({
       package: name,
       dist_tag: "experimental",
-      expected_version: "0.3.1",
+      expected_version: "0.3.2",
     })),
     provenance_verification: {
       command: "npm",
@@ -599,7 +539,7 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
         command: "npm",
         arguments: [
           "exec",
-          "--package=@launchrally/cli@0.3.1",
+          "--package=@launchrally/cli@0.3.2",
           "--",
           "rally",
         ],
@@ -611,7 +551,7 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
             "install",
             "--global",
             "--ignore-scripts",
-            "@launchrally/cli@0.3.1",
+            "@launchrally/cli@0.3.2",
           ],
         },
         verification: ["--version", "--json"],
@@ -627,7 +567,7 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
       codex: {
         marketplace: "codeacme17/launchrally",
         plugin: "launchrally@launchrally",
-        ref: "v0.3.1",
+        ref: "v0.3.2",
       },
     },
   });
@@ -653,7 +593,7 @@ test("Stable public smoke verifies the latest dist-tag", async () => {
     releaseManifest.packages.map(({ name }) => ({
       package: name,
       dist_tag: "latest",
-      expected_version: "0.3.1",
+      expected_version: "0.3.2",
     })),
   );
 });
@@ -667,7 +607,7 @@ test("Stable promotion plans a new coherent version through trusted publishing",
       "--root",
       fixture,
       "--tag",
-      "v0.3.1",
+      "v0.3.2",
       "--dry-run",
       "--json",
     ],
@@ -677,8 +617,8 @@ test("Stable promotion plans a new coherent version through trusted publishing",
   assert.deepEqual(JSON.parse(stdout), {
     status: "planned",
     strategy: "new_coherent_version",
-    tag: "v0.3.1",
-    version: "0.3.1",
+    tag: "v0.3.2",
+    version: "0.3.2",
     packages: releaseManifest.packages.map(({ name }) => name),
     publish: releaseManifest.packages.map(({ name }) => ({
       command: "npm",
@@ -702,12 +642,12 @@ test("Stable promotion plans a new coherent version through trusted publishing",
       arguments: [
         "release",
         "create",
-        "v0.3.1",
+        "v0.3.2",
         "--verify-tag",
         "--generate-notes",
         "--latest",
         "--title",
-        "LaunchRally v0.3.1",
+        "LaunchRally v0.3.2",
       ],
     },
   });
@@ -766,7 +706,7 @@ test("Stable promotion rejects every ineligible release state", async () => {
     {
       name: "approved tag",
       file: "release/p0.json",
-      mutate: (value) => { value.stable_promotion.approved_tag = "v0.3.2"; },
+      mutate: (value) => { value.stable_promotion.approved_tag = "v0.3.1"; },
       blocker: "stable_promotion.approved_tag",
     },
     {
@@ -791,7 +731,7 @@ test("Stable promotion rejects every ineligible release state", async () => {
           "--root",
           fixture,
           "--tag",
-          "v0.3.1",
+          "v0.3.2",
           "--dry-run",
           "--json",
         ],
@@ -817,7 +757,7 @@ test("Stable promotion requires the authoritative five-package release set", asy
   await assert.rejects(
     execFileAsync(
       process.execPath,
-      ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.1", "--dry-run"],
+      ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.2", "--dry-run"],
       { cwd: root },
     ),
     (error) => {
@@ -834,8 +774,8 @@ test("Stable promotion rejects a prerelease SemVer", async () => {
   const contractPath = path.join(fixture, "release/p0.json");
   const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
-  packageJson.version = "0.3.1-rc.1";
-  contract.stable_promotion.approved_tag = "v0.3.1-rc.1";
+  packageJson.version = "0.3.2-rc.1";
+  contract.stable_promotion.approved_tag = "v0.3.2-rc.1";
   await Promise.all([
     writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`),
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
@@ -849,7 +789,7 @@ test("Stable promotion rejects a prerelease SemVer", async () => {
         "--root",
         fixture,
         "--tag",
-        "v0.3.1-rc.1",
+        "v0.3.2-rc.1",
         "--dry-run",
       ],
       { cwd: root },
@@ -871,7 +811,7 @@ test("Stable promotion publishes, verifies, and announces through public command
       "--root",
       fixture,
       "--tag",
-      "v0.3.1",
+      "v0.3.2",
       "--json",
     ],
     {
@@ -887,8 +827,8 @@ test("Stable promotion publishes, verifies, and announces through public command
   assert.deepEqual(JSON.parse(stdout), {
     status: "completed",
     strategy: "new_coherent_version",
-    tag: "v0.3.1",
-    version: "0.3.1",
+    tag: "v0.3.2",
+    version: "0.3.2",
     publication: "published",
     smoke: "verified",
     github_release: "created",
@@ -900,7 +840,7 @@ test("Stable promotion publishes, verifies, and announces through public command
   assert.deepEqual(calls, [
     ...releaseManifest.packages.map(({ name }) => ({
       command: "npm",
-      arguments: ["view", `${name}@0.3.1`, "version", "--json"],
+      arguments: ["view", `${name}@0.3.2`, "version", "--json"],
     })),
     ...releaseManifest.packages.map(({ name }) => ({
       command: "npm",
@@ -921,19 +861,19 @@ test("Stable promotion publishes, verifies, and announces through public command
     },
     {
       command: "gh",
-      arguments: ["release", "view", "v0.3.1", "--json", "isDraft,isPrerelease"],
+      arguments: ["release", "view", "v0.3.2", "--json", "isDraft,isPrerelease"],
     },
     {
       command: "gh",
       arguments: [
         "release",
         "create",
-        "v0.3.1",
+        "v0.3.2",
         "--verify-tag",
         "--generate-notes",
         "--latest",
         "--title",
-        "LaunchRally v0.3.1",
+        "LaunchRally v0.3.2",
       ],
     },
   ]);
@@ -944,7 +884,7 @@ test("Stable promotion resumes only after a coherent publication", async () => {
   const commands = await createStablePromotionCommandStubs();
   const { stdout } = await execFileAsync(
     process.execPath,
-    ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.1", "--json"],
+    ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.2", "--json"],
     {
       cwd: root,
       env: {
@@ -967,11 +907,11 @@ test("Stable promotion resumes only after a coherent publication", async () => {
 test("Stable promotion rejects a partially published coherent version", async () => {
   const fixture = await createStablePromotionFixture();
   const commands = await createStablePromotionCommandStubs();
-  const existing = `${releaseManifest.packages[0].name}@0.3.1`;
+  const existing = `${releaseManifest.packages[0].name}@0.3.2`;
   await assert.rejects(
     execFileAsync(
       process.execPath,
-      ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.1", "--json"],
+      ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.2", "--json"],
       {
         cwd: root,
         env: {
@@ -1000,7 +940,7 @@ test("Stable promotion reconciles an existing GitHub release on retry", async ()
   const commands = await createStablePromotionCommandStubs();
   const { stdout } = await execFileAsync(
     process.execPath,
-    ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.1", "--json"],
+    ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.2", "--json"],
     {
       cwd: root,
       env: {
@@ -1020,19 +960,19 @@ test("Stable promotion reconciles an existing GitHub release on retry", async ()
   assert.deepEqual(calls.slice(-2), [
     {
       command: "gh",
-      arguments: ["release", "view", "v0.3.1", "--json", "isDraft,isPrerelease"],
+      arguments: ["release", "view", "v0.3.2", "--json", "isDraft,isPrerelease"],
     },
     {
       command: "gh",
       arguments: [
         "release",
         "edit",
-        "v0.3.1",
+        "v0.3.2",
         "--draft=false",
         "--prerelease=false",
         "--latest",
         "--title",
-        "LaunchRally v0.3.1",
+        "LaunchRally v0.3.2",
       ],
     },
   ]);
@@ -1048,7 +988,7 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
 
   assert.deepEqual(result, {
     status: "completed",
-    version: "0.3.1",
+    version: "0.3.2",
     artifacts: [
       "@launchrally/claude-plugin",
       "@launchrally/cli",
@@ -1059,7 +999,7 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
     artifact_files_verified: true,
     cli_smoke: {
       operation: "version",
-      cli_version: "0.3.1",
+      cli_version: "0.3.2",
       audit_status: "needs_input",
       provider_tool_recovery: "exact_instruction_and_fresh_permission",
       coverage_journeys: [
@@ -1163,7 +1103,7 @@ test("Codex and Claude marketplaces resolve their native Plugin adapters", async
     source: {
       source: "npm",
       package: "@launchrally/claude-plugin",
-      version: "0.3.1",
+      version: "0.3.2",
     },
   }]);
 });
@@ -1204,7 +1144,7 @@ test("release docs cover user-scope Plugin install, update, and uninstall", asyn
   assert.match(readme, /\[Install and release guide\]\(docs\/getting-started\/install\.md\)/u);
   assert.match(
     guide,
-    /codex plugin marketplace add codeacme17\/launchrally --ref v0\.3\.1/u,
+    /codex plugin marketplace add codeacme17\/launchrally --ref v0\.3\.2/u,
   );
   assert.match(guide, /codex plugin add launchrally@launchrally/u);
   assert.match(guide, /codex plugin remove launchrally@launchrally/u);
@@ -1226,7 +1166,7 @@ test("release docs cover user-scope Plugin install, update, and uninstall", asyn
     /claude plugin uninstall launchrally@launchrally --scope user/u,
   );
   assert.match(guide, /Plugin removal preserves project-owned `?\.launchrally/iu);
-  assert.match(guide, /npm install --global @launchrally\/cli@0\.3\.1/u);
+  assert.match(guide, /npm install --global @launchrally\/cli@0\.3\.2/u);
   assert.doesNotMatch(guide, /sudo npm|npm exec[^\n]*--yes/u);
   assert.doesNotMatch(guide, /curl[^\n|]*\|\s*(?:ba)?sh/u);
   assert.doesNotMatch(guide, /(?:copy|cp)[^\n]*skills?\//iu);
@@ -1366,22 +1306,22 @@ test("release validation requires an annotated tag on the approved main commit",
   await execFileAsync("git", [
     "-c", "user.name=LaunchRally Tests",
     "-c", "user.email=tests@launchrally.dev",
-    "tag", "--annotate", "v0.3.1", "--message", "LaunchRally 0.3.1",
+    "tag", "--annotate", "v0.3.2", "--message", "LaunchRally 0.3.2",
   ], { cwd: repository });
 
   const { stdout } = await execFileAsync(
     process.execPath,
-    [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.3.1", "--json"],
+    [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.3.2", "--json"],
     { cwd: root },
   );
   assert.equal(JSON.parse(stdout).tag_type, "annotated");
 
-  await execFileAsync("git", ["tag", "--delete", "v0.3.1"], { cwd: repository });
-  await execFileAsync("git", ["tag", "v0.3.1"], { cwd: repository });
+  await execFileAsync("git", ["tag", "--delete", "v0.3.2"], { cwd: repository });
+  await execFileAsync("git", ["tag", "v0.3.2"], { cwd: repository });
   await assert.rejects(
     execFileAsync(
       process.execPath,
-      [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.3.1"],
+      [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.3.2"],
       { cwd: root },
     ),
     (error) => {
@@ -1390,11 +1330,11 @@ test("release validation requires an annotated tag on the approved main commit",
     },
   );
 
-  await execFileAsync("git", ["tag", "--delete", "v0.3.1"], { cwd: repository });
+  await execFileAsync("git", ["tag", "--delete", "v0.3.2"], { cwd: repository });
   await execFileAsync("git", [
     "-c", "user.name=LaunchRally Tests",
     "-c", "user.email=tests@launchrally.dev",
-    "tag", "--annotate", "v0.3.1", "--message", "LaunchRally 0.3.1",
+    "tag", "--annotate", "v0.3.2", "--message", "LaunchRally 0.3.2",
   ], { cwd: repository });
   await writeFile(path.join(repository, "release.txt"), "different main\n");
   await execFileAsync("git", ["add", "release.txt"], { cwd: repository });
@@ -1406,11 +1346,11 @@ test("release validation requires an annotated tag on the approved main commit",
   await execFileAsync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], {
     cwd: repository,
   });
-  await execFileAsync("git", ["checkout", "--quiet", "v0.3.1"], { cwd: repository });
+  await execFileAsync("git", ["checkout", "--quiet", "v0.3.2"], { cwd: repository });
   await assert.rejects(
     execFileAsync(
       process.execPath,
-      [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.3.1"],
+      [path.join(root, "scripts/validate-release-ref.mjs"), "--root", repository, "--tag", "v0.3.2"],
       { cwd: root },
     ),
     (error) => {
@@ -1425,7 +1365,7 @@ test("release validation requires an annotated tag on the approved main commit",
       "--root",
       repository,
       "--tag",
-      "v0.3.1",
+      "v0.3.2",
       "--allow-promotion-head",
       "--json",
     ],
@@ -1464,7 +1404,7 @@ if (args[0] === "publish" && args[2] === "@launchrally/core") {
     }),
     (error) => {
       assert.match(error.stderr, /partial_publication/u);
-      assert.match(error.stderr, /@launchrally\/contracts@0\.3\.1/u);
+      assert.match(error.stderr, /@launchrally\/contracts@0\.3\.2/u);
       assert.match(error.stderr, /new coherent version/iu);
       return true;
     },
@@ -1473,7 +1413,7 @@ if (args[0] === "publish" && args[2] === "@launchrally/core") {
   const calls = (await readFile(logPath, "utf8")).trim().split("\n").map(JSON.parse);
   assert.deepEqual(calls.slice(0, 5), releaseManifest.packages.map(({ name }) => [
     "view",
-    `${name}@0.3.1`,
+    `${name}@0.3.2`,
     "version",
     "--json",
   ]));
@@ -1487,12 +1427,12 @@ test("release validation rejects a tag that does not match package SemVer", asyn
   await assert.rejects(
     execFileAsync(
       process.execPath,
-      ["scripts/validate-release.mjs", "--tag", "v0.3.2", "--json"],
+      ["scripts/validate-release.mjs", "--tag", "v0.3.1", "--json"],
       { cwd: root },
     ),
     (error) => {
       assert.match(error.stderr, /release_tag_mismatch/u);
-      assert.match(error.stderr, /v0\.3\.2.*v0\.3\.1/u);
+      assert.match(error.stderr, /v0\.3\.1.*v0\.3\.2/u);
       return true;
     },
   );

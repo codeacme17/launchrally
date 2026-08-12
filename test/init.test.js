@@ -2111,7 +2111,7 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
 });
 
 test("the CLI previews a saved complete Audit and decline applies nothing", async () => {
-  const directory = await fixtureWithCliDependency("0.3.1");
+  const directory = await fixtureWithCliDependency("0.3.2");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-report-file-"));
   const reportPath = path.join(reportDirectory, "audit.json");
@@ -2152,7 +2152,7 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
 });
 
 test("Human Mode renders every exact initialization change before confirmation", async () => {
-  const directory = await fixtureWithCliDependency("0.3.1");
+  const directory = await fixtureWithCliDependency("0.3.2");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-human-report-"));
   const reportPath = path.join(reportDirectory, "audit.json");
