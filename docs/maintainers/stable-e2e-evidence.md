@@ -71,6 +71,7 @@ This evidence establishes Stable promotion eligibility only. The protected
 workflow remains the authority for publishing the five exact `0.3.2` packages
 to `latest`, verifying their public behavior, merging the reviewed promotion
 commit, and creating the regular GitHub Latest Release.
+
 ## Promotion sequencing recovery
 
 On 2026-08-12, the first `dev` to `main` promotion pull request was manually
@@ -84,3 +85,17 @@ a new bot-authored `dev` to `main` promotion pull request for independent human
 approval. The exact tagged follow-up head must then pass the unchanged protected
 Trusted Publishing, public smoke, merge, and announcement sequence. No registry
 tag or release is moved manually as part of this recovery.
+
+The bot-authored follow-up pull request passed the full Node and operating-system
+matrix and received an independent owner approval bound to its exact head. It
+was then manually merged on 2026-08-12 before the protected tag, Trusted
+Publishing, or public smoke. The repository-level Actions pull-request setting
+had already been restored to disabled. This second premature merge is likewise
+not publication evidence: the five `0.3.2` packages, tag, and GitHub Release
+still did not exist.
+
+The final recovery repeats the same unchanged gate with a new evidence-only
+`dev` head. Its bot-authored promotion pull request must remain open after human
+approval. Only `.github/workflows/release.yml` may merge it, and only after the
+exact tagged packages resolve from npm `latest` and the public CLI and Plugin
+smoke journeys pass.
