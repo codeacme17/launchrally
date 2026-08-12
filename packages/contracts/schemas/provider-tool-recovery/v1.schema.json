@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/provider-tool-recovery/v1",
+  "title": "LaunchRally Provider Tool Recovery v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "provider",
+    "adapter_version",
+    "permission_id",
+    "executable",
+    "state",
+    "detected",
+    "evidence_benefit",
+    "provider_read_scope",
+    "installation_authority",
+    "active_environment",
+    "choices",
+    "installation_instructions",
+    "safety"
+  ],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/provider-tool-recovery/v1" },
+    "provider": { "type": "string", "minLength": 1 },
+    "adapter_version": { "type": "string", "minLength": 1 },
+    "permission_id": { "type": "string", "pattern": "^provider_read:" },
+    "executable": { "type": "string", "minLength": 1 },
+    "state": {
+      "enum": [
+        "executable_missing",
+        "unsupported_version",
+        "unauthenticated",
+        "guidance_unavailable",
+        "ready_for_fresh_permission",
+        "installation_declined",
+        "authentication_declined",
+        "fresh_read_declined",
+        "recovery_cancelled"
+      ]
+    },
+    "detected": {
+      "type": "object",
+      "required": ["executable", "version", "authentication"],
+      "properties": {
+        "executable": { "enum": ["missing", "present", "unknown"] },
+        "version": { "enum": ["unknown", "supported", "unsupported"] },
+        "detected_version": { "type": ["string", "null"] },
+        "authentication": { "enum": ["unknown", "unauthenticated"] }
+      },
+      "additionalProperties": false
+    },
+    "evidence_benefit": {
+      "type": "object",
+      "required": ["target", "requested_fields", "summary"],
+      "properties": {
+        "target": { "type": "string", "minLength": 1 },
+        "requested_fields": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "summary": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "provider_read_scope": { "type": "object" },
+    "installation_authority": {
+      "type": "object",
+      "required": [
+        "official_source",
+        "package",
+        "supported_platforms",
+        "supported_shells",
+        "verification_command",
+        "reviewed_at"
+      ],
+      "properties": {
+        "official_source": {
+          "type": "object",
+          "required": ["title", "url"],
+          "properties": {
+            "title": { "type": "string", "minLength": 1 },
+            "url": { "type": "string", "format": "uri" }
+          },
+          "additionalProperties": false
+        },
+        "package": {
+          "type": "object",
+          "required": ["manager", "name", "exact_version"],
+          "properties": {
+            "manager": { "const": "npm" },
+            "name": { "type": "string", "minLength": 1 },
+            "exact_version": {
+              "type": "string",
+              "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$"
+            }
+          },
+          "additionalProperties": false
+        },
+        "supported_platforms": {
+          "type": "array",
+          "items": { "enum": ["darwin", "linux", "win32"] },
+          "uniqueItems": true
+        },
+        "supported_shells": {
+          "type": "array",
+          "items": { "enum": ["posix", "powershell"] },
+          "uniqueItems": true
+        },
+        "verification_command": { "$ref": "#/$defs/command" },
+        "reviewed_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" }
+      },
+      "additionalProperties": false
+    },
+    "active_environment": {
+      "type": "object",
+      "required": ["platform", "shell", "guidance_available"],
+      "properties": {
+        "platform": { "type": "string", "minLength": 1 },
+        "shell": { "type": "string", "minLength": 1 },
+        "guidance_available": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "choices": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "default"],
+        "properties": {
+          "id": {
+            "enum": [
+              "continue_with_gap",
+              "show_install_instructions",
+              "rediscover_executable",
+              "cancel"
+            ]
+          },
+          "label": { "type": "string", "minLength": 1 },
+          "default": { "type": "boolean" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "installation_instructions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["route_id", "command"],
+        "properties": {
+          "route_id": { "type": "string", "minLength": 1 },
+          "command": { "$ref": "#/$defs/command" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "fresh_permission": {
+      "type": "object",
+      "required": [
+        "permission_id",
+        "boundary",
+        "decision",
+        "basis",
+        "previous_approval_reused",
+        "scope"
+      ],
+      "properties": {
+        "permission_id": { "type": "string", "pattern": "^provider_read:" },
+        "boundary": { "const": "provider_read" },
+        "decision": { "const": "pending" },
+        "basis": { "const": "provider_tool_rediscovered" },
+        "previous_approval_reused": { "const": false },
+        "scope": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "safety": {
+      "type": "object",
+      "required": [
+        "launchrally_executes_installation",
+        "provider_read_approval_reused",
+        "authentication_initiated",
+        "credentials_requested",
+        "provider_write_authorized"
+      ],
+      "properties": {
+        "launchrally_executes_installation": { "const": false },
+        "provider_read_approval_reused": { "const": false },
+        "authentication_initiated": { "const": false },
+        "credentials_requested": { "const": false },
+        "provider_write_authorized": { "const": false }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "command": {
+      "type": "object",
+      "required": ["executable", "arguments", "shell"],
+      "properties": {
+        "executable": { "type": "string", "minLength": 1 },
+        "arguments": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "shell": { "const": false }
+      },
+      "additionalProperties": false
+    }
+  }
+}

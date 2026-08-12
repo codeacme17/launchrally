@@ -382,6 +382,12 @@ export function renderReportMarkdown(record) {
       `${gap.status.toUpperCase()} [${gap.priority.toUpperCase()}] ${oneLine(gap.check_id)} — ${oneLine(gap.reason)}`,
     ),
     "",
+    "## Provider Tool Recovery",
+    "",
+    markdownList(record.results.provider_tool_recoveries ?? [], (recovery) =>
+      `${oneLine(recovery.provider)} ${oneLine(recovery.adapter_version)} — ${oneLine(recovery.state)}; executable ${oneLine(recovery.executable)}; exact supported version ${oneLine(recovery.installation_authority.package.exact_version)}; default ${oneLine(recovery.choices.find(({ default: isDefault }) => isDefault)?.id ?? "none")}`,
+    ),
+    "",
     "## Limitations",
     "",
     markdownList(record.limitations, oneLine),
@@ -505,6 +511,9 @@ export function createReportPackage({
       public_evidence_refs: publicEvidenceRefs,
       authenticated_journey_evidence_refs: authenticatedJourneyEvidenceRefs,
       provider_evidence_refs: providerEvidenceRefs,
+      provider_tool_recoveries: structuredClone(
+        provider_result.provider_tool_recoveries ?? [],
+      ),
       action_queue: policyResult.action_queue,
       verification_gaps: policyResult.verification_gaps,
       domain_coverage: domainCoverage,

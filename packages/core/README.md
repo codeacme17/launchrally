@@ -21,6 +21,8 @@ console.log(interaction.status, interaction.next);
 
 `runAudit` starts with deterministic local repository facts and returns a typed interaction. Callers must preserve its explicit confirmation and permission flow before supplying any optional public or Provider reads.
 
+Missing or unauthenticated Provider executables remain Verification Gaps. The Core attaches `launchrally.dev/provider-tool-recovery/v1`, can reveal only the shared reviewed exact-version route, and can rediscover only through the declared version command. A successful rediscovery returns a new pending Provider-read description and never reuses the earlier approval.
+
 ## Compatibility and boundaries
 
 This is an ESM package for Node.js 20.12.0 or newer. The core does not create accounts, provision infrastructure, deploy, or perform autonomous production writes. Audit and Plan are read-only; the separately previewed Init and local intent flows require explicit confirmation. See [privacy and permissions](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/privacy.md) for the authoritative boundary.

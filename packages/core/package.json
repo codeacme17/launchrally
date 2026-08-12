@@ -15,6 +15,7 @@
   "exports": "./src/index.js",
   "files": [
     "provider-decision-cards/",
+    "provider-tool-installation/",
     "src/"
   ],
   "dependencies": {

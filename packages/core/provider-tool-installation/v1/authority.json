@@ -1,0 +1,195 @@
+[
+  {
+    "provider": "clerk",
+    "adapter_version": "clerk-read/v1",
+    "executable": "clerk",
+    "official_source": {
+      "title": "Clerk CLI",
+      "url": "https://clerk.com/docs/cli"
+    },
+    "package": {
+      "manager": "npm",
+      "name": "clerk",
+      "exact_version": "3.0.1"
+    },
+    "supported_platforms": ["darwin", "linux", "win32"],
+    "supported_shells": ["posix", "powershell"],
+    "verification_command": {
+      "executable": "clerk",
+      "arguments": ["--version"],
+      "shell": false
+    },
+    "installation_routes": [
+      {
+        "route_id": "official-npm-global",
+        "platforms": ["darwin", "linux", "win32"],
+        "shells": ["posix", "powershell"],
+        "command": {
+          "executable": "npm",
+          "arguments": ["install", "--global", "clerk@3.0.1"],
+          "shell": false
+        }
+      }
+    ],
+    "reviewed_at": "2026-08-12"
+  },
+  {
+    "provider": "cloudflare",
+    "adapter_version": "cloudflare-read/v1",
+    "executable": "wrangler",
+    "official_source": {
+      "title": "Install or update Wrangler",
+      "url": "https://developers.cloudflare.com/workers/wrangler/install-and-update/"
+    },
+    "package": {
+      "manager": "npm",
+      "name": "wrangler",
+      "exact_version": "4.121.0"
+    },
+    "supported_platforms": [],
+    "supported_shells": [],
+    "verification_command": {
+      "executable": "wrangler",
+      "arguments": ["--version"],
+      "shell": false
+    },
+    "installation_routes": [],
+    "reviewed_at": "2026-08-12"
+  },
+  {
+    "provider": "neon",
+    "adapter_version": "neon-read/v1",
+    "executable": "neonctl",
+    "official_source": {
+      "title": "Neon CLI",
+      "url": "https://neon.com/cli"
+    },
+    "package": {
+      "manager": "npm",
+      "name": "neonctl",
+      "exact_version": "3.1.1"
+    },
+    "supported_platforms": ["darwin", "linux", "win32"],
+    "supported_shells": ["posix", "powershell"],
+    "verification_command": {
+      "executable": "neonctl",
+      "arguments": ["--version"],
+      "shell": false
+    },
+    "installation_routes": [
+      {
+        "route_id": "official-npm-global",
+        "platforms": ["darwin", "linux", "win32"],
+        "shells": ["posix", "powershell"],
+        "command": {
+          "executable": "npm",
+          "arguments": ["install", "--global", "neonctl@3.1.1"],
+          "shell": false
+        }
+      }
+    ],
+    "reviewed_at": "2026-08-12"
+  },
+  {
+    "provider": "resend",
+    "adapter_version": "resend-read/v1",
+    "executable": "resend",
+    "official_source": {
+      "title": "Resend CLI",
+      "url": "https://resend.com/docs/cli"
+    },
+    "package": {
+      "manager": "npm",
+      "name": "resend-cli",
+      "exact_version": "2.12.0"
+    },
+    "supported_platforms": ["darwin", "linux", "win32"],
+    "supported_shells": ["posix", "powershell"],
+    "verification_command": {
+      "executable": "resend",
+      "arguments": ["--version"],
+      "shell": false
+    },
+    "installation_routes": [
+      {
+        "route_id": "official-npm-global",
+        "platforms": ["darwin", "linux", "win32"],
+        "shells": ["posix", "powershell"],
+        "command": {
+          "executable": "npm",
+          "arguments": ["install", "--global", "resend-cli@2.12.0"],
+          "shell": false
+        }
+      }
+    ],
+    "reviewed_at": "2026-08-12"
+  },
+  {
+    "provider": "sentry",
+    "adapter_version": "sentry-read/v1",
+    "executable": "sentry-cli",
+    "official_source": {
+      "title": "Official Sentry CLI npm package",
+      "url": "https://www.npmjs.com/package/@sentry/cli"
+    },
+    "package": {
+      "manager": "npm",
+      "name": "@sentry/cli",
+      "exact_version": "3.6.2"
+    },
+    "supported_platforms": ["darwin", "linux", "win32"],
+    "supported_shells": ["posix", "powershell"],
+    "verification_command": {
+      "executable": "sentry-cli",
+      "arguments": ["--version"],
+      "shell": false
+    },
+    "installation_routes": [
+      {
+        "route_id": "official-npm-global",
+        "platforms": ["darwin", "linux", "win32"],
+        "shells": ["posix", "powershell"],
+        "command": {
+          "executable": "npm",
+          "arguments": ["install", "--global", "@sentry/cli@3.6.2"],
+          "shell": false
+        }
+      }
+    ],
+    "reviewed_at": "2026-08-12"
+  },
+  {
+    "provider": "vercel",
+    "adapter_version": "vercel-read/v1",
+    "executable": "vercel",
+    "official_source": {
+      "title": "Vercel CLI overview",
+      "url": "https://vercel.com/docs/cli"
+    },
+    "package": {
+      "manager": "npm",
+      "name": "vercel",
+      "exact_version": "58.9.4"
+    },
+    "supported_platforms": ["darwin", "linux", "win32"],
+    "supported_shells": ["posix", "powershell"],
+    "verification_command": {
+      "executable": "vercel",
+      "arguments": ["--version"],
+      "shell": false
+    },
+    "installation_routes": [
+      {
+        "route_id": "official-npm-global",
+        "platforms": ["darwin", "linux", "win32"],
+        "shells": ["posix", "powershell"],
+        "command": {
+          "executable": "npm",
+          "arguments": ["install", "--global", "vercel@58.9.4"],
+          "shell": false
+        }
+      }
+    ],
+    "reviewed_at": "2026-08-12"
+  }
+]

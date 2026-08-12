@@ -44,7 +44,7 @@ const publishedPackages = [
   {
     name: "@launchrally/core",
     packagePath: "packages/core",
-    packageFiles: ["provider-decision-cards/", "src/"],
+    packageFiles: ["provider-decision-cards/", "provider-tool-installation/", "src/"],
     keywords: ["launchrally", "launch-readiness", "audit", "verification", "local-first", "release"],
     requiredContent: [
       "# @launchrally/core",

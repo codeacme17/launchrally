@@ -1086,7 +1086,8 @@ test("the canonical Skill routes every structured CLI interaction state without 
     contract,
     /`needs_refresh`.*typed reason.*request\.operation.*request\.scope/su,
   );
-  assert.match(contract, /`providers` is a supporting advisory operation/u);
+  assert.match(contract, /`providers` has two typed routes/u);
+  assert.match(contract, /launchrally\.dev\/provider-tool-recovery\/v1/u);
 
   for (const adapter of adapters) {
     const adapterContract = await readFile(

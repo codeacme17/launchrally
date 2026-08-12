@@ -1409,9 +1409,189 @@ async function smokeCli(
     throw new Error(`cli_artifact_smoke_failed: first Audit returned ${audit.status}`);
   }
 
-  const matrix = await json(path.join(root, "fixtures", "coverage", "matrix.json"));
+  const auditConfirmation = JSON.parse((await invokeRally([
+    "audit", "--json", "--cwd", auditProject,
+    "--resume", audit.interaction.resume_token,
+    "--answers", JSON.stringify({
+      intended_environment: "production",
+      production_targets: ["https://example.com"],
+      core_journeys: [{ method: "GET", path: "/", purpose: "homepage loads" }],
+      provider_roles: [{ provider: "clerk", role: "authentication" }],
+      support_layers: [],
+    }),
+  ], { cwd: cleanProject })).stdout);
+  const auditPermission = JSON.parse((await invokeRally([
+    "audit", "--json", "--cwd", auditProject,
+    "--resume", auditConfirmation.interaction.resume_token,
+    "--confirm", "confirm",
+  ], { cwd: cleanProject })).stdout);
+  const missingProviderPath = path.join(temporaryRoot, "missing-provider-path");
+  await mkdir(missingProviderPath);
+  const recoveryReport = JSON.parse((await invokeRally([
+    "audit", "--json", "--cwd", auditProject,
+    "--resume", auditPermission.interaction.resume_token,
+    "--permissions", JSON.stringify({
+      public_verification: "denied",
+      "provider_read:clerk": "approved",
+    }),
+  ], {
+    cwd: cleanProject,
+    env: { ...process.env, PATH: missingProviderPath },
+  })).stdout);
+  const recovery = recoveryReport.report?.results?.provider_tool_recoveries?.[0];
+  if (recovery?.provider !== "clerk") {
+    throw new Error("packed_provider_recovery_report_missing: Audit did not emit Clerk recovery");
+  }
+  const recoveryReportPath = path.join(temporaryRoot, "provider-recovery-report.json");
+  await writeFile(recoveryReportPath, JSON.stringify(recoveryReport));
+  const instructions = JSON.parse((await invokeRally([
+    "providers",
+    "--json",
+    "--report",
+    recoveryReportPath,
+    "--recover",
+    "clerk",
+    "--choice",
+    "show_install_instructions",
+  ], { cwd: cleanProject })).stdout);
+  assertEqual(
+    instructions.recovery?.installation_instructions?.[0]?.command,
+    {
+      executable: "npm",
+      arguments: ["install", "--global", "clerk@3.0.1"],
+      shell: false,
+    },
+    "packed_provider_recovery_instruction_drift",
+    "packed CLI must render the reviewed exact-version instruction",
+  );
+
+  const providerStub = path.join(temporaryRoot, "provider-recovery-bin");
+  const providerCalls = path.join(temporaryRoot, "provider-recovery-calls.jsonl");
+  const packageManagerCalls = path.join(temporaryRoot, "provider-recovery-npm-calls.jsonl");
+  const recoveryWatch = path.join(temporaryRoot, "provider-recovery-watch");
+  const recoveryCredentialSentinel = path.join(recoveryWatch, "credentials-do-not-touch");
+  const credentialReadCalls = path.join(temporaryRoot, "provider-recovery-credential-reads.jsonl");
+  const credentialReadGuard = path.join(temporaryRoot, "deny-credential-reads.cjs");
   const networkGuard = path.join(temporaryRoot, "deny-network.cjs");
   await cp(path.join(root, "fixtures", "coverage", "deny-network.cjs"), networkGuard);
+  await writeFile(credentialReadGuard, [
+    'const fs = require("node:fs");',
+    'const path = require("node:path");',
+    "const guardedRoots = JSON.parse(process.env.PROVIDER_RECOVERY_CREDENTIAL_ROOTS).map((value) => path.resolve(value));",
+    "const logPath = process.env.PROVIDER_RECOVERY_CREDENTIAL_READS;",
+    "function guard(value) {",
+    "  if (typeof value !== \"string\" && !Buffer.isBuffer(value) && !(value instanceof URL)) return;",
+    "  const candidate = path.resolve(value instanceof URL ? value.pathname : value.toString());",
+    "  if (!guardedRoots.some((root) => candidate === root || candidate.startsWith(`${root}${path.sep}`))) return;",
+    "  fs.appendFileSync(logPath, `${JSON.stringify(candidate)}\\n`);",
+    "  const error = new Error(\"Provider recovery attempted to read credential state.\");",
+    "  error.code = \"credential_read_forbidden\";",
+    "  throw error;",
+    "}",
+    "for (const method of [\"readFileSync\", \"openSync\", \"accessSync\", \"statSync\", \"lstatSync\", \"readdirSync\"]) {",
+    "  const original = fs[method];",
+    "  fs[method] = function guardedCredentialRead(value, ...rest) { guard(value); return original.call(this, value, ...rest); };",
+    "}",
+    "for (const method of [\"readFile\", \"open\", \"access\", \"stat\", \"lstat\", \"readdir\"]) {",
+    "  const original = fs.promises[method];",
+    "  fs.promises[method] = async function guardedCredentialRead(value, ...rest) { guard(value); return original.call(this, value, ...rest); };",
+    "}",
+  ].join("\n"));
+  await mkdir(providerStub);
+  await mkdir(recoveryWatch);
+  await writeFile(recoveryCredentialSentinel, "unchanged\n");
+  const providerScript = path.join(providerStub, "clerk-stub.cjs");
+  await writeFile(providerScript, [
+    'const fs = require("node:fs");',
+    "fs.appendFileSync(process.env.PROVIDER_RECOVERY_CALLS, JSON.stringify(process.argv.slice(2)) + \"\\n\");",
+    'process.stdout.write("3.0.1\\n");',
+  ].join("\n"));
+  if (process.platform === "win32") {
+    await writeFile(
+      path.join(providerStub, "clerk.cmd"),
+      `@echo off\r\n"${process.execPath}" "%~dp0clerk-stub.cjs" %*\r\n`,
+    );
+    await writeFile(
+      path.join(providerStub, "npm.cmd"),
+      `@echo off\r\necho npm>>"${packageManagerCalls}"\r\nexit /b 99\r\n`,
+    );
+  } else {
+    const providerExecutable = path.join(providerStub, "clerk");
+    await writeFile(providerExecutable, `#!/usr/bin/env node\n${await readFile(providerScript, "utf8")}\n`);
+    await chmod(providerExecutable, 0o755);
+    const npmExecutable = path.join(providerStub, "npm");
+    await writeFile(npmExecutable, `#!/bin/sh\nprintf 'npm\\n' >> '${packageManagerCalls}'\nexit 99\n`);
+    await chmod(npmExecutable, 0o755);
+  }
+  const watchedEntriesBefore = await readdir(recoveryWatch);
+  const rediscovered = JSON.parse((await invokeRally([
+    "providers",
+    "--json",
+    "--report",
+    recoveryReportPath,
+    "--recover",
+    "clerk",
+    "--choice",
+    "rediscover_executable",
+  ], {
+    cwd: cleanProject,
+    env: {
+      ...process.env,
+      PATH: `${providerStub}${path.delimiter}${process.env.PATH ?? ""}`,
+      PROVIDER_RECOVERY_CALLS: providerCalls,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require=${networkGuard} --require=${credentialReadGuard}`.trim(),
+      XDG_CONFIG_HOME: recoveryWatch,
+      PROVIDER_RECOVERY_CREDENTIAL_ROOTS: JSON.stringify([
+        recoveryWatch,
+        ...[process.env.HOME, process.env.USERPROFILE].filter(Boolean).flatMap((profile) => [
+          path.join(profile, ".config"),
+          path.join(profile, ".clerk"),
+          path.join(profile, ".sentryclirc"),
+          path.join(profile, ".npmrc"),
+          path.join(profile, "Library", "Application Support", "Clerk"),
+          path.join(profile, "Library", "Keychains"),
+          path.join(profile, "AppData", "Roaming", "Clerk"),
+        ]),
+      ]),
+      PROVIDER_RECOVERY_CREDENTIAL_READS: credentialReadCalls,
+    },
+  })).stdout);
+  assertEqual(
+    (await readFile(providerCalls, "utf8")).trim().split("\n").map(JSON.parse),
+    [["--version"]],
+    "packed_provider_recovery_silent_effect",
+    "packed recovery may execute only the structured version verification command",
+  );
+  await access(packageManagerCalls).then(
+    () => { throw new Error("packed_provider_recovery_silent_install: recovery invoked npm"); },
+    (error) => {
+      if (error?.code !== "ENOENT") throw error;
+    },
+  );
+  await access(credentialReadCalls).then(
+    () => { throw new Error("packed_provider_recovery_credential_read: recovery read credential state"); },
+    (error) => {
+      if (error?.code !== "ENOENT") throw error;
+    },
+  );
+  assertEqual(
+    await readdir(recoveryWatch),
+    watchedEntriesBefore,
+    "packed_provider_recovery_filesystem_effect",
+    "packed recovery must not create credential or configuration files",
+  );
+  if (await readFile(recoveryCredentialSentinel, "utf8") !== "unchanged\n") {
+    throw new Error("packed_provider_recovery_credential_effect: recovery changed credential state");
+  }
+  if (
+    rediscovered.outcome !== "ready_for_fresh_permission"
+    || rediscovered.request?.permission?.decision !== "pending"
+    || rediscovered.request?.permission?.previous_approval_reused !== false
+  ) {
+    throw new Error("packed_provider_recovery_permission_drift: rediscovery must require a fresh read");
+  }
+
+  const matrix = await json(path.join(root, "fixtures", "coverage", "matrix.json"));
   const npmStub = await createArtifactNpmStub(
     temporaryRoot,
     cleanProject,
@@ -1568,6 +1748,7 @@ async function smokeCli(
       operation: versionResult.operation,
       cli_version: versionResult.cli_version,
       audit_status: audit.status,
+      provider_tool_recovery: "exact_instruction_and_fresh_permission",
       coverage_journeys: coverageJourneys.sort(),
     },
   };

@@ -16,6 +16,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - For post-remediation evidence collection, read [references/verify.md](references/verify.md).
 - Before any network or Provider access, read [references/permissions.md](references/permissions.md).
 - When Audit or Verify returns an authenticated Core Journey request, read [references/protected-journeys.md](references/protected-journeys.md).
+- When a completed Audit or Verify contains `provider_tool_recoveries`, read [references/provider-tool-recovery.md](references/provider-tool-recovery.md).
 - When invoking the CLI or handling its states, read [references/cli-contract.md](references/cli-contract.md).
 
 ## Preserve these invariants
@@ -24,6 +25,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - Use only a Launcher and selected Engine declared by the release compatibility matrix. Do not install, update, downgrade, restore, migrate, clean, remove, or substitute either one silently.
 - For an explicitly user-selected exact-version npm-exec trial or CI entry, preserve the package manager's download confirmation.
 - Treat CLI structured output as canonical. Do not scrape human terminal prose.
+- Render Provider tool recovery only from `launchrally.dev/provider-tool-recovery/v1`; use its exact reviewed commands and preserve `continue_with_gap` as the default.
 - Confirm material release intent before passing it to the CLI.
 - Ask for explicit permission at the boundary requested by the CLI.
 - Use only an existing user-managed authenticated host session for approved protected journeys, then return the exact normalized result fields requested by the CLI.

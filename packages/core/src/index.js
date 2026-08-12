@@ -165,6 +165,13 @@ export {
   executeProviderAdapters,
   PROVIDER_ADAPTER_CONTRACT,
 } from "./provider-adapters.js";
+export {
+  applyProviderToolRecoveryChoice,
+  createProviderToolRecovery,
+  inspectProviderTool,
+  providerToolInstallationAuthorities,
+  runProviderToolRecovery,
+} from "./provider-tool-recovery.js";
 export { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
 export {
   createReportPackage,

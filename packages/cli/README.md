@@ -33,6 +33,8 @@ The CLI requires Node.js 20.12.0 or newer and is verified on Node.js 20, 22, and
 
 LaunchRally requires no account or default telemetry. CLI installation grants no Provider, deployment, production, credential, or application-source write authority. Reports and Evidence remain local. Codex and Claude Plugin installation is separate from this package.
 
+When an approved read cannot find its official Provider executable, the Report preserves the Unverified Gap and adds `launchrally.dev/provider-tool-recovery/v1`. `rally providers --report <path> --recover <provider> --json` exposes the default-safe choices; `--choice show_install_instructions` reveals only reviewed exact-version user-managed instructions for the active platform and shell. LaunchRally never executes installation or login. Successful version rediscovery requires a new Audit or Verify Provider-read decision before collection.
+
 ## Documentation
 
 - [Install, lifecycle, and troubleshooting](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/install.md)

@@ -21,6 +21,7 @@ const requiredReleaseGates = [
   "p0_release_contract",
   "permission_boundaries",
   "persistence_recovery",
+  "provider_tool_recovery",
   "secret_safety",
   "stable_promotion",
   "traceability",

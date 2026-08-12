@@ -61,6 +61,20 @@ async function createReleaseFixture() {
   ]);
 }
 
+async function assertReleaseValidationFailure(fixture, pattern) {
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["scripts/validate-release.mjs", "--root", fixture, "--json"],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, pattern);
+      return true;
+    },
+  );
+}
+
 async function createStablePromotionFixture() {
   const fixture = await copyRepositoryFixture(root, "launchrally-stable-promotion-", [
     ".agents",
@@ -261,6 +275,80 @@ test("release validation fails when a bundled Skill command drifts", async () =>
     },
   );
 
+});
+
+test("release validation rejects missing Provider sources and non-exact versions", async () => {
+  const authorityPath = "packages/core/provider-tool-installation/v1/authority.json";
+  const missingSourceFixture = await createReleaseFixture();
+  const missingSourcePath = path.join(missingSourceFixture, authorityPath);
+  const missingSource = JSON.parse(await readFile(missingSourcePath, "utf8"));
+  missingSource[0].official_source.url = "";
+  await writeFile(missingSourcePath, `${JSON.stringify(missingSource, null, 2)}\n`);
+  await assertReleaseValidationFailure(
+    missingSourceFixture,
+    /provider_tool_authority_invalid: clerk has no reviewed official source/u,
+  );
+
+  const floatingVersionFixture = await createReleaseFixture();
+  const floatingVersionPath = path.join(floatingVersionFixture, authorityPath);
+  const floatingVersion = JSON.parse(await readFile(floatingVersionPath, "utf8"));
+  floatingVersion[0].package.exact_version = "latest";
+  await writeFile(floatingVersionPath, `${JSON.stringify(floatingVersion, null, 2)}\n`);
+  await assertReleaseValidationFailure(
+    floatingVersionFixture,
+    /provider_tool_authority_invalid: clerk must pin an exact supported version/u,
+  );
+});
+
+test("release validation binds each Provider to its reviewed source and package identity", async () => {
+  const authorityPath = "packages/core/provider-tool-installation/v1/authority.json";
+  const fixture = await createReleaseFixture();
+  const fixturePath = path.join(fixture, authorityPath);
+  const authority = JSON.parse(await readFile(fixturePath, "utf8"));
+  authority[0].official_source.url = "https://vercel.com/docs/cli";
+  authority[0].package.name = "vercel";
+  await writeFile(fixturePath, `${JSON.stringify(authority, null, 2)}\n`);
+
+  await assertReleaseValidationFailure(
+    fixture,
+    /provider_tool_authority_invalid: clerk identity drifted from its reviewed source and Adapter/u,
+  );
+});
+
+test("release validation rejects floating commands and unsupported platform claims", async () => {
+  const authorityPath = "packages/core/provider-tool-installation/v1/authority.json";
+  const floatingCommandFixture = await createReleaseFixture();
+  const floatingCommandPath = path.join(floatingCommandFixture, authorityPath);
+  const floatingCommand = JSON.parse(await readFile(floatingCommandPath, "utf8"));
+  floatingCommand[0].installation_routes[0].command.arguments[2] = "clerk@latest";
+  await writeFile(floatingCommandPath, `${JSON.stringify(floatingCommand, null, 2)}\n`);
+  await assertReleaseValidationFailure(
+    floatingCommandFixture,
+    /provider_tool_authority_invalid: clerk has an unreviewed or floating installation command/u,
+  );
+
+  const platformFixture = await createReleaseFixture();
+  const platformPath = path.join(platformFixture, authorityPath);
+  const platformAuthority = JSON.parse(await readFile(platformPath, "utf8"));
+  platformAuthority[2].installation_routes[0].platforms.push("freebsd");
+  await writeFile(platformPath, `${JSON.stringify(platformAuthority, null, 2)}\n`);
+  await assertReleaseValidationFailure(
+    platformFixture,
+    /provider_tool_authority_invalid: neon claims an unsupported platform or shell/u,
+  );
+});
+
+test("release validation rejects a stale generated Provider recovery route", async () => {
+  const fixture = await createReleaseFixture();
+  const recoveryPath = path.join(
+    fixture,
+    "adapters/codex/launchrally/skills/launchrally/references/provider-tool-recovery.md",
+  );
+  await writeFile(recoveryPath, `${await readFile(recoveryPath, "utf8")}\nstale\n`);
+  await assertReleaseValidationFailure(
+    fixture,
+    /provider_tool_recovery_skill_drift/u,
+  );
 });
 
 test("release validation synchronizes CRLF Skill checkouts", async () => {
@@ -973,6 +1061,7 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       operation: "version",
       cli_version: "0.3.0",
       audit_status: "needs_input",
+      provider_tool_recovery: "exact_instruction_and_fresh_permission",
       coverage_journeys: [
         "astro-hosted-web",
         "custom-self-hosted",

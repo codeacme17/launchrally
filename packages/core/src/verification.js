@@ -744,6 +744,9 @@ function createTargetedResult({
     catalog: { checks: declarations },
     evidence,
     provider_verification_gaps: structuredClone(providerResult.verification_gaps),
+    provider_tool_recoveries: structuredClone(
+      providerResult.provider_tool_recoveries ?? [],
+    ),
     manifest_drift: structuredClone(drift),
     verification_context: createVerificationContext({
       repository_digests: repositoryDigests,

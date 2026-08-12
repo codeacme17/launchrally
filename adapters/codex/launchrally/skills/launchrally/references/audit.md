@@ -7,7 +7,8 @@
 5. On `needs_permission`, request each public, authenticated-journey, or Provider boundary separately, present every disclosed Provider command in order, and preserve denials.
 6. On `needs_input` with `request.type: "authenticated_journey_results"`, follow [protected-journeys.md](protected-journeys.md) and resume with only the typed normalized results.
 7. Resume with the returned token; start a new Audit on a token or scope error.
-8. Treat the completed Snapshot, Assessment, Action Queue, gaps, and limitations as canonical. Never describe `Inconclusive` as ready to launch.
+8. If the completed Report contains `provider_tool_recoveries`, follow [provider-tool-recovery.md](provider-tool-recovery.md) without changing the Report or Gap.
+9. Treat the completed Snapshot, Assessment, Action Queue, gaps, and limitations as canonical. Never describe `Inconclusive` as ready to launch.
 
 The Audit Brief records intended environment, confirmed public targets, public or protected core journeys, Provider roles, support layers, and planned Checks. A protected declaration uses `launchrally.dev/protected-journey/v1` and contains only its GET path, purpose, authentication class, and anonymous/authenticated status expectations. In the v2 JSON contract, targets remain stored in the compatibility field `production_targets`. Local discovery is already authorized; public verification, authenticated journey reads, and Provider reads remain pending until their exact scopes are confirmed and approved.
 
