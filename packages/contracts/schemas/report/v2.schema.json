@@ -220,6 +220,10 @@
           "type": "array",
           "items": { "$ref": "#/$defs/evidenceReference" }
         },
+        "provider_tool_recoveries": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
         "action_queue": { "type": "array", "items": { "$ref": "#/$defs/action" } },
         "verification_gaps": {
           "type": "array",

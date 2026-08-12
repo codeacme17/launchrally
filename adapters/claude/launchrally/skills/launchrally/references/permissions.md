@@ -13,5 +13,6 @@
 - Resend reads bounded JSON domain and sent-email status metadata with telemetry disabled; retain no address, subject, message ID, DNS record, or credential.
 - Sentry reads project columns and raw release versions with the existing `sentry-cli` organization/project context and update checks disabled.
 - Treat a missing tool or session, unsupported account context, malformed or oversized response, timeout, or Provider error as the returned Verification Gap. Never substitute local configuration or user statements for Machine Evidence.
+- A Provider tool rediscovery may inspect only the returned exact-version verification command. Successful rediscovery creates a new pending Provider-read boundary; prior approval remains spent. Missing authentication remains separate and never starts login.
 - Provider guidance reads local Decision Cards and performs no network access. Confirming a selection authorizes only the previewed local Manifest intent update.
 - Phase 0 never authorizes Provider writes, deployment, DNS changes, production environment writes, or production migrations.

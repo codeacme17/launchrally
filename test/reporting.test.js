@@ -126,6 +126,7 @@ test("every completed Audit returns one frozen Record, derived Markdown View, an
     ),
   ));
   assert.ok(report.results.verification_gaps.every((gap) => gap.status === "unverified"));
+  assert.deepEqual(report.results.provider_tool_recoveries, []);
   assert.deepEqual(report.permissions, result.authorization_plan);
   assert.equal(report.scope.release_intent.confirmed, true);
   assert.equal(report.execution.disclosure_version, "audit-execution-disclosure/v1");

@@ -37,8 +37,8 @@ test("the committed P0 matrix maps every normative requirement to executable evi
     schema_version: "launchrally.dev/p0-acceptance/v1",
     product_status: "complete",
     release_status: "experimental",
-    requirements: { complete: 24, open: 0, total: 24 },
-    release_gates: 11,
+    requirements: { complete: 25, open: 0, total: 25 },
+    release_gates: 12,
   });
 });
 

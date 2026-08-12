@@ -130,6 +130,15 @@
       "status": "complete"
     },
     {
+      "id": "P0-PROVIDER-RECOVERY-01",
+      "requirement": "Missing Provider tools have exact-version typed recovery while Gaps and fresh-read permissions remain fail-closed",
+      "contracts": ["packages/contracts/schemas/provider-tool-recovery/v1.schema.json", "packages/core/provider-tool-installation/v1/authority.json"],
+      "implementation": ["packages/core/src/provider-tool-recovery.js", "packages/core/src/provider-adapters.js", "packages/cli/bin/engine.js"],
+      "tests": [{"path": "test/provider-tool-recovery.test.js", "name": "the recovery interaction routes typed choices without prose parsing or installation execution"}],
+      "tracking": "#109",
+      "status": "complete"
+    },
+    {
       "id": "P0-COVERAGE-01",
       "requirement": "Direct full journey passes for all five representative repositories",
       "contracts": ["fixtures/coverage/matrix.json", "docs/reference/coverage-acceptance.md"],
@@ -225,6 +234,7 @@
     {"id": "migrations", "requirement_ids": ["P0-CONTRACT-01"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/contract-v2.test.js", "name": "init previews and confirms a fail-closed legacy JSON Manifest migration"}},
     {"id": "secret_safety", "requirement_ids": ["P0-QUALITY-01"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/init.test.js", "name": "a complete Report produces an exact secret-free preview without repository writes"}},
     {"id": "permission_boundaries", "requirement_ids": ["P0-PERMISSION-01", "P0-QUALITY-01"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/init.test.js", "name": "the CLI exposes and honors the isolated toolchain registry permission"}},
+    {"id": "provider_tool_recovery", "requirement_ids": ["P0-PROVIDER-RECOVERY-01", "P0-QUALITY-01"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/provider-tool-recovery.test.js", "name": "the recovery interaction routes typed choices without prose parsing or installation execution"}},
     {"id": "false_confidence", "requirement_ids": ["P0-EVIDENCE-01", "P0-ASSESS-02", "P0-QUALITY-01"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/policy-engine.test.js", "name": "a Passed claim without required Evidence is downgraded and can never be Launch Ready"}},
     {"id": "currentness", "requirement_ids": ["P0-CURRENT-01", "P0-CURRENT-02"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/plan.test.js", "name": "read-time currentness rejects tampered references and stored non-current Evidence"}},
     {"id": "persistence_recovery", "requirement_ids": ["P0-HISTORY-01", "P0-HISTORY-02"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/verify.test.js", "name": "Verify recovers a validated crashed transaction created under an earlier Report ID"}},

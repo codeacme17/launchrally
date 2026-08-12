@@ -227,6 +227,7 @@
         "catalog": { "$ref": "#/$defs/targetedCatalog" },
         "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidenceArtifact" } },
         "provider_verification_gaps": { "type": "array", "items": { "$ref": "#/$defs/providerGap" } },
+        "provider_tool_recoveries": { "type": "array", "items": { "type": "object" } },
         "manifest_drift": { "type": "array", "items": { "$ref": "#/$defs/manifestDrift" } },
         "verification_context": { "$ref": "#/$defs/verificationContext" },
         "current": { "type": "boolean" },

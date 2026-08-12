@@ -53,6 +53,21 @@ Audit does not create `.launchrally`. The saved Report is an explicit output at 
 
 After Init, `rally --version --json --cwd .` must report `authority.state: "ready"` and `authority.source: "project_toolchain"`. Repository operations still enter through `rally`; never invoke a Project Toolchain Engine directly.
 
+## Provider CLI recovery
+
+An approved Provider read can complete with a `missing_provider_tool` Verification Gap. The saved Report then includes `launchrally.dev/provider-tool-recovery/v1` with the Provider, Adapter version, executable, evidence benefit, official source, exact supported version, verification command, active platform and shell, and its available typed choices. `continue_with_gap` is the default and leaves the Check Unverified.
+
+To inspect the typed recovery or reveal its reviewed instructions, use the saved Report:
+
+```bash
+rally providers --report ./launchrally-audit-report.json --recover <provider> --json
+rally providers --report ./launchrally-audit-report.json --recover <provider> --choice show_install_instructions --json
+```
+
+LaunchRally renders only the route stored in `packages/core/provider-tool-installation/v1/authority.json` for the active platform and shell. It never executes that installation command, selects a floating version, invokes `sudo`, changes an npm prefix, edits `PATH` or a shell profile, or starts Provider authentication. Unsupported platforms return `guidance_unavailable` without an invented route. Cloudflare currently returns this state on every platform because its official Wrangler guidance is project-local and this recovery flow does not mutate application dependencies.
+
+After the user-managed installation, choose `rediscover_executable`. LaunchRally runs only the structured `--version` verification command. A missing or wrong executable remains a recovery state. An exact match produces a new pending `provider_read:<provider>` description; start a new Audit or Verify boundary and decide that permission again. The earlier approval is never reused. Missing Provider authentication remains a separate `missing_provider_login` Gap and never starts an automatic login flow.
+
 ## No-install trial and CI fallback
 
 Exact-version npm-exec is a no-install trial and CI fallback. It is useful in disposable evaluation or CI environments, but it is not the default interactive or Agent prerequisite. Because the process is ephemeral, every follow-up must retain the complete prefix:

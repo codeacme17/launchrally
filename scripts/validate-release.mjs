@@ -41,6 +41,31 @@ const skillTextPaths = [
   "adapters/codex/launchrally/skills/launchrally/SKILL.md",
   "adapters/codex/launchrally/skills/launchrally/references/reference-journey.md",
 ];
+const providerToolAuthorityPath =
+  "packages/core/provider-tool-installation/v1/authority.json";
+const providerToolRecoverySkillPaths = [
+  "skills/launchrally/references/provider-tool-recovery.md",
+  "adapters/claude/launchrally/skills/launchrally/references/provider-tool-recovery.md",
+  "adapters/codex/launchrally/skills/launchrally/references/provider-tool-recovery.md",
+];
+const exactVersionPattern =
+  /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$/u;
+const providerSourceHosts = new Set([
+  "clerk.com",
+  "developers.cloudflare.com",
+  "neon.com",
+  "resend.com",
+  "vercel.com",
+  "www.npmjs.com",
+]);
+const providerIdentities = Object.freeze({
+  clerk: { source_host: "clerk.com", package_name: "clerk", executable: "clerk", adapter_version: "clerk-read/v1" },
+  cloudflare: { source_host: "developers.cloudflare.com", package_name: "wrangler", executable: "wrangler", adapter_version: "cloudflare-read/v1" },
+  neon: { source_host: "neon.com", package_name: "neonctl", executable: "neonctl", adapter_version: "neon-read/v1" },
+  resend: { source_host: "resend.com", package_name: "resend-cli", executable: "resend", adapter_version: "resend-read/v1" },
+  sentry: { source_host: "www.npmjs.com", package_name: "@sentry/cli", executable: "sentry-cli", adapter_version: "sentry-read/v1" },
+  vercel: { source_host: "vercel.com", package_name: "vercel", executable: "vercel", adapter_version: "vercel-read/v1" },
+});
 
 async function json(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
@@ -52,10 +77,105 @@ function assertEqualVersion(actual, expected, source) {
   }
 }
 
+async function validateProviderToolAuthority() {
+  const entries = await json(providerToolAuthorityPath);
+  const expectedProviders = ["clerk", "cloudflare", "neon", "resend", "sentry", "vercel"];
+  if (
+    !Array.isArray(entries)
+    || JSON.stringify(entries.map(({ provider }) => provider)) !== JSON.stringify(expectedProviders)
+  ) {
+    throw new Error("provider_tool_authority_invalid: supported Providers are missing, duplicated, or unordered");
+  }
+  for (const entry of entries) {
+    const source = entry.official_source;
+    let sourceHost;
+    try {
+      sourceHost = new URL(source?.url).hostname;
+    } catch {
+      sourceHost = null;
+    }
+    if (!source?.title || !providerSourceHosts.has(sourceHost)) {
+      throw new Error(`provider_tool_authority_invalid: ${entry.provider} has no reviewed official source`);
+    }
+    const identity = providerIdentities[entry.provider];
+    if (
+      sourceHost !== identity.source_host
+      || entry.package?.name !== identity.package_name
+      || entry.executable !== identity.executable
+      || entry.adapter_version !== identity.adapter_version
+    ) {
+      throw new Error(`provider_tool_authority_invalid: ${entry.provider} identity drifted from its reviewed source and Adapter`);
+    }
+    const exactVersion = entry.package?.exact_version;
+    if (!exactVersionPattern.test(exactVersion ?? "")) {
+      throw new Error(`provider_tool_authority_invalid: ${entry.provider} must pin an exact supported version`);
+    }
+    if (
+      entry.package.manager !== "npm"
+      || entry.verification_command?.executable !== entry.executable
+      || JSON.stringify(entry.verification_command.arguments) !== JSON.stringify(["--version"])
+      || entry.verification_command.shell !== false
+    ) {
+      throw new Error(`provider_tool_authority_invalid: ${entry.provider} has an unsafe verification command`);
+    }
+    if (
+      !Array.isArray(entry.supported_platforms)
+      || !Array.isArray(entry.supported_shells)
+      || !Array.isArray(entry.installation_routes)
+    ) {
+      throw new Error(`provider_tool_authority_invalid: ${entry.provider} has incomplete platform guidance`);
+    }
+    if (
+      entry.installation_routes.length === 0
+      && (entry.supported_platforms.length !== 0 || entry.supported_shells.length !== 0)
+    ) {
+      throw new Error(`provider_tool_authority_invalid: ${entry.provider} claims unsupported installation guidance`);
+    }
+    for (const route of entry.installation_routes) {
+      if (
+        route.platforms.some((platform) => !entry.supported_platforms.includes(platform))
+        || route.shells.some((shell) => !entry.supported_shells.includes(shell))
+      ) {
+        throw new Error(`provider_tool_authority_invalid: ${entry.provider} claims an unsupported platform or shell`);
+      }
+      const expectedArguments = [
+        "install",
+        "--global",
+        `${entry.package.name}@${exactVersion}`,
+      ];
+      if (
+        route.command?.executable !== "npm"
+        || JSON.stringify(route.command.arguments) !== JSON.stringify(expectedArguments)
+        || route.command.shell !== false
+      ) {
+        throw new Error(`provider_tool_authority_invalid: ${entry.provider} has an unreviewed or floating installation command`);
+      }
+    }
+    for (const platform of entry.supported_platforms) {
+      if (!entry.installation_routes.some((route) => route.platforms.includes(platform))) {
+        throw new Error(`provider_tool_authority_invalid: ${entry.provider} has a stale supported platform claim`);
+      }
+    }
+    for (const shell of entry.supported_shells) {
+      if (!entry.installation_routes.some((route) => route.shells.includes(shell))) {
+        throw new Error(`provider_tool_authority_invalid: ${entry.provider} has a stale supported shell claim`);
+      }
+    }
+  }
+
+  const recoveryReferences = await Promise.all(providerToolRecoverySkillPaths.map(
+    (relativePath) => readFile(path.join(root, relativePath), "utf8"),
+  ));
+  if (recoveryReferences.some((content) => content !== recoveryReferences[0])) {
+    throw new Error("provider_tool_recovery_skill_drift: canonical, Codex, and Claude routes differ");
+  }
+}
+
 async function validateRelease() {
   const rootPackage = await json("package.json");
   const release = await json("release/artifacts.json");
   const version = rootPackage.version;
+  await validateProviderToolAuthority();
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
     throw new Error(`invalid_release_version: ${version}`);
   }

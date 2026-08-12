@@ -53,6 +53,7 @@ Complete.
 | P0-HISTORY-02 | Historical Records remain immutable and Report/Evidence history is never automatically pruned | Integrity and retention tests | #37 | Complete |
 | P0-TOOLCHAIN-01 | Every ecosystem uses an isolated exact LaunchRally npm toolchain without modifying application dependencies | Cross-ecosystem Init tests | #38 | Complete |
 | P0-PERMISSION-01 | Registry fallback is disclosed and separately approved; lifecycle scripts never execute | Network-denial and permission tests | #38 | Complete |
+| P0-PROVIDER-RECOVERY-01 | Missing Provider tools have exact-version typed recovery while Gaps and fresh-read permissions remain fail-closed | Provider recovery contract, CLI, and release-validation tests | #109 | Complete |
 | P0-COVERAGE-01 | Direct full journey passes for all five representative repositories | Coverage Acceptance Matrix | #38 | Complete |
 | P0-COVERAGE-02 | Skill full journey passes for JavaScript and non-JavaScript representatives under complete and partial permissions | Skill Reference Journey matrix | #38 | Complete |
 | P0-QUALITY-01 | PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates | CI validation | #39 | Complete |
