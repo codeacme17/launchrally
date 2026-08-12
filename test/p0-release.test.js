@@ -12,23 +12,23 @@ const execFileAsync = promisify(execFile);
 const COMPLETION_CLAIMS = [
   {
     path: "README.md",
-    complete: "P0 is Product Complete and `0.3.1` is publicly available",
-    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.3.1` remains publicly available",
+    complete: "P0 is Product Complete and `0.3.2` is publicly available",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.3.2` remains publicly available",
   },
   {
     path: "CONTRIBUTING.md",
     complete: "P0 is Product Complete and publicly released",
-    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed, and the Experimental release remains public",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed, and the Stable release remains public",
   },
   {
     path: "docs/maintainers/phase-0-validation.md",
-    complete: "P0 is Product Complete and `0.3.1` is a public Experimental release.",
-    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.3.1` remains a public Experimental release.",
+    complete: "P0 is Product Complete and `0.3.2` is a public Stable release.",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression is reviewed; `0.3.2` remains a public Stable release.",
   },
   {
     path: "docs/maintainers/p0-acceptance.md",
-    complete: "P0 is Product Complete and `0.3.1` is publicly available as an Experimental\nrelease.",
-    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression\nis reviewed; `0.3.1` remains publicly available as an Experimental release.",
+    complete: "P0 is Product Complete and `0.3.2` is publicly available as a Stable\nrelease.",
+    suspended: "The P0 Product Complete claim is suspended while the Quality Floor regression\nis reviewed; `0.3.2` remains publicly available as a Stable release.",
   },
 ];
 
@@ -57,7 +57,7 @@ async function replaceCompletionClaims(fixture, from, to) {
   }));
 }
 
-test("the P0 release contract keeps Product Complete, Experimental, and validation distinct", async () => {
+test("the P0 release contract keeps Product Complete, Stable, and validation distinct", async () => {
   const { stdout } = await execFileAsync(
     "npm",
     ["--silent", "run", "validate:p0", "--", "--json"],
@@ -68,7 +68,7 @@ test("the P0 release contract keeps Product Complete, Experimental, and validati
     status: "completed",
     phase: "p0",
     product_status: "complete",
-    release_status: "experimental",
+    release_status: "stable",
     validation_mode: "telemetry_free",
     validation_status: "validated",
     p0_validated: true,
@@ -76,10 +76,16 @@ test("the P0 release contract keeps Product Complete, Experimental, and validati
     p1_authority: "allowed",
     quality_floor_status: "satisfied",
     stable_promotion: {
-      status: "not_approved",
-      maintainer_e2e_status: "pending",
-      maintainer_e2e_evidence: {},
-      approved_tag: null,
+      status: "approved",
+      maintainer_e2e_status: "complete",
+      maintainer_e2e_evidence: {
+        approved_permission: "docs/maintainers/stable-e2e-evidence.md",
+        claude_plugin: "docs/maintainers/stable-e2e-evidence.md",
+        codex_plugin: "docs/maintainers/stable-e2e-evidence.md",
+        denied_permission: "docs/maintainers/stable-e2e-evidence.md",
+        direct_cli: "docs/maintainers/stable-e2e-evidence.md",
+      },
+      approved_tag: "v0.3.2",
     },
     license: "Apache-2.0",
     feedback_channels: ["discussions", "issues", "security"],
@@ -109,10 +115,10 @@ test("the public release kit documents use, data, safety, feedback, and validati
     "utf8",
   ));
 
-  assert.match(readme, /Status: Experimental P0/iu);
+  assert.match(readme, /Status: Stable/iu);
   assert.match(readme, /P0 is Product Complete/iu);
-  assert.match(readme, /P0 Validated with the Quality Floor satisfied/iu);
-  assert.match(readme, /remains Experimental/iu);
+  assert.match(readme, /P0 Validated and the Quality Floor is satisfied/iu);
+  assert.doesNotMatch(readme, /remains Experimental/iu);
   assert.match(readme, /github\.com\/codeacme17\/launchrally\/issues/u);
   assert.match(readme, /github\.com\/codeacme17\/launchrally\/discussions/u);
   assert.match(readme, /SECURITY\.md/u);
@@ -120,7 +126,7 @@ test("the public release kit documents use, data, safety, feedback, and validati
 
   assert.match(
     quickstart,
-    /npm install --global @launchrally\/cli@0\.3\.1[\s\S]*rally --version --json[\s\S]*rally audit --plain --cwd \. --output \.\/launchrally-audit-report\.json/u,
+    /npm install --global @launchrally\/cli@0\.3\.2[\s\S]*rally --version --json[\s\S]*rally audit --plain --cwd \. --output \.\/launchrally-audit-report\.json/u,
   );
   assert.match(quickstart, /Skill Quickstart/iu);
   for (const context of ["Astro", "FastAPI", "React", "Go", "pnpm", "self-hosted"]) {
@@ -256,7 +262,7 @@ test("public release status documents change atomically with the machine state",
   const readme = await readFile(readmePath, "utf8");
   await writeFile(
     readmePath,
-    readme.replace("**Experimental P0** release", "**Stable** release"),
+    readme.replace("**Stable** release", "**Experimental P0** release"),
   );
 
   await assert.rejects(
@@ -1186,17 +1192,14 @@ test("a reviewed Stable promotion remains distinct from the P0 Validated decisio
         denied_permission: "docs/maintainers/stable-e2e-evidence.md",
         direct_cli: "docs/maintainers/stable-e2e-evidence.md",
       },
-      approved_tag: "v0.3.1",
+      approved_tag: "v0.3.2",
     },
     p1_discovery: "allowed",
     p1_authority: "allowed",
   });
   for (const document of contract.release_status_documents) {
-    const documentPath = path.join(fixture, document.path);
-    const content = await readFile(documentPath, "utf8");
-    const updated = content.replace(document.experimental, document.stable);
-    assert.notEqual(updated, content, `${document.path} must contain the Experimental claim`);
-    await writeFile(documentPath, updated);
+    const content = await readFile(path.join(fixture, document.path), "utf8");
+    assert.match(content, new RegExp(document.stable.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
   }
   await writeFile(
     path.join(fixture, "docs/maintainers/stable-e2e-evidence.md"),

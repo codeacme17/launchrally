@@ -1,6 +1,6 @@
 # Install, lifecycle, and troubleshooting
 
-LaunchRally `0.3.1` is the exact Experimental P0 release used by this guide. Experimental availability remains non-stable after the reviewed P0 Validated decision.
+LaunchRally `0.3.2` is the exact Stable release used by this guide. Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor.
 
 ## Supported environments
 
@@ -23,7 +23,7 @@ The Launcher, Plugin, Project Toolchain, and project-owned `.launchrally` data h
 Before entering a repository, install through the current npm prefix and verify structured version output:
 
 ```bash
-npm install --global @launchrally/cli@0.3.1
+npm install --global @launchrally/cli@0.3.2
 rally --version --json
 ```
 
@@ -73,9 +73,9 @@ After the user-managed installation, choose `rediscover_executable`. LaunchRally
 Exact-version npm-exec is a no-install trial and CI fallback. It is useful in disposable evaluation or CI environments, but it is not the default interactive or Agent prerequisite. Because the process is ephemeral, every follow-up must retain the complete prefix:
 
 ```bash
-npm exec --package=@launchrally/cli@0.3.1 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
-npm exec --package=@launchrally/cli@0.3.1 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
-npm exec --package=@launchrally/cli@0.3.1 -- rally --version --json --cwd .
+npm exec --package=@launchrally/cli@0.3.2 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.3.2 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.3.2 -- rally --version --json --cwd .
 ```
 
 npm may show its normal download confirmation. LaunchRally does not bypass it. In Agent Mode, use `--json` and follow each returned typed state rather than Human Mode prose.
@@ -100,7 +100,7 @@ CLI installation is a prerequisite separate from Plugin installation. First requ
 Pin the marketplace checkout to the exact release tag and install at user scope:
 
 ```bash
-codex plugin marketplace add codeacme17/launchrally --ref v0.3.1
+codex plugin marketplace add codeacme17/launchrally --ref v0.3.2
 codex plugin add launchrally@launchrally
 codex plugin list --json
 ```
@@ -112,7 +112,7 @@ Update deliberately by replacing the installed Plugin and exact marketplace chec
 ```bash
 codex plugin remove launchrally@launchrally
 codex plugin marketplace remove launchrally
-codex plugin marketplace add codeacme17/launchrally --ref v0.3.1
+codex plugin marketplace add codeacme17/launchrally --ref v0.3.2
 codex plugin add launchrally@launchrally
 ```
 
@@ -125,7 +125,7 @@ codex plugin marketplace remove launchrally
 
 ### Claude Plugin
 
-The `0.3.1` marketplace catalog pins `@launchrally/claude-plugin@0.3.1`. Add it and install at explicit user scope:
+The `0.3.2` marketplace catalog pins `@launchrally/claude-plugin@0.3.2`. Add it and install at explicit user scope:
 
 ```bash
 claude plugin marketplace add codeacme17/launchrally --scope user
@@ -156,7 +156,7 @@ Plugin removal preserves project-owned `.launchrally` data, the Project Toolchai
 Reinstall the exact current Launcher to update or repair the user-managed PATH entry:
 
 ```bash
-npm install --global @launchrally/cli@0.3.1
+npm install --global @launchrally/cli@0.3.2
 rally --version --json
 ```
 
@@ -184,14 +184,14 @@ These commands act only on the repository selected by `--cwd`. Each mutation sho
 ```bash
 rally toolchain status --json --cwd .
 rally toolchain restore --cwd .
-rally toolchain migrate --to 0.3.1 --cwd .
+rally toolchain migrate --to 0.3.2 --cwd .
 rally toolchain migrate --to 0.2.2 --cwd .
 rally toolchain clean --cwd .
 ```
 
 - `status` is read-only and reports Execution Authority.
 - `restore` rebuilds the established exact pin, offline-first, without changing its version.
-- `migrate` is the only operation that changes an established pin. Upgrade to `0.3.1` or downgrade to the allowlisted legacy `0.2.2` only after reviewing the exact preview. Migration preserves the Manifest and immutable Reports/Evidence/history, marks the prior current Report non-current with `execution_authority_changed`, and requires a fresh full Verify.
+- `migrate` is the only operation that changes an established pin. Upgrade to `0.3.2` or downgrade to the allowlisted legacy `0.2.2` only after reviewing the exact preview. Migration preserves the Manifest and immutable Reports/Evidence/history, marks the prior current Report non-current with `execution_authority_changed`, and requires a fresh full Verify.
 - `clean` removes only ignored rebuildable materialization and temporary lifecycle state. It preserves the pin, authority descriptor, Manifest, Reports, Evidence, and history.
 
 Never use Init as a migration mechanism. A fresh clone with committed metadata uses `status`, then explicit `restore` if materialization is missing.
@@ -248,7 +248,7 @@ On macOS or Linux (POSIX shell):
 ```bash
 npm config set prefix "$HOME/.local"
 export PATH="$HOME/.local/bin:$PATH"
-npm install --global @launchrally/cli@0.3.1
+npm install --global @launchrally/cli@0.3.2
 rally --version --json
 ```
 
@@ -257,7 +257,7 @@ In PowerShell:
 ```powershell
 npm config set prefix "$env:LOCALAPPDATA\npm"
 $env:Path = "$env:LOCALAPPDATA\npm;$env:Path"
-npm install --global @launchrally/cli@0.3.1
+npm install --global @launchrally/cli@0.3.2
 rally --version --json
 ```
 
@@ -266,7 +266,7 @@ At an interactive `cmd.exe` prompt:
 ```batch
 npm config set prefix "%LOCALAPPDATA%\npm"
 set "PATH=%LOCALAPPDATA%\npm;%PATH%"
-npm install --global @launchrally/cli@0.3.1
+npm install --global @launchrally/cli@0.3.2
 rally --version --json
 ```
 
@@ -274,7 +274,7 @@ LaunchRally never performs this configuration and does not recommend elevated np
 
 ### Node version-manager changes
 
-A Node version manager may keep separate global prefixes for each Node version. After switching Node versions, confirm `node --version` and `npm prefix --global`, reinstall `@launchrally/cli@0.3.1` under the active user-writable prefix when necessary, and re-run structured verification.
+A Node version manager may keep separate global prefixes for each Node version. After switching Node versions, confirm `node --version` and `npm prefix --global`, reinstall `@launchrally/cli@0.3.2` under the active user-writable prefix when necessary, and re-run structured verification.
 
 ### Project mismatch or lifecycle state
 
@@ -291,10 +291,10 @@ npm cache add @launchrally/cli@0.2.2
 npm cache verify
 ```
 
-For a `0.3.1` pin:
+For a `0.3.2` pin:
 
 ```bash
-npm cache add @launchrally/cli@0.3.1
+npm cache add @launchrally/cli@0.3.2
 npm cache verify
 ```
 
@@ -312,12 +312,12 @@ Do not edit package, lock, descriptor, or materialization files independently an
 
 ### Legacy 0.2.2 projects
 
-A legacy 0.2.2 project retains its exact pin. With a supported v1 Launcher, inspect status and explicitly restore missing materialization through the allowlisted compatibility adapter. Migration to `0.3.1` is optional and never automatic:
+A legacy 0.2.2 project retains its exact pin. With a supported v1 Launcher, inspect status and explicitly restore missing materialization through the allowlisted compatibility adapter. Migration to `0.3.2` is optional and never automatic:
 
 ```bash
 rally toolchain status --json --cwd .
 rally toolchain restore --cwd .
-rally toolchain migrate --to 0.3.1 --cwd .
+rally toolchain migrate --to 0.3.2 --cwd .
 ```
 
 ### No installed Launcher
@@ -336,4 +336,4 @@ npm run test:artifacts
 npm test
 ```
 
-Release validation rejects version drift, dependency ranges, lifecycle install hooks, stale Skill copies, and unexpected tarball files. Publishing is performed only by the protected release workflow for the matching exact `v0.3.1` tag. Maintainers use the [Experimental release runbook](../maintainers/release-runbook.md) for external control checks and public smoke evidence.
+Release validation rejects version drift, dependency ranges, lifecycle install hooks, stale Skill copies, and unexpected tarball files. Publishing is performed only by the protected release workflow for the matching exact `v0.3.2` tag. Maintainers use the [Stable promotion runbook](../maintainers/stable-promotion.md) for external control checks and public smoke evidence.

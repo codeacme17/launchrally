@@ -2,16 +2,22 @@
   "schema_version": "launchrally.dev/p0-release/v1",
   "phase": "p0",
   "product_status": "complete",
-  "release_status": "experimental",
+  "release_status": "stable",
   "validation_mode": "telemetry_free",
   "validation_status": "validated",
   "p0_validated": true,
   "quality_floor_status": "satisfied",
   "stable_promotion": {
-    "status": "not_approved",
-    "maintainer_e2e_status": "pending",
-    "maintainer_e2e_evidence": {},
-    "approved_tag": null
+    "status": "approved",
+    "maintainer_e2e_status": "complete",
+    "maintainer_e2e_evidence": {
+      "approved_permission": "docs/maintainers/stable-e2e-evidence.md",
+      "claude_plugin": "docs/maintainers/stable-e2e-evidence.md",
+      "codex_plugin": "docs/maintainers/stable-e2e-evidence.md",
+      "denied_permission": "docs/maintainers/stable-e2e-evidence.md",
+      "direct_cli": "docs/maintainers/stable-e2e-evidence.md"
+    },
+    "approved_tag": "v0.3.2"
   },
   "release_status_documents": [
     {
@@ -36,13 +42,13 @@
     },
     {
       "path": "CONTRIBUTING.md",
-      "experimental": "Experimental open-source project",
-      "stable": "Stable open-source project"
+      "experimental": "an Experimental open-source project",
+      "stable": "a Stable open-source project"
     },
     {
       "path": "CONTRIBUTING.md",
-      "experimental": "LaunchRally is P0 Validated and the Quality Floor is satisfied, while the release remains Experimental",
-      "stable": "LaunchRally is P0 Validated and the Quality Floor is satisfied"
+      "experimental": "LaunchRally is P0 Validated and the Quality Floor is satisfied, while the release remains Experimental pending a separate Stable promotion.",
+      "stable": "LaunchRally is P0 Validated and the Quality Floor is satisfied."
     },
     {
       "path": "docs/getting-started/install.md",
@@ -96,8 +102,8 @@
     },
     {
       "path": "packages/cli/README.md",
-      "experimental": "**Experimental P0** release",
-      "stable": "**Stable** release"
+      "experimental": "an **Experimental P0** release",
+      "stable": "a **Stable** release"
     },
     {
       "path": "packages/cli/README.md",
@@ -106,8 +112,8 @@
     },
     {
       "path": "packages/contracts/README.md",
-      "experimental": "**Experimental P0** release",
-      "stable": "**Stable** release"
+      "experimental": "an **Experimental P0** release",
+      "stable": "a **Stable** release"
     },
     {
       "path": "packages/contracts/README.md",
@@ -116,8 +122,8 @@
     },
     {
       "path": "packages/core/README.md",
-      "experimental": "**Experimental P0** release",
-      "stable": "**Stable** release"
+      "experimental": "an **Experimental P0** release",
+      "stable": "a **Stable** release"
     },
     {
       "path": "packages/core/README.md",
@@ -126,8 +132,8 @@
     },
     {
       "path": "adapters/codex/launchrally/README.md",
-      "experimental": "**Experimental P0** release",
-      "stable": "**Stable** release"
+      "experimental": "an **Experimental P0** release",
+      "stable": "a **Stable** release"
     },
     {
       "path": "adapters/codex/launchrally/README.md",
@@ -136,8 +142,8 @@
     },
     {
       "path": "adapters/claude/launchrally/README.md",
-      "experimental": "**Experimental P0** release",
-      "stable": "**Stable** release"
+      "experimental": "an **Experimental P0** release",
+      "stable": "a **Stable** release"
     },
     {
       "path": "adapters/claude/launchrally/README.md",
@@ -195,7 +201,7 @@
       "includes": [
         "Direct CLI Quickstart",
         "Skill Quickstart",
-        "@launchrally/cli@0.3.1",
+        "@launchrally/cli@0.3.2",
         "secret-free"
       ]
     },

@@ -1,7 +1,7 @@
 {
   "schema_version": "launchrally.dev/p0-acceptance/v1",
   "product_status": "complete",
-  "release_status": "experimental",
+  "release_status": "stable",
   "requirements": [
     {
       "id": "P0-CONTRACT-01",

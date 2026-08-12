@@ -9,7 +9,7 @@ The user-managed `rally` Launcher is a prerequisite separate from the Codex or C
 If `rally` is absent, present these exact user-managed commands, stop before Audit, and wait:
 
 ```bash
-npm install --global @launchrally/cli@0.3.1
+npm install --global @launchrally/cli@0.3.2
 rally --version --json --cwd <repository-root>
 ```
 

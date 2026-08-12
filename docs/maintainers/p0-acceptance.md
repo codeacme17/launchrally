@@ -5,9 +5,8 @@ product-planning sources are intentionally local and ignored under
 `docs/product/`; therefore every release-blocking requirement needed by CI
 must be represented here and in the linked GitHub issues.
 
-P0 is Product Complete and `0.3.1` is publicly available as an Experimental
-release. P0 is Validated with the Quality Floor satisfied, while the release remains
-Experimental.
+P0 is Product Complete and `0.3.2` is publicly available as a Stable
+release. P0 is Validated with the Quality Floor satisfied.
 
 The canonical requirement-ID registry is independently committed in
 `release/p0.json`; the machine-readable traceability source is
@@ -33,7 +32,8 @@ Complete.
 5. Experimental Release announcement
 6. Telemetry-Free Validation
 7. P0 Validated
-8. P1 implementation
+8. Stable promotion
+9. P1 implementation
 
 ## Release-blocking requirements
 
@@ -72,4 +72,4 @@ egress, permission violation, unreliable representative install-to-Report
 journey, insufficiently evidenced Passed result, or untrustworthy Launch Ready
 assessment remains unresolved.
 
-Issue #17 remains the phase tracker. Issue #34 owns corrective conformance work.
+Issue #17 records the completed phase. Issue #34 records corrective conformance work.

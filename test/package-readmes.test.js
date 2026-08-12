@@ -18,8 +18,8 @@ const publishedPackages = [
     keywords: ["launch-readiness", "audit", "verification", "cli", "local-first", "release"],
     requiredContent: [
       "# @launchrally/cli",
-      "Experimental P0",
-      "npm install --global @launchrally/cli@0.3.1",
+      "Stable",
+      "npm install --global @launchrally/cli@0.3.2",
       "Node.js 20.12.0 or newer",
       "local-first",
       "docs/getting-started/quickstart.md",
@@ -33,8 +33,8 @@ const publishedPackages = [
     keywords: ["launchrally", "contracts", "schemas", "json-schema", "audit", "verification"],
     requiredContent: [
       "# @launchrally/contracts",
-      "Experimental P0",
-      "npm install @launchrally/contracts@0.3.1",
+      "Stable",
+      "npm install @launchrally/contracts@0.3.2",
       "import { REPORT_SCHEMA } from \"@launchrally/contracts\";",
       "versioned JSON Schemas",
       "ESM",
@@ -48,8 +48,8 @@ const publishedPackages = [
     keywords: ["launchrally", "launch-readiness", "audit", "verification", "local-first", "release"],
     requiredContent: [
       "# @launchrally/core",
-      "Experimental P0",
-      "npm install @launchrally/core@0.3.1",
+      "Stable",
+      "npm install @launchrally/core@0.3.2",
       "import { runAudit } from \"@launchrally/core\";",
       "deterministic",
       "ESM",
@@ -63,8 +63,8 @@ const publishedPackages = [
     keywords: ["launchrally", "codex", "plugin", "agent-skill", "audit", "launch-readiness"],
     requiredContent: [
       "# @launchrally/codex-plugin",
-      "Experimental P0",
-      "codex plugin marketplace add codeacme17/launchrally --ref v0.3.1",
+      "Stable",
+      "codex plugin marketplace add codeacme17/launchrally --ref v0.3.2",
       "codex plugin add launchrally@launchrally",
       "codex plugin remove launchrally@launchrally",
       "canonical Agent Skill",
@@ -78,7 +78,7 @@ const publishedPackages = [
     keywords: ["launchrally", "claude-code", "plugin", "agent-skill", "audit", "launch-readiness"],
     requiredContent: [
       "# @launchrally/claude-plugin",
-      "Experimental P0",
+      "Stable",
       "claude plugin marketplace add codeacme17/launchrally --scope user",
       "claude plugin install launchrally@launchrally --scope user",
       "claude plugin uninstall launchrally@launchrally --scope user",
