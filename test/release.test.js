@@ -1290,6 +1290,33 @@ test("release CI exposes an approved Stable promotion path through the trusted w
   assert.doesNotMatch(release, /NPM_TOKEN|NODE_AUTH_TOKEN|secrets\./u);
 });
 
+test("release CI uses a bot-authored Stable promotion PR to preserve independent human approval", async () => {
+  const workflow = await readFile(
+    path.join(root, ".github/workflows/open-stable-promotion-pr.yml"),
+    "utf8",
+  );
+  const runbook = await readFile(
+    path.join(root, "docs/maintainers/stable-promotion.md"),
+    "utf8",
+  );
+
+  assert.match(workflow, /workflow_dispatch:/u);
+  assert.match(workflow, /contents: read/u);
+  assert.match(workflow, /pull-requests: write/u);
+  assert.doesNotMatch(workflow, /contents: write/u);
+  assert.match(workflow, /github\.ref == 'refs\/heads\/dev'/u);
+  assert.match(workflow, /validate:acceptance -- --require-stable-ready/u);
+  assert.match(workflow, /validate:p0/u);
+  assert.match(workflow, /validate:release -- --tag "\$PROMOTION_TAG"/u);
+  assert.match(workflow, /gh pr list --base main --head dev --state open/u);
+  assert.match(workflow, /gh pr create[\s\S]*--base main[\s\S]*--head dev/u);
+  assert.doesNotMatch(workflow, /gh pr (?:review|merge)/u);
+  assert.doesNotMatch(workflow, /secrets\./u);
+  assert.match(runbook, /github-actions\[bot\]/u);
+  assert.match(runbook, /can neither\s+approve nor merge/iu);
+  assert.match(runbook, /restored immediately/iu);
+});
+
 test("release validation requires an annotated tag on the approved main commit", async () => {
   const repository = await mkdtemp(path.join(os.tmpdir(), "launchrally-release-ref-"));
   await execFileAsync("git", ["init", "--quiet", "--initial-branch=main"], { cwd: repository });

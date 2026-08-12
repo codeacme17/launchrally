@@ -55,6 +55,24 @@ version references.
 6. Dispatch `.github/workflows/release.yml` with that exact tag and promotion
    PR number, then approve the protected `npm` environment deployment.
 
+### Single-maintainer approval boundary
+
+The promotion PR author and approver must still be different identities. In a
+single-maintainer repository, dispatch
+`.github/workflows/open-stable-promotion-pr.yml` from `dev` with the exact
+approved tag so `github-actions[bot]` opens the `dev` to `main` PR. The workflow
+has read-only contents access and pull-request write access; it validates the
+Stable candidate, refuses a duplicate open promotion PR, and can neither
+approve nor merge the PR. The human maintainer must independently inspect and
+approve that exact bot-authored PR.
+
+GitHub's repository-level "Allow GitHub Actions to create and approve pull
+requests" setting must be enabled for the dispatch, then restored immediately
+after the PR is created. The workflow never calls a review or merge API, so the
+temporary setting is used only to establish a distinct PR author. Do not create
+the protected tag until the setting is restored, the PR checks pass, and the
+human approval is visible.
+
 The workflow reruns the complete repository and artifact gates, validates
 `--require-stable-ready`, publishes the five new versions with OIDC provenance
 under `latest`, and runs the exact public CLI and Plugin smoke journeys against

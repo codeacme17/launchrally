@@ -1,0 +1,44 @@
+name: Open Stable promotion pull request
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact approved Stable tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-promotion-pull-request:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    env:
+      PROMOTION_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Verify the exact Stable candidate
+        run: |
+          git diff --exit-code
+          npm run validate:acceptance -- --require-stable-ready
+          npm run validate:p0
+          npm run validate:release -- --tag "$PROMOTION_TAG"
+      - name: Open the human-review boundary
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh pr list --base main --head dev --state open --json number --jq length)" = "0"
+          gh pr create \
+            --base main \
+            --head dev \
+            --title "release: promote LaunchRally ${PROMOTION_TAG#v} Stable" \
+            --body "This bot-authored pull request preserves independent human approval for the exact \`$PROMOTION_TAG\` Stable candidate. It must remain open and be approved by a maintainer before the protected release workflow is dispatched. Do not merge it manually."
