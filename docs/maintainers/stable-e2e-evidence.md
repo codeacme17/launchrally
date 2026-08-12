@@ -71,7 +71,6 @@ This evidence establishes Stable promotion eligibility only. The protected
 workflow remains the authority for publishing the five exact `0.3.2` packages
 to `latest`, verifying their public behavior, merging the reviewed promotion
 commit, and creating the regular GitHub Latest Release.
-
 ## Promotion sequencing recovery
 
 On 2026-08-12, the first `dev` to `main` promotion pull request was manually
