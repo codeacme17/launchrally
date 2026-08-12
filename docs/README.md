@@ -33,5 +33,6 @@ the user-facing sections, but remain versioned because CI validates them.
 - [P0 acceptance contract](maintainers/p0-acceptance.md)
 - [Phase 0 release and validation](maintainers/phase-0-validation.md)
 - [Phase 0 validation log](maintainers/phase-0-validation-log.json)
+- [Experimental 0.3.1 host E2E evidence](maintainers/experimental-0.3.1-host-e2e.md)
 - [Experimental release runbook](maintainers/release-runbook.md)
 - [Stable promotion runbook](maintainers/stable-promotion.md)
