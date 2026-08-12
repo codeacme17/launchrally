@@ -228,7 +228,7 @@ test("Stable readiness requires the separately approved promotion state", async 
         denied_permission: "docs/maintainers/stable-e2e-evidence.md",
         direct_cli: "docs/maintainers/stable-e2e-evidence.md",
       },
-      approved_tag: "v0.3.0",
+      approved_tag: "v0.3.1",
     },
   });
   await writeFile(

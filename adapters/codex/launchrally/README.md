@@ -4,7 +4,7 @@ This package installs Codex Plugin metadata plus a generated copy of the LaunchR
 
 ## Status
 
-LaunchRally 0.3.0 is an **Experimental P0** release. It is Product Complete and P0 Validated, but it is not presented as stable.
+LaunchRally 0.3.1 is an **Experimental P0** release. It is Product Complete and P0 Validated, but it is not presented as stable.
 
 ## CLI prerequisite
 
@@ -15,7 +15,7 @@ CLI installation and Plugin installation are separate. Before installing this Pl
 Codex installs Plugins at user scope. Pin the marketplace to the exact release tag, then install LaunchRally:
 
 ```sh
-codex plugin marketplace add codeacme17/launchrally --ref v0.3.0
+codex plugin marketplace add codeacme17/launchrally --ref v0.3.1
 codex plugin add launchrally@launchrally
 codex plugin list --json
 ```
@@ -29,7 +29,7 @@ Replace the installed Plugin and exact marketplace checkout deliberately:
 ```sh
 codex plugin remove launchrally@launchrally
 codex plugin marketplace remove launchrally
-codex plugin marketplace add codeacme17/launchrally --ref v0.3.0
+codex plugin marketplace add codeacme17/launchrally --ref v0.3.1
 codex plugin add launchrally@launchrally
 ```
 

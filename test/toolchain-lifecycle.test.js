@@ -209,7 +209,7 @@ test("toolchain restore preserves the supported legacy 0.2.2 pin without auto-mi
 
   const restored = await runToolchainLifecycle(
     repository,
-    "0.3.0",
+    "0.3.1",
     { operation: "restore" },
     { prepare_toolchain: async (request) => {
       assert.equal(request.authority_descriptor, null);
@@ -342,14 +342,14 @@ test("toolchain migrate atomically replaces authority and preserves project hist
 
   const preview = await runToolchainLifecycle(
     repository,
-    "0.3.0",
-    { operation: "migrate", to: "0.3.0" },
+    "0.3.1",
+    { operation: "migrate", to: "0.3.1" },
     { prepare_toolchain: prepare },
   );
 
   assert.equal(preview.status, "needs_confirmation");
   assert.equal(preview.preview.from_version, "0.2.2");
-  assert.equal(preview.preview.to_version, "0.3.0");
+  assert.equal(preview.preview.to_version, "0.3.1");
   assert.deepEqual(preview.preview.materialization, {
     package_count: 9,
     integrity_digest: `sha256:${"c".repeat(64)}`,
@@ -365,10 +365,10 @@ test("toolchain migrate atomically replaces authority and preserves project hist
 
   const migrated = await runToolchainLifecycle(
     repository,
-    "0.3.0",
+    "0.3.1",
     {
       operation: "migrate",
-      to: "0.3.0",
+      to: "0.3.1",
       resume_token: preview.interaction.resume_token,
       confirmation: "confirm",
     },
@@ -378,7 +378,7 @@ test("toolchain migrate atomically replaces authority and preserves project hist
   assert.equal(migrated.status, "completed");
   assert.equal(migrated.outcome, "migrated");
   assert.equal(migrated.authority.state, "ready");
-  assert.equal(migrated.authority.engine.version, "0.3.0");
+  assert.equal(migrated.authority.engine.version, "0.3.1");
   assert.deepEqual(migrated.next_action, {
     operation: "verify",
     scope: "full",
@@ -394,7 +394,7 @@ test("toolchain migrate atomically replaces authority and preserves project hist
     reasons: [{
       reason_code: "execution_authority_changed",
       previous_version: "0.2.2",
-      current_version: "0.3.0",
+      current_version: "0.3.1",
     }],
   });
 });
@@ -406,19 +406,19 @@ test("toolchain migrate rejects ranges and unsupported exact versions before pre
   const dependencies = {
     prepare_toolchain: async () => {
       preparations += 1;
-      return { toolchain_path: await preparedToolchain("0.3.0") };
+      return { toolchain_path: await preparedToolchain("0.3.1") };
     },
   };
 
   const range = await runToolchainLifecycle(
     repository,
-    "0.3.0",
-    { operation: "migrate", to: "^0.3.0" },
+    "0.3.1",
+    { operation: "migrate", to: "^0.3.1" },
     dependencies,
   );
   const unsupported = await runToolchainLifecycle(
     repository,
-    "0.3.0",
+    "0.3.1",
     { operation: "migrate", to: "8.8.8" },
     dependencies,
   );
@@ -441,14 +441,14 @@ test("a lifecycle retry rolls back an interrupted mixed-version transaction", as
     operation: "migrate",
     had_previous: true,
     previous_version: "0.2.2",
-    version: "0.3.0",
+    version: "0.3.1",
   })}\n`);
   await rename(toolchain, path.join(transaction, "old"));
-  await cp(await preparedToolchain("0.3.0"), path.join(transaction, "new"), {
+  await cp(await preparedToolchain("0.3.1"), path.join(transaction, "new"), {
     recursive: true,
   });
 
-  const recovered = await runToolchainLifecycle(repository, "0.3.0", {
+  const recovered = await runToolchainLifecycle(repository, "0.3.1", {
     operation: "restore",
   });
 
@@ -548,17 +548,17 @@ test("migration confirmation rejects an authoritative file changed after preview
   const original = await readFile(packagePath, "utf8");
   const preview = await runToolchainLifecycle(
     repository,
-    "0.3.0",
-    { operation: "migrate", to: "0.3.0" },
+    "0.3.1",
+    { operation: "migrate", to: "0.3.1" },
     { prepare_toolchain: async () => ({
-      toolchain_path: await preparedToolchain("0.3.0"),
+      toolchain_path: await preparedToolchain("0.3.1"),
     }) },
   );
   await writeFile(packagePath, ` ${original}`);
 
-  const stale = await runToolchainLifecycle(repository, "0.3.0", {
+  const stale = await runToolchainLifecycle(repository, "0.3.1", {
     operation: "migrate",
-    to: "0.3.0",
+    to: "0.3.1",
     resume_token: preview.interaction.resume_token,
     confirmation: "confirm",
   });
@@ -615,20 +615,20 @@ test("a post-adoption report update failure rolls migration back to the complete
   await writeFile(cachePath, "not-json\n");
   const preview = await runToolchainLifecycle(
     repository,
-    "0.3.0",
-    { operation: "migrate", to: "0.3.0" },
+    "0.3.1",
+    { operation: "migrate", to: "0.3.1" },
     { prepare_toolchain: async () => ({
-      toolchain_path: await preparedToolchain("0.3.0"),
+      toolchain_path: await preparedToolchain("0.3.1"),
     }) },
   );
 
-  const result = await runToolchainLifecycle(repository, "0.3.0", {
+  const result = await runToolchainLifecycle(repository, "0.3.1", {
     operation: "migrate",
-    to: "0.3.0",
+    to: "0.3.1",
     resume_token: preview.interaction.resume_token,
     confirmation: "confirm",
   });
-  const authority = await runToolchainLifecycle(repository, "0.3.0", {
+  const authority = await runToolchainLifecycle(repository, "0.3.1", {
     operation: "status",
   });
 
@@ -646,23 +646,23 @@ test("clean discards abandoned lifecycle previews and their prepared materializa
     path.join(os.tmpdir(), "launchrally-toolchain-prepare-clean-"),
   );
   const stagedToolchain = path.join(cleanupPath, "toolchain");
-  await cp(await preparedToolchain("0.3.0"), stagedToolchain, { recursive: true });
+  await cp(await preparedToolchain("0.3.1"), stagedToolchain, { recursive: true });
   const preview = await runToolchainLifecycle(
     repository,
-    "0.3.0",
-    { operation: "migrate", to: "0.3.0" },
+    "0.3.1",
+    { operation: "migrate", to: "0.3.1" },
     { prepare_toolchain: async () => ({
       toolchain_path: stagedToolchain,
       cleanup_path: cleanupPath,
     }) },
   );
 
-  const cleaned = await runToolchainLifecycle(repository, "0.3.0", {
+  const cleaned = await runToolchainLifecycle(repository, "0.3.1", {
     operation: "clean",
   });
-  const resumed = await runToolchainLifecycle(repository, "0.3.0", {
+  const resumed = await runToolchainLifecycle(repository, "0.3.1", {
     operation: "migrate",
-    to: "0.3.0",
+    to: "0.3.1",
     resume_token: preview.interaction.resume_token,
     confirmation: "confirm",
   });
@@ -682,21 +682,21 @@ test("migration supports already-pinned, invalid-confirmation, and explicit-decl
   });
   const preview = await runToolchainLifecycle(
     repository,
-    "0.3.0",
-    { operation: "migrate", to: "0.3.0" },
+    "0.3.1",
+    { operation: "migrate", to: "0.3.1" },
     { prepare_toolchain: async () => ({
-      toolchain_path: await preparedToolchain("0.3.0"),
+      toolchain_path: await preparedToolchain("0.3.1"),
     }) },
   );
-  const invalid = await runToolchainLifecycle(repository, "0.3.0", {
+  const invalid = await runToolchainLifecycle(repository, "0.3.1", {
     operation: "migrate",
-    to: "0.3.0",
+    to: "0.3.1",
     resume_token: preview.interaction.resume_token,
     confirmation: "later",
   });
-  const declined = await runToolchainLifecycle(repository, "0.3.0", {
+  const declined = await runToolchainLifecycle(repository, "0.3.1", {
     operation: "migrate",
-    to: "0.3.0",
+    to: "0.3.1",
     resume_token: preview.interaction.resume_token,
     confirmation: "decline",
   });
@@ -795,17 +795,17 @@ test("recovery completes an adopted migration and its Report invalidation after 
     operation: "migrate",
     had_previous: true,
     previous_version: "0.2.2",
-    version: "0.3.0",
+    version: "0.3.1",
   })}\n`);
   await rename(toolchain, path.join(transaction, "old"));
-  await cp(await preparedToolchain("0.3.0"), toolchain, { recursive: true });
+  await cp(await preparedToolchain("0.3.1"), toolchain, { recursive: true });
 
-  const recovered = await runToolchainLifecycle(repository, "0.3.0", {
+  const recovered = await runToolchainLifecycle(repository, "0.3.1", {
     operation: "restore",
   });
 
   assert.equal(recovered.outcome, "already_ready");
-  assert.equal(recovered.authority.engine.version, "0.3.0");
+  assert.equal(recovered.authority.engine.version, "0.3.1");
   assert.equal(JSON.parse(await readFile(cachePath, "utf8")).currentness.status, "non_current");
   await assert.rejects(lstat(transaction), { code: "ENOENT" });
 });

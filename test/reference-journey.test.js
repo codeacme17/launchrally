@@ -56,15 +56,15 @@ const directJourney = {
   schema_version: "launchrally.dev/reference-journey/v3",
   compatibility: {
     launcher: {
-      supported_versions: ["0.3.0"],
+      supported_versions: ["0.3.0", "0.3.1"],
     },
     engine: {
-      supported_versions: ["0.2.2", "0.3.0"],
+      supported_versions: ["0.2.2", "0.3.0", "0.3.1"],
     },
   },
   cli: {
     package: "@launchrally/cli",
-    version: "0.3.0",
+    version: "0.3.1",
     contract: "launchrally.dev/cli/v2",
   },
   invocations: [
@@ -230,7 +230,7 @@ async function json(relativePath) {
 }
 
 async function createRegistryNpmStub(
-  version = "0.3.0",
+  version = "0.3.1",
   { offlineAvailable = false } = {},
 ) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-stub-"));
@@ -415,7 +415,7 @@ async function executeReferenceJourney(
   } = {},
 ) {
   const directory = await createFixture(label, fixturePath);
-  const registryStub = await createRegistryNpmStub("0.3.0", {
+  const registryStub = await createRegistryNpmStub("0.3.1", {
     offlineAvailable: !exerciseRegistryPermission,
   });
   const journeyEnv = {
@@ -848,14 +848,14 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
     },
     launcher: {
       package: "@launchrally/cli",
-      supported_versions: [cliPackage.version],
+      supported_versions: ["0.3.0", cliPackage.version],
     },
     execution_authority: {
       supported_contracts: ["launchrally.dev/execution-authority/v1"],
     },
     engine: {
       package: "@launchrally/cli",
-      supported_versions: ["0.2.2", cliPackage.version],
+      supported_versions: ["0.2.2", "0.3.0", cliPackage.version],
       authority_contracts: ["launchrally.dev/execution-authority/v1"],
       interaction_contracts: ["launchrally.dev/cli/v2"],
     },
@@ -867,7 +867,7 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
   });
   assert.deepEqual(
     journey.compatibility.launcher.supported_versions,
-    [journey.compatibility.plugin.version],
+    ["0.3.0", journey.compatibility.plugin.version],
     "a pre-authority direct binary cannot be treated as a supported Launcher",
   );
   assert.notEqual(
