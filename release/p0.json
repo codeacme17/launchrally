@@ -82,7 +82,7 @@
     {
       "path": "docs/maintainers/phase-0-validation.md",
       "experimental": "authority-expanding P1 implementation is allowed.",
-      "stable": "authority-expanding P1 implementation is allowed."
+      "stable": "authority-expanding P1 implementation remains allowed."
     },
     {
       "path": "docs/maintainers/p0-acceptance.md",
