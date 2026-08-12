@@ -7,6 +7,11 @@ import {
 } from "@launchrally/contracts";
 
 import { describeWebBaselineCatalog } from "./check-catalog.js";
+import {
+  createAuthenticatedJourneyPlan,
+  createAuthenticatedJourneyResultRequest,
+  normalizeAuthenticatedJourneyResults,
+} from "./authenticated-journeys.js";
 import { createProviderAdapterPlan } from "./provider-adapters.js";
 import { parsePublicJourneyInput } from "./public-journey.js";
 import { parsePublicTargetInput } from "./public-target.js";
@@ -324,6 +329,7 @@ function createAuditBrief(snapshot, answers = null, confirmed = false) {
       confirmed,
     },
     public_verification: createPublicVerificationPlan(answers),
+    authenticated_journeys: createAuthenticatedJourneyPlan(answers),
     provider_adapters: createProviderAdapterPlan(answers?.provider_roles),
     planned_checks: plannedChecks(answers),
   };
@@ -398,6 +404,7 @@ function createNeedsInput(snapshot, state, validationErrors = []) {
 
 function authorizationPlan(answers) {
   const publicPlan = createPublicVerificationPlan(answers);
+  const authenticatedPlan = createAuthenticatedJourneyPlan(answers);
   const providerPlan = createProviderAdapterPlan(answers.provider_roles);
   return [
     {
@@ -413,6 +420,12 @@ function authorizationPlan(answers) {
       decision: "pending",
       scope: { targets: publicPlan.targets, probes: publicPlan.probes },
     },
+    ...(authenticatedPlan.journeys.length > 0 ? [{
+      permission_id: "authenticated_journey_verification",
+      boundary: "authenticated_network_read",
+      decision: "pending",
+      scope: authenticatedPlan,
+    }] : []),
     ...providerPlan.requests.map(
       (request) => ({
         permission_id: request.permission_id,
@@ -465,6 +478,25 @@ function createNeedsPermission(snapshot, state) {
     request: {
       type: "permission",
       permissions: pendingPermissions,
+    },
+  };
+}
+
+function createNeedsAuthenticatedJourneyResults(snapshot, state, validationErrors = []) {
+  const plan = state.permissions.find(
+    ({ permission_id }) => permission_id === "authenticated_journey_verification",
+  ).scope;
+  return {
+    contract: CLI_INTERACTION_CONTRACT,
+    status: "needs_input",
+    operation: "audit",
+    snapshot,
+    audit_brief: createAuditBrief(snapshot, state.answers, true),
+    authorization_plan: state.permissions,
+    interaction: interactionMetadata(state),
+    request: {
+      ...createAuthenticatedJourneyResultRequest(plan),
+      validation_errors: validationErrors,
     },
   };
 }
@@ -592,6 +624,13 @@ export function advanceAuditInteraction(snapshot, options) {
         );
       }
       permission.decision = decision;
+      if (
+        permission.permission_id === "authenticated_journey_verification"
+        && decision === "approved"
+        && !permission.scope.collection_not_before
+      ) {
+        permission.scope.collection_not_before = new Date().toISOString();
+      }
     }
 
     const nextState = {
@@ -601,6 +640,15 @@ export function advanceAuditInteraction(snapshot, options) {
     };
     if (permissions.some((permission) => permission.decision === "pending")) {
       return createNeedsPermission(snapshot, nextState);
+    }
+    if (permissions.some(
+      ({ permission_id, decision }) =>
+        permission_id === "authenticated_journey_verification" && decision === "approved",
+    )) {
+      return createNeedsAuthenticatedJourneyResults(snapshot, {
+        ...nextState,
+        phase: "authenticated_results",
+      });
     }
     return {
       contract: CLI_INTERACTION_CONTRACT,
@@ -614,6 +662,39 @@ export function advanceAuditInteraction(snapshot, options) {
         schema_version: AUDIT_INTERACTION_SCHEMA,
         interaction_id: state.interaction_id,
         revision: nextState.revision,
+      },
+    };
+  }
+
+  if (state.phase === "authenticated_results") {
+    if (!options.journey_results) {
+      return createNeedsAuthenticatedJourneyResults(snapshot, state);
+    }
+    const plan = state.permissions.find(
+      ({ permission_id }) => permission_id === "authenticated_journey_verification",
+    ).scope;
+    let authenticatedResult;
+    try {
+      authenticatedResult = normalizeAuthenticatedJourneyResults(plan, options.journey_results);
+    } catch (error) {
+      return createNeedsAuthenticatedJourneyResults(snapshot, state, [{
+        field_id: "journey_results",
+        code: error.code ?? "invalid_authenticated_journey_results",
+      }]);
+    }
+    return {
+      contract: CLI_INTERACTION_CONTRACT,
+      status: "completed",
+      operation: "audit",
+      outcome: "audit_completed",
+      snapshot,
+      audit_brief: createAuditBrief(snapshot, state.answers, true),
+      authorization_plan: state.permissions,
+      authenticated_result: authenticatedResult,
+      interaction: {
+        schema_version: AUDIT_INTERACTION_SCHEMA,
+        interaction_id: state.interaction_id,
+        revision: state.revision + 1,
       },
     };
   }

@@ -5,13 +5,22 @@ import { isIP } from "node:net";
 import tls from "node:tls";
 
 import { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
+import { isProtectedJourney } from "./authenticated-journeys.js";
 import { environmentTargetLabel } from "./environment-terminology.js";
 
 const COLLECTOR_VERSION = "public-verification/v1";
 const PROBE_TIMEOUT_MS = 5000;
 const MAX_CONCURRENT_PROBES = 4;
 
-function probe({ id, kind, target, method, purpose, verificationMode }) {
+function probe({
+  id,
+  kind,
+  target,
+  method,
+  purpose,
+  verificationMode,
+  expectedStatusCodes,
+}) {
   const url = new URL(target);
   return {
     probe_id: id,
@@ -24,6 +33,7 @@ function probe({ id, kind, target, method, purpose, verificationMode }) {
     purpose,
     timeout_ms: PROBE_TIMEOUT_MS,
     ...(verificationMode ? { verification_mode: verificationMode } : {}),
+    ...(expectedStatusCodes ? { expected_status_codes: structuredClone(expectedStatusCodes) } : {}),
   };
 }
 
@@ -67,6 +77,19 @@ export function createPublicVerificationPlan(answers) {
       purpose: "Verify the conventional public health endpoint.",
     }));
     journeys.forEach((journey, journeyIndex) => {
+      if (isProtectedJourney(journey)) {
+        if (!journey.access.anonymous_status_codes) return;
+        probes.push(probe({
+          id: `${prefix}:journey-${journeyIndex + 1}:anonymous`,
+          kind: "journey",
+          target: new URL(journey.path, url.origin).toString(),
+          method: "GET",
+          purpose: `Verify anonymous boundary for protected Core Journey: ${journey.purpose}`,
+          verificationMode: "protected_anonymous_boundary",
+          expectedStatusCodes: journey.access.anonymous_status_codes,
+        }));
+        return;
+      }
       const declaredJourney = typeof journey === "string"
         ? {
             purpose: journey,
@@ -266,6 +289,13 @@ async function runProbe(probe, { signal } = {}) {
 
   const response = await request(probe, { signal });
   const statusCode = response.statusCode ?? 0;
+  if (probe.expected_status_codes?.includes(statusCode)) {
+    return {
+      status: "passed",
+      outcome: "access_boundary_confirmed",
+      details: { status_code: statusCode },
+    };
+  }
   const location = redirectTarget(response.headers.location, probe.target);
   if (statusCode >= 300 && statusCode < 400) {
     const targetMismatch = location && location !== "invalid"

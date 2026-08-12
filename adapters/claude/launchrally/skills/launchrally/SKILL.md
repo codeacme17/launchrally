@@ -16,6 +16,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - For remediation guidance or Provider choices, read [references/plan.md](references/plan.md).
 - For post-remediation evidence collection, read [references/verify.md](references/verify.md).
 - Before any network or Provider access, read [references/permissions.md](references/permissions.md).
+- When Audit or Verify returns an authenticated Core Journey request, read [references/protected-journeys.md](references/protected-journeys.md).
 - When invoking the CLI or handling its states, read [references/cli-contract.md](references/cli-contract.md).
 
 ## Preserve these invariants
@@ -26,6 +27,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - Treat CLI structured output as canonical. Do not scrape human terminal prose.
 - Confirm material release intent before passing it to the CLI.
 - Ask for explicit permission at the boundary requested by the CLI.
+- Use only an existing user-managed authenticated host session for approved protected journeys, then return the exact normalized result fields requested by the CLI.
 - Never change a Check result, Severity, Gate, Assessment, or immutable Report.
 - Keep Phase 0 read-only outside approved local initialization and explicitly confirmed Provider Manifest intent. Never create or modify production resources.
 - Present Provider guidance only for the CLI-reported evidenced gap or confirmed constraint mismatch. Never rank a Card as universally best or present its pricing as live.

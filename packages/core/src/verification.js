@@ -28,6 +28,11 @@ import { persistLocalHistory } from "./local-history.js";
 import { createProviderAdapterPlan, executeProviderAdapters } from "./provider-adapters.js";
 import { matchesProviderDecisionCard } from "./provider-decision-cards.js";
 import { createPublicVerificationPlan, collectPublicEvidence } from "./public-verification.js";
+import {
+  createAuthenticatedJourneyPlan,
+  createAuthenticatedJourneyResultRequest,
+  normalizeAuthenticatedJourneyResults,
+} from "./authenticated-journeys.js";
 import { createReportPackage, createVerificationContext } from "./reporting.js";
 import { normalizeSupportLayers } from "./support-layers.js";
 
@@ -143,6 +148,7 @@ function permissionsFor(report, manifest, checkIds, mode) {
   }
   const answers = manifestAnswers(manifest, report);
   const publicPlan = limitedPublicPlan(createPublicVerificationPlan(answers), checkIds, mode);
+  const authenticatedPlan = createAuthenticatedJourneyPlan(answers);
   const providerPlan = createProviderAdapterPlan(answers.provider_roles);
   const permissions = [{
     permission_id: "local_safe_scan",
@@ -157,6 +163,17 @@ function permissionsFor(report, manifest, checkIds, mode) {
       boundary: "public_network",
       decision: "pending",
       scope: publicPlan,
+    });
+  }
+  if (
+    permissionIds.has("public_verification")
+    && authenticatedPlan.journeys.length > 0
+  ) {
+    permissions.push({
+      permission_id: "authenticated_journey_verification",
+      boundary: "authenticated_network_read",
+      decision: "pending",
+      scope: authenticatedPlan,
     });
   }
   for (const request of providerPlan.requests) {
@@ -215,6 +232,27 @@ function needsPermission(state, token) {
         .filter(({ decision }) => decision === "pending")
         .map((permission) => structuredClone(permission)),
     },
+    interaction: {
+      schema_version: VERIFY_INTERACTION_SCHEMA,
+      interaction_id: state.interaction_id,
+      revision: state.revision,
+      resume_token: token,
+      source_report: manifestSourceReportIdentity(
+        state.manifest.execution.source_report_id.value,
+      ),
+    },
+    history: structuredClone(state.history),
+  };
+}
+
+function needsAuthenticatedJourneyResults(state, token, plan) {
+  return {
+    contract: CLI_INTERACTION_CONTRACT,
+    status: "needs_input",
+    operation: "verify",
+    verification_scope: structuredClone(state.verification_scope),
+    authorization_plan: structuredClone(state.permissions),
+    request: createAuthenticatedJourneyResultRequest(plan),
     interaction: {
       schema_version: VERIFY_INTERACTION_SCHEMA,
       interaction_id: state.interaction_id,
@@ -308,6 +346,7 @@ function auditBrief(state, snapshot) {
     state.verification_scope.check_ids,
     state.verification_scope.mode,
   );
+  const authenticatedJourneys = createAuthenticatedJourneyPlan(answers);
   const selected = new Set(state.verification_scope.check_ids);
   const publicTargets = publicVerification.targets;
   const plannedChecks = [
@@ -352,6 +391,7 @@ function auditBrief(state, snapshot) {
     provider_roles: selection(answers.provider_roles),
     support_layers: selection(answers.support_layers),
     public_verification: publicVerification,
+    authenticated_journeys: authenticatedJourneys,
     provider_adapters: providerAdapters,
     planned_checks: plannedChecks,
   };
@@ -644,6 +684,7 @@ function createTargetedResult({
   state,
   baseline,
   publicEvidence,
+  authenticatedResult,
   providerResult,
   drift,
   repositoryDigests,
@@ -680,6 +721,7 @@ function createTargetedResult({
   const evidence = [...new Map([
     ...localEvidence,
     ...publicEvidence.map((item) => structuredClone(item)),
+    ...authenticatedResult.evidence.map((item) => structuredClone(item)),
     ...providerResult.evidence.map((item) => structuredClone(item)),
   ].map((item) => [JSON.stringify(item), item])).values()];
   const freshness = targetedCurrentness(
@@ -733,7 +775,13 @@ function applyPermissionDecisions(state, decisions) {
     ) {
       return null;
     }
-    if (permission.decision === "pending") permission.decision = decision;
+    if (permission.decision === "pending") {
+      permission.decision = decision;
+      if (
+        permission.permission_id === "authenticated_journey_verification"
+        && decision === "approved"
+      ) permission.scope.collection_not_before = new Date().toISOString();
+    }
   }
   return permissions;
 }
@@ -770,6 +818,35 @@ async function resumeVerify(cwd, options, dependencies) {
     const token = await (dependencies.store_state ?? storeState)(nextState);
     return needsPermission(nextState, token);
   }
+  const authenticatedPermission = permissions.find(
+    ({ permission_id }) => permission_id === "authenticated_journey_verification",
+  );
+  if (
+    authenticatedPermission?.decision === "approved"
+    && options.journey_results === undefined
+  ) {
+    await discardState(statePath);
+    const token = await (dependencies.store_state ?? storeState)(nextState);
+    return needsAuthenticatedJourneyResults(
+      nextState,
+      token,
+      authenticatedPermission.scope,
+    );
+  }
+  let authenticatedResult = { evidence: [], verification_gaps: [] };
+  if (authenticatedPermission?.decision === "approved") {
+    try {
+      authenticatedResult = normalizeAuthenticatedJourneyResults(
+        authenticatedPermission.scope,
+        options.journey_results,
+      );
+    } catch (error) {
+      return executionError(
+        error.code ?? "invalid_authenticated_journey_results",
+        error.message,
+      );
+    }
+  }
   await discardState(statePath);
   const snapshot = await createSnapshot(cwd);
   const brief = auditBrief(nextState, snapshot);
@@ -795,6 +872,7 @@ async function resumeVerify(cwd, options, dependencies) {
     audit_brief: brief,
     authorization_plan: permissions,
     public_evidence: publicEvidence,
+    authenticated_result: authenticatedResult,
     provider_result: providerResult,
   });
   baseline.catalog.versions.active_adapters = providerResult.active_adapter_versions;
@@ -804,6 +882,7 @@ async function resumeVerify(cwd, options, dependencies) {
       state,
       baseline,
       publicEvidence,
+      authenticatedResult,
       providerResult,
       drift,
       repositoryDigests: snapshot.project.content_digests,
@@ -868,6 +947,7 @@ async function resumeVerify(cwd, options, dependencies) {
     },
     baseline,
     public_evidence: publicEvidence,
+    authenticated_result: authenticatedResult,
     provider_result: providerResult,
     limitations: VERIFY_LIMITATIONS,
     repository_digests: snapshot.project.content_digests,

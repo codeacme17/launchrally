@@ -70,6 +70,15 @@ function evidenceMetadata(evidence, createdAt) {
       redaction_state: "normalized",
     };
   }
+  if (evidence.kind === "authenticated_journey_observation") {
+    return {
+      source: evidence.provenance.collector,
+      target: evidence.provenance.exact_target,
+      collected_at: evidence.collected_at,
+      freshness_class: "audit_time",
+      redaction_state: "normalized",
+    };
+  }
   if (evidence.kind === "machine_evidence") {
     return {
       source: evidence.provenance.collector,
@@ -167,9 +176,15 @@ function indexedCheck(check, evidenceRegistry) {
   };
 }
 
-function accessScope(publicAccess, providerAccess) {
+function accessScope(publicAccess, authenticatedAccess, providerAccess) {
+  if (publicAccess && authenticatedAccess && providerAccess) {
+    return "local_public_authenticated_and_provider_read_only";
+  }
+  if (publicAccess && authenticatedAccess) return "local_public_and_authenticated_read_only";
+  if (authenticatedAccess && providerAccess) return "local_authenticated_and_provider_read_only";
   if (publicAccess && providerAccess) return "local_public_and_provider_read_only";
   if (publicAccess) return "local_and_public_read_only";
+  if (authenticatedAccess) return "local_and_authenticated_read_only";
   if (providerAccess) return "local_and_provider_read_only";
   return "local_read_only";
 }
@@ -178,7 +193,11 @@ function reportScope({ snapshot, auditBrief, authorizationPlan, providerResult }
   const publicPermission = authorizationPlan.find(
     (permission) => permission.permission_id === "public_verification",
   );
+  const authenticatedPermission = authorizationPlan.find(
+    (permission) => permission.permission_id === "authenticated_journey_verification",
+  );
   const publicAccess = publicPermission?.decision === "approved";
+  const authenticatedAccess = authenticatedPermission?.decision === "approved";
   const providerAccess = providerResult.active_adapter_versions.length > 0;
   return {
     project_root: snapshot.project.root,
@@ -204,7 +223,7 @@ function reportScope({ snapshot, auditBrief, authorizationPlan, providerResult }
         auditBrief.support_layers,
       ].every((selection) => selection.confirmed),
     },
-    access: accessScope(publicAccess, providerAccess),
+    access: accessScope(publicAccess, authenticatedAccess, providerAccess),
     public_verification: {
       decision: publicPermission?.decision ?? "denied",
       targets: structuredClone(auditBrief.public_verification.targets),
@@ -379,6 +398,7 @@ export function createReportPackage({
   interaction,
   baseline,
   public_evidence,
+  authenticated_result = { evidence: [], verification_gaps: [] },
   provider_result,
   limitations,
   content_changes = [],
@@ -399,6 +419,9 @@ export function createReportPackage({
   });
   const checks = baseline.checks.map((check) => indexedCheck(check, evidenceRegistry));
   const publicEvidenceRefs = public_evidence.map(evidenceRegistry.reference);
+  const authenticatedJourneyEvidenceRefs = authenticated_result.evidence.map(
+    evidenceRegistry.reference,
+  );
   const providerEvidenceRefs = provider_result.evidence.map(evidenceRegistry.reference);
   const evidenceIndex = evidenceRegistry.index();
   const scopeConfirmed = [
@@ -480,6 +503,7 @@ export function createReportPackage({
     results: {
       checks: reportChecks,
       public_evidence_refs: publicEvidenceRefs,
+      authenticated_journey_evidence_refs: authenticatedJourneyEvidenceRefs,
       provider_evidence_refs: providerEvidenceRefs,
       action_queue: policyResult.action_queue,
       verification_gaps: policyResult.verification_gaps,

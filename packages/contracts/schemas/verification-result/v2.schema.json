@@ -90,7 +90,7 @@
       "required": ["permission_id", "boundary", "decision", "scope"],
       "properties": {
         "permission_id": { "type": "string", "minLength": 1 },
-        "boundary": { "enum": ["local_scan", "public_network", "provider_read"] },
+        "boundary": { "enum": ["local_scan", "public_network", "authenticated_network_read", "provider_read"] },
         "decision": { "enum": ["granted", "approved", "denied"] },
         "basis": { "type": "string", "minLength": 1 },
         "scope": { "type": "object" }
@@ -277,6 +277,7 @@
         { "$ref": "#/$defs/projectFactEvidence" },
         { "$ref": "#/$defs/releaseIntentEvidence" },
         { "$ref": "#/$defs/publicObservationEvidence" },
+        { "$ref": "#/$defs/authenticatedJourneyEvidence" },
         { "$ref": "#/$defs/machineEvidence" }
       ]
     },
@@ -352,7 +353,7 @@
         "path": { "type": "string", "minLength": 1 },
         "method": { "enum": ["DNS_LOOKUP", "TLS_HANDSHAKE", "GET"] },
         "purpose": { "type": "string", "minLength": 1 },
-        "verification_mode": { "enum": ["description_only", "executable_path"] },
+        "verification_mode": { "enum": ["description_only", "executable_path", "protected_anonymous_boundary"] },
         "status": { "enum": ["passed", "failed", "unverified"] },
         "outcome": { "type": "string", "minLength": 1 },
         "collected_at": { "type": "string", "format": "date-time" },
@@ -363,6 +364,33 @@
           "required": ["collector", "exact_target", "collected_at"],
           "properties": {
             "collector": { "const": "public-verification/v1" },
+            "exact_target": { "type": "string", "format": "uri" },
+            "collected_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "authenticatedJourneyEvidence": {
+      "type": "object",
+      "required": ["kind", "journey_id", "target", "method", "purpose", "authentication_class", "status", "outcome", "status_code", "collected_at", "provenance"],
+      "properties": {
+        "kind": { "const": "authenticated_journey_observation" },
+        "journey_id": { "type": "string", "pattern": "^target-[1-9][0-9]*:journey-[1-9][0-9]*:authenticated$" },
+        "target": { "type": "string", "format": "uri" },
+        "method": { "const": "GET" },
+        "purpose": { "type": "string", "minLength": 1 },
+        "authentication_class": { "enum": ["user", "staff", "signed_token"] },
+        "status": { "enum": ["passed", "failed", "unverified"] },
+        "outcome": { "enum": ["completed", "missing_authentication", "insufficient_capability", "expired_authentication", "runner_unavailable", "unexpected_denial", "redirect", "timeout", "execution_failure"] },
+        "status_code": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+        "collected_at": { "type": "string", "format": "date-time" },
+        "provenance": {
+          "type": "object",
+          "required": ["collector", "exact_target", "collected_at"],
+          "properties": {
+            "collector": { "const": "host-agent-authenticated-journey/v1" },
             "exact_target": { "type": "string", "format": "uri" },
             "collected_at": { "type": "string", "format": "date-time" }
           },

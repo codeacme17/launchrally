@@ -17,6 +17,7 @@ import {
   runAudit,
   runVerify,
 } from "../packages/core/src/index.js";
+import { createAuthenticatedJourneyPlan } from "../packages/core/src/authenticated-journeys.js";
 import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
@@ -110,7 +111,7 @@ test("full Verify discloses fresh Evidence permissions without mutating history 
   });
 
   assert.equal(result.contract, "launchrally.dev/cli/v2");
-  assert.equal(result.status, "needs_permission");
+  assert.equal(result.status, "needs_permission", JSON.stringify(result));
   assert.equal(result.operation, "verify");
   assert.equal(VERIFY_INTERACTION_SCHEMA, "launchrally.dev/verify-interaction/v2");
   assert.deepEqual(result.interaction.source_report, {
@@ -131,6 +132,204 @@ test("full Verify discloses fresh Evidence permissions without mutating history 
   assert.equal(result.history.source_evidence_index_id, source.evidence_index.index_id);
   assert.deepEqual(source, sourceBefore);
   assert.deepEqual(manifest, manifestBefore);
+});
+
+test("full Verify requests protected journey reads independently from public verification", async () => {
+  const directory = await fixture();
+  const protectedJourney = {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/control",
+    purpose: "staff Control Room loads",
+    access: {
+      authentication_class: "staff",
+      anonymous_status_codes: [404],
+      authenticated_status_codes: [200],
+    },
+  };
+  const source = await completeAudit(
+    directory,
+    { ...ANSWERS, core_journeys: [protectedJourney] },
+    {
+      public_verification: "denied",
+      authenticated_journey_verification: "denied",
+    },
+  );
+  await writeManifest(directory, source);
+
+  const result = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+
+  assert.equal(result.status, "needs_permission", JSON.stringify(result));
+  assert.deepEqual(
+    result.request.permissions.map(({ permission_id, boundary }) => ({ permission_id, boundary })),
+    [
+      { permission_id: "public_verification", boundary: "public_network" },
+      {
+        permission_id: "authenticated_journey_verification",
+        boundary: "authenticated_network_read",
+      },
+    ],
+  );
+  assert.deepEqual(
+    result.request.permissions[1].scope,
+    createAuthenticatedJourneyPlan({
+      ...ANSWERS,
+      core_journeys: [protectedJourney],
+    }),
+  );
+});
+
+test("full Verify requests typed authenticated results before executing approved reads", async () => {
+  const directory = await fixture();
+  const protectedJourney = {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/control",
+    purpose: "staff Control Room loads",
+    access: {
+      authentication_class: "staff",
+      anonymous_status_codes: [404],
+      authenticated_status_codes: [200],
+    },
+  };
+  const source = await completeAudit(
+    directory,
+    { ...ANSWERS, core_journeys: [protectedJourney] },
+    {
+      public_verification: "denied",
+      authenticated_journey_verification: "denied",
+    },
+  );
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  let publicCollections = 0;
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: {
+      public_verification: "approved",
+      authenticated_journey_verification: "approved",
+    },
+  }, {
+    collect_public_evidence: async () => {
+      publicCollections += 1;
+      return [];
+    },
+  });
+
+  assert.equal(result.status, "needs_input", JSON.stringify(result));
+  assert.equal(result.request.type, "authenticated_journey_results");
+  assert.equal(result.request.result_schema, "launchrally.dev/authenticated-journey-results/v1");
+  assert.equal(result.request.plan.schema_version, "launchrally.dev/authenticated-journey-plan/v1");
+  assert.deepEqual(result.request.allowed_outcomes, [
+    "completed",
+    "missing_authentication",
+    "insufficient_capability",
+    "expired_authentication",
+    "runner_unavailable",
+    "unexpected_denial",
+    "redirect",
+    "timeout",
+    "execution_failure",
+  ]);
+  assert.equal(publicCollections, 0);
+  assert.ok(result.interaction.resume_token.length > 20);
+});
+
+test("full Verify records redacted authenticated evidence and completes protected journeys", async () => {
+  const directory = await fixture();
+  const protectedJourney = {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/control",
+    purpose: "staff Control Room loads",
+    access: {
+      authentication_class: "staff",
+      anonymous_status_codes: [404],
+      authenticated_status_codes: [200],
+    },
+  };
+  const source = await completeAudit(
+    directory,
+    { ...ANSWERS, core_journeys: [protectedJourney] },
+    {
+      public_verification: "denied",
+      authenticated_journey_verification: "denied",
+    },
+  );
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const input = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: {
+      public_verification: "approved",
+      authenticated_journey_verification: "approved",
+    },
+  });
+  const collectedAt = new Date(Date.now() + 1).toISOString();
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: input.interaction.resume_token,
+    journey_results: {
+      schema_version: "launchrally.dev/authenticated-journey-results/v1",
+      adapter_version: "host-agent-authenticated-journey/v1",
+      results: [{
+        journey_id: "target-1:journey-1:authenticated",
+        status: "passed",
+        outcome: "completed",
+        status_code: 200,
+        collected_at: collectedAt,
+      }],
+    },
+  }, {
+    collect_public_evidence: async () => [{
+      kind: "public_observation",
+      probe_id: "target-1:journey-1:anonymous",
+      probe_kind: "journey",
+      target: "https://example.com/control",
+      host: "example.com",
+      port: 443,
+      path: "/control",
+      method: "GET",
+      purpose: "Verify anonymous boundary for protected Core Journey: staff Control Room loads",
+      verification_mode: "protected_anonymous_boundary",
+      status: "passed",
+      outcome: "access_boundary_confirmed",
+      collected_at: collectedAt,
+      duration_ms: 1,
+      details: { status_code: 404 },
+      provenance: {
+        collector: "public-verification/v1",
+        exact_target: "https://example.com/control",
+        collected_at: collectedAt,
+      },
+    }],
+  });
+
+  assert.equal(result.status, "completed", JSON.stringify(result));
+  const journeyCheck = result.report.results.checks.find(
+    ({ check_id }) => check_id === "web.public.core-journeys",
+  );
+  assert.equal(journeyCheck.status, "passed");
+  const authenticated = result.evidence_index.entries.find(
+    ({ evidence_kind }) => evidence_kind === "authenticated_journey_observation",
+  );
+  assert.equal(authenticated.redaction_state, "normalized");
+  assert.equal(authenticated.normalized_artifact.status_code, 200);
+  assert.doesNotMatch(
+    JSON.stringify(result),
+    /session=|bearer\s|"cookie"|"headers"|"token"/iu,
+  );
+  assertValidReportPackage(result);
+  assertValidVerificationResult(result);
 });
 
 test("Verify accepts a portable token when mkdtemp preserves its placeholder", async () => {

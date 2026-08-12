@@ -7,6 +7,7 @@ import {
   normalizeSupportLayers,
   supportLayerIsSelected,
 } from "./support-layers.js";
+import { isProtectedJourney } from "./authenticated-journeys.js";
 
 const CHECK_CATALOG_VERSION = "web-baseline-check-catalog/v2";
 const BASELINE_VERSION = "web-application-baseline/v1";
@@ -36,6 +37,12 @@ const RELEASE_INTENT_EVIDENCE = Object.freeze({
 
 const PUBLIC_EVIDENCE = Object.freeze({
   accepted_kinds: ["public_observation"],
+  minimum_items: 1,
+  provenance_required: true,
+});
+
+const CORE_JOURNEY_EVIDENCE = Object.freeze({
+  accepted_kinds: ["public_observation", "authenticated_journey_observation"],
   minimum_items: 1,
   provenance_required: true,
 });
@@ -499,7 +506,7 @@ const CHECKS = Object.freeze([
       risk_domain: "user_experience",
       permission_id: "public_verification",
       required_inputs: ["audit_brief.production_targets.values", "audit_brief.core_journeys.values"],
-      pass_evidence_requirement: PUBLIC_EVIDENCE,
+      pass_evidence_requirement: CORE_JOURNEY_EVIDENCE,
       verification_rules: [
         "Pass only after every confirmed core journey completes against a confirmed target with fresh public evidence.",
       ],
@@ -525,16 +532,63 @@ const CHECKS = Object.freeze([
         intentEvidence("core_journeys", "confirmed"),
       ]);
     },
-    verify(_project, brief, authorizationPlan, publicEvidence) {
-      return publicVerificationResult({
-        brief,
-        authorizationPlan,
-        publicEvidence,
-        subject: "core journeys",
-        kinds: ["journey"],
-        expectedCount: brief.production_targets.values.length * brief.core_journeys.values.length,
-        passedSummary: "Every declared core journey returned a successful public observation.",
-      });
+    verify(_project, brief, authorizationPlan, publicEvidence, authenticatedResult) {
+      const publiclyAssertedJourneyCount = brief.core_journeys.values.filter(
+        (journey) => !isProtectedJourney(journey) || journey.access.anonymous_status_codes,
+      ).length * brief.production_targets.values.length;
+      const publicResult = publiclyAssertedJourneyCount === 0
+        ? passed("No public assertion was declared for the protected Core Journeys.", [])
+        : publicVerificationResult({
+            brief,
+            authorizationPlan,
+            publicEvidence,
+            subject: "core journeys",
+            kinds: ["journey"],
+            expectedCount: publiclyAssertedJourneyCount,
+            passedSummary: "Every declared public Core Journey assertion returned a successful observation.",
+          });
+      if (publicResult.status !== "passed") return publicResult;
+      const protectedCount = brief.core_journeys.values.filter(isProtectedJourney).length
+        * brief.production_targets.values.length;
+      if (protectedCount === 0) return publicResult;
+      const permission = authorizationPlan.find(
+        ({ permission_id }) => permission_id === "authenticated_journey_verification",
+      );
+      if (permission?.decision !== "approved") {
+        return unverified(
+          permission?.decision === "denied" ? "permission_denied" : "execution_skipped",
+          "Authenticated Core Journey verification was not authorized.",
+          publicResult.evidence,
+        );
+      }
+      const evidence = authenticatedResult.evidence ?? [];
+      if (evidence.length !== protectedCount) {
+        return unverified(
+          "partial_authenticated_evidence",
+          "Authenticated Core Journey verification did not return all disclosed observations.",
+          [...publicResult.evidence, ...evidence],
+        );
+      }
+      const unverifiedEvidence = evidence.find(({ status }) => status === "unverified");
+      if (unverifiedEvidence) {
+        return unverified(
+          unverifiedEvidence.outcome,
+          `Authenticated Core Journey remained ${unverifiedEvidence.outcome}.`,
+          [...publicResult.evidence, ...evidence],
+        );
+      }
+      if (evidence.some(({ status }) => status === "failed")) {
+        return failed(
+          "Authenticated Core Journey verification failed.",
+          [...publicResult.evidence, ...evidence],
+        );
+      }
+      return passed(
+        publiclyAssertedJourneyCount > 0
+          ? "Every protected Core Journey preserved its declared anonymous boundary and completed with the disclosed authenticated capability."
+          : "Every protected Core Journey completed with the disclosed authenticated capability; no anonymous boundary assertion was declared.",
+        [...publicResult.evidence, ...evidence],
+      );
     },
   },
 ]);
@@ -750,6 +804,7 @@ function executeCheck(
   auditBrief,
   authorizationPlan,
   publicEvidence,
+  authenticatedResult,
 ) {
   let applicability;
   try {
@@ -794,7 +849,13 @@ function executeCheck(
   try {
     return {
       ...base,
-      ...check.verify(project, auditBrief, authorizationPlan, publicEvidence),
+      ...check.verify(
+        project,
+        auditBrief,
+        authorizationPlan,
+        publicEvidence,
+        authenticatedResult,
+      ),
     };
   } catch {
     return {
@@ -825,6 +886,7 @@ export function executeWebBaseline({
   audit_brief,
   authorization_plan = [],
   public_evidence = [],
+  authenticated_result = { evidence: [], verification_gaps: [] },
   provider_result = { evidence: [], verification_gaps: [] },
 }) {
   const catalog = describeWebBaselineCatalog();
@@ -835,6 +897,7 @@ export function executeWebBaseline({
       audit_brief,
       authorization_plan,
       public_evidence,
+      authenticated_result,
     ),
   );
   const providerRequests = audit_brief.provider_adapters?.requests

@@ -43,6 +43,13 @@ export const PROVIDER_DECISION_CARD_SCHEMA =
   "launchrally.dev/provider-decision-card/v1";
 export const PROVIDER_INTENT_DECISION_SCHEMA =
   "launchrally.dev/provider-intent-decision/v1";
+export const PROTECTED_JOURNEY_SCHEMA = "launchrally.dev/protected-journey/v1";
+export const AUTHENTICATED_JOURNEY_PLAN_SCHEMA =
+  "launchrally.dev/authenticated-journey-plan/v1";
+export const AUTHENTICATED_JOURNEY_RESULTS_SCHEMA =
+  "launchrally.dev/authenticated-journey-results/v1";
+export const AUTHENTICATED_JOURNEY_ADAPTER_VERSION =
+  "host-agent-authenticated-journey/v1";
 
 function jsonType(value) {
   if (value === null) return "null";

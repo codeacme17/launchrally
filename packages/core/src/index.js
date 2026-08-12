@@ -121,6 +121,7 @@ export async function runAudit(cwd, version, interactionOptions = {}, { signal }
     audit_brief: interactionResult.audit_brief,
     authorization_plan: interactionResult.authorization_plan,
     public_evidence: publicEvidence,
+    authenticated_result: interactionResult.authenticated_result,
     provider_result: providerResult,
   });
   baseline.catalog.versions.active_adapters = providerResult.active_adapter_versions;
@@ -132,6 +133,7 @@ export async function runAudit(cwd, version, interactionOptions = {}, { signal }
     interaction: interactionResult.interaction,
     baseline,
     public_evidence: publicEvidence,
+    authenticated_result: interactionResult.authenticated_result,
     provider_result: providerResult,
     limitations: LOCAL_AUDIT_LIMITATIONS,
     content_changes: interactionOptions.content_changes ?? [],

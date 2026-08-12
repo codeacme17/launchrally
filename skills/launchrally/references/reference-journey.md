@@ -28,7 +28,7 @@ When the CLI returns `needs_refresh`, run its typed full Verify request with the
 
 ## 1. Audit
 
-Run `rally audit --json --cwd <repository-root>`. Confirm all inferred release facts with the user through the returned typed states. Ask separately for every permission requested by the CLI. Preserve resume tokens exactly and save the completed Audit JSON unchanged. When Init binds that Report to the Manifest, retain it as `<manifest-source-report-json>` for every later whole-release Verify.
+Run `rally audit --json --cwd <repository-root>`. Confirm all inferred release facts with the user through the returned typed states. Ask separately for every permission requested by the CLI. If an approved protected Core Journey returns `authenticated_journey_results`, follow [protected-journeys.md](protected-journeys.md) and resume with `--journey-results` before saving the completed Audit JSON unchanged. Preserve resume tokens exactly. When Init binds that Report to the Manifest, retain it as `<manifest-source-report-json>` for every later whole-release Verify.
 
 Explain the CLI's Checks, Evidence, policy, Verification Gaps, and final Assessment without reclassifying them. Missing or denied Evidence remains a Gap. Neither the host model nor this Skill may manufacture Evidence or independently mark a Check Passed.
 
@@ -54,7 +54,7 @@ After the host Agent changes local code, do not claim the Findings are fixed. Re
 
 ## 5. Verify
 
-Run `rally verify --json --cwd <repository-root> --report <manifest-source-report-json> --scope full` for a whole-release reassessment. Require `interaction.source_report.role: "manifest_source"`, and require its `report_id` to match the supplied saved Report. Do not pass `<current-report-json>` to whole-release Verify. If the user explicitly requests a bounded check subset, use targeted scope and the exact Check IDs instead. Present each fresh permission request and preserve every denial as a Verification Gap.
+Run `rally verify --json --cwd <repository-root> --report <manifest-source-report-json> --scope full` for a whole-release reassessment. Require `interaction.source_report.role: "manifest_source"`, and require its `report_id` to match the supplied saved Report. Do not pass `<current-report-json>` to whole-release Verify. If the user explicitly requests a bounded check subset, use targeted scope and the exact Check IDs instead. Present each fresh permission request and preserve every denial as a Verification Gap. For an approved protected Core Journey, complete the typed [protected-journeys.md](protected-journeys.md) branch before interpreting the final Report.
 
 Explain `verification_scope`, Manifest Drift, Evidence, history, comparison, policy currentness, and Assessment exactly as returned. A targeted result has no whole-release Assessment. Only a full, current CLI Report may carry the final whole-release Assessment.
 
