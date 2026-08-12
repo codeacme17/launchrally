@@ -1,162 +1,47 @@
-import { execFile } from "node:child_process";
-import { access } from "node:fs/promises";
-import path from "node:path";
-import { isDeepStrictEqual, promisify } from "node:util";
+import { isDeepStrictEqual } from "node:util";
 
 import { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
 import { assertSafeEvidenceArtifact } from "./evidence-artifact.js";
+import {
+  PROVIDER_ADAPTER_SCOPES,
+  canonicalProviderAdapterRequest,
+} from "./provider-adapter-scopes.js";
+import {
+  PROVIDER_COMMAND_MAX_OUTPUT_BYTES,
+  runProviderCommand,
+} from "./provider-command-runner.js";
+import { createProviderToolRecovery } from "./provider-tool-recovery.js";
 
 export const PROVIDER_ADAPTER_CONTRACT = "provider-adapter-contract/v2";
 
-const execFileAsync = promisify(execFile);
-const MAX_OUTPUT_BYTES = 1024 * 1024;
-const TIMEOUT_MS = 10_000;
-const WINDOWS_EXECUTABLE_EXTENSIONS = Object.freeze([
-  ".COM",
-  ".EXE",
-  ".BAT",
-  ".CMD",
-]);
-
 const ADAPTERS = Object.freeze({
   clerk: Object.freeze({
-    adapter_version: "clerk-read/v1",
-    target: "authenticated_workspace_applications",
-    requested_fields: Object.freeze([
-      "applications[].application_id",
-      "applications[].name",
-      "applications[].instances[].instance_id",
-      "applications[].instances[].environment_type",
-    ]),
-    commands: Object.freeze([
-      Object.freeze({
-        executable: "clerk",
-        arguments: Object.freeze(["apps", "list", "--json"]),
-      }),
-    ]),
+    ...PROVIDER_ADAPTER_SCOPES.clerk,
     normalize: normalizeClerk,
   }),
   cloudflare: Object.freeze({
-    adapter_version: "cloudflare-read/v1",
-    target: "configured_worker_deployments",
-    requested_fields: Object.freeze([
-      "deployments[].id",
-      "deployments[].created_on",
-      "deployments[].source",
-      "deployments[].strategy",
-      "deployments[].versions[].version_id",
-      "deployments[].versions[].percentage",
-    ]),
-    command: Object.freeze({
-      executable: "wrangler",
-      arguments: Object.freeze(["deployments", "list", "--json"]),
-    }),
+    ...PROVIDER_ADAPTER_SCOPES.cloudflare,
+    command: PROVIDER_ADAPTER_SCOPES.cloudflare.commands[0],
+    commands: undefined,
     normalize: normalizeCloudflare,
   }),
   neon: Object.freeze({
-    adapter_version: "neon-read/v1",
-    target: "authenticated_scope_and_linked_project_metadata",
-    requested_fields: Object.freeze([
-      "projects[].id",
-      "projects[].name",
-      "projects[].region_id",
-      "projects[].created_at",
-      "branches[].id",
-      "branches[].name",
-      "branches[].current_state",
-      "branches[].created_at",
-      "branches[].expires_at",
-      "databases[].name",
-      "databases[].created_at",
-    ]),
-    commands: Object.freeze([
-      Object.freeze({
-        executable: "neonctl",
-        arguments: Object.freeze([
-          "projects", "list", "--output", "json", "--no-analytics",
-        ]),
-      }),
-      Object.freeze({
-        executable: "neonctl",
-        arguments: Object.freeze([
-          "branches", "list", "--output", "json", "--no-analytics",
-        ]),
-      }),
-      Object.freeze({
-        executable: "neonctl",
-        arguments: Object.freeze([
-          "databases", "list", "--output", "json", "--no-analytics",
-        ]),
-      }),
-    ]),
+    ...PROVIDER_ADAPTER_SCOPES.neon,
     normalize: normalizeNeon,
   }),
   resend: Object.freeze({
-    adapter_version: "resend-read/v1",
-    target: "authenticated_team_domains_and_recent_email_status",
-    requested_fields: Object.freeze([
-      "domains[].id",
-      "domains[].name",
-      "domains[].status",
-      "domains[].region",
-      "domains[].created_at",
-      "domains[].capabilities.sending",
-      "domains[].capabilities.receiving",
-      "emails[].id",
-      "emails[].created_at",
-      "emails[].last_event",
-      "emails[].scheduled_at",
-    ]),
-    commands: Object.freeze([
-      Object.freeze({
-        executable: "resend",
-        arguments: Object.freeze(["domains", "list", "--limit", "10", "--json"]),
-      }),
-      Object.freeze({
-        executable: "resend",
-        arguments: Object.freeze(["emails", "list", "--limit", "10", "--json"]),
-      }),
-    ]),
+    ...PROVIDER_ADAPTER_SCOPES.resend,
     normalize: normalizeResend,
   }),
   sentry: Object.freeze({
-    adapter_version: "sentry-read/v1",
-    target: "configured_organization_projects_and_recent_releases",
-    requested_fields: Object.freeze([
-      "projects[].id",
-      "projects[].slug",
-      "projects[].team",
-      "projects[].name",
-      "releases[].version",
-    ]),
-    commands: Object.freeze([
-      Object.freeze({
-        executable: "sentry-cli",
-        arguments: Object.freeze(["projects", "list"]),
-      }),
-      Object.freeze({
-        executable: "sentry-cli",
-        arguments: Object.freeze(["releases", "list", "--raw"]),
-      }),
-    ]),
+    ...PROVIDER_ADAPTER_SCOPES.sentry,
     parse: (stdout) => stdout,
     normalize: normalizeSentry,
   }),
   vercel: Object.freeze({
-    adapter_version: "vercel-read/v1",
-    target: "authenticated_scope_projects",
-    requested_fields: Object.freeze([
-      "projects[].id",
-      "projects[].name",
-      "projects[].framework",
-      "projects[].nodeVersion",
-      "projects[].createdAt",
-      "projects[].updatedAt",
-    ]),
-    command: Object.freeze({
-      executable: "vercel",
-      arguments: Object.freeze(["project", "ls", "--json"]),
-    }),
+    ...PROVIDER_ADAPTER_SCOPES.vercel,
+    command: PROVIDER_ADAPTER_SCOPES.vercel.commands[0],
+    commands: undefined,
     normalize: normalizeVercel,
   }),
 });
@@ -321,30 +206,7 @@ export function createProviderAdapterPlan(providerRoles = []) {
     contract_version: PROVIDER_ADAPTER_CONTRACT,
     requests: groupedRoles(providerRoles).map(([provider, rolesSet]) => {
       const roles = [...rolesSet].sort();
-      const adapter = ADAPTERS[provider];
-      return {
-        provider,
-        permission_id: `provider_read:${provider}`,
-        roles,
-        adapter_version: adapter?.adapter_version ?? null,
-        operation: "read_only",
-        target: adapter?.target ?? "declared_provider_role_metadata",
-        requested_fields: adapter?.requested_fields
-          ? [...adapter.requested_fields]
-          : roles.map((role) => `${role}.configuration`),
-        command: adapter
-          ? {
-            executable: (adapter.command ?? adapter.commands[0]).executable,
-            arguments: [...(adapter.command ?? adapter.commands[0]).arguments],
-          }
-          : null,
-        commands: adapter
-          ? (adapter.commands ?? [adapter.command]).map((command) => ({
-            executable: command.executable,
-            arguments: [...command.arguments],
-          }))
-          : null,
-      };
+      return canonicalProviderAdapterRequest(provider, roles);
     }),
   };
 }
@@ -364,85 +226,6 @@ function gap(request, reason_code, reason) {
     reason_code,
     reason,
   };
-}
-
-function windowsExecutableExtensions(executable, env) {
-  if (path.extname(executable)) return [""];
-  const supported = new Set(WINDOWS_EXECUTABLE_EXTENSIONS);
-  const extensions = (env.PATHEXT ?? WINDOWS_EXECUTABLE_EXTENSIONS.join(";"))
-    .split(";")
-    .map((extension) => extension.trim().toUpperCase())
-    .filter((extension, index, values) =>
-      supported.has(extension) && values.indexOf(extension) === index);
-  return extensions.length > 0 ? extensions : [...WINDOWS_EXECUTABLE_EXTENSIONS];
-}
-
-async function resolveWindowsExecutable(executable, cwd, env) {
-  const searchPath = env.PATH ?? env.Path ?? "";
-  const directories = searchPath.split(path.delimiter);
-  const extensions = windowsExecutableExtensions(executable, env);
-  for (const entry of directories) {
-    const directory = entry.trim().replace(/^"(.*)"$/u, "$1");
-    if (!directory) continue;
-    for (const extension of extensions) {
-      const candidate = path.resolve(cwd, directory, `${executable}${extension}`);
-      try {
-        await access(candidate);
-        return candidate;
-      } catch (error) {
-        if (!["ENOENT", "ENOTDIR"].includes(error?.code)) throw error;
-      }
-    }
-  }
-  const error = new Error("The disclosed Provider executable is not on PATH.");
-  error.code = "ENOENT";
-  throw error;
-}
-
-function windowsBatchCommand(executable, arguments_) {
-  const values = [executable, ...arguments_];
-  if (values.some((value) => /["%\r\n]/u.test(value))) {
-    const error = new Error("The disclosed Provider command cannot be represented safely.");
-    error.code = "unsafe_provider_command";
-    throw error;
-  }
-  const commandLine = values.map((value) => `"${value}"`).join(" ");
-  return `"${commandLine}"`;
-}
-
-async function defaultRunner(command, cwd, { signal } = {}) {
-  throwIfAborted(signal);
-  const env = {
-    ...process.env,
-    CI: "1",
-    NO_COLOR: "1",
-    RESEND_TELEMETRY_DISABLED: "1",
-    SENTRY_DISABLE_UPDATE_CHECK: "true",
-    VERCEL_TELEMETRY_DISABLED: "1",
-    WRANGLER_SEND_METRICS: "false",
-  };
-  let invocation = command;
-  if (process.platform === "win32") {
-    const executable = await resolveWindowsExecutable(command.executable, cwd, env);
-    throwIfAborted(signal);
-    invocation = /\.(?:bat|cmd)$/iu.test(executable)
-      ? {
-        executable: env.ComSpec ?? env.COMSPEC ?? "cmd.exe",
-        arguments: ["/d", "/s", "/c", windowsBatchCommand(executable, command.arguments)],
-        windowsVerbatimArguments: true,
-      }
-      : { executable, arguments: command.arguments };
-  }
-  return execFileAsync(invocation.executable, invocation.arguments, {
-    cwd,
-    encoding: "utf8",
-    maxBuffer: MAX_OUTPUT_BYTES,
-    timeout: TIMEOUT_MS,
-    killSignal: "SIGTERM",
-    ...(invocation.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
-    ...(signal ? { signal } : {}),
-    env,
-  });
 }
 
 function failureKind(error) {
@@ -496,8 +279,10 @@ export async function executeProviderAdapters({
   cwd,
   plan,
   authorization_plan = [],
-  runner = defaultRunner,
+  runner = runProviderCommand,
   now = () => new Date(),
+  platform = process.platform,
+  shell = platform === "win32" ? "powershell" : "posix",
   signal,
 }) {
   throwIfAborted(signal);
@@ -508,6 +293,7 @@ export async function executeProviderAdapters({
   const evidence = [];
   const verification_gaps = [];
   const active_adapter_versions = [];
+  const provider_tool_recoveries = [];
 
   for (const request of plan.requests) {
     throwIfAborted(signal);
@@ -556,7 +342,7 @@ export async function executeProviderAdapters({
         if (typeof result?.stdout !== "string") {
           throw new Error("invalid_provider_response");
         }
-        if (Buffer.byteLength(result.stdout, "utf8") > MAX_OUTPUT_BYTES) {
+        if (Buffer.byteLength(result.stdout, "utf8") > PROVIDER_COMMAND_MAX_OUTPUT_BYTES) {
           const error = new Error("provider_response_too_large");
           error.code = "provider_response_too_large";
           throw error;
@@ -602,6 +388,14 @@ export async function executeProviderAdapters({
       rethrowIfAborted(error, signal);
       const reasonCode = failureKind(error);
       verification_gaps.push(gap(request, reasonCode, failureReason(request, reasonCode)));
+      if (["missing_provider_tool", "missing_provider_login"].includes(reasonCode)) {
+        const recovery = createProviderToolRecovery(request, {
+          reason_code: reasonCode,
+          platform,
+          shell,
+        });
+        if (recovery) provider_tool_recoveries.push(recovery);
+      }
     }
   }
 
@@ -610,5 +404,6 @@ export async function executeProviderAdapters({
     evidence,
     verification_gaps,
     active_adapter_versions: [...new Set(active_adapter_versions)].sort(),
+    provider_tool_recoveries,
   };
 }

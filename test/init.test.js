@@ -149,11 +149,13 @@ async function prepareNpmChangesWithCliDependencies(request, dependencies) {
   return changes;
 }
 
-async function completeAudit(directory) {
+async function completeAudit(directory, answers = ANSWERS, permissionDecisions = {
+  public_verification: "denied",
+}) {
   const initial = await runAudit(directory, "0.1.0");
   const confirmation = await runAudit(directory, "0.1.0", {
     resume_token: initial.interaction.resume_token,
-    answers: ANSWERS,
+    answers,
   });
   const permission = await runAudit(directory, "0.1.0", {
     resume_token: confirmation.interaction.resume_token,
@@ -161,9 +163,47 @@ async function completeAudit(directory) {
   });
   return runAudit(directory, "0.1.0", {
     resume_token: permission.interaction.resume_token,
-    permission_decisions: { public_verification: "denied" },
+    permission_decisions: permissionDecisions,
   });
 }
+
+test("Init preserves protected journey declarations without authenticated results", async () => {
+  const directory = await fixture();
+  const protectedJourney = {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/control",
+    purpose: "staff Control Room loads",
+    access: {
+      authentication_class: "staff",
+      anonymous_status_codes: [404],
+      authenticated_status_codes: [200],
+    },
+  };
+  const audit = await completeAudit(
+    directory,
+    { ...ANSWERS, core_journeys: [protectedJourney] },
+    {
+      public_verification: "denied",
+      authenticated_journey_verification: "denied",
+    },
+  );
+  const preview = await runInit(directory, "0.1.0", {
+    report_package: audit,
+  }, {
+    prepare_dependency_changes: prepareNpmChanges,
+  });
+
+  assert.equal(preview.status, "needs_confirmation", JSON.stringify(preview));
+  assert.deepEqual(preview.manifest.release.core_journeys, {
+    state: "declared",
+    value: [protectedJourney],
+  });
+  assert.doesNotMatch(
+    JSON.stringify(preview.manifest),
+    /journey_results|session=|bearer\s|"cookie"|"headers"/iu,
+  );
+});
 
 async function unconfirmedAudit(directory) {
   const initial = await runAudit(directory, "0.1.0");
@@ -2071,7 +2111,7 @@ test("the CLI exposes and honors the isolated toolchain registry permission", as
 });
 
 test("the CLI previews a saved complete Audit and decline applies nothing", async () => {
-  const directory = await fixtureWithCliDependency("0.3.0");
+  const directory = await fixtureWithCliDependency("0.3.1");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-report-file-"));
   const reportPath = path.join(reportDirectory, "audit.json");
@@ -2112,7 +2152,7 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
 });
 
 test("Human Mode renders every exact initialization change before confirmation", async () => {
-  const directory = await fixtureWithCliDependency("0.3.0");
+  const directory = await fixtureWithCliDependency("0.3.1");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-human-report-"));
   const reportPath = path.join(reportDirectory, "audit.json");

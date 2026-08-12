@@ -868,5 +868,6 @@ test("a deployment without Provider roles uses no Adapter and produces no Provid
     evidence: [],
     verification_gaps: [],
     active_adapter_versions: [],
+    provider_tool_recoveries: [],
   });
 });

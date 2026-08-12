@@ -1,13 +1,13 @@
 # Quickstart
 
-LaunchRally `0.3.0` is a public Experimental release. Run it against a repository you control and review every disclosed read or write boundary before confirming it. Experimental means the product is not presented as stable or P0 Validated.
+LaunchRally `0.3.1` is a public Experimental release. Run it against a repository you control and review every disclosed read or write boundary before confirming it. Experimental means the P0 Validated product is not yet presented as Stable.
 
 ## Direct CLI Quickstart
 
 LaunchRally's default interactive journey uses a user-managed PATH installation. Install the exact Launcher through your current npm prefix, then verify structured output before entering a repository:
 
 ```bash
-npm install --global @launchrally/cli@0.3.0
+npm install --global @launchrally/cli@0.3.1
 rally --version --json
 ```
 
@@ -36,9 +36,9 @@ Init makes the saved Manifest-bound Audit Report historical. Follow the typed `n
 Exact-version npm-exec is a no-install trial and CI fallback. It is not the default Agent prerequisite. Use complete npm-exec follow-ups because the first ephemeral process does not leave `rally` on PATH:
 
 ```bash
-npm exec --package=@launchrally/cli@0.3.0 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
-npm exec --package=@launchrally/cli@0.3.0 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
-npm exec --package=@launchrally/cli@0.3.0 -- rally --version --json --cwd .
+npm exec --package=@launchrally/cli@0.3.1 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.3.1 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.3.1 -- rally --version --json --cwd .
 ```
 
 npm may show its normal package-download confirmation. LaunchRally does not suppress it or add `--yes`.

@@ -108,14 +108,24 @@
               "items": { "type": "string", "format": "uri" },
               "uniqueItems": true
             },
-            "core_journeys": { "type": "array" },
+            "core_journeys": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "$ref": "#/$defs/publicJourney" },
+                  { "$ref": "#/$defs/protectedJourney" },
+                  { "$ref": "#/$defs/legacyJourney" }
+                ]
+              }
+            },
             "provider_roles": { "type": "array" },
             "support_layers": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
             "confirmed": { "type": "boolean" }
           },
           "additionalProperties": false
         },
-        "access": { "enum": ["local_read_only", "local_and_public_read_only", "local_and_provider_read_only", "local_public_and_provider_read_only"] },
+        "access": { "enum": ["local_read_only", "local_and_public_read_only", "local_and_authenticated_read_only", "local_and_provider_read_only", "local_public_and_authenticated_read_only", "local_public_and_provider_read_only", "local_authenticated_and_provider_read_only", "local_public_authenticated_and_provider_read_only"] },
         "public_verification": {
           "type": "object",
           "required": ["decision", "targets"],
@@ -163,7 +173,7 @@
         "required": ["permission_id", "boundary", "decision", "scope"],
         "properties": {
           "permission_id": { "type": "string", "minLength": 1 },
-          "boundary": { "enum": ["local_scan", "public_network", "provider_read"] },
+          "boundary": { "enum": ["local_scan", "public_network", "authenticated_network_read", "provider_read"] },
           "decision": { "enum": ["granted", "approved", "denied", "pending"] },
           "basis": { "type": "string", "minLength": 1 },
           "scope": { "type": "object" }
@@ -202,9 +212,17 @@
           "type": "array",
           "items": { "$ref": "#/$defs/evidenceReference" }
         },
+        "authenticated_journey_evidence_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidenceReference" }
+        },
         "provider_evidence_refs": {
           "type": "array",
           "items": { "$ref": "#/$defs/evidenceReference" }
+        },
+        "provider_tool_recoveries": {
+          "type": "array",
+          "items": { "type": "object" }
         },
         "action_queue": { "type": "array", "items": { "$ref": "#/$defs/action" } },
         "verification_gaps": {
@@ -234,6 +252,42 @@
   "x-launchrally-contract-major": 2,
   "$defs": {
     "priority": { "enum": ["p0", "p1", "p2"] },
+    "publicJourney": {
+      "type": "object",
+      "required": ["purpose", "path", "method"],
+      "properties": {
+        "purpose": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "pattern": "^/(?!/)" },
+        "method": { "const": "GET" }
+      },
+      "additionalProperties": false
+    },
+    "legacyJourney": {
+      "description": "Compatibility shape for v2 journey objects published before protected journey contracts; versioned objects are excluded and remain fail-closed.",
+      "type": "object",
+      "not": { "required": ["schema_version"] }
+    },
+    "protectedJourney": {
+      "type": "object",
+      "required": ["schema_version", "purpose", "path", "method", "access"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/protected-journey/v1" },
+        "purpose": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "pattern": "^/(?!/)" },
+        "method": { "const": "GET" },
+        "access": {
+          "type": "object",
+          "required": ["authentication_class", "authenticated_status_codes"],
+          "properties": {
+            "authentication_class": { "enum": ["user", "staff", "signed_token"] },
+            "anonymous_status_codes": { "type": "array", "items": { "type": "integer", "minimum": 300, "maximum": 499 }, "minItems": 1, "maxItems": 10, "uniqueItems": true },
+            "authenticated_status_codes": { "type": "array", "items": { "type": "integer", "minimum": 200, "maximum": 299 }, "minItems": 1, "maxItems": 10, "uniqueItems": true }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "severity": { "enum": ["critical", "major", "moderate"] },
     "riskDomain": {
       "enum": ["build_integrity", "configuration", "deployment", "availability", "security_and_privacy", "data_and_integrations", "observability_and_operations", "user_experience"]
@@ -265,9 +319,9 @@
         "path": { "type": "string", "pattern": "^/" },
         "method": { "enum": ["DNS_LOOKUP", "TLS_HANDSHAKE", "GET"] },
         "purpose": { "type": "string", "minLength": 1 },
-        "verification_mode": { "enum": ["description_only", "executable_path"] },
+        "verification_mode": { "enum": ["description_only", "executable_path", "protected_anonymous_boundary"] },
         "status": { "enum": ["passed", "failed", "unverified"] },
-        "outcome": { "enum": ["resolved", "secure", "reachable", "healthy", "completed", "journey_definition_incomplete", "redirect_not_followed", "target_mismatch", "http_status_failure", "dns_failure", "certificate_failure", "unreachable", "timeout", "execution_failure"] },
+        "outcome": { "enum": ["resolved", "secure", "reachable", "healthy", "completed", "access_boundary_confirmed", "journey_definition_incomplete", "redirect_not_followed", "target_mismatch", "http_status_failure", "dns_failure", "certificate_failure", "unreachable", "timeout", "execution_failure"] },
         "collected_at": { "type": "string", "format": "date-time" },
         "duration_ms": { "type": "integer", "minimum": 0 },
         "details": { "type": "object" },
@@ -450,7 +504,7 @@
         "severity": { "$ref": "#/$defs/severity" },
         "gating": { "type": "boolean" },
         "status": { "const": "unverified" },
-        "reason_code": { "enum": ["permission_denied", "missing_required_input", "insufficient_evidence", "insufficient_machine_evidence", "conflicting_evidence", "applicability_unresolved", "uncovered_scope", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence", "partial_provider_evidence", "missing_provider_tool", "missing_provider_login", "unsupported_provider", "adapter_error"] },
+        "reason_code": { "enum": ["permission_denied", "missing_required_input", "insufficient_evidence", "insufficient_machine_evidence", "conflicting_evidence", "applicability_unresolved", "uncovered_scope", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence", "partial_authenticated_evidence", "partial_provider_evidence", "missing_authentication", "insufficient_capability", "expired_authentication", "runner_unavailable", "missing_provider_tool", "missing_provider_login", "unsupported_provider", "adapter_error"] },
         "reason": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
@@ -544,7 +598,7 @@
       "type": "object",
       "required": ["accepted_kinds", "minimum_items", "provenance_required"],
       "properties": {
-        "accepted_kinds": { "type": "array", "items": { "enum": ["file", "local_observation", "project_fact", "release_intent", "public_observation", "machine_evidence"] }, "minItems": 1, "uniqueItems": true },
+        "accepted_kinds": { "type": "array", "items": { "enum": ["file", "local_observation", "project_fact", "release_intent", "public_observation", "authenticated_journey_observation", "machine_evidence"] }, "minItems": 1, "uniqueItems": true },
         "minimum_items": { "type": "integer", "minimum": 1 },
         "provenance_required": { "const": true }
       },

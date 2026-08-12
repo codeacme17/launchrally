@@ -4,11 +4,149 @@
   "product_status": "complete",
   "release_status": "experimental",
   "validation_mode": "telemetry_free",
-  "validation_status": "collecting",
-  "p0_validated": false,
+  "validation_status": "validated",
+  "p0_validated": true,
   "quality_floor_status": "satisfied",
+  "stable_promotion": {
+    "status": "not_approved",
+    "maintainer_e2e_status": "pending",
+    "maintainer_e2e_evidence": {},
+    "approved_tag": null
+  },
+  "release_status_documents": [
+    {
+      "path": "README.md",
+      "experimental": "Status: Experimental P0.",
+      "stable": "Status: Stable."
+    },
+    {
+      "path": "README.md",
+      "experimental": "npm/v/@launchrally/cli/experimental?label=experimental",
+      "stable": "npm/v/@launchrally/cli/latest?label=stable"
+    },
+    {
+      "path": "README.md",
+      "experimental": "publicly available on the non-stable `experimental` channel",
+      "stable": "publicly available on the stable `latest` channel"
+    },
+    {
+      "path": "README.md",
+      "experimental": "LaunchRally is P0 Validated with the Quality Floor satisfied; the release remains Experimental until a separate Stable promotion.",
+      "stable": "LaunchRally is P0 Validated and the Quality Floor is satisfied."
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "experimental": "Experimental open-source project",
+      "stable": "Stable open-source project"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "experimental": "LaunchRally is P0 Validated and the Quality Floor is satisfied, while the release remains Experimental",
+      "stable": "LaunchRally is P0 Validated and the Quality Floor is satisfied"
+    },
+    {
+      "path": "docs/getting-started/install.md",
+      "experimental": "exact Experimental P0 release",
+      "stable": "exact Stable release"
+    },
+    {
+      "path": "docs/getting-started/install.md",
+      "experimental": "Experimental availability remains non-stable after the reviewed P0 Validated decision.",
+      "stable": "Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor."
+    },
+    {
+      "path": "docs/getting-started/install.md",
+      "experimental": "Experimental release runbook",
+      "stable": "Stable promotion runbook"
+    },
+    {
+      "path": "docs/getting-started/quickstart.md",
+      "experimental": "public Experimental release",
+      "stable": "public Stable release"
+    },
+    {
+      "path": "docs/getting-started/quickstart.md",
+      "experimental": "Experimental means the P0 Validated product is not yet presented as Stable.",
+      "stable": "Stable means the reviewed P0 Validated decision and Quality Floor requirements are satisfied."
+    },
+    {
+      "path": "docs/maintainers/phase-0-validation.md",
+      "experimental": "public Experimental release.",
+      "stable": "public Stable release."
+    },
+    {
+      "path": "docs/maintainers/phase-0-validation.md",
+      "experimental": "LaunchRally is P0 Validated with the Quality Floor satisfied, but remains Experimental.",
+      "stable": "LaunchRally is P0 Validated with the Quality Floor satisfied."
+    },
+    {
+      "path": "docs/maintainers/phase-0-validation.md",
+      "experimental": "authority-expanding P1 implementation is allowed.",
+      "stable": "authority-expanding P1 implementation remains allowed."
+    },
+    {
+      "path": "docs/maintainers/p0-acceptance.md",
+      "experimental": "publicly available as an Experimental",
+      "stable": "publicly available as a Stable"
+    },
+    {
+      "path": "docs/maintainers/p0-acceptance.md",
+      "experimental": "P0 is Validated with the Quality Floor satisfied, while the release remains\nExperimental.",
+      "stable": "P0 is Validated with the Quality Floor satisfied."
+    },
+    {
+      "path": "packages/cli/README.md",
+      "experimental": "**Experimental P0** release",
+      "stable": "**Stable** release"
+    },
+    {
+      "path": "packages/cli/README.md",
+      "experimental": "P0 is Product Complete and P0 Validated, while the package remains non-stable.",
+      "stable": "P0 is Product Complete and P0 Validated with the Quality Floor satisfied."
+    },
+    {
+      "path": "packages/contracts/README.md",
+      "experimental": "**Experimental P0** release",
+      "stable": "**Stable** release"
+    },
+    {
+      "path": "packages/contracts/README.md",
+      "experimental": "Experimental availability remains non-stable after the reviewed P0 Validated decision.",
+      "stable": "Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor."
+    },
+    {
+      "path": "packages/core/README.md",
+      "experimental": "**Experimental P0** release",
+      "stable": "**Stable** release"
+    },
+    {
+      "path": "packages/core/README.md",
+      "experimental": "The package is Product Complete and P0 Validated, but its API is not presented as stable.",
+      "stable": "The package is Product Complete, P0 Validated, and published on the stable channel."
+    },
+    {
+      "path": "adapters/codex/launchrally/README.md",
+      "experimental": "**Experimental P0** release",
+      "stable": "**Stable** release"
+    },
+    {
+      "path": "adapters/codex/launchrally/README.md",
+      "experimental": "It is Product Complete and P0 Validated, but it is not presented as stable.",
+      "stable": "It is Product Complete, P0 Validated, and published on the stable channel."
+    },
+    {
+      "path": "adapters/claude/launchrally/README.md",
+      "experimental": "**Experimental P0** release",
+      "stable": "**Stable** release"
+    },
+    {
+      "path": "adapters/claude/launchrally/README.md",
+      "experimental": "It is Product Complete and P0 Validated, but it is not presented as stable.",
+      "stable": "It is Product Complete, P0 Validated, and published on the stable channel."
+    }
+  ],
   "p1_discovery": "allowed",
-  "p1_authority": "blocked",
+  "p1_authority": "allowed",
   "license": "Apache-2.0",
   "feedback_channels": [
     "discussions",
@@ -30,6 +168,7 @@
     "P0-HISTORY-02",
     "P0-TOOLCHAIN-01",
     "P0-PERMISSION-01",
+    "P0-PROVIDER-RECOVERY-01",
     "P0-COVERAGE-01",
     "P0-COVERAGE-02",
     "P0-QUALITY-01",
@@ -37,6 +176,7 @@
     "P0-RELEASE-01",
     "P0-RELEASE-02",
     "P0-RELEASE-03",
+    "P0-RELEASE-04",
     "P0-VALIDATE-01",
     "P0-VALIDATE-02"
   ],
@@ -44,7 +184,6 @@
     {
       "path": "README.md",
       "includes": [
-        "Status: Experimental P0",
         "github.com/codeacme17/launchrally/issues",
         "github.com/codeacme17/launchrally/discussions",
         "SECURITY.md",
@@ -56,7 +195,7 @@
       "includes": [
         "Direct CLI Quickstart",
         "Skill Quickstart",
-        "@launchrally/cli@0.3.0",
+        "@launchrally/cli@0.3.1",
         "secret-free"
       ]
     },
@@ -96,13 +235,25 @@
     {
       "path": "docs/maintainers/phase-0-validation.md",
       "includes": [
-        "public Experimental release",
         "P0 Product Complete",
         "Experimental release",
         "Telemetry-Free Validation",
         "P0 Validated",
-        "No hard download quota",
-        "authority-expanding P1 implementation remains blocked"
+        "No hard download quota"
+      ]
+    },
+    {
+      "path": "docs/maintainers/stable-promotion.md",
+      "includes": [
+        "Stable promotion",
+        "new coherent version",
+        "P0 Validated",
+        "maintainer E2E",
+        "Quality Floor",
+        "npm latest",
+        "GitHub regular Latest Release",
+        "partial publication",
+        "interactive 2FA"
       ]
     },
     {

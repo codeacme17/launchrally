@@ -18,6 +18,10 @@
     },
     "determinism": { "$ref": "#/$defs/determinism" },
     "items": { "type": "array", "items": { "$ref": "#/$defs/planItem" } },
+    "authenticated_journeys": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/authenticatedJourney" }
+    },
     "verification_gaps": {
       "type": "array",
       "items": { "$ref": "#/$defs/verificationGapWork" }
@@ -138,6 +142,43 @@
         "investigation": { "$ref": "#/$defs/investigation" },
         "remediation": { "type": "string", "minLength": 1 },
         "evidence_to_recollect": { "$ref": "#/$defs/evidenceToRecollect" }
+      },
+      "additionalProperties": false
+    },
+    "authenticatedJourneyResult": {
+      "type": "object",
+      "required": ["status", "outcome", "status_code", "collected_at", "evidence_digest", "current", "currentness"],
+      "properties": {
+        "status": { "enum": ["passed", "unverified", "failed"] },
+        "outcome": { "enum": ["completed", "missing_authentication", "insufficient_capability", "expired_authentication", "runner_unavailable", "unexpected_denial", "redirect", "timeout", "execution_failure"] },
+        "status_code": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 },
+        "collected_at": { "type": "string", "format": "date-time" },
+        "evidence_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "current": { "type": "boolean" },
+        "currentness": {
+          "type": "object",
+          "required": ["status", "evaluated_at", "reasons"],
+          "properties": {
+            "status": { "enum": ["current", "non_current"] },
+            "evaluated_at": { "type": "string", "format": "date-time" },
+            "reasons": { "type": "array", "items": { "type": "object" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "authenticatedJourney": {
+      "type": "object",
+      "required": ["journey_id", "target", "method", "purpose", "authentication_class", "expected_status_codes", "result"],
+      "properties": {
+        "journey_id": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "format": "uri" },
+        "method": { "const": "GET" },
+        "purpose": { "type": "string", "minLength": 1 },
+        "authentication_class": { "enum": ["user", "staff", "signed_token"] },
+        "expected_status_codes": { "type": "array", "items": { "type": "integer", "minimum": 200, "maximum": 299 }, "minItems": 1, "maxItems": 10, "uniqueItems": true },
+        "result": { "anyOf": [{ "$ref": "#/$defs/authenticatedJourneyResult" }, { "type": "null" }] }
       },
       "additionalProperties": false
     },

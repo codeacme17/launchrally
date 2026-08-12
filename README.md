@@ -11,14 +11,14 @@ LaunchRally is a local-first, open-source launch-readiness audit and verificatio
 
 It needs no LaunchRally account, uses no default telemetry, and makes no repository, deployment, or Provider write during an Audit.
 
-> **Status: Experimental P0.** P0 is Product Complete and `0.3.0` is publicly available on the non-stable `experimental` channel. Telemetry-Free Validation is collecting aggregate directional signals; LaunchRally is not P0 Validated.
+> **Status: Experimental P0.** P0 is Product Complete and `0.3.1` is publicly available on the non-stable `experimental` channel. LaunchRally is P0 Validated with the Quality Floor satisfied; the release remains Experimental until a separate Stable promotion.
 
 ## First Audit
 
 Install the exact Experimental Launcher through your current npm prefix and verify its structured version output before entering a repository:
 
 ```bash
-npm install --global @launchrally/cli@0.3.0
+npm install --global @launchrally/cli@0.3.1
 rally --version --json
 ```
 
@@ -50,9 +50,9 @@ Continue with the [Quickstart](docs/getting-started/quickstart.md) for the compl
 Exact-version npm-exec is supported as a no-install trial and CI fallback, not the default interactive journey. Its follow-ups retain the complete prefix so they remain executable after the first process exits:
 
 ```bash
-npm exec --package=@launchrally/cli@0.3.0 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
-npm exec --package=@launchrally/cli@0.3.0 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
-npm exec --package=@launchrally/cli@0.3.0 -- rally --version --json --cwd .
+npm exec --package=@launchrally/cli@0.3.1 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.3.1 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.3.1 -- rally --version --json --cwd .
 ```
 
 ## How it works

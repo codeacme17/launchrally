@@ -313,8 +313,14 @@ test("new Reports bind Check Catalog v2 while historical Report v1 remains reada
   historical.report.schema_version = "launchrally.dev/report/v1";
   historical.report.provenance.check_catalog_version = "web-baseline-check-catalog/v1";
   historical.report.catalog.versions.check_catalog = "web-baseline-check-catalog/v1";
+  delete historical.report.results.authenticated_journey_evidence_refs;
+  delete historical.report.results.provider_tool_recoveries;
   for (const declaration of historical.report.catalog.checks) {
     declaration.evidence_requirement = declaration.pass_evidence_requirement;
+    declaration.evidence_requirement.accepted_kinds =
+      declaration.evidence_requirement.accepted_kinds.filter(
+        (kind) => kind !== "authenticated_journey_observation",
+      );
     delete declaration.pass_evidence_requirement;
     delete declaration.failure_evidence_requirement;
   }

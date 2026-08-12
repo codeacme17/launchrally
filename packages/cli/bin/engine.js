@@ -4,7 +4,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-import { CLI_INTERACTION_CONTRACT } from "@launchrally/contracts";
+import {
+  CLI_INTERACTION_CONTRACT,
+  assertValidReportPackage,
+  assertValidVerificationResult,
+} from "@launchrally/contracts";
 import {
   environmentTargetLabel,
   reviewedEnvironmentLabel,
@@ -13,6 +17,7 @@ import {
   runInit,
   runPlan,
   runProviderGuidance,
+  runProviderToolRecovery,
   runToolchainLifecycle,
   runVerify,
 } from "@launchrally/core";
@@ -27,7 +32,7 @@ import {
 } from "./cli-arguments.js";
 import { inspectReportDestination } from "./report-destination.js";
 import { createSystemFilePicker } from "./system-file-picker.js";
-import { consumeInvocationContext } from "./invocation-context.js";
+import { consumeInvocationContext, renderCommand } from "./invocation-context.js";
 import { VERSION } from "./version.js";
 
 const invocationContext = consumeInvocationContext({
@@ -257,6 +262,48 @@ function renderHumanPlan(value) {
 }
 
 function renderHumanProviders(value) {
+  if (value.recovery) {
+    const recovery = value.recovery;
+    const authority = recovery.installation_authority;
+    const lines = [
+      "LaunchRally Provider Tool Recovery",
+      `Provider: ${recovery.provider}`,
+      `Adapter: ${recovery.adapter_version}`,
+      `Executable: ${recovery.executable}`,
+      `State: ${recovery.state}`,
+      `Evidence benefit: ${recovery.evidence_benefit.summary}`,
+      `Official source: ${authority.official_source.title} — ${authority.official_source.url}`,
+      `Exact supported version: ${authority.package.exact_version}`,
+      `Verification command: ${renderCommand(authority.verification_command)}`,
+    ];
+    if (!recovery.active_environment.guidance_available) {
+      lines.push(
+        `Installation guidance is unavailable for ${recovery.active_environment.platform}/${recovery.active_environment.shell}.`,
+      );
+    }
+    if (recovery.installation_instructions.length > 0) {
+      lines.push(
+        "User-managed installation instructions (LaunchRally does not execute them):",
+        ...recovery.installation_instructions.map(({ route_id: routeId, command }) =>
+          `- ${routeId}: ${renderCommand(command)}`),
+      );
+    }
+    if (value.request?.permission) {
+      lines.push(
+        `Fresh permission required: ${value.request.permission.permission_id} (${value.request.permission.decision}).`,
+        "The earlier Provider-read approval is not reused.",
+      );
+    }
+    if (value.request?.choices) {
+      lines.push(
+        "Choices:",
+        ...value.request.choices.map(({ id, default: isDefault }) =>
+          `- ${id}${isDefault ? " (default)" : ""}`),
+      );
+    }
+    if (value.next?.message) lines.push(value.next.message);
+    return lines.join("\n");
+  }
   const lines = [
     "LaunchRally Advisory Provider Guidance",
     ...(value.source_report_id ? [`Source Report: ${value.source_report_id}`] : []),
@@ -536,13 +583,14 @@ async function main() {
     const cwd = optionValue("--cwd") ?? process.cwd();
     const answers = jsonOption("--answers");
     const permissionDecisions = jsonOption("--permissions");
-    if (answers.error || permissionDecisions.error) {
+    const journeyResults = jsonOption("--journey-results");
+    if (answers.error || permissionDecisions.error || journeyResults.error) {
       print({
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
         operation: "audit",
         error: "invalid_option_json",
-        message: "Audit answers and permission decisions must use valid JSON.",
+        message: "Audit answers, permission decisions, and journey results must use valid JSON.",
       });
       return 2;
     }
@@ -552,6 +600,7 @@ async function main() {
         answers: answers.value,
         confirmation: optionValue("--confirm"),
         permission_decisions: permissionDecisions.value,
+        journey_results: journeyResults.value,
       });
       print(result);
       return result.status === "execution_error" ? 2 : 0;
@@ -729,6 +778,42 @@ async function main() {
         return 2;
       }
     }
+    const recoveryProvider = optionValue("--recover");
+    if (recoveryProvider) {
+      try {
+        if (reportPackage?.report) assertValidReportPackage(reportPackage);
+        else assertValidVerificationResult(reportPackage);
+      } catch (error) {
+        print({
+          contract: CLI_INTERACTION_CONTRACT,
+          status: "execution_error",
+          operation: "providers",
+          error: error.code ?? "invalid_report_package",
+          message: "Provider Tool Recovery requires a complete saved Report or Verification Result.",
+        });
+        return 2;
+      }
+      const recoveries = reportPackage?.report?.results?.provider_tool_recoveries
+        ?? reportPackage?.targeted_result?.provider_tool_recoveries;
+      const recovery = recoveries?.find(
+        ({ provider }) => provider === recoveryProvider,
+      );
+      if (!recovery) {
+        print({
+          contract: CLI_INTERACTION_CONTRACT,
+          status: "unavailable",
+          operation: "providers",
+          error: "provider_tool_recovery_unavailable",
+          message: `No typed Provider Tool Recovery is available for ${recoveryProvider}.`,
+        });
+        return 2;
+      }
+      const result = await runProviderToolRecovery(recovery, {
+        choice: optionValue("--choice"),
+      }, { cwd });
+      print(result);
+      return result.status === "execution_error" ? 2 : 0;
+    }
     const constraints = jsonOption("--constraints");
     if (constraints.error) {
       print({
@@ -772,13 +857,14 @@ async function main() {
     }
     const checks = jsonOption("--checks");
     const permissionDecisions = jsonOption("--permissions");
-    if (checks.error || permissionDecisions.error) {
+    const journeyResults = jsonOption("--journey-results");
+    if (checks.error || permissionDecisions.error || journeyResults.error) {
       print({
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
         operation: "verify",
         error: "invalid_option_json",
-        message: "Verify Check IDs and permission decisions must use valid JSON.",
+        message: "Verify Check IDs, permission decisions, and journey results must use valid JSON.",
       });
       return 2;
     }
@@ -788,6 +874,7 @@ async function main() {
       check_ids: checks.value,
       resume_token: optionValue("--resume"),
       permission_decisions: permissionDecisions.value,
+      journey_results: journeyResults.value,
     });
     print(result);
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;

@@ -16,6 +16,8 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - For remediation guidance or Provider choices, read [references/plan.md](references/plan.md).
 - For post-remediation evidence collection, read [references/verify.md](references/verify.md).
 - Before any network or Provider access, read [references/permissions.md](references/permissions.md).
+- When Audit or Verify returns an authenticated Core Journey request, read [references/protected-journeys.md](references/protected-journeys.md).
+- When a completed Audit or Verify contains `provider_tool_recoveries`, read [references/provider-tool-recovery.md](references/provider-tool-recovery.md).
 - When invoking the CLI or handling its states, read [references/cli-contract.md](references/cli-contract.md).
 
 ## Preserve these invariants
@@ -24,8 +26,10 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - Use only a Launcher and selected Engine declared by the release compatibility matrix. Do not install, update, downgrade, restore, migrate, clean, remove, or substitute either one silently.
 - For an explicitly user-selected exact-version npm-exec trial or CI entry, preserve the package manager's download confirmation.
 - Treat CLI structured output as canonical. Do not scrape human terminal prose.
+- Render Provider tool recovery only from `launchrally.dev/provider-tool-recovery/v1`; use its exact reviewed commands and preserve `continue_with_gap` as the default.
 - Confirm material release intent before passing it to the CLI.
 - Ask for explicit permission at the boundary requested by the CLI.
+- Use only an existing user-managed authenticated host session for approved protected journeys, then return the exact normalized result fields requested by the CLI.
 - Never change a Check result, Severity, Gate, Assessment, or immutable Report.
 - Keep Phase 0 read-only outside approved local initialization and explicitly confirmed Provider Manifest intent. Never create or modify production resources.
 - Present Provider guidance only for the CLI-reported evidenced gap or confirmed constraint mismatch. Never rank a Card as universally best or present its pricing as live.
@@ -38,7 +42,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 
 1. Resolve the exact repository root without changing files.
 2. Make `rally --version --json --cwd <repository-root>` the first discovery operation. Do not probe for or invoke a Project Toolchain Engine directly.
-3. If `rally` is absent, explain that CLI installation and Plugin installation are separate, link to the repository's single Install authority, present exactly `npm install --global @launchrally/cli@0.3.0` and the structured verification command, then stop before Audit and wait for the user. Do not run the install, automatically substitute the separate exact-version npm-exec trial/CI entry, or change npm prefixes or shell profiles.
+3. If `rally` is absent, explain that CLI installation and Plugin installation are separate, link to the repository's single Install authority, present exactly `npm install --global @launchrally/cli@0.3.1` and the structured verification command, then stop before Audit and wait for the user. Do not run the install, automatically substitute the separate exact-version npm-exec trial/CI entry, or change npm prefixes or shell profiles.
 4. Validate the complete version response and `launchrally.dev/execution-authority/v1` object through the compatibility matrix and typed authority router in [references/cli-contract.md](references/cli-contract.md). Plugin, Launcher, selected Engine, and project-pin versions are separate facts and need not be equal when each is supported.
 5. For `ready`, invoke every repository operation through `rally` so the Launcher follows the selected Engine. For restore, migrate, or clean, show the exact operation, permissions, targets, and effects and wait for explicit user approval before Agent execution.
 6. Invoke Agent Mode with structured output and handle the returned state. Stop on unknown contracts or versions, invalid descriptors or paths, and malformed output.

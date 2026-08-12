@@ -37,7 +37,7 @@ test("the static authority descriptor names only the exact Engine interface", ()
     contract: "launchrally.dev/execution-authority/v1",
     engine: {
       package: "@launchrally/cli",
-      version: "0.3.0",
+      version: "0.3.1",
       entrypoint: "bin/engine.js",
     },
   };
@@ -71,7 +71,7 @@ test("execution authority states permit only their compatible materialization an
   const base = {
     schema_version: EXECUTION_AUTHORITY_CONTRACT,
     source: "project_toolchain",
-    launcher_version: "0.3.0",
+    launcher_version: "0.3.1",
     engine: {
       package: "@launchrally/cli",
       version: "0.2.2",
@@ -132,10 +132,10 @@ test("Launcher and Project ready states cannot exchange compatibility rules", ()
     schema_version: EXECUTION_AUTHORITY_CONTRACT,
     state: "ready",
     source: "launcher",
-    launcher_version: "0.3.0",
+    launcher_version: "0.3.1",
     engine: {
       package: "@launchrally/cli",
-      version: "0.3.0",
+      version: "0.3.1",
       contract: EXECUTION_AUTHORITY_CONTRACT,
       compatibility: "native",
     },

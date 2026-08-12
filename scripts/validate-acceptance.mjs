@@ -2,6 +2,10 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import {
+  invalidStablePromotionEvidence,
+  stablePromotionBlockers,
+} from "./stable-promotion-policy.mjs";
 
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootOption = process.argv.indexOf("--root");
@@ -17,7 +21,9 @@ const requiredReleaseGates = [
   "p0_release_contract",
   "permission_boundaries",
   "persistence_recovery",
+  "provider_tool_recovery",
   "secret_safety",
+  "stable_promotion",
   "traceability",
 ];
 const postPublicationRequirementIds = new Set([
@@ -106,7 +112,7 @@ async function validate() {
   if (
     matrix.schema_version !== "launchrally.dev/p0-acceptance/v1"
     || !new Set(["complete", "incomplete", "suspended"]).has(matrix.product_status)
-    || !new Set(["experimental", "not_published", "release_candidate"])
+    || !new Set(["experimental", "not_published", "release_candidate", "stable"])
       .has(matrix.release_status)
     || !Array.isArray(matrix.requirements)
     || !Array.isArray(matrix.release_gates)
@@ -229,6 +235,27 @@ async function validate() {
       blockers.unshift(`release_status=${matrix.release_status}`);
     }
     if (blockers.length > 0) fail("acceptance_release_blocked", blockers.join(", "));
+  }
+  if (process.argv.includes("--require-stable-ready")) {
+    const release = await readJson("release/artifacts.json");
+    const blockers = stablePromotionBlockers({
+      acceptance: matrix,
+      contract: p0,
+      release,
+      tag: p0.stable_promotion?.approved_tag,
+      version: packageJson.version,
+    });
+    const invalidEvidence = await invalidStablePromotionEvidence({
+      promotion: p0.stable_promotion,
+      root,
+    });
+    if (
+      invalidEvidence.length > 0
+      && !blockers.includes("stable_promotion.maintainer_e2e_evidence")
+    ) {
+      blockers.push("stable_promotion.maintainer_e2e_evidence");
+    }
+    if (blockers.length > 0) fail("acceptance_stable_blocked", blockers.join(", "));
   }
   if (process.argv.includes("--require-publish-ready")) {
     const blockers = [...requirements.values()]

@@ -37,8 +37,8 @@ test("the committed P0 matrix maps every normative requirement to executable evi
     schema_version: "launchrally.dev/p0-acceptance/v1",
     product_status: "complete",
     release_status: "experimental",
-    requirements: { complete: 23, open: 0, total: 23 },
-    release_gates: 10,
+    requirements: { complete: 25, open: 0, total: 25 },
+    release_gates: 12,
   });
 });
 
@@ -206,6 +206,69 @@ test("release readiness accepts the Product Complete Experimental state", async 
   assert.equal(JSON.parse(stdout).release_status, "experimental");
 });
 
+test("Stable readiness requires the separately approved promotion state", async () => {
+  const fixture = await createAcceptanceFixture();
+  const matrixPath = path.join(fixture, "release/p0-acceptance.json");
+  const contractPath = path.join(fixture, "release/p0.json");
+  const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  matrix.release_status = "stable";
+  Object.assign(contract, {
+    release_status: "stable",
+    validation_status: "validated",
+    p0_validated: true,
+    quality_floor_status: "satisfied",
+    stable_promotion: {
+      status: "approved",
+      maintainer_e2e_status: "complete",
+      maintainer_e2e_evidence: {
+        approved_permission: "docs/maintainers/stable-e2e-evidence.md",
+        claude_plugin: "docs/maintainers/stable-e2e-evidence.md",
+        codex_plugin: "docs/maintainers/stable-e2e-evidence.md",
+        denied_permission: "docs/maintainers/stable-e2e-evidence.md",
+        direct_cli: "docs/maintainers/stable-e2e-evidence.md",
+      },
+      approved_tag: "v0.3.1",
+    },
+  });
+  await writeFile(
+    path.join(fixture, "docs/maintainers/stable-e2e-evidence.md"),
+    "# Stable E2E evidence\n\nAll required journeys completed.\n",
+  );
+  await Promise.all([
+    writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
+    writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
+  ]);
+
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "scripts/validate-acceptance.mjs",
+      "--root",
+      fixture,
+      "--require-stable-ready",
+      "--json",
+    ],
+    { cwd: root },
+  );
+  assert.equal(JSON.parse(stdout).release_status, "stable");
+
+  contract.p0_validated = false;
+  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["scripts/validate-acceptance.mjs", "--root", fixture, "--require-stable-ready"],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /acceptance_stable_blocked/u);
+      assert.match(error.stderr, /p0_validated/u);
+      return true;
+    },
+  );
+});
+
 test("acceptance status follows a Quality Floor suspension", async () => {
   const fixture = await createAcceptanceFixture();
   const matrixPath = path.join(fixture, "release/p0-acceptance.json");
@@ -307,7 +370,7 @@ test("publication readiness accepts only the approved pre-publication requiremen
   );
 });
 
-test("public status declares Experimental while P0 validation remains distinct", async () => {
+test("public status declares Experimental while P0 Validated remains distinct from Stable", async () => {
   const [readme, quickstart, contributing, validation, release] = await Promise.all([
     "README.md",
     "docs/getting-started/quickstart.md",
@@ -319,8 +382,8 @@ test("public status declares Experimental while P0 validation remains distinct",
   assert.match(readme, /Status: Experimental P0/u);
   assert.match(quickstart, /public Experimental release/iu);
   assert.match(contributing, /Experimental open-source project/iu);
-  assert.match(validation, /Telemetry-Free Validation is collecting/iu);
-  assert.match(validation, /not P0 Validated/iu);
+  assert.match(validation, /P0 Validated with the Quality Floor satisfied/iu);
+  assert.match(validation, /remains Experimental/iu);
   assert.deepEqual(
     (({ product_status, release_status, validation_status }) => ({
       product_status,
@@ -332,7 +395,7 @@ test("public status declares Experimental while P0 validation remains distinct",
     {
       product_status: "complete",
       release_status: "experimental",
-      validation_status: "collecting",
+      validation_status: "validated",
     },
   );
 });

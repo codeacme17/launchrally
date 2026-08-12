@@ -1,15 +1,15 @@
 # @launchrally/contracts
 
-`@launchrally/contracts` is the public contract package for LaunchRally integrators and tool authors. It exports versioned contract identifiers, validators, and the versioned JSON Schemas used by CLI interactions, manifests, reports, plans, evidence indexes, Provider guidance, and verification results.
+`@launchrally/contracts` is the public contract package for LaunchRally integrators and tool authors. It exports versioned contract identifiers, validators, and the versioned JSON Schemas used by CLI interactions, manifests, reports, plans, evidence indexes, Provider guidance, Provider tool recovery, and verification results.
 
 ## Status
 
-LaunchRally 0.3.0 is an **Experimental P0** release. Its public contracts are versioned, but Experimental availability is not a general stability claim or a P0 Validated decision. Consumers should reject unsupported contract major versions and pin the package version they have tested.
+LaunchRally 0.3.1 is an **Experimental P0** release. Its public contracts are versioned, and Experimental availability remains non-stable after the reviewed P0 Validated decision. Consumers should reject unsupported contract major versions and pin the package version they have tested.
 
 ## Install and import
 
 ```sh
-npm install @launchrally/contracts@0.3.0
+npm install @launchrally/contracts@0.3.1
 ```
 
 ```js

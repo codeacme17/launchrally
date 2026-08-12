@@ -4,10 +4,10 @@ LaunchRally uses four deliberately separate states:
 
 - **P0 Product Complete** means the P0 scope, documentation, license, clean Reference Journey, Coverage Acceptance Matrix, release packaging, and Quality Floor are delivered. It describes product construction, not field validation.
 - **Experimental release** means those artifacts are public for cautious real-world use. Contracts may change, and users should review every permission and preview.
-- **Telemetry-Free Validation** is the current learning period. Aggregate trends, voluntary feedback categories, represented framework and deployment contexts, repeated value and defect patterns, recurring P1 requests, and resulting decisions are recorded without default telemetry or mandatory uploads.
-- **P0 Validated** is a future product decision supported by the published Validation Log. It is not implied by publication, passing CI, package downloads, or elapsed time.
+- **Telemetry-Free Validation** is the completed qualitative learning period recorded in the append-only Validation Log. Aggregate trends, voluntary feedback categories, represented framework and deployment contexts, repeated value and defect patterns, recurring P1 requests, and resulting decisions were recorded without default telemetry or mandatory uploads.
+- **P0 Validated** is the current reviewed product decision supported by the published Validation Log. It was not implied by publication, passing CI, package downloads, or elapsed time.
 
-P0 is Product Complete and `0.3.0` is a public Experimental release. Telemetry-Free Validation is collecting directional signals, but LaunchRally is not P0 Validated. P1 discovery and design may continue; authority-expanding P1 implementation remains blocked.
+P0 is Product Complete and `0.3.1` is a public Experimental release. LaunchRally is P0 Validated with the Quality Floor satisfied, but remains Experimental. P1 discovery and design may continue while that validated state and Quality Floor remain intact. While both remain intact, authority-expanding P1 implementation is allowed.
 
 ## Decision method
 

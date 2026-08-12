@@ -4,14 +4,14 @@ The LaunchRally CLI provides the `rally` Launcher and deterministic Engine for a
 
 ## Status
 
-LaunchRally 0.3.0 is an **Experimental P0** release. P0 is Product Complete, not a stability claim or a P0 Validated decision. Review every disclosed permission and preview before continuing.
+LaunchRally 0.3.1 is an **Experimental P0** release. P0 is Product Complete and P0 Validated, while the package remains non-stable. Review every disclosed permission and preview before continuing.
 
 ## Install and complete the first journey
 
 Install the exact Launcher through your current user-writable npm prefix and verify it before entering a repository:
 
 ```sh
-npm install --global @launchrally/cli@0.3.0
+npm install --global @launchrally/cli@0.3.1
 rally --version --json
 ```
 
@@ -32,6 +32,8 @@ Exact-version npm-exec remains a no-install trial and CI fallback. Keep its full
 The CLI requires Node.js 20.12.0 or newer and is verified on Node.js 20, 22, and 24. A supported Launcher follows a valid project Engine through versioned Execution Authority and never silently falls back when project authority is unavailable or invalid.
 
 LaunchRally requires no account or default telemetry. CLI installation grants no Provider, deployment, production, credential, or application-source write authority. Reports and Evidence remain local. Codex and Claude Plugin installation is separate from this package.
+
+When an approved read cannot find its official Provider executable, the Report preserves the Unverified Gap and adds `launchrally.dev/provider-tool-recovery/v1`. `rally providers --report <path> --recover <provider> --json` exposes the default-safe choices; `--choice show_install_instructions` reveals only reviewed exact-version user-managed instructions for the active platform and shell. LaunchRally never executes installation or login. Successful version rediscovery requires a new Audit or Verify Provider-read decision before collection.
 
 ## Documentation
 

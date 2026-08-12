@@ -20,6 +20,9 @@ const providerDecisionCardSchema = require(
   "../schemas/provider-decision-card/v1.schema.json",
 );
 const providerGuidanceSchema = require("../schemas/provider-guidance/v2.schema.json");
+const providerToolRecoverySchema = require(
+  "../schemas/provider-tool-recovery/v1.schema.json",
+);
 
 export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v2";
 export const EXECUTION_AUTHORITY_CONTRACT = "launchrally.dev/execution-authority/v1";
@@ -43,6 +46,15 @@ export const PROVIDER_DECISION_CARD_SCHEMA =
   "launchrally.dev/provider-decision-card/v1";
 export const PROVIDER_INTENT_DECISION_SCHEMA =
   "launchrally.dev/provider-intent-decision/v1";
+export const PROVIDER_TOOL_RECOVERY_SCHEMA =
+  "launchrally.dev/provider-tool-recovery/v1";
+export const PROTECTED_JOURNEY_SCHEMA = "launchrally.dev/protected-journey/v1";
+export const AUTHENTICATED_JOURNEY_PLAN_SCHEMA =
+  "launchrally.dev/authenticated-journey-plan/v1";
+export const AUTHENTICATED_JOURNEY_RESULTS_SCHEMA =
+  "launchrally.dev/authenticated-journey-results/v1";
+export const AUTHENTICATED_JOURNEY_ADAPTER_VERSION =
+  "host-agent-authenticated-journey/v1";
 
 function jsonType(value) {
   if (value === null) return "null";
@@ -124,6 +136,16 @@ export function assertValidReportPackage(source) {
   };
   const reportSchema = reportSchemas[source?.report?.schema_version];
   const reportViewSchema = reportViewSchemas[source?.report_view?.schema_version];
+  const recoveries = source?.report?.results?.provider_tool_recoveries;
+  const validRecoveries = recoveries === undefined
+    || Array.isArray(recoveries)
+      && source.report.results.provider_tool_recoveries.every((recovery) => {
+        try {
+          return assertValidProviderToolRecovery(recovery);
+        } catch {
+          return false;
+        }
+      });
   const valid = source?.status === "completed"
     && ["audit", "verify"].includes(source?.operation)
     && (source?.operation !== "verify" || source?.verification_scope?.whole_release === true)
@@ -132,6 +154,7 @@ export function assertValidReportPackage(source) {
     && validatesSchema(source.report, reportSchema)
     && validatesSchema(source.report_view, reportViewSchema)
     && validatesSchema(source.evidence_index, evidenceIndexSchema)
+    && validRecoveries
     && source.report_view.report_id === source.report.report_id
     && source.report_view.report_schema_version === source.report.schema_version
     && source.evidence_index.report_id === source.report.report_id
@@ -247,8 +270,20 @@ export function assertValidVerificationResult(result) {
       === JSON.stringify(result?.targeted_result?.check_ids)
     && JSON.stringify(result?.manifest_drift)
       === JSON.stringify(result?.targeted_result?.manifest_drift);
+  const recoveries = result?.targeted_result?.provider_tool_recoveries;
+  const targetedRecoveries = result?.verification_scope?.whole_release !== false
+    || recoveries === undefined
+    || Array.isArray(recoveries)
+      && result.targeted_result.provider_tool_recoveries.every((recovery) => {
+        try {
+          return assertValidProviderToolRecovery(recovery);
+        } catch {
+          return false;
+        }
+      });
   const valid = validatesSchema(result, verificationResultSchema)
     && commonHistory
+    && targetedRecoveries
     && (result.verification_scope.whole_release
       ? (() => {
         try {
@@ -281,6 +316,15 @@ export function assertValidProviderGuidance(guidance) {
   if (!validatesSchema(guidance, providerGuidanceSchema) || !validCards) {
     const error = new Error("The Provider Guidance result is incomplete or invalid.");
     error.code = "invalid_provider_guidance";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidProviderToolRecovery(recovery) {
+  if (!validatesSchema(recovery, providerToolRecoverySchema)) {
+    const error = new Error("The Provider Tool Recovery is incomplete or invalid.");
+    error.code = "invalid_provider_tool_recovery";
     throw error;
   }
   return true;

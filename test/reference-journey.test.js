@@ -56,15 +56,15 @@ const directJourney = {
   schema_version: "launchrally.dev/reference-journey/v3",
   compatibility: {
     launcher: {
-      supported_versions: ["0.3.0"],
+      supported_versions: ["0.3.0", "0.3.1"],
     },
     engine: {
-      supported_versions: ["0.2.2", "0.3.0"],
+      supported_versions: ["0.2.2", "0.3.0", "0.3.1"],
     },
   },
   cli: {
     package: "@launchrally/cli",
-    version: "0.3.0",
+    version: "0.3.1",
     contract: "launchrally.dev/cli/v2",
   },
   invocations: [
@@ -230,7 +230,7 @@ async function json(relativePath) {
 }
 
 async function createRegistryNpmStub(
-  version = "0.3.0",
+  version = "0.3.1",
   { offlineAvailable = false } = {},
 ) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-stub-"));
@@ -415,7 +415,7 @@ async function executeReferenceJourney(
   } = {},
 ) {
   const directory = await createFixture(label, fixturePath);
-  const registryStub = await createRegistryNpmStub("0.3.0", {
+  const registryStub = await createRegistryNpmStub("0.3.1", {
     offlineAvailable: !exerciseRegistryPermission,
   });
   const journeyEnv = {
@@ -848,14 +848,14 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
     },
     launcher: {
       package: "@launchrally/cli",
-      supported_versions: [cliPackage.version],
+      supported_versions: ["0.3.0", cliPackage.version],
     },
     execution_authority: {
       supported_contracts: ["launchrally.dev/execution-authority/v1"],
     },
     engine: {
       package: "@launchrally/cli",
-      supported_versions: ["0.2.2", cliPackage.version],
+      supported_versions: ["0.2.2", "0.3.0", cliPackage.version],
       authority_contracts: ["launchrally.dev/execution-authority/v1"],
       interaction_contracts: ["launchrally.dev/cli/v2"],
     },
@@ -867,7 +867,7 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
   });
   assert.deepEqual(
     journey.compatibility.launcher.supported_versions,
-    [journey.compatibility.plugin.version],
+    ["0.3.0", journey.compatibility.plugin.version],
     "a pre-authority direct binary cannot be treated as a supported Launcher",
   );
   assert.notEqual(
@@ -1031,6 +1031,36 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
   assert.match(contract, /malformed structured output/u);
 });
 
+test("canonical and generated Skills route protected journeys through normalized host results", async () => {
+  const journey = await json("skills/launchrally/references/reference-journey.json");
+  assert.deepEqual(journey.protected_journeys, {
+    declaration_schema: "launchrally.dev/protected-journey/v1",
+    permission_id: "authenticated_journey_verification",
+    permission_boundary: "authenticated_network_read",
+    plan_schema: "launchrally.dev/authenticated-journey-plan/v1",
+    adapter_version: "host-agent-authenticated-journey/v1",
+    result_schema: "launchrally.dev/authenticated-journey-results/v1",
+    resume_argument: "--journey-results",
+    retained_fields: ["journey_id", "status", "outcome", "status_code", "collected_at"],
+    raw_auth_material: "excluded",
+  });
+
+  for (const skillRoot of [
+    path.join(root, "skills", "launchrally"),
+    path.join(root, "adapters", "codex", "launchrally", "skills", "launchrally"),
+    path.join(root, "adapters", "claude", "launchrally", "skills", "launchrally"),
+  ]) {
+    const [skill, protectedJourneys] = await Promise.all([
+      readFile(path.join(skillRoot, "SKILL.md"), "utf8"),
+      readFile(path.join(skillRoot, "references", "protected-journeys.md"), "utf8"),
+    ]);
+    assert.match(skill, /references\/protected-journeys\.md/u);
+    assert.match(protectedJourneys, /host-agent-authenticated-journey\/v1/u);
+    assert.match(protectedJourneys, /--journey-results/u);
+    assert.doesNotMatch(protectedJourneys, /copy (?:a )?(?:cookie|token)/iu);
+  }
+});
+
 test("the canonical Skill routes every structured CLI interaction state without prose parsing", async () => {
   const contract = await readFile(
     path.join(root, "skills", "launchrally", "references", "cli-contract.md"),
@@ -1056,7 +1086,8 @@ test("the canonical Skill routes every structured CLI interaction state without 
     contract,
     /`needs_refresh`.*typed reason.*request\.operation.*request\.scope/su,
   );
-  assert.match(contract, /`providers` is a supporting advisory operation/u);
+  assert.match(contract, /`providers` has two typed routes/u);
+  assert.match(contract, /launchrally\.dev\/provider-tool-recovery\/v1/u);
 
   for (const adapter of adapters) {
     const adapterContract = await readFile(

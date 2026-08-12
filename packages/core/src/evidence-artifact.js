@@ -20,6 +20,7 @@ const PUBLIC_OUTCOMES = new Set([
   "reachable",
   "healthy",
   "completed",
+  "access_boundary_confirmed",
   "timeout",
   "dns_failure",
   "certificate_failure",
@@ -399,12 +400,57 @@ export function isSafeEvidenceArtifact(artifact) {
       && isoTimestamp(artifact.collected_at)
       && Number.isFinite(artifact.duration_ms) && artifact.duration_ms >= 0
       && (!artifact.verification_mode
-        || ["description_only", "executable_path"].includes(artifact.verification_mode))
+        || [
+          "description_only",
+          "executable_path",
+          "protected_anonymous_boundary",
+        ].includes(artifact.verification_mode))
       && exactKeys(artifact.provenance, ["collector", "exact_target", "collected_at"])
       && artifact.provenance.collector === "public-verification/v1"
       && artifact.provenance.exact_target === artifact.target
       && artifact.provenance.collected_at === artifact.collected_at
       && safePublicDetails(artifact);
+  }
+  if (artifact.kind === "authenticated_journey_observation") {
+    return exactKeys(artifact, [
+      "kind",
+      "journey_id",
+      "target",
+      "method",
+      "purpose",
+      "authentication_class",
+      "status",
+      "outcome",
+      "status_code",
+      "collected_at",
+      "provenance",
+    ])
+      && /^target-[1-9][0-9]*:journey-[1-9][0-9]*:authenticated$/u.test(artifact.journey_id)
+      && safeString(artifact.target, 2048)
+      && artifact.method === "GET"
+      && safeString(artifact.purpose, 2048)
+      && ["user", "staff", "signed_token"].includes(artifact.authentication_class)
+      && ["passed", "failed", "unverified"].includes(artifact.status)
+      && [
+        "completed",
+        "missing_authentication",
+        "insufficient_capability",
+        "expired_authentication",
+        "runner_unavailable",
+        "unexpected_denial",
+        "redirect",
+        "timeout",
+        "execution_failure",
+      ].includes(artifact.outcome)
+      && (artifact.status_code === null
+        || Number.isInteger(artifact.status_code)
+        && artifact.status_code >= 100
+        && artifact.status_code <= 599)
+      && isoTimestamp(artifact.collected_at)
+      && exactKeys(artifact.provenance, ["collector", "exact_target", "collected_at"])
+      && artifact.provenance.collector === "host-agent-authenticated-journey/v1"
+      && artifact.provenance.exact_target === artifact.target
+      && artifact.provenance.collected_at === artifact.collected_at;
   }
   if (artifact.kind === "machine_evidence") {
     const provider = PROVIDERS[artifact.provider];

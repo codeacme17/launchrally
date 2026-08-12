@@ -16,7 +16,7 @@
         "required": ["digest", "evidence_kind", "source", "target", "collected_at", "freshness_class", "redaction_state", "current", "currentness", "normalized_artifact"],
         "properties": {
           "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
-          "evidence_kind": { "enum": ["file", "local_observation", "release_intent", "project_fact", "public_observation", "machine_evidence"] },
+          "evidence_kind": { "enum": ["file", "local_observation", "release_intent", "project_fact", "public_observation", "authenticated_journey_observation", "machine_evidence"] },
           "source": { "type": "string", "minLength": 1 },
           "target": { "type": "string", "minLength": 1 },
           "collected_at": { "type": "string", "format": "date-time" },

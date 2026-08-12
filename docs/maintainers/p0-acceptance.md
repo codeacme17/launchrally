@@ -5,9 +5,9 @@ product-planning sources are intentionally local and ignored under
 `docs/product/`; therefore every release-blocking requirement needed by CI
 must be represented here and in the linked GitHub issues.
 
-P0 is Product Complete and `0.3.0` is publicly available as an Experimental
-release. Telemetry-Free Validation is collecting directional signals and P0
-Validated remains false.
+P0 is Product Complete and `0.3.1` is publicly available as an Experimental
+release. P0 is Validated with the Quality Floor satisfied, while the release remains
+Experimental.
 
 The canonical requirement-ID registry is independently committed in
 `release/p0.json`; the machine-readable traceability source is
@@ -53,6 +53,7 @@ Complete.
 | P0-HISTORY-02 | Historical Records remain immutable and Report/Evidence history is never automatically pruned | Integrity and retention tests | #37 | Complete |
 | P0-TOOLCHAIN-01 | Every ecosystem uses an isolated exact LaunchRally npm toolchain without modifying application dependencies | Cross-ecosystem Init tests | #38 | Complete |
 | P0-PERMISSION-01 | Registry fallback is disclosed and separately approved; lifecycle scripts never execute | Network-denial and permission tests | #38 | Complete |
+| P0-PROVIDER-RECOVERY-01 | Missing Provider tools have exact-version typed recovery while Gaps and fresh-read permissions remain fail-closed | Provider recovery contract, CLI, and release-validation tests | #109 | Complete |
 | P0-COVERAGE-01 | Direct full journey passes for all five representative repositories | Coverage Acceptance Matrix | #38 | Complete |
 | P0-COVERAGE-02 | Skill full journey passes for JavaScript and non-JavaScript representatives under complete and partial permissions | Skill Reference Journey matrix | #38 | Complete |
 | P0-QUALITY-01 | PRD traceability, secret safety, permission boundaries, false-confidence invariants, migrations, and recovery are release gates | CI validation | #39 | Complete |
@@ -60,6 +61,7 @@ Complete.
 | P0-RELEASE-01 | Five exact public packages publish with provenance under the Experimental channel | Registry and provenance verification | #40 | Complete |
 | P0-RELEASE-02 | Exact public CLI and both Plugin paths pass clean external smoke tests before GitHub prerelease creation | Post-publication workflow | #40 | Complete |
 | P0-RELEASE-03 | Packed and exact public Launchers complete fixture-driven installation, delegation, lifecycle, and full verification journeys while preserving project data | Packed and post-publication artifact journeys | #99 | Complete |
+| P0-RELEASE-04 | Stable promotion requires reviewed eligibility, a new coherent version through Trusted Publishing, latest-channel smoke, and an approved GitHub release | Stable promotion contract and protected workflow | #108 | Complete |
 | P0-VALIDATE-01 | Validation Log remains aggregate, non-identifying, append-only, and reviewed | Validation contract tests | #41 | Complete |
 | P0-VALIDATE-02 | P0 Validated requires a documented qualitative decision while the Quality Floor remains satisfied | Maintainer validation record | #41 | Complete |
 

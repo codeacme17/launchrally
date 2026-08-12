@@ -12,6 +12,8 @@ Public verification and every Provider Adapter are separate permission boundarie
 
 Clerk retains only application and instance environment metadata. Neon retains bounded project, branch, and database metadata from the existing CLI context. Resend retains domain state and transactional-email delivery status without addresses, subjects, message IDs, or DNS records. Sentry retains bounded project columns and release versions. Raw CLI output is never Evidence; only structurally allowlisted normalized facts with exact command provenance can enter the local Evidence Index. Missing tools or authentication, unsupported account context, malformed or oversized output, timeouts, and Provider errors remain Verification Gaps.
 
+A missing Provider executable may attach a versioned recovery description to the local Report. The recovery contains reviewed official installation authority and exact command tokens, but LaunchRally executes no installation, package-manager prefix change, shell-profile edit, login, or credential flow. Rediscovery runs only the disclosed version command. A supported executable creates a new pending Provider-read boundary; it does not reuse the earlier approval or collect metadata. An unauthenticated executable remains a separate Gap.
+
 Audit actions cite only allowlisted Evidence provenance and normalized failed-observation fields: probe identity, method, safe path, outcome, and status code when present. Response bodies, secret-bearing headers, credentials, raw Provider output, and unallowlisted Evidence fields cannot enter the Action Queue or its derived Markdown View. An HTTP status is reported as an observation, never converted into a guessed internal root cause.
 
 ## Local writes

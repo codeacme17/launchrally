@@ -19,7 +19,7 @@ const publishedPackages = [
     requiredContent: [
       "# @launchrally/cli",
       "Experimental P0",
-      "npm install --global @launchrally/cli@0.3.0",
+      "npm install --global @launchrally/cli@0.3.1",
       "Node.js 20.12.0 or newer",
       "local-first",
       "docs/getting-started/quickstart.md",
@@ -34,7 +34,7 @@ const publishedPackages = [
     requiredContent: [
       "# @launchrally/contracts",
       "Experimental P0",
-      "npm install @launchrally/contracts@0.3.0",
+      "npm install @launchrally/contracts@0.3.1",
       "import { REPORT_SCHEMA } from \"@launchrally/contracts\";",
       "versioned JSON Schemas",
       "ESM",
@@ -44,12 +44,12 @@ const publishedPackages = [
   {
     name: "@launchrally/core",
     packagePath: "packages/core",
-    packageFiles: ["provider-decision-cards/", "src/"],
+    packageFiles: ["provider-decision-cards/", "provider-tool-installation/", "src/"],
     keywords: ["launchrally", "launch-readiness", "audit", "verification", "local-first", "release"],
     requiredContent: [
       "# @launchrally/core",
       "Experimental P0",
-      "npm install @launchrally/core@0.3.0",
+      "npm install @launchrally/core@0.3.1",
       "import { runAudit } from \"@launchrally/core\";",
       "deterministic",
       "ESM",
@@ -64,7 +64,7 @@ const publishedPackages = [
     requiredContent: [
       "# @launchrally/codex-plugin",
       "Experimental P0",
-      "codex plugin marketplace add codeacme17/launchrally --ref v0.3.0",
+      "codex plugin marketplace add codeacme17/launchrally --ref v0.3.1",
       "codex plugin add launchrally@launchrally",
       "codex plugin remove launchrally@launchrally",
       "canonical Agent Skill",

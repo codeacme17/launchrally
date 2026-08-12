@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export function exactToolchainPackage(version = "0.3.0") {
+export function exactToolchainPackage(version = "0.3.1") {
   return {
     name: "launchrally-toolchain",
     private: true,
@@ -17,7 +17,7 @@ export function exactToolchainPackage(version = "0.3.0") {
   };
 }
 
-export function exactToolchainLock(version = "0.3.0") {
+export function exactToolchainLock(version = "0.3.1") {
   const integrity = "sha512-QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQ==";
   return {
     name: "launchrally-toolchain",
@@ -130,7 +130,7 @@ export function prepareExactToolchainChanges({ package_path: packagePath, lockfi
   ];
 }
 
-export async function writeExactToolchain(repository, version = "0.3.0") {
+export async function writeExactToolchain(repository, version = "0.3.1") {
   const directory = path.join(repository, ".launchrally", "toolchain");
   await mkdir(directory, { recursive: true });
   await writeFile(
@@ -143,7 +143,7 @@ export async function writeExactToolchain(repository, version = "0.3.0") {
   );
 }
 
-export async function materializeExactToolchain(repository, version = "0.3.0") {
+export async function materializeExactToolchain(repository, version = "0.3.1") {
   const toolchain = path.join(repository, ".launchrally", "toolchain");
   const lock = exactToolchainLock(version);
   for (const [lockedPath, entry] of Object.entries(lock.packages)) {

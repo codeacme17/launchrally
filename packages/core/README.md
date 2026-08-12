@@ -4,22 +4,24 @@
 
 ## Status
 
-LaunchRally 0.3.0 is an **Experimental P0** release. The package is Product Complete at P0, but its API is not presented as stable and LaunchRally is not P0 Validated. Pin the exact version and review release changes before upgrading.
+LaunchRally 0.3.1 is an **Experimental P0** release. The package is Product Complete and P0 Validated, but its API is not presented as stable. Pin the exact version and review release changes before upgrading.
 
 ## Install and use
 
 ```sh
-npm install @launchrally/core@0.3.0
+npm install @launchrally/core@0.3.1
 ```
 
 ```js
 import { runAudit } from "@launchrally/core";
 
-const interaction = await runAudit(process.cwd(), "0.3.0");
+const interaction = await runAudit(process.cwd(), "0.3.1");
 console.log(interaction.status, interaction.next);
 ```
 
 `runAudit` starts with deterministic local repository facts and returns a typed interaction. Callers must preserve its explicit confirmation and permission flow before supplying any optional public or Provider reads.
+
+Missing or unauthenticated Provider executables remain Verification Gaps. The Core attaches `launchrally.dev/provider-tool-recovery/v1`, can reveal only the shared reviewed exact-version route, and can rediscover only through the declared version command. A successful rediscovery returns a new pending Provider-read description and never reuses the earlier approval.
 
 ## Compatibility and boundaries
 

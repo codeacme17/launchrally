@@ -2,19 +2,19 @@
   "schema_version": "launchrally.dev/reference-journey/v3",
   "compatibility": {
     "plugin": {
-      "version": "0.3.0",
+      "version": "0.3.1",
       "role": "interaction_only"
     },
     "launcher": {
       "package": "@launchrally/cli",
-      "supported_versions": ["0.3.0"]
+      "supported_versions": ["0.3.0", "0.3.1"]
     },
     "execution_authority": {
       "supported_contracts": ["launchrally.dev/execution-authority/v1"]
     },
     "engine": {
       "package": "@launchrally/cli",
-      "supported_versions": ["0.2.2", "0.3.0"],
+      "supported_versions": ["0.2.2", "0.3.0", "0.3.1"],
       "authority_contracts": ["launchrally.dev/execution-authority/v1"],
       "interaction_contracts": ["launchrally.dev/cli/v2"]
     },
@@ -31,7 +31,7 @@
     "installation": {
       "owner": "user",
       "executable": "npm",
-      "arguments": ["install", "--global", "@launchrally/cli@0.3.0"]
+      "arguments": ["install", "--global", "@launchrally/cli@0.3.1"]
     },
     "verification": {
       "arguments": ["--version", "--json", "--cwd", "{repository_root}"]
@@ -57,8 +57,19 @@
   },
   "cli": {
     "package": "@launchrally/cli",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "contract": "launchrally.dev/cli/v2"
+  },
+  "protected_journeys": {
+    "declaration_schema": "launchrally.dev/protected-journey/v1",
+    "permission_id": "authenticated_journey_verification",
+    "permission_boundary": "authenticated_network_read",
+    "plan_schema": "launchrally.dev/authenticated-journey-plan/v1",
+    "adapter_version": "host-agent-authenticated-journey/v1",
+    "result_schema": "launchrally.dev/authenticated-journey-results/v1",
+    "resume_argument": "--journey-results",
+    "retained_fields": ["journey_id", "status", "outcome", "status_code", "collected_at"],
+    "raw_auth_material": "excluded"
   },
   "invocations": [
     {

@@ -4,7 +4,7 @@ This package installs Claude Code Plugin metadata plus a generated copy of the L
 
 ## Status
 
-LaunchRally 0.3.0 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated.
+LaunchRally 0.3.1 is an **Experimental P0** release. It is Product Complete and P0 Validated, but it is not presented as stable.
 
 ## CLI prerequisite
 
@@ -12,7 +12,7 @@ CLI installation and Plugin installation are separate. Before installing this Pl
 
 ## Plugin installation and use
 
-The `0.3.0` marketplace catalog pins `@launchrally/claude-plugin@0.3.0`. Add it and install at explicit user scope:
+The `0.3.1` marketplace catalog pins `@launchrally/claude-plugin@0.3.1`. Add it and install at explicit user scope:
 
 ```sh
 claude plugin marketplace add codeacme17/launchrally --scope user
