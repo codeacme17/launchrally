@@ -820,7 +820,7 @@
         "schema_version": { "enum": ["launchrally.dev/architect-interaction/v1", "launchrally.dev/handoff-interaction/v1"] },
         "interaction_id": { "$ref": "#/$defs/identifier" },
         "operation": { "enum": ["architect", "handoff"] },
-        "status": { "enum": ["needs_input", "needs_confirmation", "denied", "cancelled", "partial_completion", "stale_input", "resumable", "completed"] },
+        "status": { "enum": ["needs_input", "needs_confirmation", "needs_permission", "denied", "cancelled", "partial_completion", "stale_input", "resumable", "completed"] },
         "state": { "enum": ["intent_discovery", "blueprint_review", "decision_confirmation", "executor_discovery", "authority_preview", "receipt_review", "verification_pending", "completed"] },
         "resume_token": { "type": ["string", "null"] },
         "source_refs": {

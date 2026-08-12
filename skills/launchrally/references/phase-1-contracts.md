@@ -13,5 +13,6 @@ Preserve these distinctions:
 - An Execution Receipt is a claim with `machine_evidence: false`; fresh qualifying Verify is required.
 - Evidence and active verification are environment-bound.
 - Raw source, Provider output, stdout, stderr, response bodies, secrets, credentials, business payloads, and real-user data must not enter persisted Phase 1 records.
+- Local Semantic Analysis is a fresh permission above Local Safe Scan and applies only to explicitly selected supported product materials; denial or incomplete coverage remains visible.
 
 These schemas do not implement `rally architect`, external execution, `rally handoff`, or active verification. Until the CLI advertises and returns their exact typed contracts, do not synthesize those operations, invoke an Executor, or infer new authority from these record definitions.
