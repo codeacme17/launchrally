@@ -70,10 +70,10 @@ test("the P0 release contract keeps Product Complete, Experimental, and validati
     product_status: "complete",
     release_status: "experimental",
     validation_mode: "telemetry_free",
-    validation_status: "collecting",
-    p0_validated: false,
+    validation_status: "validated",
+    p0_validated: true,
     p1_discovery: "allowed",
-    p1_authority: "blocked",
+    p1_authority: "allowed",
     quality_floor_status: "satisfied",
     stable_promotion: {
       status: "not_approved",
@@ -111,8 +111,8 @@ test("the public release kit documents use, data, safety, feedback, and validati
 
   assert.match(readme, /Status: Experimental P0/iu);
   assert.match(readme, /P0 is Product Complete/iu);
-  assert.match(readme, /Telemetry-Free Validation.*collecting/iu);
-  assert.match(readme, /not P0 Validated/iu);
+  assert.match(readme, /P0 Validated with the Quality Floor satisfied/iu);
+  assert.match(readme, /remains Experimental/iu);
   assert.match(readme, /github\.com\/codeacme17\/launchrally\/issues/u);
   assert.match(readme, /github\.com\/codeacme17\/launchrally\/discussions/u);
   assert.match(readme, /SECURITY\.md/u);

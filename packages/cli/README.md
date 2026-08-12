@@ -4,7 +4,7 @@ The LaunchRally CLI provides the `rally` Launcher and deterministic Engine for a
 
 ## Status
 
-LaunchRally 0.3.0 is an **Experimental P0** release. P0 is Product Complete, not a stability claim or a P0 Validated decision. Review every disclosed permission and preview before continuing.
+LaunchRally 0.3.0 is an **Experimental P0** release. P0 is Product Complete and P0 Validated, while the package remains non-stable. Review every disclosed permission and preview before continuing.
 
 ## Install and complete the first journey
 

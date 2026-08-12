@@ -370,7 +370,7 @@ test("publication readiness accepts only the approved pre-publication requiremen
   );
 });
 
-test("public status declares Experimental while P0 validation remains distinct", async () => {
+test("public status declares Experimental while P0 Validated remains distinct from Stable", async () => {
   const [readme, quickstart, contributing, validation, release] = await Promise.all([
     "README.md",
     "docs/getting-started/quickstart.md",
@@ -382,8 +382,8 @@ test("public status declares Experimental while P0 validation remains distinct",
   assert.match(readme, /Status: Experimental P0/u);
   assert.match(quickstart, /public Experimental release/iu);
   assert.match(contributing, /Experimental open-source project/iu);
-  assert.match(validation, /Telemetry-Free Validation is collecting/iu);
-  assert.match(validation, /not P0 Validated/iu);
+  assert.match(validation, /P0 Validated with the Quality Floor satisfied/iu);
+  assert.match(validation, /remains Experimental/iu);
   assert.deepEqual(
     (({ product_status, release_status, validation_status }) => ({
       product_status,
@@ -395,7 +395,7 @@ test("public status declares Experimental while P0 validation remains distinct",
     {
       product_status: "complete",
       release_status: "experimental",
-      validation_status: "collecting",
+      validation_status: "validated",
     },
   );
 });

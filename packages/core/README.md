@@ -4,7 +4,7 @@
 
 ## Status
 
-LaunchRally 0.3.0 is an **Experimental P0** release. The package is Product Complete at P0, but its API is not presented as stable and LaunchRally is not P0 Validated. Pin the exact version and review release changes before upgrading.
+LaunchRally 0.3.0 is an **Experimental P0** release. The package is Product Complete and P0 Validated, but its API is not presented as stable. Pin the exact version and review release changes before upgrading.
 
 ## Install and use
 

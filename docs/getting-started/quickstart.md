@@ -1,6 +1,6 @@
 # Quickstart
 
-LaunchRally `0.3.0` is a public Experimental release. Run it against a repository you control and review every disclosed read or write boundary before confirming it. Experimental means the product is not presented as stable or P0 Validated.
+LaunchRally `0.3.0` is a public Experimental release. Run it against a repository you control and review every disclosed read or write boundary before confirming it. Experimental means the P0 Validated product is not yet presented as Stable.
 
 ## Direct CLI Quickstart
 

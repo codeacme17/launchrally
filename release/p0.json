@@ -4,8 +4,8 @@
   "product_status": "complete",
   "release_status": "experimental",
   "validation_mode": "telemetry_free",
-  "validation_status": "collecting",
-  "p0_validated": false,
+  "validation_status": "validated",
+  "p0_validated": true,
   "quality_floor_status": "satisfied",
   "stable_promotion": {
     "status": "not_approved",
@@ -31,7 +31,7 @@
     },
     {
       "path": "README.md",
-      "experimental": "Telemetry-Free Validation is collecting aggregate directional signals; LaunchRally is not P0 Validated.",
+      "experimental": "LaunchRally is P0 Validated with the Quality Floor satisfied; the release remains Experimental until a separate Stable promotion.",
       "stable": "LaunchRally is P0 Validated and the Quality Floor is satisfied."
     },
     {
@@ -41,7 +41,7 @@
     },
     {
       "path": "CONTRIBUTING.md",
-      "experimental": "Telemetry-Free Validation remains in progress and LaunchRally is not P0 Validated",
+      "experimental": "LaunchRally is P0 Validated and the Quality Floor is satisfied, while the release remains Experimental",
       "stable": "LaunchRally is P0 Validated and the Quality Floor is satisfied"
     },
     {
@@ -51,7 +51,7 @@
     },
     {
       "path": "docs/getting-started/install.md",
-      "experimental": "Experimental availability is not a stability claim or a P0 Validated decision.",
+      "experimental": "Experimental availability remains non-stable after the reviewed P0 Validated decision.",
       "stable": "Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor."
     },
     {
@@ -66,7 +66,7 @@
     },
     {
       "path": "docs/getting-started/quickstart.md",
-      "experimental": "Experimental means the product is not presented as stable or P0 Validated.",
+      "experimental": "Experimental means the P0 Validated product is not yet presented as Stable.",
       "stable": "Stable means the reviewed P0 Validated decision and Quality Floor requirements are satisfied."
     },
     {
@@ -76,12 +76,12 @@
     },
     {
       "path": "docs/maintainers/phase-0-validation.md",
-      "experimental": "Telemetry-Free Validation is collecting directional signals, but LaunchRally is not P0 Validated.",
+      "experimental": "LaunchRally is P0 Validated with the Quality Floor satisfied, but remains Experimental.",
       "stable": "LaunchRally is P0 Validated with the Quality Floor satisfied."
     },
     {
       "path": "docs/maintainers/phase-0-validation.md",
-      "experimental": "authority-expanding P1 implementation remains blocked.",
+      "experimental": "authority-expanding P1 implementation is allowed.",
       "stable": "authority-expanding P1 implementation is allowed."
     },
     {
@@ -91,7 +91,7 @@
     },
     {
       "path": "docs/maintainers/p0-acceptance.md",
-      "experimental": "Telemetry-Free Validation is collecting directional signals and P0\nValidated remains false.",
+      "experimental": "P0 is Validated with the Quality Floor satisfied, while the release remains\nExperimental.",
       "stable": "P0 is Validated with the Quality Floor satisfied."
     },
     {
@@ -101,7 +101,7 @@
     },
     {
       "path": "packages/cli/README.md",
-      "experimental": "P0 is Product Complete, not a stability claim or a P0 Validated decision.",
+      "experimental": "P0 is Product Complete and P0 Validated, while the package remains non-stable.",
       "stable": "P0 is Product Complete and P0 Validated with the Quality Floor satisfied."
     },
     {
@@ -111,7 +111,7 @@
     },
     {
       "path": "packages/contracts/README.md",
-      "experimental": "Experimental availability is not a general stability claim or a P0 Validated decision.",
+      "experimental": "Experimental availability remains non-stable after the reviewed P0 Validated decision.",
       "stable": "Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor."
     },
     {
@@ -121,7 +121,7 @@
     },
     {
       "path": "packages/core/README.md",
-      "experimental": "The package is Product Complete at P0, but its API is not presented as stable and LaunchRally is not P0 Validated.",
+      "experimental": "The package is Product Complete and P0 Validated, but its API is not presented as stable.",
       "stable": "The package is Product Complete, P0 Validated, and published on the stable channel."
     },
     {
@@ -131,7 +131,7 @@
     },
     {
       "path": "adapters/codex/launchrally/README.md",
-      "experimental": "It is Product Complete at P0, but it is not presented as stable or P0 Validated.",
+      "experimental": "It is Product Complete and P0 Validated, but it is not presented as stable.",
       "stable": "It is Product Complete, P0 Validated, and published on the stable channel."
     },
     {
@@ -141,12 +141,12 @@
     },
     {
       "path": "adapters/claude/launchrally/README.md",
-      "experimental": "It is Product Complete at P0, but it is not presented as stable or P0 Validated.",
+      "experimental": "It is Product Complete and P0 Validated, but it is not presented as stable.",
       "stable": "It is Product Complete, P0 Validated, and published on the stable channel."
     }
   ],
   "p1_discovery": "allowed",
-  "p1_authority": "blocked",
+  "p1_authority": "allowed",
   "license": "Apache-2.0",
   "feedback_channels": [
     "discussions",
