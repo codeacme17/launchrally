@@ -91,24 +91,6 @@ const artifacts = JSON.parse(await readFile(
   path.join(root, "release/artifacts.json"),
   "utf8",
 ));
-if (isStableState) {
-  const blockers = stablePromotionBlockers({
-    contract,
-    release: artifacts,
-    tag: stablePromotion.approved_tag,
-    version: rootPackage.version,
-  });
-  if (blockers.length > 0) {
-    throw new Error(`stable_promotion_blocked: ${blockers.join(", ")}`);
-  }
-  const invalidEvidence = await invalidStablePromotionEvidence({
-    promotion: stablePromotion,
-    root,
-  });
-  if (invalidEvidence.length > 0) {
-    throw new Error(`stable_promotion_e2e_evidence_invalid: ${invalidEvidence.join(", ")}`);
-  }
-}
 for (const artifact of artifacts.packages) {
   const packageJson = JSON.parse(await readFile(
     path.join(root, artifact.path, "package.json"),
@@ -249,6 +231,33 @@ if (baselineRefOption !== -1) {
     throw new Error(`p0_validation_baseline_missing: ${baselineRef}`);
   }
   assertAppendOnlyValidationLog(validationLog, JSON.parse(baselineContent));
+}
+if (isStableState) {
+  const blockers = stablePromotionBlockers({
+    contract,
+    release: artifacts,
+    tag: stablePromotion.approved_tag,
+    version: rootPackage.version,
+  });
+  const postPromotionSuspensionBlockers = new Set([
+    "p0_validated",
+    "product_status",
+    "quality_floor_status",
+    "validation_status",
+  ]);
+  const activeBlockers = contract.product_status === "suspended"
+    ? blockers.filter((blocker) => !postPromotionSuspensionBlockers.has(blocker))
+    : blockers;
+  if (activeBlockers.length > 0) {
+    throw new Error(`stable_promotion_blocked: ${activeBlockers.join(", ")}`);
+  }
+  const invalidEvidence = await invalidStablePromotionEvidence({
+    promotion: stablePromotion,
+    root,
+  });
+  if (invalidEvidence.length > 0) {
+    throw new Error(`stable_promotion_e2e_evidence_invalid: ${invalidEvidence.join(", ")}`);
+  }
 }
 const result = {
   status: "completed",

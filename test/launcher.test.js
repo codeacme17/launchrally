@@ -42,7 +42,7 @@ function validManifest() {
 
 async function projectWithEngine(
   engineSource,
-  version = "0.3.1",
+  version = "0.3.2",
   { entrypoint = "bin/engine.js", materialized = true } = {},
 ) {
   const repository = await mkdtemp(path.join(os.tmpdir(), "launchrally-launcher-"));
@@ -129,7 +129,7 @@ test("rally delegates through an existing v1 bin/rally.js compatibility Engine",
 test("rally rejects a non-allowlisted bin/rally.js Engine before it can recurse", async () => {
   const repository = await projectWithEngine(
     "process.stdout.write('must not execute');\n",
-    "0.3.1",
+    "0.3.2",
     { entrypoint: "bin/rally.js" },
   );
   let failure;
@@ -184,7 +184,7 @@ test("rally rejects an allowlisted bin/rally.js descriptor over a split Launcher
 });
 
 test("a missing project Engine returns the Audit authority state and executable restore action", async () => {
-  const repository = await projectWithEngine("", "0.3.1", { materialized: false });
+  const repository = await projectWithEngine("", "0.3.2", { materialized: false });
   let failure;
 
   await assert.rejects(
@@ -216,7 +216,7 @@ test("a missing project Engine returns the Audit authority state and executable 
       executable: "npm",
       arguments: [
         "exec",
-        "--package=@launchrally/cli@0.3.1",
+        "--package=@launchrally/cli@0.3.2",
         "--",
         "rally",
         "toolchain",
@@ -231,7 +231,7 @@ test("a missing project Engine returns the Audit authority state and executable 
 });
 
 test("migration and invalid authority return exact bootstrap actions without running Verify", async () => {
-  const migrationRepository = await projectWithEngine("", "0.3.1", {
+  const migrationRepository = await projectWithEngine("", "0.3.2", {
     materialized: false,
   });
   await writeFile(
@@ -240,7 +240,7 @@ test("migration and invalid authority return exact bootstrap actions without run
       contract: "launchrally.dev/execution-authority/v0",
       engine: {
         package: "@launchrally/cli",
-        version: "0.3.1",
+        version: "0.3.2",
         entrypoint: "bin/engine.js",
       },
     })}\n`,
@@ -279,7 +279,7 @@ test("migration and invalid authority return exact bootstrap actions without run
         "toolchain",
         "migrate",
         "--to",
-        "0.3.1",
+        "0.3.2",
         "--cwd",
         migrationRepository,
       ],
@@ -320,7 +320,7 @@ test("the Launcher replaces an inherited internal context before delegation", as
   assert.deepEqual(context, {
     schema_version: "launchrally.dev/invocation-context/v1",
     source: "unknown",
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
 });
 
@@ -510,7 +510,7 @@ test("every repository operation resolves to the project Engine", async () => {
 
 test("older, matching, and newer project pins all outrank the Launcher", async () => {
   const selected = [];
-  for (const version of ["0.1.0", "0.2.2", "0.3.1"]) {
+  for (const version of ["0.1.0", "0.2.2", "0.3.2"]) {
     const repository = await projectWithEngine(
       `process.stdout.write(${JSON.stringify(version)});\n`,
       version,
@@ -523,13 +523,13 @@ test("older, matching, and newer project pins all outrank the Launcher", async (
     ])).stdout);
   }
 
-  assert.deepEqual(selected, ["0.1.0", "0.2.2", "0.3.1"]);
+  assert.deepEqual(selected, ["0.1.0", "0.2.2", "0.3.2"]);
 });
 
 test("version and toolchain status remain Launcher bootstrap operations", async () => {
   const repository = await projectWithEngine(
     "process.stdout.write(\"project Engine must not run\");\n",
-    "0.3.1",
+    "0.3.2",
   );
 
   const version = JSON.parse((await execFileAsync(process.execPath, [
@@ -560,13 +560,13 @@ test("version and toolchain status remain Launcher bootstrap operations", async 
     },
   }, {
     version: {
-      cli: "0.3.1",
-      launcher: "0.3.1",
+      cli: "0.3.2",
+      launcher: "0.3.2",
       source: "project_toolchain",
     },
     status: {
       operation: "toolchain_status",
-      engine: "0.3.1",
+      engine: "0.3.2",
     },
   });
 });

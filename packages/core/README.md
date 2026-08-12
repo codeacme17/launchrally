@@ -4,18 +4,18 @@
 
 ## Status
 
-LaunchRally 0.3.1 is an **Experimental P0** release. The package is Product Complete and P0 Validated, but its API is not presented as stable. Pin the exact version and review release changes before upgrading.
+LaunchRally 0.3.2 is a **Stable** release. The package is Product Complete, P0 Validated, and published on the stable channel. Pin the exact version and review release changes before upgrading.
 
 ## Install and use
 
 ```sh
-npm install @launchrally/core@0.3.1
+npm install @launchrally/core@0.3.2
 ```
 
 ```js
 import { runAudit } from "@launchrally/core";
 
-const interaction = await runAudit(process.cwd(), "0.3.1");
+const interaction = await runAudit(process.cwd(), "0.3.2");
 console.log(interaction.status, interaction.next);
 ```
 

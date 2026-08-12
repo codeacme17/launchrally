@@ -2,7 +2,7 @@
 
 **Know what stands between your repository and a trustworthy launch.**
 
-[![Experimental release](https://img.shields.io/npm/v/@launchrally/cli/experimental?label=experimental)](https://www.npmjs.com/package/@launchrally/cli)
+[![Stable release](https://img.shields.io/npm/v/@launchrally/cli/latest?label=stable)](https://www.npmjs.com/package/@launchrally/cli)
 [![CI](https://github.com/codeacme17/launchrally/actions/workflows/ci.yml/badge.svg)](https://github.com/codeacme17/launchrally/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node.js 20.12+](https://img.shields.io/badge/node-%3E%3D20.12-339933.svg)](https://nodejs.org/)
@@ -11,14 +11,14 @@ LaunchRally is a local-first, open-source launch-readiness audit and verificatio
 
 It needs no LaunchRally account, uses no default telemetry, and makes no repository, deployment, or Provider write during an Audit.
 
-> **Status: Experimental P0.** P0 is Product Complete and `0.3.1` is publicly available on the non-stable `experimental` channel. LaunchRally is P0 Validated with the Quality Floor satisfied; the release remains Experimental until a separate Stable promotion.
+> **Status: Stable.** P0 is Product Complete and `0.3.2` is publicly available on the stable `latest` channel. LaunchRally is P0 Validated and the Quality Floor is satisfied.
 
 ## First Audit
 
-Install the exact Experimental Launcher through your current npm prefix and verify its structured version output before entering a repository:
+Install the exact Stable Launcher through your current npm prefix and verify its structured version output before entering a repository:
 
 ```bash
-npm install --global @launchrally/cli@0.3.1
+npm install --global @launchrally/cli@0.3.2
 rally --version --json
 ```
 
@@ -50,9 +50,9 @@ Continue with the [Quickstart](docs/getting-started/quickstart.md) for the compl
 Exact-version npm-exec is supported as a no-install trial and CI fallback, not the default interactive journey. Its follow-ups retain the complete prefix so they remain executable after the first process exits:
 
 ```bash
-npm exec --package=@launchrally/cli@0.3.1 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
-npm exec --package=@launchrally/cli@0.3.1 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
-npm exec --package=@launchrally/cli@0.3.1 -- rally --version --json --cwd .
+npm exec --package=@launchrally/cli@0.3.2 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.3.2 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
+npm exec --package=@launchrally/cli@0.3.2 -- rally --version --json --cwd .
 ```
 
 ## How it works

@@ -36,7 +36,7 @@ test("the committed P0 matrix maps every normative requirement to executable evi
     status: "completed",
     schema_version: "launchrally.dev/p0-acceptance/v1",
     product_status: "complete",
-    release_status: "experimental",
+    release_status: "stable",
     requirements: { complete: 25, open: 0, total: 25 },
     release_gates: 12,
   });
@@ -185,7 +185,15 @@ test("release readiness accepts the Product Complete Experimental state", async 
   const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   matrix.product_status = "complete";
+  matrix.release_status = "experimental";
   contract.product_status = "complete";
+  contract.release_status = "experimental";
+  contract.stable_promotion = {
+    status: "not_approved",
+    maintainer_e2e_status: "pending",
+    maintainer_e2e_evidence: {},
+    approved_tag: null,
+  };
   await Promise.all([
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
@@ -228,7 +236,7 @@ test("Stable readiness requires the separately approved promotion state", async 
         denied_permission: "docs/maintainers/stable-e2e-evidence.md",
         direct_cli: "docs/maintainers/stable-e2e-evidence.md",
       },
-      approved_tag: "v0.3.1",
+      approved_tag: "v0.3.2",
     },
   });
   await writeFile(
@@ -370,7 +378,7 @@ test("publication readiness accepts only the approved pre-publication requiremen
   );
 });
 
-test("public status declares Experimental while P0 Validated remains distinct from Stable", async () => {
+test("public status declares Stable only after the distinct promotion approval", async () => {
   const [readme, quickstart, contributing, validation, release] = await Promise.all([
     "README.md",
     "docs/getting-started/quickstart.md",
@@ -379,11 +387,11 @@ test("public status declares Experimental while P0 Validated remains distinct fr
     "release/p0.json",
   ].map((relativePath) => readFile(path.join(root, relativePath), "utf8")));
 
-  assert.match(readme, /Status: Experimental P0/u);
-  assert.match(quickstart, /public Experimental release/iu);
-  assert.match(contributing, /Experimental open-source project/iu);
+  assert.match(readme, /Status: Stable/u);
+  assert.match(quickstart, /public Stable release/iu);
+  assert.match(contributing, /Stable open-source project/iu);
   assert.match(validation, /P0 Validated with the Quality Floor satisfied/iu);
-  assert.match(validation, /remains Experimental/iu);
+  assert.doesNotMatch(validation, /remains Experimental/iu);
   assert.deepEqual(
     (({ product_status, release_status, validation_status }) => ({
       product_status,
@@ -394,7 +402,7 @@ test("public status declares Experimental while P0 Validated remains distinct fr
     ),
     {
       product_status: "complete",
-      release_status: "experimental",
+      release_status: "stable",
       validation_status: "validated",
     },
   );

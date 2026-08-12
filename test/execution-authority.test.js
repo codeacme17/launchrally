@@ -57,7 +57,7 @@ function validManifest() {
   };
 }
 
-async function writeConfirmedProject(repository, version = "0.3.1") {
+async function writeConfirmedProject(repository, version = "0.3.2") {
   await mkdir(path.join(repository, ".launchrally"), { recursive: true });
   await writeFile(
     path.join(repository, ".launchrally", "manifest.yaml"),
@@ -86,7 +86,7 @@ async function writeLegacyProject(repository, version = "0.2.2") {
   await writeExactToolchain(repository, version);
 }
 
-async function materializeEngine(repository, version = "0.3.1") {
+async function materializeEngine(repository, version = "0.3.2") {
   const lock = JSON.parse(await readFile(
     path.join(repository, ".launchrally/toolchain/package-lock.json"),
     "utf8",
@@ -160,17 +160,17 @@ test("an uninitialized repository uses the Launcher Engine", async () => {
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
 
   assert.deepEqual(authority, {
     schema_version: "launchrally.dev/execution-authority/v1",
     state: "ready",
     source: "launcher",
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
     engine: {
       package: "@launchrally/cli",
-      version: "0.3.1",
+      version: "0.3.2",
       contract: "launchrally.dev/execution-authority/v1",
       compatibility: "native",
     },
@@ -187,14 +187,14 @@ test("a partial LaunchRally project fails closed instead of using the Launcher E
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
 
   assert.deepEqual(authority, {
     schema_version: "launchrally.dev/execution-authority/v1",
     state: "invalid_toolchain",
     source: "project_toolchain",
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
     engine: {
       package: "@launchrally/cli",
       version: null,
@@ -209,7 +209,7 @@ test("a partial LaunchRally project fails closed instead of using the Launcher E
 
 test("a valid project pin outranks a newer Launcher and requests explicit restore", async () => {
   const repository = await repositoryFixture();
-  await writeConfirmedProject(repository, "0.3.1");
+  await writeConfirmedProject(repository, "0.3.2");
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
@@ -223,7 +223,7 @@ test("a valid project pin outranks a newer Launcher and requests explicit restor
     launcher_version: "0.4.0",
     engine: {
       package: "@launchrally/cli",
-      version: "0.3.1",
+      version: "0.3.2",
       contract: "launchrally.dev/execution-authority/v1",
       compatibility: "native",
     },
@@ -237,8 +237,8 @@ test("process cwd discovers a ready project Engine from a repository subdirector
   const repository = await repositoryFixture();
   const subdirectory = path.join(repository, "packages", "web");
   await mkdir(subdirectory, { recursive: true });
-  await writeConfirmedProject(repository, "0.3.1");
-  await materializeEngine(repository, "0.3.1");
+  await writeConfirmedProject(repository, "0.3.2");
+  await materializeEngine(repository, "0.3.2");
 
   const authority = await resolveExecutionAuthority({
     launcher_version: "0.2.2",
@@ -247,7 +247,7 @@ test("process cwd discovers a ready project Engine from a repository subdirector
 
   assert.equal(authority.state, "ready");
   assert.equal(authority.source, "project_toolchain");
-  assert.equal(authority.engine.version, "0.3.1");
+  assert.equal(authority.engine.version, "0.3.2");
   assert.equal(authority.materialization.state, "ready");
   assert.equal(authority.reason, "project_engine_validated");
   assert.equal(authority.selection.operation_cwd, subdirectory);
@@ -265,8 +265,8 @@ test("process cwd discovers a ready project Engine from a repository subdirector
 
 test("an incomplete installed dependency closure requires explicit restore", async () => {
   const repository = await repositoryFixture();
-  await writeConfirmedProject(repository, "0.3.1");
-  await materializeEngine(repository, "0.3.1");
+  await writeConfirmedProject(repository, "0.3.2");
+  await materializeEngine(repository, "0.3.2");
   await rm(path.join(
     repository,
     ".launchrally/toolchain/node_modules/@launchrally/core",
@@ -274,7 +274,7 @@ test("an incomplete installed dependency closure requires explicit restore", asy
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
 
   assert.equal(authority.state, "needs_toolchain_restore");
@@ -288,7 +288,7 @@ test("the allowlisted 0.2.2 legacy layout has explicit restore authority", async
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
 
   assert.equal(authority.state, "needs_toolchain_restore");
@@ -305,7 +305,7 @@ test("an existing v1 rally Engine descriptor remains a validated compatibility p
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
 
   assert.equal(authority.state, "ready");
@@ -322,7 +322,7 @@ test("an existing v1 rally Engine descriptor remains a validated compatibility p
 
 test("a non-allowlisted v1 rally entrypoint cannot recurse through a native Launcher", async () => {
   const repository = await repositoryFixture();
-  await writePreLauncherSplitProject(repository, "0.3.1");
+  await writePreLauncherSplitProject(repository, "0.3.2");
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
@@ -357,14 +357,14 @@ test("an allowlisted rally descriptor rejects a split Launcher materialization",
 
 test("a recognizable unsupported Engine contract requires explicit migration", async () => {
   const repository = await repositoryFixture();
-  await writeConfirmedProject(repository, "0.3.1");
+  await writeConfirmedProject(repository, "0.3.2");
   await writeFile(
     path.join(repository, EXECUTION_AUTHORITY_DESCRIPTOR_PATH),
     `${JSON.stringify({
       contract: "launchrally.dev/execution-authority/v0",
       engine: {
         package: "@launchrally/cli",
-        version: "0.3.1",
+        version: "0.3.2",
         entrypoint: "bin/engine.js",
       },
     })}\n`,
@@ -382,7 +382,7 @@ test("a recognizable unsupported Engine contract requires explicit migration", a
     launcher_version: "0.4.0",
     engine: {
       package: "@launchrally/cli",
-      version: "0.3.1",
+      version: "0.3.2",
       contract: "launchrally.dev/execution-authority/v0",
       compatibility: "migration_required",
     },
@@ -406,8 +406,8 @@ test("structured version reports the effective Engine and separate Launcher auth
   assert.equal(result.contract, "launchrally.dev/cli/v2");
   assert.equal(result.status, "completed");
   assert.equal(result.operation, "version");
-  assert.equal(result.cli_version, "0.3.1");
-  assert.equal(result.launcher_version, "0.3.1");
+  assert.equal(result.cli_version, "0.3.2");
+  assert.equal(result.launcher_version, "0.3.2");
   assert.equal(result.authority.schema_version, "launchrally.dev/execution-authority/v1");
   assert.equal(result.authority.source, "launcher");
   assert.equal(result.authority.materialization.state, "bundled");
@@ -415,8 +415,8 @@ test("structured version reports the effective Engine and separate Launcher auth
 
 test("a nested repository cannot inherit authority from its parent repository", async () => {
   const repository = await repositoryFixture();
-  await writeConfirmedProject(repository, "0.3.1");
-  await materializeEngine(repository, "0.3.1");
+  await writeConfirmedProject(repository, "0.3.2");
+  await materializeEngine(repository, "0.3.2");
   const nested = path.join(repository, "examples", "standalone");
   await mkdir(path.join(nested, ".git"), { recursive: true });
 
@@ -435,7 +435,7 @@ test("unknown legacy layouts stop instead of falling back", async () => {
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
 
   assert.equal(authority.state, "invalid_toolchain");
@@ -451,7 +451,7 @@ test("the legacy adapter validates an executable 0.2.2 materialization", async (
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
 
   assert.equal(authority.state, "ready");
@@ -461,7 +461,7 @@ test("the legacy adapter validates an executable 0.2.2 materialization", async (
 
 test("toolchain lock corruption invalidates project authority", async () => {
   const repository = await repositoryFixture();
-  await writeConfirmedProject(repository, "0.3.1");
+  await writeConfirmedProject(repository, "0.3.2");
   const lockPath = path.join(repository, ".launchrally/toolchain/package-lock.json");
   const lock = JSON.parse(await readFile(lockPath, "utf8"));
   lock.packages["node_modules/@launchrally/cli"].integrity = "sha512-invalid";
@@ -469,7 +469,7 @@ test("toolchain lock corruption invalidates project authority", async () => {
 
   const authority = await resolveExecutionAuthority({
     cwd: repository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
 
   assert.equal(authority.state, "invalid_toolchain");
@@ -478,7 +478,7 @@ test("toolchain lock corruption invalidates project authority", async () => {
 
 test("transaction recovery and inconsistent installed identity fail closed", async () => {
   const recoveringRepository = await repositoryFixture();
-  await writeConfirmedProject(recoveringRepository, "0.3.1");
+  await writeConfirmedProject(recoveringRepository, "0.3.2");
   await mkdir(path.join(
     recoveringRepository,
     ".launchrally",
@@ -486,17 +486,17 @@ test("transaction recovery and inconsistent installed identity fail closed", asy
   ));
   const recovering = await resolveExecutionAuthority({
     cwd: recoveringRepository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
   assert.equal(recovering.state, "invalid_toolchain");
   assert.equal(recovering.reason, "transaction_recovery_required");
 
   const inconsistentRepository = await repositoryFixture();
-  await writeConfirmedProject(inconsistentRepository, "0.3.1");
+  await writeConfirmedProject(inconsistentRepository, "0.3.2");
   await materializeEngine(inconsistentRepository, "0.4.0");
   const inconsistent = await resolveExecutionAuthority({
     cwd: inconsistentRepository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
   assert.equal(inconsistent.state, "invalid_toolchain");
   assert.equal(inconsistent.reason, "invalid_engine_materialization");
@@ -504,7 +504,7 @@ test("transaction recovery and inconsistent installed identity fail closed", asy
 
 test("symlinked authority files and path-escaping toolchains fail closed", async () => {
   const descriptorRepository = await repositoryFixture();
-  await writeConfirmedProject(descriptorRepository, "0.3.1");
+  await writeConfirmedProject(descriptorRepository, "0.3.2");
   const outside = await mkdtemp(path.join(os.tmpdir(), "launchrally-authority-outside-"));
   const outsideDescriptor = path.join(outside, "authority.json");
   await writeFile(outsideDescriptor, "{}\n");
@@ -517,7 +517,7 @@ test("symlinked authority files and path-escaping toolchains fail closed", async
 
   const descriptorAuthority = await resolveExecutionAuthority({
     cwd: descriptorRepository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
   assert.equal(descriptorAuthority.state, "invalid_toolchain");
   assert.equal(descriptorAuthority.reason, "unsafe_project_path");
@@ -532,7 +532,7 @@ test("symlinked authority files and path-escaping toolchains fail closed", async
 
   const toolchainAuthority = await resolveExecutionAuthority({
     cwd: toolchainRepository,
-    launcher_version: "0.3.1",
+    launcher_version: "0.3.2",
   });
   assert.equal(toolchainAuthority.state, "invalid_toolchain");
   assert.equal(toolchainAuthority.reason, "unsafe_project_path");
@@ -540,7 +540,7 @@ test("symlinked authority files and path-escaping toolchains fail closed", async
 
 test("version failure states are structured, non-zero, and omit cli_version", async () => {
   const restoreRepository = await repositoryFixture();
-  await writeConfirmedProject(restoreRepository, "0.3.1");
+  await writeConfirmedProject(restoreRepository, "0.3.2");
   let restoreFailure;
   await assert.rejects(
     execFileAsync(process.execPath, [
@@ -562,14 +562,14 @@ test("version failure states are structured, non-zero, and omit cli_version", as
   assert.equal(assertValidCliInteraction(restore), true);
 
   const migrationRepository = await repositoryFixture();
-  await writeConfirmedProject(migrationRepository, "0.3.1");
+  await writeConfirmedProject(migrationRepository, "0.3.2");
   await writeFile(
     path.join(migrationRepository, EXECUTION_AUTHORITY_DESCRIPTOR_PATH),
     `${JSON.stringify({
       contract: "launchrally.dev/execution-authority/v0",
       engine: {
         package: "@launchrally/cli",
-        version: "0.3.1",
+        version: "0.3.2",
         entrypoint: "bin/engine.js",
       },
     })}\n`,

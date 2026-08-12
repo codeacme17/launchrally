@@ -1,6 +1,6 @@
 # Contributing to LaunchRally
 
-LaunchRally is an Experimental open-source project under Apache-2.0. P0 is Product Complete and publicly released. LaunchRally is P0 Validated and the Quality Floor is satisfied, while the release remains Experimental pending a separate Stable promotion. By submitting a contribution, you agree that it is licensed under Apache-2.0 and that you have the right to submit it.
+LaunchRally is a Stable open-source project under Apache-2.0. P0 is Product Complete and publicly released. LaunchRally is P0 Validated and the Quality Floor is satisfied. By submitting a contribution, you agree that it is licensed under Apache-2.0 and that you have the right to submit it.
 
 ## Choose a feedback path
 
