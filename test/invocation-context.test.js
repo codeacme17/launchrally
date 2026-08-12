@@ -20,10 +20,10 @@ test("an exact npm-exec Launcher produces an equivalent executable Init command"
     env: {
       npm_command: "exec",
       npm_lifecycle_event: "npx",
-      npm_config_package: "@launchrally/cli@0.3.0",
+      npm_config_package: "@launchrally/cli@0.3.1",
       PATH: "/tmp/npm-cache/_npx/hash/node_modules/.bin:/usr/bin",
     },
-    launcherVersion: "0.3.0",
+    launcherVersion: "0.3.1",
   });
   const action = createNextAction(context, [
     "init",
@@ -37,14 +37,14 @@ test("an exact npm-exec Launcher produces an equivalent executable Init command"
     context: {
       schema_version: "launchrally.dev/invocation-context/v1",
       source: "npm_exec",
-      launcher_version: "0.3.0",
+      launcher_version: "0.3.1",
     },
     action: {
       command: {
         executable: "npm",
         arguments: [
           "exec",
-          "--package=@launchrally/cli@0.3.0",
+          "--package=@launchrally/cli@0.3.1",
           "--",
           "rally",
           "init",
@@ -55,7 +55,7 @@ test("an exact npm-exec Launcher produces an equivalent executable Init command"
         ],
         shell: false,
       },
-      display: "npm exec --package=@launchrally/cli@0.3.0 -- rally init --cwd '/workspace/site' --report '/reports/audit.json'",
+      display: "npm exec --package=@launchrally/cli@0.3.1 -- rally init --cwd '/workspace/site' --report '/reports/audit.json'",
     },
   });
 });
@@ -68,7 +68,7 @@ test("the Engine consumes only the explicit Launcher context and removes it from
     [INVOCATION_CONTEXT_ENV]: JSON.stringify({
       schema_version: "launchrally.dev/invocation-context/v1",
       source: "user_path",
-      launcher_version: "0.3.0",
+      launcher_version: "0.3.1",
     }),
   };
 
@@ -81,7 +81,7 @@ test("the Engine consumes only the explicit Launcher context and removes it from
     context: {
       schema_version: "launchrally.dev/invocation-context/v1",
       source: "user_path",
-      launcher_version: "0.3.0",
+      launcher_version: "0.3.1",
     },
     remainingContext: undefined,
   });
@@ -97,7 +97,7 @@ test("a confirmed user-managed PATH entry keeps bare rally follow-up commands", 
   const context = createInvocationContext({
     argv: ["/usr/bin/node", executable],
     env: { PATH: `${directory}${path.delimiter}/usr/bin` },
-    launcherVersion: "0.3.0",
+    launcherVersion: "0.3.1",
   });
 
   assert.deepEqual(createNextAction(context, [
@@ -136,7 +136,7 @@ test("an earlier PATH shadow prevents a direct entry from claiming stable PATH a
   const context = createInvocationContext({
     argv: ["/usr/bin/node", selected],
     env: { PATH: `${shadowDirectory}${path.delimiter}${selectedDirectory}` },
-    launcherVersion: "0.3.0",
+    launcherVersion: "0.3.1",
   });
 
   assert.equal(context.source, "unknown");
@@ -146,7 +146,7 @@ test("an unknown direct entry discloses and uses the exact npm-exec fallback", (
   const context = createInvocationContext({
     argv: ["/usr/bin/node", "/workspace/packages/cli/bin/rally.js"],
     env: { PATH: "/usr/bin" },
-    launcherVersion: "0.3.0",
+    launcherVersion: "0.3.1",
   });
 
   assert.deepEqual(createNextAction(context, ["toolchain", "status"], {
@@ -156,7 +156,7 @@ test("an unknown direct entry discloses and uses the exact npm-exec fallback", (
       executable: "npm",
       arguments: [
         "exec",
-        "--package=@launchrally/cli@0.3.0",
+        "--package=@launchrally/cli@0.3.1",
         "--",
         "rally",
         "toolchain",
@@ -164,7 +164,7 @@ test("an unknown direct entry discloses and uses the exact npm-exec fallback", (
       ],
       shell: false,
     },
-    display: "npm exec --package=@launchrally/cli@0.3.0 -- rally toolchain status",
+    display: "npm exec --package=@launchrally/cli@0.3.1 -- rally toolchain status",
     disclosure: "The original Launcher entry could not be confirmed; using an exact-version npm-exec fallback.",
   });
 });
@@ -173,7 +173,7 @@ test("Windows rendering is PowerShell-safe without changing executable argv", ()
   const context = {
     schema_version: "launchrally.dev/invocation-context/v1",
     source: "npm_exec",
-    launcher_version: "0.3.0",
+    launcher_version: "0.3.1",
   };
 
   assert.equal(createNextAction(context, [
@@ -183,5 +183,5 @@ test("Windows rendering is PowerShell-safe without changing executable argv", ()
     "--report",
     "C:\\Reports\\audit.json",
   ], { platform: "win32" }).display,
-  "& 'npm' 'exec' '--package=@launchrally/cli@0.3.0' '--' 'rally' 'init' '--cwd' 'C:\\Work $Site\\100% ''ready''' '--report' 'C:\\Reports\\audit.json'");
+  "& 'npm' 'exec' '--package=@launchrally/cli@0.3.1' '--' 'rally' 'init' '--cwd' 'C:\\Work $Site\\100% ''ready''' '--report' 'C:\\Reports\\audit.json'");
 });
