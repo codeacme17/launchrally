@@ -1,0 +1,859 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/phase-1/v1",
+  "title": "LaunchRally Phase 1 domain contracts v1",
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,127}$"
+    },
+    "nonEmptyStrings": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "stringSet": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "productIntentProfile": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "profile_id",
+        "revision",
+        "environment",
+        "created_at",
+        "desired_intent",
+        "observed_implementation",
+        "provenance",
+        "coverage",
+        "conflicts",
+        "unknowns",
+        "retention"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "launchrally.dev/product-intent-profile/v1"
+        },
+        "profile_id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "environment": { "type": "string", "minLength": 1 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "desired_intent": {
+          "type": "object",
+          "required": ["confirmation", "behaviors", "hard_constraints", "preferences"],
+          "properties": {
+            "confirmation": { "enum": ["confirmed", "unconfirmed"] },
+            "behaviors": { "$ref": "#/$defs/nonEmptyStrings" },
+            "hard_constraints": { "$ref": "#/$defs/stringSet" },
+            "preferences": { "$ref": "#/$defs/stringSet" }
+          },
+          "additionalProperties": false
+        },
+        "observed_implementation": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["fact_id", "summary", "confidence"],
+            "properties": {
+              "fact_id": { "$ref": "#/$defs/identifier" },
+              "summary": { "type": "string", "minLength": 1 },
+              "confidence": { "enum": ["observed", "inferred_candidate"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "provenance": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["source_id", "source_class", "path", "digest", "permission"],
+            "properties": {
+              "source_id": { "$ref": "#/$defs/identifier" },
+              "source_class": { "type": "string", "minLength": 1 },
+              "path": { "type": "string", "minLength": 1 },
+              "digest": { "$ref": "#/$defs/digest" },
+              "permission": { "enum": ["local_safe_scan", "local_semantic_analysis"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "required": ["state", "supported_sources", "excluded_sources", "negative_findings_allowed"],
+          "properties": {
+            "state": { "enum": ["complete", "partial", "denied", "unsupported"] },
+            "supported_sources": { "$ref": "#/$defs/stringSet" },
+            "excluded_sources": { "$ref": "#/$defs/stringSet" },
+            "negative_findings_allowed": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["conflict_id", "source_ids", "summary", "status"],
+            "properties": {
+              "conflict_id": { "$ref": "#/$defs/identifier" },
+              "source_ids": { "$ref": "#/$defs/nonEmptyStrings" },
+              "summary": { "type": "string", "minLength": 1 },
+              "status": { "const": "unresolved" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "unknowns": { "$ref": "#/$defs/stringSet" },
+        "retention": {
+          "type": "object",
+          "required": ["raw_source_retained", "provider_output_retained", "sensitive_data_retained"],
+          "properties": {
+            "raw_source_retained": { "const": false },
+            "provider_output_retained": { "const": false },
+            "sensitive_data_retained": { "const": false }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "recordReference": {
+      "type": "object",
+      "required": ["id", "schema_version", "digest"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "schema_version": {
+          "type": "string",
+          "pattern": "^launchrally\\.dev/[a-z0-9-]+/v[0-9]+$"
+        },
+        "digest": { "$ref": "#/$defs/digest" }
+      },
+      "additionalProperties": false
+    },
+    "capabilityCatalog": {
+      "type": "object",
+      "required": ["schema_version", "catalog_id", "catalog_version", "digest", "reviewed_at", "domains", "capabilities", "provenance"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/capability-catalog/v1" },
+        "catalog_id": { "$ref": "#/$defs/identifier" },
+        "catalog_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "reviewed_at": { "type": "string", "format": "date-time" },
+        "domains": {
+          "type": "array",
+          "items": {
+            "enum": ["runtime", "identity", "data", "billing_entitlement", "object_storage", "communication", "background_work", "observability", "analytics_privacy", "dns_tls", "ci_cd", "secrets_configuration", "backup_recovery_retention"]
+          },
+          "minItems": 13,
+          "maxItems": 13,
+          "uniqueItems": true
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["capability_id", "domain", "summary", "requirement_facets", "decision_facets", "implementation_facets", "evidence_facets"],
+            "properties": {
+              "capability_id": { "$ref": "#/$defs/identifier" },
+              "domain": { "type": "string", "minLength": 1 },
+              "summary": { "type": "string", "minLength": 1 },
+              "requirement_facets": { "$ref": "#/$defs/nonEmptyStrings" },
+              "decision_facets": { "$ref": "#/$defs/nonEmptyStrings" },
+              "implementation_facets": { "$ref": "#/$defs/nonEmptyStrings" },
+              "evidence_facets": { "$ref": "#/$defs/nonEmptyStrings" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "required": ["trust_tier", "source_refs"],
+          "properties": {
+            "trust_tier": { "enum": ["core_catalog", "reviewed_extension", "local_experimental"] },
+            "source_refs": { "$ref": "#/$defs/nonEmptyStrings" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "capabilityGraph": {
+      "type": "object",
+      "required": ["schema_version", "graph_id", "revision", "environment", "product_intent", "catalog", "nodes", "edges", "derived_obligations"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/capability-graph/v1" },
+        "graph_id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "environment": { "type": "string", "minLength": 1 },
+        "product_intent": { "$ref": "#/$defs/recordReference" },
+        "catalog": { "$ref": "#/$defs/recordReference" },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["capability_id", "environment", "requirement_state", "decision_state", "implementation_state", "evidence_state", "implementation_path"],
+            "properties": {
+              "capability_id": { "$ref": "#/$defs/identifier" },
+              "environment": { "type": "string", "minLength": 1 },
+              "requirement_state": { "enum": ["required", "optional", "deferred", "not_applicable", "unknown"] },
+              "decision_state": { "enum": ["retain", "adopt", "replace", "defer", "investigate", "undecided"] },
+              "implementation_state": { "enum": ["present", "absent", "partial", "unknown"] },
+              "evidence_state": { "enum": ["verified", "failed", "unverified", "not_applicable"] },
+              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "deferred", "not_applicable", "unknown"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from", "to", "kind"],
+            "properties": {
+              "from": { "$ref": "#/$defs/identifier" },
+              "to": { "$ref": "#/$defs/identifier" },
+              "kind": { "enum": ["requires", "integrates_with", "invalidates"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "derived_obligations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["obligation_id", "source_behavior_ids", "target_capability_id", "state", "derivation_chain"],
+            "properties": {
+              "obligation_id": { "$ref": "#/$defs/identifier" },
+              "source_behavior_ids": { "$ref": "#/$defs/nonEmptyStrings" },
+              "target_capability_id": { "$ref": "#/$defs/identifier" },
+              "state": { "enum": ["candidate", "confirmed"] },
+              "confirmation": { "const": "explicit_user_confirmation" },
+              "derivation_chain": { "$ref": "#/$defs/nonEmptyStrings" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "integrationContract": {
+      "type": "object",
+      "required": ["schema_version", "contract_id", "contract_version", "environment", "source_capability_id", "target_capability_id", "mode", "provider_binding", "semantics"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/integration-contract/v1" },
+        "contract_id": { "$ref": "#/$defs/identifier" },
+        "contract_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "environment": { "type": "string", "minLength": 1 },
+        "source_capability_id": { "$ref": "#/$defs/identifier" },
+        "target_capability_id": { "$ref": "#/$defs/identifier" },
+        "mode": { "enum": ["synchronous", "asynchronous"] },
+        "provider_binding": {
+          "type": "object",
+          "required": ["kind", "provider_id"],
+          "properties": {
+            "kind": { "enum": ["known", "unknown", "custom", "self_hosted"] },
+            "provider_id": { "type": ["string", "null"], "minLength": 1 }
+          },
+          "additionalProperties": false
+        },
+        "semantics": {
+          "type": "object",
+          "required": ["authentication", "ordering", "duplication", "retry", "replay", "idempotency", "eventual_consistency", "failure_visibility", "privacy", "success_evidence", "invalidation_dependencies"],
+          "properties": {
+            "authentication": { "type": "string", "minLength": 1 },
+            "ordering": { "type": "string", "minLength": 1 },
+            "duplication": { "type": "string", "minLength": 1 },
+            "retry": { "type": "string", "minLength": 1 },
+            "replay": { "type": "string", "minLength": 1 },
+            "idempotency": { "type": "string", "minLength": 1 },
+            "eventual_consistency": { "type": "string", "minLength": 1 },
+            "failure_visibility": { "type": "string", "minLength": 1 },
+            "privacy": { "type": "string", "minLength": 1 },
+            "success_evidence": { "$ref": "#/$defs/nonEmptyStrings" },
+            "invalidation_dependencies": { "$ref": "#/$defs/nonEmptyStrings" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "architectureBlueprint": {
+      "type": "object",
+      "required": ["schema_version", "blueprint_id", "revision", "environment", "source_report", "product_intent", "capability_graph", "constraints", "decisions", "whole_product", "unknowns"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/architecture-blueprint/v1" },
+        "blueprint_id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "environment": { "type": "string", "minLength": 1 },
+        "source_report": { "$ref": "#/$defs/recordReference" },
+        "product_intent": { "$ref": "#/$defs/recordReference" },
+        "capability_graph": { "$ref": "#/$defs/recordReference" },
+        "constraints": {
+          "type": "object",
+          "required": ["hard", "preferences"],
+          "properties": {
+            "hard": { "$ref": "#/$defs/stringSet" },
+            "preferences": { "$ref": "#/$defs/stringSet" }
+          },
+          "additionalProperties": false
+        },
+        "decisions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["decision_id", "capability_id", "action", "implementation_path", "disposition", "rationale", "tradeoffs", "assumptions", "reevaluation_triggers", "knowledge_refs"],
+            "properties": {
+              "decision_id": { "$ref": "#/$defs/identifier" },
+              "capability_id": { "$ref": "#/$defs/identifier" },
+              "action": { "enum": ["retain", "adopt", "replace", "defer", "investigate", "undecided"] },
+              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "deferred", "not_applicable", "unknown"] },
+              "disposition": { "enum": ["recommended", "alternative", "excluded"] },
+              "rationale": { "$ref": "#/$defs/nonEmptyStrings" },
+              "tradeoffs": { "$ref": "#/$defs/nonEmptyStrings" },
+              "assumptions": { "$ref": "#/$defs/nonEmptyStrings" },
+              "reevaluation_triggers": { "$ref": "#/$defs/nonEmptyStrings" },
+              "knowledge_refs": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/recordReference" }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "whole_product": {
+          "type": "object",
+          "required": ["integration_compatibility", "operational_burden", "cost_scenarios", "data_flow_residency", "failure_domains", "provider_concentration", "lock_in_exit", "duplication", "migration_cost"],
+          "properties": {
+            "integration_compatibility": { "type": "string", "minLength": 1 },
+            "operational_burden": { "$ref": "#/$defs/nonEmptyStrings" },
+            "cost_scenarios": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["scenario", "drivers", "assumptions", "review_date", "unknowns", "currency_estimate"],
+                "properties": {
+                  "scenario": { "type": "string", "minLength": 1 },
+                  "drivers": { "$ref": "#/$defs/nonEmptyStrings" },
+                  "assumptions": { "$ref": "#/$defs/nonEmptyStrings" },
+                  "review_date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+                  "unknowns": { "$ref": "#/$defs/stringSet" },
+                  "currency_estimate": { "type": ["string", "null"] }
+                },
+                "additionalProperties": false
+              }
+            },
+            "data_flow_residency": { "$ref": "#/$defs/nonEmptyStrings" },
+            "failure_domains": { "$ref": "#/$defs/nonEmptyStrings" },
+            "provider_concentration": { "type": "string", "minLength": 1 },
+            "lock_in_exit": { "$ref": "#/$defs/nonEmptyStrings" },
+            "duplication": { "$ref": "#/$defs/nonEmptyStrings" },
+            "migration_cost": { "$ref": "#/$defs/nonEmptyStrings" }
+          },
+          "additionalProperties": false
+        },
+        "unknowns": { "$ref": "#/$defs/stringSet" }
+      },
+      "additionalProperties": false
+    },
+    "privacyRetention": {
+      "type": "object",
+      "required": ["raw_provider_output_retained", "receipt_payload_retained", "sensitive_data_retained"],
+      "properties": {
+        "raw_provider_output_retained": { "const": false },
+        "receipt_payload_retained": { "const": false },
+        "sensitive_data_retained": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "architectureRecord": {
+      "type": "object",
+      "required": ["schema_version", "record_id", "revision", "created_at", "environment", "blueprint", "bindings", "confirmed_decisions", "provenance", "retention"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/architecture-record/v1" },
+        "record_id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "environment": { "type": "string", "minLength": 1 },
+        "blueprint": { "$ref": "#/$defs/recordReference" },
+        "bindings": {
+          "type": "object",
+          "required": ["source_report", "product_intent", "capability_catalog", "integration_contracts", "provider_knowledge"],
+          "properties": {
+            "source_report": { "$ref": "#/$defs/recordReference" },
+            "product_intent": { "$ref": "#/$defs/recordReference" },
+            "capability_catalog": { "$ref": "#/$defs/recordReference" },
+            "integration_contracts": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/recordReference" }
+            },
+            "provider_knowledge": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/recordReference" }
+            }
+          },
+          "additionalProperties": false
+        },
+        "confirmed_decisions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["decision_id", "decision_revision", "confirmation", "status"],
+            "properties": {
+              "decision_id": { "$ref": "#/$defs/identifier" },
+              "decision_revision": { "type": "integer", "minimum": 1 },
+              "confirmation": { "const": "explicit_user_confirmation" },
+              "status": { "enum": ["retain", "adopt", "replace", "defer", "investigate", "undecided"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "required": ["actor", "interaction_id"],
+          "properties": {
+            "actor": { "const": "user" },
+            "interaction_id": { "$ref": "#/$defs/identifier" }
+          },
+          "additionalProperties": false
+        },
+        "retention": { "$ref": "#/$defs/privacyRetention" }
+      },
+      "additionalProperties": false
+    },
+    "architecturePackage": {
+      "type": "object",
+      "required": ["schema_version", "package_id", "revision", "created_at", "environment", "records", "currentness", "storage", "retention"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/architecture-package/v1" },
+        "package_id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "environment": { "type": "string", "minLength": 1 },
+        "records": {
+          "type": "object",
+          "required": ["product_intent", "capability_graph", "architecture_record", "task_graph"],
+          "properties": {
+            "product_intent": { "$ref": "#/$defs/recordReference" },
+            "capability_graph": { "$ref": "#/$defs/recordReference" },
+            "architecture_record": { "$ref": "#/$defs/recordReference" },
+            "task_graph": {
+              "type": ["object", "null"],
+              "required": ["id", "schema_version", "digest"],
+              "properties": {
+                "id": { "$ref": "#/$defs/identifier" },
+                "schema_version": { "const": "launchrally.dev/task-graph/v1" },
+                "digest": { "$ref": "#/$defs/digest" }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "currentness": {
+          "type": "object",
+          "required": ["state", "invalidated_record_ids", "reasons"],
+          "properties": {
+            "state": { "enum": ["current", "needs_reassessment", "partially_invalidated", "superseded"] },
+            "invalidated_record_ids": { "$ref": "#/$defs/stringSet" },
+            "reasons": { "$ref": "#/$defs/stringSet" }
+          },
+          "additionalProperties": false
+        },
+        "storage": {
+          "type": "object",
+          "required": ["shareable_intent_separate", "local_history_immutable", "automatically_staged", "automatically_committed"],
+          "properties": {
+            "shareable_intent_separate": { "const": true },
+            "local_history_immutable": { "const": true },
+            "automatically_staged": { "const": false },
+            "automatically_committed": { "const": false }
+          },
+          "additionalProperties": false
+        },
+        "retention": { "$ref": "#/$defs/privacyRetention" }
+      },
+      "additionalProperties": false
+    },
+    "effectClass": {
+      "enum": ["read_only", "local_source", "provider_configuration", "secret", "deployment", "production_data", "active_test"]
+    },
+    "taskGraph": {
+      "type": "object",
+      "required": ["schema_version", "graph_id", "revision", "environment", "architecture_record", "tasks", "ready_frontier"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/task-graph/v1" },
+        "graph_id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "environment": { "type": "string", "minLength": 1 },
+        "architecture_record": { "$ref": "#/$defs/recordReference" },
+        "tasks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["task_id", "task_type", "source", "environment", "prerequisites", "effect_class", "expected_target", "allowed_effects", "prohibited_effects", "recovery_notes", "minimum_executor_capability", "structured_result_schema", "evidence_targets", "follow_up_verify", "cancellation_behavior", "status"],
+            "properties": {
+              "task_id": { "$ref": "#/$defs/identifier" },
+              "task_type": { "type": "string", "minLength": 1 },
+              "source": { "enum": ["finding", "verification_gap", "architecture_decision", "implementation_work"] },
+              "environment": { "type": "string", "minLength": 1 },
+              "prerequisites": { "$ref": "#/$defs/stringSet" },
+              "effect_class": { "$ref": "#/$defs/effectClass" },
+              "expected_target": { "type": "string", "minLength": 1 },
+              "allowed_effects": { "$ref": "#/$defs/nonEmptyStrings" },
+              "prohibited_effects": { "$ref": "#/$defs/nonEmptyStrings" },
+              "recovery_notes": { "$ref": "#/$defs/nonEmptyStrings" },
+              "minimum_executor_capability": { "type": "string", "minLength": 1 },
+              "structured_result_schema": { "type": "string", "pattern": "^launchrally\\.dev/[a-z0-9-]+/v[0-9]+$" },
+              "evidence_targets": { "$ref": "#/$defs/nonEmptyStrings" },
+              "follow_up_verify": {
+                "type": "object",
+                "required": ["operation", "scope", "fresh_evidence_required"],
+                "properties": {
+                  "operation": { "const": "verify" },
+                  "scope": { "type": "string", "minLength": 1 },
+                  "fresh_evidence_required": { "const": true }
+                },
+                "additionalProperties": false
+              },
+              "cancellation_behavior": { "enum": ["stop_before_next_effect", "preserve_completed_prerequisites", "manual_recovery_required"] },
+              "status": { "enum": ["not_started", "blocked", "running", "reported_succeeded", "reported_failed", "cancelled", "verification_pending", "verified"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "ready_frontier": { "$ref": "#/$defs/stringSet" }
+      },
+      "additionalProperties": false
+    },
+    "executorDescriptor": {
+      "type": "object",
+      "required": ["schema_version", "descriptor_id", "descriptor_version", "executor_name", "supported_task_types", "contract_versions", "platforms", "environments", "tools", "auth_assumptions", "allowed_effects", "prohibited_effects", "secret_handling", "result_schema", "cancellation", "partial_failure", "trust"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/executor-descriptor/v1" },
+        "descriptor_id": { "$ref": "#/$defs/identifier" },
+        "descriptor_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "executor_name": { "type": "string", "minLength": 1 },
+        "supported_task_types": { "$ref": "#/$defs/nonEmptyStrings" },
+        "contract_versions": { "$ref": "#/$defs/nonEmptyStrings" },
+        "platforms": { "$ref": "#/$defs/nonEmptyStrings" },
+        "environments": { "$ref": "#/$defs/nonEmptyStrings" },
+        "tools": { "$ref": "#/$defs/nonEmptyStrings" },
+        "auth_assumptions": { "$ref": "#/$defs/nonEmptyStrings" },
+        "allowed_effects": { "$ref": "#/$defs/nonEmptyStrings" },
+        "prohibited_effects": { "$ref": "#/$defs/nonEmptyStrings" },
+        "secret_handling": { "enum": ["no_secret_required", "external_reference_only", "executor_managed"] },
+        "result_schema": { "const": "launchrally.dev/execution-receipt/v1" },
+        "cancellation": { "enum": ["unsupported", "supported_between_effects", "supported_during_effect"] },
+        "partial_failure": { "enum": ["all_or_nothing", "reported_per_task", "manual_inspection_required"] },
+        "trust": {
+          "type": "object",
+          "required": ["tier", "digest", "reviewed_at"],
+          "properties": {
+            "tier": { "enum": ["core_catalog", "reviewed_extension", "local_experimental"] },
+            "digest": { "$ref": "#/$defs/digest" },
+            "reviewed_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "handoffPackage": {
+      "type": "object",
+      "required": ["schema_version", "handoff_id", "revision", "created_at", "environment", "task_graph", "task_ids", "executor", "authority_batch", "approval", "retention"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/handoff-package/v1" },
+        "handoff_id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "created_at": { "type": "string", "format": "date-time" },
+        "environment": { "type": "string", "minLength": 1 },
+        "task_graph": { "$ref": "#/$defs/recordReference" },
+        "task_ids": { "$ref": "#/$defs/nonEmptyStrings" },
+        "executor": { "$ref": "#/$defs/recordReference" },
+        "authority_batch": {
+          "type": "object",
+          "required": ["effect_classes", "target", "allowed_effects", "prohibited_effects", "user_visible_effects"],
+          "properties": {
+            "effect_classes": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/effectClass" },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "target": { "type": "string", "minLength": 1 },
+            "allowed_effects": { "$ref": "#/$defs/nonEmptyStrings" },
+            "prohibited_effects": { "$ref": "#/$defs/nonEmptyStrings" },
+            "user_visible_effects": { "$ref": "#/$defs/nonEmptyStrings" }
+          },
+          "additionalProperties": false
+        },
+        "approval": {
+          "type": "object",
+          "required": ["state", "confirmation", "confirmed_at"],
+          "properties": {
+            "state": { "enum": ["required", "approved", "denied", "cancelled"] },
+            "confirmation": { "type": ["string", "null"] },
+            "confirmed_at": { "type": ["string", "null"], "format": "date-time" }
+          },
+          "additionalProperties": false
+        },
+        "retention": { "$ref": "#/$defs/privacyRetention" }
+      },
+      "additionalProperties": false
+    },
+    "executionReceipt": {
+      "type": "object",
+      "required": ["schema_version", "receipt_id", "handoff", "executor", "reported_at", "task_results", "classification", "retention"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/execution-receipt/v1" },
+        "receipt_id": { "$ref": "#/$defs/identifier" },
+        "handoff": { "$ref": "#/$defs/recordReference" },
+        "executor": { "$ref": "#/$defs/recordReference" },
+        "reported_at": { "type": "string", "format": "date-time" },
+        "task_results": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["task_id", "state", "claim_codes"],
+            "properties": {
+              "task_id": { "$ref": "#/$defs/identifier" },
+              "state": { "enum": ["reported_succeeded", "reported_failed", "cancelled", "partial"] },
+              "claim_codes": { "$ref": "#/$defs/nonEmptyStrings" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "classification": {
+          "type": "object",
+          "required": ["claim_only", "machine_evidence", "verification_status"],
+          "properties": {
+            "claim_only": { "const": true },
+            "machine_evidence": { "const": false },
+            "verification_status": { "const": "unverified" }
+          },
+          "additionalProperties": false
+        },
+        "retention": {
+          "type": "object",
+          "required": ["raw_stdout_retained", "raw_stderr_retained", "response_body_retained", "sensitive_data_retained"],
+          "properties": {
+            "raw_stdout_retained": { "const": false },
+            "raw_stderr_retained": { "const": false },
+            "response_body_retained": { "const": false },
+            "sensitive_data_retained": { "const": false }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "activeVerificationRequest": {
+      "type": "object",
+      "required": ["schema_version", "request_id", "revision", "environment", "capability_id", "recipe", "executor_mode", "approval", "synthetic_fixture", "correlation_id", "effects", "observation_window_ms", "timeout_ms", "cleanup_strategy", "production_safety"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/active-verification-request/v1" },
+        "request_id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "environment": { "type": "string", "minLength": 1 },
+        "capability_id": { "$ref": "#/$defs/identifier" },
+        "recipe": {
+          "type": "object",
+          "required": ["recipe_id", "recipe_version", "trust_tier"],
+          "properties": {
+            "recipe_id": { "$ref": "#/$defs/identifier" },
+            "recipe_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+            "trust_tier": { "enum": ["core_catalog", "reviewed_extension"] }
+          },
+          "additionalProperties": false
+        },
+        "executor_mode": { "type": "string", "minLength": 1 },
+        "approval": {
+          "type": "object",
+          "required": ["state", "confirmation", "separate_production_approval"],
+          "properties": {
+            "state": { "enum": ["required", "approved", "denied"] },
+            "confirmation": { "type": ["string", "null"] },
+            "separate_production_approval": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "synthetic_fixture": {
+          "type": "object",
+          "required": ["fixture_id", "minimized", "real_user_data", "business_payload"],
+          "properties": {
+            "fixture_id": { "$ref": "#/$defs/identifier" },
+            "minimized": { "const": true },
+            "real_user_data": { "const": false },
+            "business_payload": { "const": false }
+          },
+          "additionalProperties": false
+        },
+        "correlation_id": { "$ref": "#/$defs/identifier" },
+        "effects": {
+          "type": "object",
+          "required": ["allowed", "prohibited"],
+          "properties": {
+            "allowed": { "$ref": "#/$defs/nonEmptyStrings" },
+            "prohibited": { "$ref": "#/$defs/nonEmptyStrings" }
+          },
+          "additionalProperties": false
+        },
+        "observation_window_ms": { "type": "integer", "minimum": 1 },
+        "timeout_ms": { "type": "integer", "minimum": 1 },
+        "cleanup_strategy": { "type": "string", "minLength": 1 },
+        "production_safety": {
+          "type": "object",
+          "required": ["classification", "default_denied"],
+          "properties": {
+            "classification": { "enum": ["non_production", "production_safe", "production_unsafe"] },
+            "default_denied": { "const": true }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "activeVerificationResult": {
+      "type": "object",
+      "required": ["schema_version", "result_id", "request", "environment", "outcome", "correlation_id", "expected_effect_class", "observed", "latency_ms", "cleanup_status", "observation", "classification", "retention"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/active-verification-result/v1" },
+        "result_id": { "$ref": "#/$defs/identifier" },
+        "request": { "$ref": "#/$defs/recordReference" },
+        "environment": { "type": "string", "minLength": 1 },
+        "outcome": { "enum": ["observed_success", "observed_failure", "timeout", "late_success", "duplicate_delivery", "retry_exhausted", "cleanup_failure", "inconclusive", "denied", "unsupported"] },
+        "correlation_id": { "$ref": "#/$defs/identifier" },
+        "expected_effect_class": { "type": "string", "minLength": 1 },
+        "observed": { "type": "boolean" },
+        "latency_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "cleanup_status": { "enum": ["succeeded", "failed", "not_required", "unknown"] },
+        "observation": {
+          "type": "object",
+          "required": ["retry_count", "duplicate_count", "ordering", "eventual_consistency", "failure_visible"],
+          "properties": {
+            "retry_count": { "type": "integer", "minimum": 0 },
+            "duplicate_count": { "type": "integer", "minimum": 0 },
+            "ordering": { "enum": ["as_expected", "out_of_order", "not_observed"] },
+            "eventual_consistency": { "enum": ["observed", "not_observed", "not_applicable"] },
+            "failure_visible": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "classification": {
+          "type": "object",
+          "required": ["environment_bound", "evidence_qualification", "provider_configuration_only"],
+          "properties": {
+            "environment_bound": { "const": true },
+            "evidence_qualification": { "enum": ["qualifying_machine_evidence", "verification_gap", "non_qualifying_observation"] },
+            "provider_configuration_only": { "const": false }
+          },
+          "additionalProperties": false
+        },
+        "retention": {
+          "type": "object",
+          "required": ["real_user_identifiers_retained", "payloads_retained", "messages_retained", "database_rows_retained"],
+          "properties": {
+            "real_user_identifiers_retained": { "const": false },
+            "payloads_retained": { "const": false },
+            "messages_retained": { "const": false },
+            "database_rows_retained": { "const": false }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "architectureStatus": {
+      "type": "object",
+      "required": ["schema_version", "status_id", "architecture_record", "environment", "currentness", "summary", "decision_states", "unknowns", "launch_assessment"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/architecture-status/v1" },
+        "status_id": { "$ref": "#/$defs/identifier" },
+        "architecture_record": { "$ref": "#/$defs/recordReference" },
+        "environment": { "type": "string", "minLength": 1 },
+        "currentness": { "enum": ["current", "needs_reassessment", "partially_invalidated", "superseded"] },
+        "summary": { "enum": ["decided", "partially_decided", "undecided", "stale"] },
+        "decision_states": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["decision_id", "state"],
+            "properties": {
+              "decision_id": { "$ref": "#/$defs/identifier" },
+              "state": { "enum": ["retain", "adopt", "replace", "defer", "investigate", "undecided"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "unknowns": { "$ref": "#/$defs/stringSet" },
+        "launch_assessment": {
+          "type": "object",
+          "required": ["independent", "assessment_ref"],
+          "properties": {
+            "independent": { "const": true },
+            "assessment_ref": { "type": ["object", "null"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "phase1Interaction": {
+      "type": "object",
+      "required": ["schema_version", "interaction_id", "operation", "status", "state", "resume_token", "source_refs", "request", "preview"],
+      "properties": {
+        "schema_version": { "enum": ["launchrally.dev/architect-interaction/v1", "launchrally.dev/handoff-interaction/v1"] },
+        "interaction_id": { "$ref": "#/$defs/identifier" },
+        "operation": { "enum": ["architect", "handoff"] },
+        "status": { "enum": ["needs_input", "needs_confirmation", "denied", "cancelled", "partial_completion", "stale_input", "resumable", "completed"] },
+        "state": { "enum": ["intent_discovery", "blueprint_review", "decision_confirmation", "executor_discovery", "authority_preview", "receipt_review", "verification_pending", "completed"] },
+        "resume_token": { "type": ["string", "null"] },
+        "source_refs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/recordReference" }
+        },
+        "request": {
+          "type": "object",
+          "required": ["kind", "choices"],
+          "properties": {
+            "kind": { "type": "string", "minLength": 1 },
+            "choices": { "$ref": "#/$defs/nonEmptyStrings" }
+          },
+          "additionalProperties": false
+        },
+        "preview": {
+          "type": "object",
+          "required": ["effect_classes", "user_visible_effects"],
+          "properties": {
+            "effect_classes": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/effectClass" },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "user_visible_effects": { "$ref": "#/$defs/nonEmptyStrings" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "x-launchrally-contract-major": 1,
+  "x-launchrally-status": "phase-1-contract-foundation"
+}

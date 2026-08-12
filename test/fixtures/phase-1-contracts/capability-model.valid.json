@@ -1,0 +1,102 @@
+{
+  "catalog": {
+    "schema_version": "launchrally.dev/capability-catalog/v1",
+    "catalog_id": "catalog_phase1",
+    "catalog_version": "1.0.0",
+    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "reviewed_at": "2026-08-13T00:00:00.000Z",
+    "domains": [
+      "runtime",
+      "identity",
+      "data",
+      "billing_entitlement",
+      "object_storage",
+      "communication",
+      "background_work",
+      "observability",
+      "analytics_privacy",
+      "dns_tls",
+      "ci_cd",
+      "secrets_configuration",
+      "backup_recovery_retention"
+    ],
+    "capabilities": [
+      {
+        "capability_id": "identity_authentication",
+        "domain": "identity",
+        "summary": "Authenticate product users.",
+        "requirement_facets": ["applicability", "environment"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["local", "provider"],
+        "evidence_facets": ["configuration", "operational", "outcome"]
+      }
+    ],
+    "provenance": {
+      "trust_tier": "core_catalog",
+      "source_refs": ["launchrally_phase1_contract"]
+    }
+  },
+  "graph": {
+    "schema_version": "launchrally.dev/capability-graph/v1",
+    "graph_id": "graph_product_01",
+    "revision": 1,
+    "environment": "production",
+    "product_intent": {
+      "id": "intent_01hphase1",
+      "schema_version": "launchrally.dev/product-intent-profile/v1",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "catalog": {
+      "id": "catalog_phase1",
+      "schema_version": "launchrally.dev/capability-catalog/v1",
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "nodes": [
+      {
+        "capability_id": "identity_authentication",
+        "environment": "production",
+        "requirement_state": "required",
+        "decision_state": "investigate",
+        "implementation_state": "unknown",
+        "evidence_state": "unverified",
+        "implementation_path": "unknown"
+      }
+    ],
+    "edges": [],
+    "derived_obligations": [
+      {
+        "obligation_id": "obligation_session_revocation",
+        "source_behavior_ids": ["customers_sign_in"],
+        "target_capability_id": "identity_authentication",
+        "state": "candidate",
+        "derivation_chain": ["customers_sign_in", "sessions_exist", "revocation_is_required"]
+      }
+    ]
+  },
+  "integration": {
+    "schema_version": "launchrally.dev/integration-contract/v1",
+    "contract_id": "integration_identity_data",
+    "contract_version": "1.0.0",
+    "environment": "production",
+    "source_capability_id": "identity_authentication",
+    "target_capability_id": "application_data",
+    "mode": "asynchronous",
+    "provider_binding": {
+      "kind": "unknown",
+      "provider_id": null
+    },
+    "semantics": {
+      "authentication": "signed_event",
+      "ordering": "per_subject",
+      "duplication": "possible",
+      "retry": "bounded_backoff",
+      "replay": "supported",
+      "idempotency": "required",
+      "eventual_consistency": "expected",
+      "failure_visibility": "dead_letter_or_equivalent",
+      "privacy": "normalized_identifiers_only",
+      "success_evidence": ["entitlement_state_observed"],
+      "invalidation_dependencies": ["identity_event_shape", "entitlement_projection"]
+    }
+  }
+}

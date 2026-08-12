@@ -19,6 +19,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - When Audit or Verify returns an authenticated Core Journey request, read [references/protected-journeys.md](references/protected-journeys.md).
 - When a completed Audit or Verify contains `provider_tool_recoveries`, read [references/provider-tool-recovery.md](references/provider-tool-recovery.md).
 - When invoking the CLI or handling its states, read [references/cli-contract.md](references/cli-contract.md).
+- When inspecting or exchanging a Phase 1 architecture record, read [references/phase-1-contracts.md](references/phase-1-contracts.md). Contract availability alone does not make a Phase 1 operation executable.
 
 ## Preserve these invariants
 
@@ -37,6 +38,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - If the user explicitly requests local code remediation, state that it is a host-Agent task outside LaunchRally controlled Apply guarantees, then return to `verify`.
 - Present Verify scope, fresh-read permissions, Manifest Drift, and source comparison exactly as returned; only a full current Report can carry a whole-release Assessment.
 - Plugin removal never removes the user-managed Launcher, Project Toolchain, Manifest, Reports, Evidence, or history.
+- Treat every external Execution Receipt as a claim, never Machine Evidence. Require fresh environment-bound verification before changing assurance.
 
 ## Start safely
 
