@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/product-intent-profile/v1",
+  "$ref": "../phase-1/v1.schema.json#/$defs/productIntentProfile",
+  "x-launchrally-contract-major": 1
+}

@@ -1,6 +1,6 @@
 # @launchrally/contracts
 
-`@launchrally/contracts` is the public contract package for LaunchRally integrators and tool authors. It exports versioned contract identifiers, validators, and the versioned JSON Schemas used by CLI interactions, manifests, reports, plans, evidence indexes, Provider guidance, Provider tool recovery, and verification results.
+`@launchrally/contracts` is the public contract package for LaunchRally integrators and tool authors. It exports versioned contract identifiers, validators, and the versioned JSON Schemas used by CLI interactions, manifests, reports, plans, evidence indexes, Provider guidance, Provider tool recovery, verification results, and the additive Phase 1 architecture contract foundation.
 
 ## Status
 
@@ -20,9 +20,13 @@ console.log(REPORT_SCHEMA); // launchrally.dev/report/v2
 
 The package also exports validators such as `assertValidReportPackage` and bundles its JSON Schema files in the published payload.
 
+The Phase 1 foundation exports one validator per record plus `assertValidPhase1Record`, `assertValidPhase1References`, `assertSupportedPhase1Version`, and `PHASE_1_SCHEMA_VERSIONS`. Use `assertValidPhase1References` with an external trusted ID/version/digest index to validate cross-record bindings without embedding the referenced records. These contracts define data semantics only. Their presence does not mean that `rally architect`, external Executor handoff, or active verification is implemented or authorized.
+
 ## Compatibility and versioning
 
 This is an ESM package for the Node.js runtime supported by LaunchRally (Node.js 20.12.0 or newer). Contract names include a major version. Read the [data model](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/data-model.md) before persisting or consuming Manifest, Report, View, or Evidence data, and use the exported compatibility helpers instead of guessing from fields.
+
+Phase 1 v1 readers reject malformed records, unknown enum values, and unknown major versions. Historical Report v1 references remain readable where the Phase 1 binding explicitly permits them. Cross-record references retain their own IDs, schema versions, and digests; a receipt remains a claim and can never be represented as Evidence.
 
 ## Documentation
 

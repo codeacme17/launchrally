@@ -1,0 +1,141 @@
+{
+  "request": {
+    "schema_version": "launchrally.dev/active-verification-request/v1",
+    "request_id": "active_verify_01",
+    "revision": 1,
+    "environment": "staging",
+    "capability_id": "identity_authentication",
+    "recipe": {
+      "recipe_id": "recipe_identity_login",
+      "recipe_version": "1.0.0",
+      "trust_tier": "core_catalog"
+    },
+    "executor_mode": "synthetic_identity_login",
+    "approval": {
+      "state": "approved",
+      "confirmation": "explicit_user_confirmation",
+      "separate_production_approval": false
+    },
+    "synthetic_fixture": {
+      "fixture_id": "fixture_synthetic_identity",
+      "minimized": true,
+      "real_user_data": false,
+      "business_payload": false
+    },
+    "correlation_id": "corr_01hphase1",
+    "effects": {
+      "allowed": ["synthetic_user_create", "synthetic_user_delete"],
+      "prohibited": ["real_user_mutation", "business_payload_write"]
+    },
+    "observation_window_ms": 30000,
+    "timeout_ms": 45000,
+    "cleanup_strategy": "delete_synthetic_user",
+    "production_safety": {
+      "classification": "non_production",
+      "default_denied": true
+    }
+  },
+  "result": {
+    "schema_version": "launchrally.dev/active-verification-result/v1",
+    "result_id": "active_result_01",
+    "request": {
+      "id": "active_verify_01",
+      "schema_version": "launchrally.dev/active-verification-request/v1",
+      "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "environment": "staging",
+    "outcome": "observed_success",
+    "correlation_id": "corr_01hphase1",
+    "expected_effect_class": "identity_session_created",
+    "observed": true,
+    "latency_ms": 420,
+    "cleanup_status": "succeeded",
+    "observation": {
+      "retry_count": 0,
+      "duplicate_count": 0,
+      "ordering": "as_expected",
+      "eventual_consistency": "observed",
+      "failure_visible": false
+    },
+    "classification": {
+      "environment_bound": true,
+      "evidence_qualification": "qualifying_machine_evidence",
+      "provider_configuration_only": false
+    },
+    "retention": {
+      "real_user_identifiers_retained": false,
+      "payloads_retained": false,
+      "messages_retained": false,
+      "database_rows_retained": false
+    }
+  },
+  "architecture_status": {
+    "schema_version": "launchrally.dev/architecture-status/v1",
+    "status_id": "architecture_status_01",
+    "architecture_record": {
+      "id": "architecture_record_01",
+      "schema_version": "launchrally.dev/architecture-record/v1",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "environment": "production",
+    "currentness": "current",
+    "summary": "partially_decided",
+    "decision_states": [
+      {
+        "decision_id": "decision_identity",
+        "state": "investigate"
+      }
+    ],
+    "unknowns": ["identity_provider_selection"],
+    "launch_assessment": {
+      "independent": true,
+      "assessment_ref": null
+    }
+  },
+  "architect_interaction": {
+    "schema_version": "launchrally.dev/architect-interaction/v1",
+    "interaction_id": "interaction_architect_01",
+    "operation": "architect",
+    "status": "needs_confirmation",
+    "state": "decision_confirmation",
+    "resume_token": "resume_architect_01",
+    "source_refs": [
+      {
+        "id": "blueprint_product_01",
+        "schema_version": "launchrally.dev/architecture-blueprint/v1",
+        "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    ],
+    "request": {
+      "kind": "architecture_decision",
+      "choices": ["confirm", "reject", "revise", "defer", "cancel"]
+    },
+    "preview": {
+      "effect_classes": ["local_source"],
+      "user_visible_effects": ["Append a new immutable Architecture Record after confirmation."]
+    }
+  },
+  "handoff_interaction": {
+    "schema_version": "launchrally.dev/handoff-interaction/v1",
+    "interaction_id": "interaction_handoff_01",
+    "operation": "handoff",
+    "status": "partial_completion",
+    "state": "receipt_review",
+    "resume_token": "resume_handoff_01",
+    "source_refs": [
+      {
+        "id": "handoff_01",
+        "schema_version": "launchrally.dev/handoff-package/v1",
+        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      }
+    ],
+    "request": {
+      "kind": "fresh_verification",
+      "choices": ["verify", "defer", "cancel"]
+    },
+    "preview": {
+      "effect_classes": ["read_only"],
+      "user_visible_effects": ["Request fresh independent verification; the receipt remains a claim."]
+    }
+  }
+}
