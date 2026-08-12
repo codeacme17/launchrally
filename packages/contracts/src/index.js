@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 const require = createRequire(import.meta.url);
 const cliInteractionSchema = require("../schemas/cli/v2.schema.json");
@@ -202,6 +203,26 @@ function assertPhase1Schema(value, definition, message, errorCode, predicates = 
     throw error;
   }
   return true;
+}
+
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
+}
+
+export function computeCapabilityCatalogDigest(catalog) {
+  const content = {
+    catalog_id: catalog?.catalog_id,
+    catalog_version: catalog?.catalog_version,
+    reviewed_at: catalog?.reviewed_at,
+    domains: catalog?.domains,
+    capabilities: catalog?.capabilities,
+    provenance: catalog?.provenance,
+  };
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify(canonicalValue(content)))
+    .digest("hex")}`;
 }
 
 export function assertValidReportPackage(source) {
@@ -419,11 +440,18 @@ export function assertValidProductIntentProfile(profile) {
 }
 
 export function assertValidCapabilityCatalog(catalog) {
+  const capabilityIds = catalog?.capabilities?.map(({ capability_id: capabilityId }) => capabilityId);
+  const capabilityDomains = new Set(catalog?.capabilities?.map(({ domain }) => domain));
   return assertPhase1Schema(
     catalog,
     "capabilityCatalog",
     "The Capability Catalog is incomplete or invalid.",
     "invalid_capability_catalog",
+    [
+      () => new Set(capabilityIds).size === capabilityIds.length,
+      () => catalog.domains.every((domain) => capabilityDomains.has(domain)),
+      () => catalog.digest === computeCapabilityCatalogDigest(catalog),
+    ],
   );
 }
 
@@ -432,10 +460,16 @@ export function assertValidCapabilityGraph(graph) {
     obligation.state === "confirmed"
       && obligation.confirmation !== "explicit_user_confirmation");
   const validEnvironments = graph?.nodes?.every((node) => node.environment === graph.environment);
+  const nodeIds = graph?.nodes?.map(({ capability_id: capabilityId }) => capabilityId);
+  const nodeIdSet = new Set(nodeIds);
+  const validObligationTargets = graph?.derived_obligations?.every(({ target_capability_id: target }) =>
+    nodeIdSet.has(target));
   if (
     !validatesSchema(graph, phase1Schema.$defs.capabilityGraph, phase1Schema)
     || confirmedCandidates
     || !validEnvironments
+    || nodeIdSet.size !== nodeIds.length
+    || !validObligationTargets
     || !referenceUses(graph?.product_intent, [PRODUCT_INTENT_PROFILE_SCHEMA])
     || !referenceUses(graph?.catalog, [CAPABILITY_CATALOG_SCHEMA])
     || hasPersistedSensitivePayload(graph)
@@ -448,11 +482,13 @@ export function assertValidCapabilityGraph(graph) {
 }
 
 export function assertValidIntegrationContract(contract) {
+  const binding = contract?.provider_binding;
   return assertPhase1Schema(
     contract,
     "integrationContract",
     "The Integration Contract is incomplete or invalid.",
     "invalid_integration_contract",
+    [() => binding.kind === "unknown" ? binding.provider_id === null : binding.provider_id !== null],
   );
 }
 

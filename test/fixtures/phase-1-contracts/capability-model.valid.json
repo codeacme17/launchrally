@@ -3,7 +3,7 @@
     "schema_version": "launchrally.dev/capability-catalog/v1",
     "catalog_id": "catalog_phase1",
     "catalog_version": "1.0.0",
-    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "digest": "sha256:a6a77264b87a174c66a50a44f7686130e0018645cea8110dc8b0b731dc6b6707",
     "reviewed_at": "2026-08-13T00:00:00.000Z",
     "domains": [
       "runtime",
@@ -29,6 +29,114 @@
         "decision_facets": ["implementation_path"],
         "implementation_facets": ["local", "provider"],
         "evidence_facets": ["configuration", "operational", "outcome"]
+      },
+      {
+        "capability_id": "runtime_execution",
+        "domain": "runtime",
+        "summary": "Execute the product runtime.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "application_data",
+        "domain": "data",
+        "summary": "Persist application data.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "billing_entitlement",
+        "domain": "billing_entitlement",
+        "summary": "Connect billing and entitlements.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "object_storage",
+        "domain": "object_storage",
+        "summary": "Store product objects.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "communication_delivery",
+        "domain": "communication",
+        "summary": "Deliver product communications.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "background_work",
+        "domain": "background_work",
+        "summary": "Execute background work.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "operational_observability",
+        "domain": "observability",
+        "summary": "Expose operational health.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "analytics_privacy",
+        "domain": "analytics_privacy",
+        "summary": "Constrain product analytics.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "dns_tls",
+        "domain": "dns_tls",
+        "summary": "Route trusted traffic.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "ci_cd",
+        "domain": "ci_cd",
+        "summary": "Build and deliver changes.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "secrets_configuration",
+        "domain": "secrets_configuration",
+        "summary": "Supply scoped configuration.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "backup_recovery_retention",
+        "domain": "backup_recovery_retention",
+        "summary": "Recover retained product state.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
       }
     ],
     "provenance": {
@@ -49,7 +157,7 @@
     "catalog": {
       "id": "catalog_phase1",
       "schema_version": "launchrally.dev/capability-catalog/v1",
-      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      "digest": "sha256:a6a77264b87a174c66a50a44f7686130e0018645cea8110dc8b0b731dc6b6707"
     },
     "nodes": [
       {
