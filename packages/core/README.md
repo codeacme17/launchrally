@@ -6,6 +6,8 @@
 
 LaunchRally 0.3.2 is a **Stable** release. The package is Product Complete, P0 Validated, and published on the stable channel. Pin the exact version and review release changes before upgrading.
 
+The additive Phase 1 Core exports `runProductIntentDiscovery` for permissioned, local Product Intent discovery. It separates Local Safe Scan observations, selected-material candidates, explicit user confirmation, conflicts, Unknowns, and coverage. It never persists selected source text and grants no Provider or deployment authority.
+
 ## Install and use
 
 ```sh

@@ -60,6 +60,14 @@ _Avoid_: Execution Authority, reconstructed command
 The versioned distinction between explicitly confirmed desired behavior, observed implementation facts, provenance, unresolved conflicts, coverage, and Unknowns.
 _Avoid_: Agent summary, inferred requirements
 
+**Local Semantic Analysis**:
+A separately disclosed, explicitly approved read of selected local product materials that retains only normalized Product Intent candidates and provenance.
+_Avoid_: Local Safe Scan, unrestricted repository analysis
+
+**Product Intent Candidate**:
+A normalized behavior or obligation suggested by observed facts or approved materials that remains unconfirmed until the builder explicitly accepts it.
+_Avoid_: Confirmed Product Intent, Agent conclusion
+
 **Capability Catalog**:
 The Provider-neutral, independently versioned vocabulary of launch capabilities and their requirement, decision, implementation, and Evidence facets.
 _Avoid_: Provider catalog, feature checklist

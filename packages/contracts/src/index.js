@@ -706,7 +706,9 @@ function assertValidPhase1Interaction(interaction, operation, schemaVersion, err
   };
   const statusStates = {
     needs_input: new Set(["intent_discovery", "executor_discovery"]),
+    needs_permission: new Set(["intent_discovery", "authority_preview"]),
     needs_confirmation: new Set([
+      "intent_discovery",
       "blueprint_review",
       "decision_confirmation",
       "authority_preview",
@@ -716,6 +718,7 @@ function assertValidPhase1Interaction(interaction, operation, schemaVersion, err
   };
   const requiresResume = new Set([
     "needs_input",
+    "needs_permission",
     "needs_confirmation",
     "partial_completion",
     "stale_input",

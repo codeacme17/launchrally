@@ -192,5 +192,9 @@ export { runPlan } from "./planning.js";
 export { parsePublicJourneyInput } from "./public-journey.js";
 export { parsePublicTargetInput } from "./public-target.js";
 export { runProviderGuidance } from "./provider-guidance.js";
+export {
+  PRODUCT_INTENT_ANALYZER_VERSION,
+  runProductIntentDiscovery,
+} from "./product-intent.js";
 export { SUPPORT_LAYER_CATEGORIES } from "./support-layers.js";
 export { runVerify } from "./verification.js";
