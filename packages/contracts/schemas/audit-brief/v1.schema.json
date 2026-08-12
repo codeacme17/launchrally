@@ -61,6 +61,7 @@
       },
       "additionalProperties": false
     },
+    "authenticated_journeys": { "$ref": "#/$defs/authenticatedJourneyPlan" },
     "provider_adapters": {
       "type": "object",
       "required": ["contract_version", "requests"],
@@ -107,7 +108,8 @@
           "items": {
             "oneOf": [
               { "type": "string", "minLength": 1 },
-              { "$ref": "#/$defs/publicJourney" }
+              { "$ref": "#/$defs/publicJourney" },
+              { "$ref": "#/$defs/protectedJourney" }
             ]
           }
         },
@@ -123,6 +125,79 @@
         "purpose": { "type": "string", "minLength": 1 },
         "path": { "type": "string", "pattern": "^/(?!/)" },
         "method": { "const": "GET" }
+      },
+      "additionalProperties": false
+    },
+    "protectedJourney": {
+      "type": "object",
+      "required": ["schema_version", "purpose", "path", "method", "access"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/protected-journey/v1" },
+        "purpose": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "pattern": "^/(?!/)" },
+        "method": { "const": "GET" },
+        "access": {
+          "type": "object",
+          "required": ["authentication_class", "authenticated_status_codes"],
+          "properties": {
+            "authentication_class": { "enum": ["user", "staff", "signed_token"] },
+            "anonymous_status_codes": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 300, "maximum": 499 },
+              "minItems": 1,
+              "maxItems": 10,
+              "uniqueItems": true
+            },
+            "authenticated_status_codes": {
+              "type": "array",
+              "items": { "type": "integer", "minimum": 200, "maximum": 299 },
+              "minItems": 1,
+              "maxItems": 10,
+              "uniqueItems": true
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "authenticatedJourneyPlan": {
+      "type": "object",
+      "required": ["schema_version", "adapter_version", "operation", "requested_fields", "journeys"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/authenticated-journey-plan/v1" },
+        "adapter_version": { "const": "host-agent-authenticated-journey/v1" },
+        "operation": { "const": "read_only" },
+        "requested_fields": {
+          "type": "array",
+          "items": { "enum": ["journey_id", "status", "outcome", "status_code", "collected_at"] },
+          "minItems": 5,
+          "maxItems": 5,
+          "uniqueItems": true
+        },
+        "collection_not_before": { "type": "string", "format": "date-time" },
+        "journeys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["journey_id", "target", "method", "purpose", "authentication_class", "expected_status_codes"],
+            "properties": {
+              "journey_id": { "type": "string", "pattern": "^target-[1-9][0-9]*:journey-[1-9][0-9]*:authenticated$" },
+              "target": { "type": "string", "format": "uri" },
+              "method": { "const": "GET" },
+              "purpose": { "type": "string", "minLength": 1 },
+              "authentication_class": { "enum": ["user", "staff", "signed_token"] },
+              "expected_status_codes": {
+                "type": "array",
+                "items": { "type": "integer", "minimum": 200, "maximum": 299 },
+                "minItems": 1,
+                "maxItems": 10,
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     },
@@ -194,7 +269,14 @@
         "method": { "enum": ["DNS_LOOKUP", "TLS_HANDSHAKE", "GET"] },
         "purpose": { "type": "string", "minLength": 1 },
         "timeout_ms": { "type": "integer", "minimum": 1, "maximum": 30000 },
-        "verification_mode": { "enum": ["description_only", "executable_path"] }
+        "verification_mode": { "enum": ["description_only", "executable_path", "protected_anonymous_boundary"] },
+        "expected_status_codes": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 300, "maximum": 499 },
+          "minItems": 1,
+          "maxItems": 10,
+          "uniqueItems": true
+        }
       },
       "additionalProperties": false
     }

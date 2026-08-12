@@ -11,7 +11,7 @@ LaunchRally is a local-first, open-source launch-readiness audit and verificatio
 
 It needs no LaunchRally account, uses no default telemetry, and makes no repository, deployment, or Provider write during an Audit.
 
-> **Status: Experimental P0.** P0 is Product Complete and `0.3.0` is publicly available on the non-stable `experimental` channel. Telemetry-Free Validation is collecting aggregate directional signals; LaunchRally is not P0 Validated.
+> **Status: Experimental P0.** P0 is Product Complete and `0.3.0` is publicly available on the non-stable `experimental` channel. LaunchRally is P0 Validated with the Quality Floor satisfied; the release remains Experimental until a separate Stable promotion.
 
 ## First Audit
 

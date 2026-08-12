@@ -1,6 +1,6 @@
 # Install, lifecycle, and troubleshooting
 
-LaunchRally `0.3.0` is the exact Experimental P0 release used by this guide. Experimental availability is not a stability claim or a P0 Validated decision.
+LaunchRally `0.3.0` is the exact Experimental P0 release used by this guide. Experimental availability remains non-stable after the reviewed P0 Validated decision.
 
 ## Supported environments
 

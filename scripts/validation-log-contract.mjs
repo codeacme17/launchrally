@@ -44,13 +44,20 @@ const AGGREGATE_TAXONOMY = Object.freeze({
     "repeated_defect_under_review",
   ]),
   p1Needs: new Set([
+    "authenticated_journey_verification",
     "hosted_history",
     "managed_collaboration",
     "permissioned_provider_mutation",
   ]),
-  decisions: new Set(["start_telemetry_free_validation"]),
-  decisionOutcomes: new Set(["collecting"]),
-  decisionRationales: new Set(["publication_is_not_field_validation"]),
+  decisions: new Set([
+    "start_telemetry_free_validation",
+    "validate_p0_and_allow_p1_authority",
+  ]),
+  decisionOutcomes: new Set(["collecting", "validated"]),
+  decisionRationales: new Set([
+    "consistent_directional_evidence",
+    "publication_is_not_field_validation",
+  ]),
   regressionCategories: new Set([
     "evidence_integrity",
     "false_confidence",

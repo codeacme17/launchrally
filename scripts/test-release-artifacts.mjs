@@ -474,6 +474,218 @@ async function runInstallationJourneys({
     ...process.env,
     PATH: [npmStub, path.dirname(launcher), process.env.PATH ?? ""].join(path.delimiter),
   };
+  const runProtectedSkillJourney = async (skillJourney, host) => {
+    assertEqual(
+      skillJourney.protected_journeys,
+      {
+        declaration_schema: "launchrally.dev/protected-journey/v1",
+        permission_id: "authenticated_journey_verification",
+        permission_boundary: "authenticated_network_read",
+        plan_schema: "launchrally.dev/authenticated-journey-plan/v1",
+        adapter_version: "host-agent-authenticated-journey/v1",
+        result_schema: "launchrally.dev/authenticated-journey-results/v1",
+        resume_argument: "--journey-results",
+        retained_fields: ["journey_id", "status", "outcome", "status_code", "collected_at"],
+        raw_auth_material: "excluded",
+      },
+      `packaged_${host}_protected_journey_contract_drift`,
+      `${host} must ship the complete protected journey host contract`,
+    );
+    const protectedRepository = path.join(temporaryRoot, `${host} protected journey`);
+    await cp(
+      path.join(root, "fixtures", "coverage", "typescript-astro"),
+      protectedRepository,
+      { recursive: true },
+    );
+    const applicationSnapshot = (await snapshotTree(protectedRepository)).filter(
+      ([relativePath]) => !relativePath.startsWith(".launchrally/"),
+    );
+    const run = async (...arguments_) => {
+      try {
+        return JSON.parse((await invokeLauncher(
+          "rally",
+          [...arguments_, "--json", "--cwd", protectedRepository],
+          { cwd: temporaryRoot, env: launcherEnvironment },
+        )).stdout);
+      } catch (error) {
+        if (typeof error.stdout !== "string" || error.stdout.trim() === "") throw error;
+        return JSON.parse(error.stdout);
+      }
+    };
+    const fixtureHostEffects = [];
+    const executeFixtureAuthenticatedRead = (plan) => {
+      if (
+        plan.operation !== "read_only"
+        || typeof plan.collection_not_before !== "string"
+        || plan.requested_fields.join(",")
+          !== "journey_id,status,outcome,status_code,collected_at"
+      ) throw new Error(`packaged_${host}_authenticated_runner_contract_failed`);
+      const fixtureSession = Object.freeze({
+        authentication_class: "staff",
+        capability: "control:read",
+        target: "https://example.com/control",
+      });
+      const results = plan.journeys.map((journey) => {
+        if (
+          journey.authentication_class !== fixtureSession.authentication_class
+          || journey.target !== fixtureSession.target
+          || journey.method !== "GET"
+        ) throw new Error(`packaged_${host}_authenticated_fixture_scope_failed`);
+        fixtureHostEffects.push({
+          effect: "authenticated_network_read",
+          target: journey.target,
+          capability: fixtureSession.capability,
+        });
+        return {
+          journey_id: journey.journey_id,
+          status: "passed",
+          outcome: "completed",
+          status_code: journey.expected_status_codes[0],
+          collected_at: new Date(Math.max(
+            Date.now(),
+            new Date(plan.collection_not_before).valueOf() + 1,
+          )).toISOString(),
+        };
+      });
+      return JSON.stringify({
+        schema_version: skillJourney.protected_journeys.result_schema,
+        adapter_version: skillJourney.protected_journeys.adapter_version,
+        results,
+      });
+    };
+    const input = await run("audit");
+    const confirmation = await run(
+      "audit",
+      "--resume",
+      input.interaction.resume_token,
+      "--answers",
+      JSON.stringify({
+        intended_environment: "staging",
+        production_targets: ["https://example.com"],
+        core_journeys: [{
+          schema_version: skillJourney.protected_journeys.declaration_schema,
+          method: "GET",
+          path: "/control",
+          purpose: `${host} protected Control Room loads`,
+          access: {
+            authentication_class: "staff",
+            authenticated_status_codes: [200],
+          },
+        }],
+        provider_roles: [],
+        support_layers: [],
+      }),
+    );
+    const permission = await run(
+      "audit",
+      "--resume",
+      confirmation.interaction.resume_token,
+      "--confirm",
+      "confirm",
+    );
+    const resultInput = await run(
+      "audit",
+      "--resume",
+      permission.interaction.resume_token,
+      "--permissions",
+      JSON.stringify({
+        public_verification: "denied",
+        authenticated_journey_verification: "approved",
+      }),
+    );
+    if (
+      resultInput.status !== "needs_input"
+      || resultInput.request?.result_schema !== skillJourney.protected_journeys.result_schema
+      || resultInput.request?.plan?.schema_version !== skillJourney.protected_journeys.plan_schema
+    ) throw new Error(`packaged_${host}_protected_audit_input_failed`);
+    const normalizedResults = executeFixtureAuthenticatedRead(resultInput.request.plan);
+    const auditCollectedAt = JSON.parse(normalizedResults).results[0].collected_at;
+    const audit = await run(
+      "audit",
+      "--resume",
+      resultInput.interaction.resume_token,
+      skillJourney.protected_journeys.resume_argument,
+      normalizedResults,
+    );
+    if (
+      audit.status !== "completed"
+      || !audit.evidence_index.entries.some(
+        ({ evidence_kind: kind, normalized_artifact: artifact }) =>
+          kind === "authenticated_journey_observation"
+          && artifact.outcome === "completed"
+          && artifact.status === "passed",
+      )
+    ) throw new Error(`packaged_${host}_protected_audit_failed`);
+    const reportPath = path.join(temporaryRoot, `${host}-protected-audit.json`);
+    await writeFile(reportPath, JSON.stringify(audit));
+    const initPreview = await run("init", "--report", reportPath);
+    if (initPreview.status !== "needs_confirmation") {
+      throw new Error(
+        `packaged_${host}_protected_init_preview_failed: ${JSON.stringify(initPreview)}`,
+      );
+    }
+    const initialized = await run(
+      "init",
+      "--resume",
+      initPreview.interaction.resume_token,
+      "--confirm",
+      "confirm",
+    );
+    if (initialized.status !== "completed") {
+      throw new Error(`packaged_${host}_protected_init_failed`);
+    }
+    const verifyPermission = await run(
+      "verify",
+      "--report",
+      reportPath,
+      "--scope",
+      "full",
+    );
+    const verifyInput = await run(
+      "verify",
+      "--resume",
+      verifyPermission.interaction.resume_token,
+      "--permissions",
+      JSON.stringify({
+        public_verification: "denied",
+        authenticated_journey_verification: "approved",
+      }),
+    );
+    const verify = await run(
+      "verify",
+      "--resume",
+      verifyInput.interaction.resume_token,
+      skillJourney.protected_journeys.resume_argument,
+      executeFixtureAuthenticatedRead(verifyInput.request.plan),
+    );
+    if (
+      verify.status !== "completed"
+      || !verify.evidence_index.entries.some(
+        ({ evidence_kind: kind, normalized_artifact: artifact }) =>
+          kind === "authenticated_journey_observation"
+          && artifact.outcome === "completed"
+          && artifact.status === "passed"
+          && artifact.collected_at !== auditCollectedAt,
+      )
+    ) throw new Error(`packaged_${host}_protected_verify_failed`);
+    if (/session=|bearer\s|"cookie"|"headers"/iu.test(JSON.stringify(verify))) {
+      throw new Error(`packaged_${host}_protected_auth_material_retained`);
+    }
+    if (
+      fixtureHostEffects.length !== 2
+      || fixtureHostEffects.some(({ effect }) => effect !== "authenticated_network_read")
+    ) throw new Error(`packaged_${host}_protected_forbidden_host_effect`);
+    assertEqual(
+      (await snapshotTree(protectedRepository)).filter(
+        ([relativePath]) => !relativePath.startsWith(".launchrally/"),
+      ),
+      applicationSnapshot,
+      `packaged_${host}_protected_journey_mutated_application`,
+      `${host} must not perform login, capability grants, deployment, or application writes`,
+    );
+  };
+  await runProtectedSkillJourney(journey, "codex");
+  await runProtectedSkillJourney(claudeJourney, "claude");
   let activeRepository = repository;
   const invoke = async (id, replacements = {}, options = {}) => {
     const invocation = findFixtureInvocation(journey, id);
@@ -1069,6 +1281,7 @@ async function runInstallationJourneys({
       transaction_recovery: "interrupted_migration_recovered",
       full_journey: "plan_handoff_verify_completed",
       packaged_skill_fixtures: "codex_and_claude_executed",
+      protected_journeys: "codex_and_claude_audit_verify_normalized",
       launcher_removal: "project_data_preserved",
       fixture_invocations: fixtureInvocations,
     },

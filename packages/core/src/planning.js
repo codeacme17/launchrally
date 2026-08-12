@@ -1,6 +1,7 @@
 import {
   CLI_INTERACTION_CONTRACT,
   LAUNCH_PLAN_SCHEMA,
+  PROTECTED_JOURNEY_SCHEMA,
   assertSupportedReportVersion,
   assertValidLaunchPlan,
   assertValidReportPackage,
@@ -79,6 +80,49 @@ function planGap(gap) {
         ? "Authenticate the existing read-only Provider CLI outside LaunchRally, then recollect Evidence; LaunchRally never initiates login or handles credentials."
         : "Investigate and recollect the missing Evidence before proposing remediation; this Gap is not a confirmed fix.",
   };
+}
+
+function authenticatedJourneySnapshot(report, evidenceIndex) {
+  const referencedDigests = new Set(
+    (report.results.authenticated_journey_evidence_refs ?? []).map(({ digest }) => digest),
+  );
+  const observations = new Map(
+    evidenceIndex.entries
+      .filter(({ digest, evidence_kind }) =>
+        referencedDigests.has(digest)
+        && evidence_kind === "authenticated_journey_observation")
+      .map((entry) => [entry.normalized_artifact.journey_id, entry]),
+  );
+  const snapshots = [];
+  report.scope.release_intent.production_targets.forEach((target, targetIndex) => {
+    const origin = new URL(target).origin;
+    report.scope.release_intent.core_journeys.forEach((journey, journeyIndex) => {
+      if (journey?.schema_version !== PROTECTED_JOURNEY_SCHEMA) return;
+      const journeyId = `target-${targetIndex + 1}:journey-${journeyIndex + 1}:authenticated`;
+      const observationEntry = observations.get(journeyId);
+      const observation = observationEntry?.normalized_artifact;
+      snapshots.push({
+        journey_id: journeyId,
+        target: new URL(journey.path, origin).toString(),
+        method: journey.method,
+        purpose: journey.purpose,
+        authentication_class: journey.access.authentication_class,
+        expected_status_codes: structuredClone(journey.access.authenticated_status_codes),
+        result: observation
+          ? {
+              status: observation.status,
+              outcome: observation.outcome,
+              status_code: observation.status_code,
+              collected_at: observation.collected_at,
+              evidence_digest: observationEntry.digest,
+              current: observationEntry.current,
+              currentness: structuredClone(observationEntry.currentness),
+            }
+          : null,
+      });
+    });
+  });
+  return snapshots;
 }
 
 function remediationHandoff() {
@@ -251,6 +295,7 @@ export function runPlan(reportPackage, options = {}) {
       generated_timestamps: false,
     },
     items: report.results.action_queue.map((action, index) => planItem(report, action, index)),
+    authenticated_journeys: authenticatedJourneySnapshot(report, reportPackage.evidence_index),
     verification_gaps: report.results.verification_gaps.map(planGap),
     next: {
       type: "remediation_handoff",

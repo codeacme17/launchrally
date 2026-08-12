@@ -6,8 +6,8 @@ product-planning sources are intentionally local and ignored under
 must be represented here and in the linked GitHub issues.
 
 P0 is Product Complete and `0.3.0` is publicly available as an Experimental
-release. Telemetry-Free Validation is collecting directional signals and P0
-Validated remains false.
+release. P0 is Validated with the Quality Floor satisfied, while the release remains
+Experimental.
 
 The canonical requirement-ID registry is independently committed in
 `release/p0.json`; the machine-readable traceability source is

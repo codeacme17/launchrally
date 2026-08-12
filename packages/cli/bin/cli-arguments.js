@@ -5,6 +5,7 @@ const OPTIONS_WITH_VALUES = new Set([
   "--checks",
   "--cwd",
   "--gap",
+  "--journey-results",
   "--output",
   "--permissions",
   "--report",

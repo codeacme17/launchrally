@@ -64,6 +64,7 @@ function evidencePath(digest) {
 function referencedEvidenceDigests(report) {
   return [
     ...report.results.public_evidence_refs,
+    ...(report.results.authenticated_journey_evidence_refs ?? []),
     ...report.results.provider_evidence_refs,
     ...report.results.checks.flatMap((check) => [
       ...check.applicability.evidence,

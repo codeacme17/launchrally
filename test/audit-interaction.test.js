@@ -12,6 +12,8 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
+import { createAuthenticatedJourneyPlan } from "../packages/core/src/authenticated-journeys.js";
+import { parsePublicJourneyInput } from "../packages/core/src/public-journey.js";
 import {
   collectPublicEvidence,
   createPublicVerificationPlan,
@@ -515,6 +517,241 @@ test("public probe purposes support custom and unknown environment labels", () =
     unknown.probes.find((probe) => probe.kind === "tls").purpose,
     "Verify the confirmed target certificate and TLS handshake.",
   );
+});
+
+test("protected Core Journey declarations preserve only versioned safe access assertions", () => {
+  const declaration = {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/control",
+    purpose: "staff Control Room loads",
+    access: {
+      authentication_class: "staff",
+      anonymous_status_codes: [404],
+      authenticated_status_codes: [200],
+    },
+  };
+
+  assert.deepEqual(parsePublicJourneyInput(declaration), { value: declaration });
+  assert.deepEqual(
+    parsePublicJourneyInput({ method: "GET", path: "/", purpose: "homepage loads" }),
+    { value: { method: "GET", path: "/", purpose: "homepage loads" } },
+  );
+  assert.deepEqual(parsePublicJourneyInput({
+    ...declaration,
+    access: {
+      ...declaration.access,
+      cookie: "secret-session",
+    },
+  }), { error: "invalid_protected_journey" });
+});
+
+test("protected Core Journeys split anonymous boundary and authenticated read plans", () => {
+  const answers = {
+    intended_environment: "staging",
+    production_targets: ["https://example.com/"],
+    core_journeys: [{
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/control",
+      purpose: "staff Control Room loads",
+      access: {
+        authentication_class: "staff",
+        anonymous_status_codes: [404],
+        authenticated_status_codes: [200],
+      },
+    }],
+  };
+
+  const publicPlan = createPublicVerificationPlan(answers);
+  const authenticatedPlan = createAuthenticatedJourneyPlan(answers);
+
+  assert.deepEqual(
+    publicPlan.probes.filter(({ kind }) => kind === "journey"),
+    [{
+      probe_id: "target-1:journey-1:anonymous",
+      kind: "journey",
+      target: "https://example.com/control",
+      host: "example.com",
+      port: 443,
+      path: "/control",
+      method: "GET",
+      purpose: "Verify anonymous boundary for protected Core Journey: staff Control Room loads",
+      timeout_ms: 5000,
+      verification_mode: "protected_anonymous_boundary",
+      expected_status_codes: [404],
+    }],
+  );
+  assert.deepEqual(authenticatedPlan, {
+    schema_version: "launchrally.dev/authenticated-journey-plan/v1",
+    adapter_version: "host-agent-authenticated-journey/v1",
+    operation: "read_only",
+    requested_fields: ["journey_id", "status", "outcome", "status_code", "collected_at"],
+    journeys: [{
+      journey_id: "target-1:journey-1:authenticated",
+      target: "https://example.com/control",
+      method: "GET",
+      purpose: "staff Control Room loads",
+      authentication_class: "staff",
+      expected_status_codes: [200],
+    }],
+  });
+});
+
+test("protected anonymous status expectations become normalized passing evidence", async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(request.url === "/control" ? 404 : 204);
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address();
+    const plan = createPublicVerificationPlan({
+      intended_environment: "staging",
+      production_targets: [`http://127.0.0.1:${port}`],
+      core_journeys: [{
+        schema_version: "launchrally.dev/protected-journey/v1",
+        method: "GET",
+        path: "/control",
+        purpose: "staff Control Room loads",
+        access: {
+          authentication_class: "staff",
+          anonymous_status_codes: [404],
+          authenticated_status_codes: [200],
+        },
+      }],
+    });
+    const evidence = await collectPublicEvidence(plan);
+    const boundary = evidence.find(({ probe_kind }) => probe_kind === "journey");
+
+    assert.equal(boundary.status, "passed");
+    assert.equal(boundary.outcome, "access_boundary_confirmed");
+    assert.equal(boundary.details.status_code, 404);
+    assert.equal(boundary.verification_mode, "protected_anonymous_boundary");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("Audit requests protected journey reads as a fresh permission separate from public probes", async () => {
+  const fixture = await createInteractionFixture({ providerSignals: false });
+  const initial = await runAudit(fixture);
+  const answers = {
+    intended_environment: "staging",
+    production_targets: ["https://example.com/"],
+    core_journeys: [{
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/control",
+      purpose: "staff Control Room loads",
+      access: {
+        authentication_class: "staff",
+        anonymous_status_codes: [404],
+        authenticated_status_codes: [200],
+      },
+    }],
+    provider_roles: [],
+    support_layers: [],
+  };
+  const confirmation = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify(answers),
+  ]);
+
+  assert.equal(confirmation.status, "needs_confirmation");
+  assert.equal(confirmation.audit_brief.authenticated_journeys.journeys.length, 1);
+  assert.deepEqual(
+    confirmation.authorization_plan.map(({ permission_id, boundary }) => ({
+      permission_id,
+      boundary,
+    })),
+    [
+      { permission_id: "local_safe_scan", boundary: "local_scan" },
+      { permission_id: "public_verification", boundary: "public_network" },
+      {
+        permission_id: "authenticated_journey_verification",
+        boundary: "authenticated_network_read",
+      },
+    ],
+  );
+  assert.deepEqual(
+    confirmation.authorization_plan[2].scope,
+    confirmation.audit_brief.authenticated_journeys,
+  );
+});
+
+test("Audit resumes from typed authenticated results without accepting auth material", async () => {
+  const fixture = await createInteractionFixture({ providerSignals: false });
+  const initial = await runAudit(fixture);
+  const answers = {
+    intended_environment: "staging",
+    production_targets: ["https://example.com"],
+    core_journeys: [{
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/control",
+      purpose: "staff Control Room loads",
+      access: {
+        authentication_class: "staff",
+        anonymous_status_codes: [404],
+        authenticated_status_codes: [200],
+      },
+    }],
+    provider_roles: [],
+    support_layers: [],
+  };
+  const confirmation = await runAudit(fixture, [
+    "--resume",
+    initial.interaction.resume_token,
+    "--answers",
+    JSON.stringify(answers),
+  ]);
+  const permission = await runAudit(fixture, [
+    "--resume",
+    confirmation.interaction.resume_token,
+    "--confirm",
+    "confirm",
+  ]);
+  const input = await runAudit(fixture, [
+    "--resume",
+    permission.interaction.resume_token,
+    "--permissions",
+    JSON.stringify({
+      public_verification: "denied",
+      authenticated_journey_verification: "approved",
+    }),
+  ]);
+
+  assert.equal(input.status, "needs_input");
+  assert.equal(input.request.type, "authenticated_journey_results");
+  assert.doesNotMatch(JSON.stringify(input), /session=|bearer\s|"cookie"|"headers"/iu);
+
+  const completed = await runAudit(fixture, [
+    "--resume",
+    input.interaction.resume_token,
+    "--journey-results",
+    JSON.stringify({
+      schema_version: "launchrally.dev/authenticated-journey-results/v1",
+      adapter_version: "host-agent-authenticated-journey/v1",
+      results: [{
+        journey_id: "target-1:journey-1:authenticated",
+        status: "unverified",
+        outcome: "missing_authentication",
+        status_code: null,
+        collected_at: new Date().toISOString(),
+      }],
+    }),
+  ]);
+
+  assert.equal(completed.status, "completed", JSON.stringify(completed));
+  assert.equal(completed.report.scope.access, "local_and_authenticated_read_only");
+  assert.ok(completed.evidence_index.entries.some(
+    ({ evidence_kind, normalized_artifact }) =>
+      evidence_kind === "authenticated_journey_observation"
+      && normalized_artifact.outcome === "missing_authentication",
+  ));
 });
 
 test("confirmation requests public and Provider permissions as distinct boundaries", async () => {
@@ -1286,7 +1523,7 @@ test("Agent Mode reports malformed interaction input as a structured execution e
         status: "execution_error",
         operation: "audit",
         error: "invalid_option_json",
-        message: "Audit answers and permission decisions must use valid JSON.",
+        message: "Audit answers, permission decisions, and journey results must use valid JSON.",
       });
       return true;
     },

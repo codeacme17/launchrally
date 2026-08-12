@@ -1003,6 +1003,7 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       transaction_recovery: "interrupted_migration_recovered",
       full_journey: "plan_handoff_verify_completed",
       packaged_skill_fixtures: "codex_and_claude_executed",
+      protected_journeys: "codex_and_claude_audit_verify_normalized",
       launcher_removal: "project_data_preserved",
       plugin_removal: "skipped",
       fixture_invocations: [

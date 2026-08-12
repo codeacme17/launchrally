@@ -1,7 +1,7 @@
 {
   "schema_version": "launchrally.dev/phase-0-validation-log/v1",
   "collection_mode": "telemetry_free",
-  "updated_at": "2026-08-09",
+  "updated_at": "2026-08-12",
   "entries": [
     {
       "period": "pre-release-quality-baseline",
@@ -223,6 +223,81 @@
       "p1_gate": {
         "discovery": "allowed",
         "authority_expanding_implementation": "blocked"
+      }
+    },
+    {
+      "period": "2026-08-12-01",
+      "aggregate_adoption_trends": {
+        "signal": "validation_started",
+        "sources": [
+          "clean_environment_checks",
+          "opt_in_maintainer_summary",
+          "public_aggregate_package_trends",
+          "voluntary_github_feedback"
+        ],
+        "notes": "clean_release_verified_field_evidence_pending"
+      },
+      "voluntary_feedback_categories": [
+        "journey_completion",
+        "permission_comprehension",
+        "plugin_integration"
+      ],
+      "represented_contexts": {
+        "frameworks": [
+          "astro",
+          "custom_web",
+          "fastapi",
+          "react_go"
+        ],
+        "deployments": [
+          "container",
+          "edge_monorepo",
+          "hosted_web",
+          "self_hosted",
+          "split_stack"
+        ]
+      },
+      "repeated_value_patterns": [
+        {
+          "pattern": "exact_public_install",
+          "signal": "confirmed_in_clean_environment",
+          "notes": "exact_cli_and_plugin_journeys_passed"
+        }
+      ],
+      "repeated_defect_patterns": [
+        {
+          "pattern": "permission_boundary",
+          "signal": "resolved",
+          "notes": "repeated_defect_fix_verified"
+        }
+      ],
+      "recurring_p1_requests": [
+        "authenticated_journey_verification"
+      ],
+      "product_decisions": [
+        {
+          "decision": "validate_p0_and_allow_p1_authority",
+          "outcome": "validated",
+          "rationale": "consistent_directional_evidence"
+        }
+      ],
+      "quality_floor": {
+        "status": "satisfied",
+        "regressions": []
+      },
+      "validation_decision": {
+        "status": "validated",
+        "rationale": "consistent_directional_evidence",
+        "evidence_summary": {
+          "represented_contexts": "represented_contexts_established",
+          "repeated_patterns": "repeated_patterns_established",
+          "recurring_p1_needs": "recurring_p1_needs_reviewed",
+          "resulting_decisions": "explicit_p0_validation_decision"
+        }
+      },
+      "p1_gate": {
+        "discovery": "allowed",
+        "authority_expanding_implementation": "allowed"
       }
     }
   ]

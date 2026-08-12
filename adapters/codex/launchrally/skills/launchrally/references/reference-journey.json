@@ -60,6 +60,17 @@
     "version": "0.3.0",
     "contract": "launchrally.dev/cli/v2"
   },
+  "protected_journeys": {
+    "declaration_schema": "launchrally.dev/protected-journey/v1",
+    "permission_id": "authenticated_journey_verification",
+    "permission_boundary": "authenticated_network_read",
+    "plan_schema": "launchrally.dev/authenticated-journey-plan/v1",
+    "adapter_version": "host-agent-authenticated-journey/v1",
+    "result_schema": "launchrally.dev/authenticated-journey-results/v1",
+    "resume_argument": "--journey-results",
+    "retained_fields": ["journey_id", "status", "outcome", "status_code", "collected_at"],
+    "raw_auth_material": "excluded"
+  },
   "invocations": [
     {
       "id": "version",

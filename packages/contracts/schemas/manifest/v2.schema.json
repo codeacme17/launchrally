@@ -25,7 +25,7 @@
           "description": "Compatibility field containing the confirmed public targets for the intended environment.",
           "$ref": "#/$defs/intentState"
         },
-        "core_journeys": { "$ref": "#/$defs/intentState" }
+        "core_journeys": { "$ref": "#/$defs/journeyIntentState" }
       },
       "additionalProperties": false
     },
@@ -65,6 +65,67 @@
         { "$ref": "#/$defs/unknownState" },
         { "$ref": "#/$defs/notApplicableState" }
       ]
+    },
+    "journeyIntentState": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["state", "value"],
+          "properties": {
+            "state": { "const": "declared" },
+            "value": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  { "type": "string", "minLength": 1 },
+                  { "$ref": "#/$defs/publicJourney" },
+                  { "$ref": "#/$defs/protectedJourney" },
+                  { "$ref": "#/$defs/legacyJourney" }
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        { "$ref": "#/$defs/unknownState" },
+        { "$ref": "#/$defs/notApplicableState" }
+      ]
+    },
+    "publicJourney": {
+      "type": "object",
+      "required": ["purpose", "path", "method"],
+      "properties": {
+        "purpose": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "pattern": "^/(?!/)" },
+        "method": { "const": "GET" }
+      },
+      "additionalProperties": false
+    },
+    "legacyJourney": {
+      "description": "Compatibility shape for v2 journey objects published before protected journey contracts; versioned objects are excluded and remain fail-closed.",
+      "type": "object",
+      "not": { "required": ["schema_version"] }
+    },
+    "protectedJourney": {
+      "type": "object",
+      "required": ["schema_version", "purpose", "path", "method", "access"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/protected-journey/v1" },
+        "purpose": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "pattern": "^/(?!/)" },
+        "method": { "const": "GET" },
+        "access": {
+          "type": "object",
+          "required": ["authentication_class", "authenticated_status_codes"],
+          "properties": {
+            "authentication_class": { "enum": ["user", "staff", "signed_token"] },
+            "anonymous_status_codes": { "type": "array", "items": { "type": "integer", "minimum": 300, "maximum": 499 }, "minItems": 1, "maxItems": 10, "uniqueItems": true },
+            "authenticated_status_codes": { "type": "array", "items": { "type": "integer", "minimum": 200, "maximum": 299 }, "minItems": 1, "maxItems": 10, "uniqueItems": true }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     },
     "declaredState": {
       "type": "object",

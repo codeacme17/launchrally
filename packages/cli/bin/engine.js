@@ -536,13 +536,14 @@ async function main() {
     const cwd = optionValue("--cwd") ?? process.cwd();
     const answers = jsonOption("--answers");
     const permissionDecisions = jsonOption("--permissions");
-    if (answers.error || permissionDecisions.error) {
+    const journeyResults = jsonOption("--journey-results");
+    if (answers.error || permissionDecisions.error || journeyResults.error) {
       print({
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
         operation: "audit",
         error: "invalid_option_json",
-        message: "Audit answers and permission decisions must use valid JSON.",
+        message: "Audit answers, permission decisions, and journey results must use valid JSON.",
       });
       return 2;
     }
@@ -552,6 +553,7 @@ async function main() {
         answers: answers.value,
         confirmation: optionValue("--confirm"),
         permission_decisions: permissionDecisions.value,
+        journey_results: journeyResults.value,
       });
       print(result);
       return result.status === "execution_error" ? 2 : 0;
@@ -772,13 +774,14 @@ async function main() {
     }
     const checks = jsonOption("--checks");
     const permissionDecisions = jsonOption("--permissions");
-    if (checks.error || permissionDecisions.error) {
+    const journeyResults = jsonOption("--journey-results");
+    if (checks.error || permissionDecisions.error || journeyResults.error) {
       print({
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
         operation: "verify",
         error: "invalid_option_json",
-        message: "Verify Check IDs and permission decisions must use valid JSON.",
+        message: "Verify Check IDs, permission decisions, and journey results must use valid JSON.",
       });
       return 2;
     }
@@ -788,6 +791,7 @@ async function main() {
       check_ids: checks.value,
       resume_token: optionValue("--resume"),
       permission_decisions: permissionDecisions.value,
+      journey_results: journeyResults.value,
     });
     print(result);
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;

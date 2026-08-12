@@ -470,6 +470,9 @@ test("the structured Launch Plan is versioned and rejects incomplete plan items"
   const plan = runPlan(audit, { handoff_requested: true });
 
   assert.equal(assertValidLaunchPlan(plan), true);
+  const historical = structuredClone(plan);
+  delete historical.authenticated_journeys;
+  assert.equal(assertValidLaunchPlan(historical), true);
   const incomplete = structuredClone(plan);
   delete incomplete.items[0].problem;
   assert.throws(
@@ -522,6 +525,75 @@ test("Plan currentness uses the explicit repository cwd rather than a Report-sup
   assert.equal(result.status, "completed");
   assert.equal(result.source_report_id, audit.report.report_id);
   assert.equal(runPlanCore(audit).status, "needs_refresh");
+});
+
+test("Plan preserves each protected declaration and its typed authenticated result", async () => {
+  const directory = await fixture();
+  const initial = await runAudit(directory, "0.1.0");
+  const confirmation = await runAudit(directory, "0.1.0", {
+    resume_token: initial.interaction.resume_token,
+    answers: {
+      ...ANSWERS,
+      core_journeys: [{
+        schema_version: "launchrally.dev/protected-journey/v1",
+        method: "GET",
+        path: "/control",
+        purpose: "staff Control Room loads",
+        access: {
+          authentication_class: "staff",
+          authenticated_status_codes: [200],
+        },
+      }],
+    },
+  });
+  const permission = await runAudit(directory, "0.1.0", {
+    resume_token: confirmation.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const input = await runAudit(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: {
+      public_verification: "denied",
+      authenticated_journey_verification: "approved",
+    },
+  });
+  const audit = await runAudit(directory, "0.1.0", {
+    resume_token: input.interaction.resume_token,
+    journey_results: {
+      schema_version: "launchrally.dev/authenticated-journey-results/v1",
+      adapter_version: "host-agent-authenticated-journey/v1",
+      results: [{
+        journey_id: "target-1:journey-1:authenticated",
+        status: "unverified",
+        outcome: "insufficient_capability",
+        status_code: null,
+        collected_at: new Date().toISOString(),
+      }],
+    },
+  });
+
+  const result = runPlan(audit);
+  const authenticatedEntry = audit.evidence_index.entries.find(
+    ({ evidence_kind }) => evidence_kind === "authenticated_journey_observation",
+  );
+
+  assert.deepEqual(result.authenticated_journeys, [{
+    journey_id: "target-1:journey-1:authenticated",
+    target: "https://example.com/control",
+    method: "GET",
+    purpose: "staff Control Room loads",
+    authentication_class: "staff",
+    expected_status_codes: [200],
+    result: {
+      status: "unverified",
+      outcome: "insufficient_capability",
+      status_code: null,
+      collected_at: authenticatedEntry.collected_at,
+      evidence_digest: authenticatedEntry.digest,
+      current: authenticatedEntry.current,
+      currentness: authenticatedEntry.currentness,
+    },
+  }]);
 });
 
 test("Human Mode explains Findings, investigation locations, Evidence, and Gaps separately", async () => {

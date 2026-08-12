@@ -4,7 +4,7 @@ This package installs Codex Plugin metadata plus a generated copy of the LaunchR
 
 ## Status
 
-LaunchRally 0.3.0 is an **Experimental P0** release. It is Product Complete at P0, but it is not presented as stable or P0 Validated.
+LaunchRally 0.3.0 is an **Experimental P0** release. It is Product Complete and P0 Validated, but it is not presented as stable.
 
 ## CLI prerequisite
 

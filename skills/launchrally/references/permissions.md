@@ -3,10 +3,11 @@
 - Starting an Audit authorizes only the documented Local Safe Scan.
 - Confirming an Audit Brief confirms scope; it grants no public or Provider permission.
 - Public network Checks require their own decision for the disclosed target list.
+- Authenticated Core Journey reads require a separate decision for the versioned plan. Approval covers only its exact GET targets, authentication classes, expected status codes, and normalized result fields.
 - Provider reads require one decision per Provider and exact metadata scope. Present every entry in `scope.commands`; approval covers only that disclosed sequence.
 - Preserve prior decisions when resuming. A decided boundary cannot change within the interaction.
 - A denial produces an explicit Verification Gap; it never ends the entire Audit.
-- Never request or persist secret values. Use the user's existing official Provider CLI or API session when that integration is implemented.
+- Keep authentication material inside the user's existing host or official Provider session. Collect only the CLI-disclosed normalized fields; never request, copy, print, pass, or persist cookies, headers, tokens, storage values, login credentials, response bodies, or account identifiers.
 - Clerk reads application and instance environment metadata with `clerk apps list --json`.
 - Neon reads JSON project, branch, and database metadata with the existing linked-project or single-project `neonctl` context and analytics disabled.
 - Resend reads bounded JSON domain and sent-email status metadata with telemetry disabled; retain no address, subject, message ID, DNS record, or credential.
