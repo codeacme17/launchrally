@@ -60,6 +60,7 @@ Complete.
 | P0-RELEASE-01 | Five exact public packages publish with provenance under the Experimental channel | Registry and provenance verification | #40 | Complete |
 | P0-RELEASE-02 | Exact public CLI and both Plugin paths pass clean external smoke tests before GitHub prerelease creation | Post-publication workflow | #40 | Complete |
 | P0-RELEASE-03 | Packed and exact public Launchers complete fixture-driven installation, delegation, lifecycle, and full verification journeys while preserving project data | Packed and post-publication artifact journeys | #99 | Complete |
+| P0-RELEASE-04 | Stable promotion requires reviewed eligibility, a new coherent version through Trusted Publishing, latest-channel smoke, and an approved GitHub release | Stable promotion contract and protected workflow | #108 | Complete |
 | P0-VALIDATE-01 | Validation Log remains aggregate, non-identifying, append-only, and reviewed | Validation contract tests | #41 | Complete |
 | P0-VALIDATE-02 | P0 Validated requires a documented qualitative decision while the Quality Floor remains satisfied | Maintainer validation record | #41 | Complete |
 

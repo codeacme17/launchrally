@@ -10,6 +10,7 @@ const root = rootOption === -1
   : path.resolve(process.argv[rootOption + 1] ?? "");
 const tagOption = process.argv.indexOf("--tag");
 const tag = tagOption === -1 ? "" : process.argv[tagOption + 1] ?? "";
+const allowPromotionHead = process.argv.includes("--allow-promotion-head");
 
 function fail(code, detail) {
   throw new Error(`${code}: ${detail}`);
@@ -38,7 +39,7 @@ async function validateReleaseRef() {
   if (tagCommit !== headCommit) {
     fail("release_tag_checkout_mismatch", `${tagCommit} != ${headCommit}`);
   }
-  if (tagCommit !== mainCommit) {
+  if (!allowPromotionHead && tagCommit !== mainCommit) {
     fail("release_tag_not_on_main", `${tagCommit} != ${mainCommit}`);
   }
   return {
@@ -55,7 +56,9 @@ try {
   process.stdout.write(
     process.argv.includes("--json")
       ? `${JSON.stringify(result)}\n`
-      : `Validated annotated release tag ${result.tag} on origin/main.\n`,
+      : allowPromotionHead
+        ? `Validated annotated promotion tag ${result.tag}.\n`
+        : `Validated annotated release tag ${result.tag} on origin/main.\n`,
   );
 } catch (error) {
   process.stderr.write(`${error.message}\n`);

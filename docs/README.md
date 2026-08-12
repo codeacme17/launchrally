@@ -34,3 +34,4 @@ the user-facing sections, but remain versioned because CI validates them.
 - [Phase 0 release and validation](maintainers/phase-0-validation.md)
 - [Phase 0 validation log](maintainers/phase-0-validation-log.json)
 - [Experimental release runbook](maintainers/release-runbook.md)
+- [Stable promotion runbook](maintainers/stable-promotion.md)

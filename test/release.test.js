@@ -16,6 +16,13 @@ const releaseManifest = JSON.parse(await readFile(
   path.join(root, "release/artifacts.json"),
   "utf8",
 ));
+const stableE2eEvidence = {
+  approved_permission: "docs/maintainers/stable-e2e-evidence.md",
+  claude_plugin: "docs/maintainers/stable-e2e-evidence.md",
+  codex_plugin: "docs/maintainers/stable-e2e-evidence.md",
+  denied_permission: "docs/maintainers/stable-e2e-evidence.md",
+  direct_cli: "docs/maintainers/stable-e2e-evidence.md",
+};
 
 test("Claude public smoke recognizes the installed-list schema", () => {
   const installed = {
@@ -52,6 +59,136 @@ async function createReleaseFixture() {
     "release",
     "skills",
   ]);
+}
+
+async function createStablePromotionFixture() {
+  const fixture = await copyRepositoryFixture(root, "launchrally-stable-promotion-", [
+    ".agents",
+    ".claude-plugin",
+    ".github",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md",
+    "adapters",
+    "docs",
+    "package.json",
+    "package-lock.json",
+    "packages",
+    "release",
+    "scripts",
+    "skills",
+    "test",
+  ]);
+  const logPath = path.join(fixture, "docs/maintainers/phase-0-validation-log.json");
+  const contractPath = path.join(fixture, "release/p0.json");
+  const acceptancePath = path.join(fixture, "release/p0-acceptance.json");
+  const log = JSON.parse(await readFile(logPath, "utf8"));
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  const acceptance = JSON.parse(await readFile(acceptancePath, "utf8"));
+  Object.assign(log.entries.at(-1), {
+    validation_decision: {
+      status: "validated",
+      rationale: "consistent_directional_evidence",
+      evidence_summary: {
+        represented_contexts: "represented_contexts_established",
+        repeated_patterns: "repeated_patterns_established",
+        recurring_p1_needs: "recurring_p1_needs_reviewed",
+        resulting_decisions: "explicit_p0_validation_decision",
+      },
+    },
+    p1_gate: {
+      discovery: "allowed",
+      authority_expanding_implementation: "allowed",
+    },
+  });
+  Object.assign(contract, {
+    release_status: "stable",
+    validation_status: "validated",
+    p0_validated: true,
+    stable_promotion: {
+      status: "approved",
+      maintainer_e2e_status: "complete",
+      maintainer_e2e_evidence: stableE2eEvidence,
+      approved_tag: "v0.3.0",
+    },
+    p1_authority: "allowed",
+  });
+  acceptance.release_status = "stable";
+  await writeFile(
+    path.join(fixture, "docs/maintainers/stable-e2e-evidence.md"),
+    "# Stable E2E evidence\n\nAll required journeys completed.\n",
+  );
+  for (const document of contract.release_status_documents) {
+    const documentPath = path.join(fixture, document.path);
+    const content = await readFile(documentPath, "utf8");
+    const updated = content.replace(document.experimental, document.stable);
+    assert.notEqual(updated, content, `${document.path} must contain the Experimental claim`);
+    await writeFile(documentPath, updated);
+  }
+  await Promise.all([
+    writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`),
+    writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
+    writeFile(acceptancePath, `${JSON.stringify(acceptance, null, 2)}\n`),
+  ]);
+  return fixture;
+}
+
+async function createStablePromotionCommandStubs() {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-stable-commands-"));
+  const logPath = path.join(directory, "calls.jsonl");
+  for (const command of ["npm", "gh"]) {
+    const scriptPath = path.join(directory, `${command}-stub.cjs`);
+    await writeFile(scriptPath, `
+const fs = require("node:fs");
+const command = ${JSON.stringify(command)};
+const args = process.argv.slice(2);
+fs.appendFileSync(
+  process.env.STABLE_PROMOTION_STUB_LOG,
+  JSON.stringify({ command, arguments: args }) + "\\n",
+);
+if (command === "npm" && args[0] === "view") {
+  const existing = (process.env.STABLE_PROMOTION_EXISTING || "").split(",").filter(Boolean);
+  if (existing.includes("all") || existing.includes(args[1])) {
+    process.stdout.write(JSON.stringify(args[1].slice(args[1].lastIndexOf("@") + 1)));
+    process.exit(0);
+  }
+  process.stderr.write("npm error code E404\\n");
+  process.exit(1);
+}
+if (command === "gh" && args[0] === "release" && args[1] === "view") {
+  if (process.env.STABLE_PROMOTION_GITHUB_RELEASE === "existing") {
+    process.stdout.write(JSON.stringify({ isDraft: false, isPrerelease: false }));
+    process.exit(0);
+  }
+  process.stderr.write("release not found\\n");
+  process.exit(1);
+}
+if (
+  command === "gh"
+  && args[0] === "release"
+  && args[1] === "create"
+  && process.env.STABLE_PROMOTION_GITHUB_RELEASE === "existing"
+) {
+  process.stderr.write("release already exists\\n");
+  process.exit(1);
+}
+`);
+    if (process.platform === "win32") {
+      await writeFile(
+        path.join(directory, `${command}.cmd`),
+        `@echo off\r\n"${process.execPath}" "%~dp0${command}-stub.cjs" %*\r\n`,
+      );
+    } else {
+      const executable = path.join(directory, command);
+      await writeFile(
+        executable,
+        `#!/usr/bin/env node\n${await readFile(scriptPath, "utf8")}`,
+      );
+      await chmod(executable, 0o755);
+    }
+  }
+  return { directory, logPath };
 }
 
 test("release validation proves one SemVer across CLI, Plugins, and bundled Skills", async () => {
@@ -408,6 +545,411 @@ test("release validation plans exact public CLI and Plugin smoke inputs", async 
   });
 });
 
+test("Stable public smoke verifies the latest dist-tag", async () => {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "scripts/test-release-artifacts.mjs",
+      "--public",
+      "--dist-tag",
+      "latest",
+      "--dry-run",
+      "--json",
+    ],
+    { cwd: root },
+  );
+  const plan = JSON.parse(stdout);
+
+  assert.deepEqual(
+    plan.registry_verification,
+    releaseManifest.packages.map(({ name }) => ({
+      package: name,
+      dist_tag: "latest",
+      expected_version: "0.3.0",
+    })),
+  );
+});
+
+test("Stable promotion plans a new coherent version through trusted publishing", async () => {
+  const fixture = await createStablePromotionFixture();
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "scripts/promote-stable.mjs",
+      "--root",
+      fixture,
+      "--tag",
+      "v0.3.0",
+      "--dry-run",
+      "--json",
+    ],
+    { cwd: root },
+  );
+
+  assert.deepEqual(JSON.parse(stdout), {
+    status: "planned",
+    strategy: "new_coherent_version",
+    tag: "v0.3.0",
+    version: "0.3.0",
+    packages: releaseManifest.packages.map(({ name }) => name),
+    publish: releaseManifest.packages.map(({ name }) => ({
+      command: "npm",
+      arguments: [
+        "publish",
+        "--workspace",
+        name,
+        "--provenance",
+        "--access",
+        "public",
+        "--tag",
+        "latest",
+      ],
+    })),
+    smoke: {
+      command: "npm",
+      arguments: ["run", "test:public-release", "--", "--dist-tag", "latest", "--json"],
+    },
+    github_release: {
+      command: "gh",
+      arguments: [
+        "release",
+        "create",
+        "v0.3.0",
+        "--verify-tag",
+        "--generate-notes",
+        "--latest",
+        "--title",
+        "LaunchRally v0.3.0",
+      ],
+    },
+  });
+});
+
+test("Stable promotion rejects every ineligible release state", async () => {
+  const cases = [
+    {
+      name: "product completion",
+      file: "release/p0.json",
+      mutate: (value) => { value.product_status = "suspended"; },
+      blocker: "product_status",
+    },
+    {
+      name: "Stable release approval",
+      file: "release/p0.json",
+      mutate: (value) => { value.release_status = "experimental"; },
+      blocker: "release_status",
+    },
+    {
+      name: "validation status",
+      file: "release/p0.json",
+      mutate: (value) => { value.validation_status = "collecting"; },
+      blocker: "validation_status",
+    },
+    {
+      name: "P0 Validated decision",
+      file: "release/p0.json",
+      mutate: (value) => { value.p0_validated = false; },
+      blocker: "p0_validated",
+    },
+    {
+      name: "Quality Floor",
+      file: "release/p0.json",
+      mutate: (value) => { value.quality_floor_status = "suspended"; },
+      blocker: "quality_floor_status",
+    },
+    {
+      name: "promotion approval",
+      file: "release/p0.json",
+      mutate: (value) => { value.stable_promotion.status = "not_approved"; },
+      blocker: "stable_promotion.status",
+    },
+    {
+      name: "maintainer E2E",
+      file: "release/p0.json",
+      mutate: (value) => { value.stable_promotion.maintainer_e2e_status = "pending"; },
+      blocker: "stable_promotion.maintainer_e2e_status",
+    },
+    {
+      name: "maintainer E2E evidence",
+      file: "release/p0.json",
+      mutate: (value) => { delete value.stable_promotion.maintainer_e2e_evidence.direct_cli; },
+      blocker: "stable_promotion.maintainer_e2e_evidence",
+    },
+    {
+      name: "approved tag",
+      file: "release/p0.json",
+      mutate: (value) => { value.stable_promotion.approved_tag = "v0.3.1"; },
+      blocker: "stable_promotion.approved_tag",
+    },
+    {
+      name: "acceptance completion",
+      file: "release/p0-acceptance.json",
+      mutate: (value) => { value.requirements[0].status = "open"; },
+      blocker: "acceptance.requirements",
+    },
+  ];
+
+  for (const scenario of cases) {
+    const fixture = await createStablePromotionFixture();
+    const filePath = path.join(fixture, scenario.file);
+    const value = JSON.parse(await readFile(filePath, "utf8"));
+    scenario.mutate(value);
+    await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`);
+    await assert.rejects(
+      execFileAsync(
+        process.execPath,
+        [
+          "scripts/promote-stable.mjs",
+          "--root",
+          fixture,
+          "--tag",
+          "v0.3.0",
+          "--dry-run",
+          "--json",
+        ],
+        { cwd: root },
+      ),
+      (error) => {
+        assert.match(error.stderr, /stable_promotion_blocked/u, scenario.name);
+        assert.match(error.stderr, new RegExp(scenario.blocker.replaceAll(".", "\\."), "u"));
+        return true;
+      },
+      scenario.name,
+    );
+  }
+});
+
+test("Stable promotion requires the authoritative five-package release set", async () => {
+  const fixture = await createStablePromotionFixture();
+  const manifestPath = path.join(fixture, "release/artifacts.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.packages.pop();
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.0", "--dry-run"],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /stable_promotion_blocked/u);
+      assert.match(error.stderr, /release\.packages/u);
+      return true;
+    },
+  );
+});
+
+test("Stable promotion rejects a prerelease SemVer", async () => {
+  const fixture = await createStablePromotionFixture();
+  const packagePath = path.join(fixture, "package.json");
+  const contractPath = path.join(fixture, "release/p0.json");
+  const packageJson = JSON.parse(await readFile(packagePath, "utf8"));
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  packageJson.version = "0.3.0-rc.1";
+  contract.stable_promotion.approved_tag = "v0.3.0-rc.1";
+  await Promise.all([
+    writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`),
+    writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
+  ]);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "scripts/promote-stable.mjs",
+        "--root",
+        fixture,
+        "--tag",
+        "v0.3.0-rc.1",
+        "--dry-run",
+      ],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /stable_promotion\.approved_tag/u);
+      return true;
+    },
+  );
+});
+
+test("Stable promotion publishes, verifies, and announces through public commands", async () => {
+  const fixture = await createStablePromotionFixture();
+  const commands = await createStablePromotionCommandStubs();
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [
+      "scripts/promote-stable.mjs",
+      "--root",
+      fixture,
+      "--tag",
+      "v0.3.0",
+      "--json",
+    ],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        PATH: `${commands.directory}${path.delimiter}${process.env.PATH ?? ""}`,
+        STABLE_PROMOTION_STUB_LOG: commands.logPath,
+      },
+    },
+  );
+
+  assert.deepEqual(JSON.parse(stdout), {
+    status: "completed",
+    strategy: "new_coherent_version",
+    tag: "v0.3.0",
+    version: "0.3.0",
+    publication: "published",
+    smoke: "verified",
+    github_release: "created",
+  });
+  const calls = (await readFile(commands.logPath, "utf8"))
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.deepEqual(calls, [
+    ...releaseManifest.packages.map(({ name }) => ({
+      command: "npm",
+      arguments: ["view", `${name}@0.3.0`, "version", "--json"],
+    })),
+    ...releaseManifest.packages.map(({ name }) => ({
+      command: "npm",
+      arguments: [
+        "publish",
+        "--workspace",
+        name,
+        "--provenance",
+        "--access",
+        "public",
+        "--tag",
+        "latest",
+      ],
+    })),
+    {
+      command: "npm",
+      arguments: ["run", "test:public-release", "--", "--dist-tag", "latest", "--json"],
+    },
+    {
+      command: "gh",
+      arguments: ["release", "view", "v0.3.0", "--json", "isDraft,isPrerelease"],
+    },
+    {
+      command: "gh",
+      arguments: [
+        "release",
+        "create",
+        "v0.3.0",
+        "--verify-tag",
+        "--generate-notes",
+        "--latest",
+        "--title",
+        "LaunchRally v0.3.0",
+      ],
+    },
+  ]);
+});
+
+test("Stable promotion resumes only after a coherent publication", async () => {
+  const fixture = await createStablePromotionFixture();
+  const commands = await createStablePromotionCommandStubs();
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.0", "--json"],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        PATH: `${commands.directory}${path.delimiter}${process.env.PATH ?? ""}`,
+        STABLE_PROMOTION_STUB_LOG: commands.logPath,
+        STABLE_PROMOTION_EXISTING: "all",
+      },
+    },
+  );
+  assert.equal(JSON.parse(stdout).publication, "resumed");
+  const calls = (await readFile(commands.logPath, "utf8"))
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.equal(calls.filter(({ arguments: arguments_ }) => arguments_[0] === "publish").length, 0);
+  assert.deepEqual(calls.slice(-3).map(({ command }) => command), ["npm", "gh", "gh"]);
+});
+
+test("Stable promotion rejects a partially published coherent version", async () => {
+  const fixture = await createStablePromotionFixture();
+  const commands = await createStablePromotionCommandStubs();
+  const existing = `${releaseManifest.packages[0].name}@0.3.0`;
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.0", "--json"],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          PATH: `${commands.directory}${path.delimiter}${process.env.PATH ?? ""}`,
+          STABLE_PROMOTION_STUB_LOG: commands.logPath,
+          STABLE_PROMOTION_EXISTING: existing,
+        },
+      },
+    ),
+    (error) => {
+      assert.match(error.stderr, /partial_stable_publication/u);
+      assert.match(error.stderr, /new coherent version/iu);
+      return true;
+    },
+  );
+  const calls = (await readFile(commands.logPath, "utf8"))
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.equal(calls.every(({ arguments: arguments_ }) => arguments_[0] === "view"), true);
+});
+
+test("Stable promotion reconciles an existing GitHub release on retry", async () => {
+  const fixture = await createStablePromotionFixture();
+  const commands = await createStablePromotionCommandStubs();
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["scripts/promote-stable.mjs", "--root", fixture, "--tag", "v0.3.0", "--json"],
+    {
+      cwd: root,
+      env: {
+        ...process.env,
+        PATH: `${commands.directory}${path.delimiter}${process.env.PATH ?? ""}`,
+        STABLE_PROMOTION_STUB_LOG: commands.logPath,
+        STABLE_PROMOTION_EXISTING: "all",
+        STABLE_PROMOTION_GITHUB_RELEASE: "existing",
+      },
+    },
+  );
+  assert.equal(JSON.parse(stdout).github_release, "reconciled");
+  const calls = (await readFile(commands.logPath, "utf8"))
+    .trim()
+    .split("\n")
+    .map(JSON.parse);
+  assert.deepEqual(calls.slice(-2), [
+    {
+      command: "gh",
+      arguments: ["release", "view", "v0.3.0", "--json", "isDraft,isPrerelease"],
+    },
+    {
+      command: "gh",
+      arguments: [
+        "release",
+        "edit",
+        "v0.3.0",
+        "--draft=false",
+        "--prerelease=false",
+        "--latest",
+        "--title",
+        "LaunchRally v0.3.0",
+      ],
+    },
+  ]);
+});
+
 test("packed artifacts complete installation, delegation, lifecycle, and full verification journeys", async () => {
   const { stdout } = await execFileAsync(
     "npm",
@@ -671,6 +1213,53 @@ test("release CI verifies clean artifacts before OIDC provenance publishing", as
   );
 });
 
+test("release CI exposes an approved Stable promotion path through the trusted workflow", async () => {
+  const release = await readFile(
+    path.join(root, ".github/workflows/release.yml"),
+    "utf8",
+  );
+
+  assert.match(release, /workflow_dispatch:[\s\S]*tag:[\s\S]*required: true/u);
+  assert.match(release, /workflow_dispatch:[\s\S]*promotion_pr:[\s\S]*required: true/u);
+  assert.match(
+    release,
+    /release_state:[\s\S]*outputs:[\s\S]*release_status:[\s\S]*GITHUB_OUTPUT/u,
+  );
+  assert.match(
+    release,
+    /contracts:[\s\S]*needs: release_state[\s\S]*if: github\.event_name == 'push' && needs\.release_state\.outputs\.release_status == 'experimental'/u,
+  );
+  assert.match(
+    release,
+    /journeys:[\s\S]*needs: release_state[\s\S]*if: github\.event_name == 'push' && needs\.release_state\.outputs\.release_status == 'experimental'/u,
+  );
+  assert.match(
+    release,
+    /stable-promotion:[\s\S]*if: github\.event_name == 'workflow_dispatch'/u,
+  );
+  assert.match(release, /stable-promotion:[\s\S]*environment: npm/u);
+  assert.match(release, /stable-promotion:[\s\S]*contents: write[\s\S]*id-token: write/u);
+  assert.match(release, /stable-promotion:[\s\S]*pull-requests: write/u);
+  assert.match(release, /stable-promotion:[\s\S]*ref: \$\{\{ inputs\.tag \}\}/u);
+  assert.match(release, /stable-promotion:[\s\S]*npm@11\.17\.0/u);
+  assert.match(
+    release,
+    /stable-promotion:[\s\S]*npm run validate:acceptance -- --require-stable-ready/u,
+  );
+  assert.match(release, /stable-promotion:[\s\S]*npm run validate:p0/u);
+  assert.match(release, /stable-promotion:[\s\S]*npm run validate:release -- --tag/u);
+  assert.match(
+    release,
+    /stable-promotion:[\s\S]*npm run validate:release-ref -- --tag[^\n]*--allow-promotion-head/u,
+  );
+  assert.match(release, /stable-promotion:[\s\S]*npm run test:artifacts/u);
+  assert.match(
+    release,
+    /stable-promotion:[\s\S]*\.state\)" = "OPEN"[\s\S]*\.mergeable\)" = "MERGEABLE"[\s\S]*\.mergeStateStatus\)" = "CLEAN"[\s\S]*\.reviewDecision\)" = "APPROVED"[\s\S]*--phase publish[\s\S]*gh pr merge[\s\S]*--phase announce/u,
+  );
+  assert.doesNotMatch(release, /NPM_TOKEN|NODE_AUTH_TOKEN|secrets\./u);
+});
+
 test("release validation requires an annotated tag on the approved main commit", async () => {
   const repository = await mkdtemp(path.join(os.tmpdir(), "launchrally-release-ref-"));
   await execFileAsync("git", ["init", "--quiet", "--initial-branch=main"], { cwd: repository });
@@ -739,6 +1328,20 @@ test("release validation requires an annotated tag on the approved main commit",
       return true;
     },
   );
+  const { stdout: promotionStdout } = await execFileAsync(
+    process.execPath,
+    [
+      path.join(root, "scripts/validate-release-ref.mjs"),
+      "--root",
+      repository,
+      "--tag",
+      "v0.3.0",
+      "--allow-promotion-head",
+      "--json",
+    ],
+    { cwd: root },
+  );
+  assert.equal(JSON.parse(promotionStdout).tag_type, "annotated");
 });
 
 test("release validation fixes partial publication forward with one coherent version", async () => {

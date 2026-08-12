@@ -193,6 +193,15 @@
       "status": "complete"
     },
     {
+      "id": "P0-RELEASE-04",
+      "requirement": "Stable promotion requires reviewed eligibility, a new coherent version through Trusted Publishing, latest-channel smoke, and an approved GitHub release",
+      "contracts": ["release/p0.json", "docs/maintainers/stable-promotion.md"],
+      "implementation": ["scripts/promote-stable.mjs", "scripts/test-release-artifacts.mjs", ".github/workflows/release.yml"],
+      "tests": [{"path": "test/release.test.js", "name": "Stable promotion publishes, verifies, and announces through public commands"}],
+      "tracking": "#108",
+      "status": "complete"
+    },
+    {
       "id": "P0-VALIDATE-01",
       "requirement": "Validation Log remains aggregate, non-identifying, append-only, and reviewed",
       "contracts": ["docs/maintainers/phase-0-validation-log.json"],
@@ -221,6 +230,7 @@
     {"id": "persistence_recovery", "requirement_ids": ["P0-HISTORY-01", "P0-HISTORY-02"], "command": "test:contracts", "evidence": {"type": "test", "path": "test/verify.test.js", "name": "Verify recovers a validated crashed transaction created under an earlier Report ID"}},
     {"id": "artifact_clean_install", "requirement_ids": ["P0-COVERAGE-01", "P0-RELEASE-01", "P0-RELEASE-03"], "command": "test:artifacts", "evidence": {"type": "script", "path": "scripts/test-release-artifacts.mjs"}},
     {"id": "native_plugins", "requirement_ids": ["P0-COVERAGE-02", "P0-RELEASE-02"], "command": "test:artifacts", "evidence": {"type": "script", "path": "scripts/test-release-artifacts.mjs"}},
-    {"id": "p0_release_contract", "requirement_ids": ["P0-QUALITY-01"], "command": "validate:p0", "evidence": {"type": "script", "path": "scripts/validate-p0.mjs"}}
+    {"id": "p0_release_contract", "requirement_ids": ["P0-QUALITY-01"], "command": "validate:p0", "evidence": {"type": "script", "path": "scripts/validate-p0.mjs"}},
+    {"id": "stable_promotion", "requirement_ids": ["P0-RELEASE-04"], "command": "test:release-contracts", "evidence": {"type": "test", "path": "test/release.test.js", "name": "Stable promotion publishes, verifies, and announces through public commands"}}
   ]
 }
