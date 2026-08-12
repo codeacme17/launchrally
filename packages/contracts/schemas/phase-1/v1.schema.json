@@ -164,7 +164,7 @@
             "required": ["capability_id", "domain", "summary", "requirement_facets", "decision_facets", "implementation_facets", "evidence_facets"],
             "properties": {
               "capability_id": { "$ref": "#/$defs/identifier" },
-              "domain": { "type": "string", "minLength": 1 },
+              "domain": { "enum": ["runtime", "identity", "data", "billing_entitlement", "object_storage", "communication", "background_work", "observability", "analytics_privacy", "dns_tls", "ci_cd", "secrets_configuration", "backup_recovery_retention"] },
               "summary": { "type": "string", "minLength": 1 },
               "requirement_facets": { "$ref": "#/$defs/nonEmptyStrings" },
               "decision_facets": { "$ref": "#/$defs/nonEmptyStrings" },

@@ -22,6 +22,14 @@ export {
   resolveExecutionAuthority,
 } from "./execution-authority.js";
 export { runToolchainLifecycle } from "./toolchain-lifecycle.js";
+export {
+  CAPABILITY_CATALOG_DOMAINS,
+  buildCapabilityGraph,
+  confirmDerivedObligations,
+  createCapabilityCatalog,
+  createIntegrationContract,
+  invalidatedOutputsForCatalogUpdate,
+} from "./capability-model.js";
 
 const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
   "Local Checks use only normalized, secret-safe repository facts.",

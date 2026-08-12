@@ -20,6 +20,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - When invoking the CLI or handling its states, read [references/cli-contract.md](references/cli-contract.md).
 - When inspecting or exchanging a Phase 1 architecture record, read [references/phase-1-contracts.md](references/phase-1-contracts.md). Contract availability alone does not make a Phase 1 operation executable.
 - When a typed `architect` interaction enters Product Intent discovery, read [references/product-intent.md](references/product-intent.md) before presenting semantic-analysis permission or confirmation.
+- When presenting a Capability Catalog, derived obligations, a Capability Graph, or an Integration Contract, read [references/capability-model.md](references/capability-model.md).
 
 ## Preserve these invariants
 

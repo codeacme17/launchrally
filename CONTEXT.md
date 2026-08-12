@@ -76,6 +76,10 @@ _Avoid_: Provider catalog, feature checklist
 The environment-bound applicability and dependency graph derived from a confirmed Product Intent Profile and a Capability Catalog.
 _Avoid_: Completion score, Provider architecture
 
+**Derived Obligation**:
+An inspectable candidate requirement linked from a confirmed source behavior to a target capability; it becomes confirmed only through explicit builder selection.
+_Avoid_: Hidden requirement, automatic Product Intent change
+
 **Integration Contract**:
 The Provider-neutral semantics required between two capabilities, including delivery, failure, privacy, Evidence, and invalidation behavior.
 _Avoid_: Provider webhook definition, SDK contract
