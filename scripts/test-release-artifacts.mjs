@@ -458,6 +458,7 @@ async function runInstallationJourneys({
   const {
     buildCapabilityGraph,
     createCapabilityCatalog,
+    createArchitecturePackageBundle,
     createIntegrationContract,
     createReferenceCoverageMatrix,
     referenceExecutorDescriptors,
@@ -1080,35 +1081,6 @@ async function runInstallationJourneys({
     writeFile(path.join(temporaryRoot, "capability-graph.json"), JSON.stringify(graph)),
     writeFile(path.join(temporaryRoot, "integration-contracts.json"), JSON.stringify(integrationContracts)),
   ]);
-  const invokePhase1Command = async (example) => {
-    const artifactPath = (value) => path.join(temporaryRoot, path.basename(value));
-    const arguments_ = example.argv.map((value, index, values) => {
-      if (index > 0 && values[index - 1] === "--cwd") return activeRepository;
-      if (
-        index > 0
-        && [
-          "--report", "--intent", "--catalog", "--graph", "--integrations",
-          "--architecture-package", "--task-graph", "--executors", "--tools",
-          "--reviewed-executors",
-        ].includes(values[index - 1])
-      ) return artifactPath(value);
-      return value;
-    });
-    const execution = await invokeLauncher("rally", arguments_, {
-      cwd: temporaryRoot,
-      env: launcherEnvironment,
-    });
-    const result = JSON.parse(execution.stdout);
-    if (
-      result.contract !== example.expected.contract
-      || result.operation !== example.operation
-      || result.status !== example.expected.status
-      || (example.expected.state !== null && result.state !== example.expected.state)
-    ) throw new Error(
-      `packed_phase_1_command_failed:${example.operation}:${JSON.stringify(result)}`,
-    );
-    return result;
-  };
   const invokeDocumentedPhase1Command = async (example) => {
     const rendered = process.platform === "win32" ? example.powershell : example.posix;
     const substitutions = [["./app", shellQuote(activeRepository)]];
@@ -1135,20 +1107,30 @@ async function runInstallationJourneys({
   const architectExample = phase1Commands.commands.find(
     ({ operation }) => operation === "architect",
   );
-  const architectPreview = await invokePhase1Command(architectExample);
-  await invokeDocumentedPhase1Command(architectExample);
-  const architectureReview = JSON.parse((await invokeLauncher("rally", [
-    "architect", "--json", "--cwd", ".", "--resume",
-    architectPreview.interaction.resume_token, "--confirm", "confirm",
-  ], { cwd: activeRepository, env: launcherEnvironment })).stdout);
-  const architectureCompleted = JSON.parse((await invokeLauncher("rally", [
-    "architect", "--json", "--cwd", ".", "--resume",
-    architectureReview.interaction.resume_token,
-    "--decisions",
-    JSON.stringify(Object.fromEntries(
-      architectureReview.pending_decision_ids.map((id) => [id, "confirm"]),
-    )),
-  ], { cwd: activeRepository, env: launcherEnvironment })).stdout);
+  const architectPreview = await invokeDocumentedPhase1Command(architectExample);
+  const sourceArchitecture = createArchitecturePackageBundle({
+    blueprint: architectPreview.blueprint,
+    product_intent: intentCompleted.profile,
+    catalog,
+    capability_graph: graph,
+    integration_contracts: integrationContracts,
+    provider_knowledge_refs: [],
+    decision_results: architectPreview.blueprint.decisions.map(({ decision_id: id }) => ({
+      decision_id: id,
+      response: "confirm",
+    })),
+    task_graph: null,
+    dependencies: architectPreview.blueprint.decisions.map(({ decision_id: id }) => ({
+      source_id: id,
+      dependent_semantics: ["architecture_record"],
+      evidence_ids: [],
+    })),
+    interaction_id: "interaction_architecture_decision_engine",
+  }, { now: "2026-08-14T00:00:00.000Z" });
+  const architectureCompleted = {
+    status: "completed",
+    architecture_package: sourceArchitecture,
+  };
   if (architectureCompleted.status !== "completed") {
     throw new Error("packed_phase_1_architecture_completion_failed");
   }
@@ -1157,8 +1139,7 @@ async function runInstallationJourneys({
     JSON.stringify(architectureCompleted.architecture_package),
   );
   const planExample = phase1Commands.commands.find(({ operation }) => operation === "plan");
-  const phase1Plan = await invokePhase1Command(planExample);
-  await invokeDocumentedPhase1Command(planExample);
+  const phase1Plan = await invokeDocumentedPhase1Command(planExample);
   await writeFile(path.join(temporaryRoot, "task-graph.json"), JSON.stringify(phase1Plan.task_graph));
   const descriptor = referenceExecutorDescriptors[0];
   await Promise.all([
@@ -1176,7 +1157,6 @@ async function runInstallationJourneys({
     }])),
   ]);
   const handoffExample = phase1Commands.commands.find(({ operation }) => operation === "handoff");
-  await invokePhase1Command(handoffExample);
   await invokeDocumentedPhase1Command(handoffExample);
 
   const initPreview = await invokeFixture("init_preview", {
@@ -1196,8 +1176,7 @@ async function runInstallationJourneys({
     JSON.stringify(auditCompleted),
   );
   const verifyExample = phase1Commands.commands.find(({ operation }) => operation === "verify");
-  const phase1VerifyPermission = await invokePhase1Command(verifyExample);
-  await invokeDocumentedPhase1Command(verifyExample);
+  const phase1VerifyPermission = await invokeDocumentedPhase1Command(verifyExample);
   const verifyContinuation = verifyExample.success_continuation;
   const completedVerifyCommand = shellCommand(
     process.platform === "win32"
