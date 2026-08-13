@@ -23,6 +23,7 @@ test("Launcher and Engine command classification skips every valued option", () 
     "--integrations",
     "--journey-results",
     "--output",
+    "--package",
     "--permissions",
     "--report",
     "--recover",

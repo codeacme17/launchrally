@@ -14,6 +14,7 @@ import {
   environmentTargetLabel,
   reviewedEnvironmentLabel,
   resolveExecutionAuthority,
+  persistArchitecturePackage,
   runAudit,
   runArchitectureDecisionEngine,
   runInit,
@@ -519,7 +520,7 @@ function help() {
     status: "completed",
     operation: "help",
     commands: {
-      core: ["audit", "architect", "init", "plan", "verify"],
+      core: ["audit", "architect", "architecture-package", "init", "plan", "verify"],
       bootstrap: [
         "toolchain status",
         "toolchain restore",
@@ -534,6 +535,7 @@ function help() {
       "Core commands:",
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
       "  architect Build and independently confirm a whole-product Architecture Blueprint",
+      "  architecture-package Preview or persist a confirmed immutable Architecture Package",
       "  init     Preview and confirm local adoption after a complete Audit Report",
       "  plan     Build a deterministic read-only Launch Plan from a current Report",
       "  verify   Recollect fresh Evidence for full or targeted verification",
@@ -805,6 +807,47 @@ async function main() {
     });
     print(result);
     return ["unavailable", "execution_error", "stale_input"].includes(result.status) ? 2 : 0;
+  }
+
+  if (command === "architecture-package") {
+    const cwd = optionValue("--cwd") ?? process.cwd();
+    const packagePath = optionValue("--package");
+    let architecturePackage;
+    try {
+      architecturePackage = JSON.parse(await readFile(packagePath, "utf8"));
+    } catch {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "architecture-package",
+        error: "invalid_architecture_package_file",
+        message: "The Architecture Package bundle could not be read and parsed.",
+      });
+      return 2;
+    }
+    try {
+      const persistence = await persistArchitecturePackage(cwd, architecturePackage, {
+        output_path: optionValue("--output"),
+        confirmation: optionValue("--confirm"),
+        resume_token: optionValue("--resume"),
+        launcher_version: VERSION,
+      });
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        operation: "architecture-package",
+        ...persistence,
+      });
+      return ["completed", "needs_confirmation"].includes(persistence.status) ? 0 : 1;
+    } catch (error) {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "architecture-package",
+        error: error.code ?? "architecture_package_persistence_failed",
+        message: error.message,
+      });
+      return 2;
+    }
   }
 
   if (command === "toolchain") {

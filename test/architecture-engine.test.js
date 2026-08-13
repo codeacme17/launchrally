@@ -331,9 +331,14 @@ test("each Blueprint decision can be accepted or rejected independently", async 
     resume_token: partial.resume_token,
     decision_responses: remaining,
   });
-  assert.equal(completed.status, "completed");
+  assert.equal(completed.status, "completed", JSON.stringify(completed));
   assert.equal(assertValidArchitectInteraction(completed.interaction), true);
   assert.equal(completed.decision_results.length, review.pending_decision_ids.length);
+  assert.equal(completed.architecture_package.package.currentness.state, "current");
+  assert.equal(
+    completed.architecture_package.architecture_record.confirmed_decisions.length,
+    review.pending_decision_ids.length - 1,
+  );
 });
 
 test("Agent CLI exposes the same typed Architecture decision semantics", async () => {

@@ -75,6 +75,7 @@
         "provider-tool-installation/v1/authority.json",
         "src/audit-interaction.js",
         "src/architecture-engine.js",
+        "src/architecture-package.js",
         "src/authenticated-journeys.js",
         "src/cancellation.js",
         "src/capability-model.js",

@@ -15,6 +15,7 @@ import {
 } from "@launchrally/contracts";
 
 import { sha256 } from "./local-history.js";
+import { createArchitecturePackageBundle } from "./architecture-package.js";
 import { evaluateReportCurrentness } from "./report-currentness.js";
 import { decodeResumeState, encodeResumeState } from "./resume-state.js";
 
@@ -459,6 +460,16 @@ export function runArchitectureDecisionEngine(cwd, source = {}, options = {}) {
       blueprint: createdBlueprint,
       source_refs: sourceRefs,
       responses: {},
+      package_source: {
+        product_intent: structuredClone(source.product_intent),
+        catalog: structuredClone(source.catalog),
+        capability_graph: structuredClone(source.capability_graph),
+        integration_contracts: structuredClone(source.integration_contracts),
+        provider_knowledge_refs: structuredClone(source.provider_knowledge_refs ?? []),
+        previous_package: source.previous_package
+          ? structuredClone(source.previous_package)
+          : undefined,
+      },
     };
     const request = { kind: "blueprint_confirmation", choices: ["confirm", "reject", "cancel"] };
     return result(
@@ -522,10 +533,35 @@ export function runArchitectureDecisionEngine(cwd, source = {}, options = {}) {
         choices: ["confirm", "reject"],
       }, { blueprint: state.blueprint, pending_decision_ids: pending, decision_results: decisionResults });
     }
+    const confirmed = decisionResults.filter(({ response }) => response === "confirm");
+    let architecturePackage = null;
+    if (confirmed.length > 0) {
+      try {
+        architecturePackage = createArchitecturePackageBundle({
+          blueprint: state.blueprint,
+          ...state.package_source,
+          decision_results: decisionResults,
+          task_graph: null,
+          dependencies: confirmed.map(({ decision_id: decisionId }) => ({
+            source_id: decisionId,
+            dependent_semantics: ["architecture_record"],
+            evidence_ids: [],
+          })),
+          interaction_id: "interaction_architecture_decision_engine",
+        });
+      } catch (error) {
+        return executionError(error.code ?? "invalid_architecture_package");
+      }
+    }
     return result("completed", "completed", null, state.source_refs, {
       kind: "none",
       choices: ["none"],
-    }, { outcome: "architecture_decisions_reviewed", blueprint: state.blueprint, decision_results: decisionResults });
+    }, {
+      outcome: "architecture_decisions_reviewed",
+      blueprint: state.blueprint,
+      decision_results: decisionResults,
+      architecture_package: architecturePackage,
+    });
   }
   return executionError("unsupported_architecture_state");
 }
