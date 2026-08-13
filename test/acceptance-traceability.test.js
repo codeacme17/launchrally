@@ -50,6 +50,7 @@ test("Phase 1 requirements map public contracts to executable Core and host jour
   assert.deepEqual(matrix.requirements.map(({ id }) => id), [
     "P1-AUTH-01",
     "P1-COMPAT-01",
+    "P1-ARCH-DESKTOP-01",
     "P1-HOST-01",
   ]);
   assert.ok(matrix.requirements[0].contracts.includes(

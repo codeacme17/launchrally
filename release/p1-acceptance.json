@@ -61,6 +61,25 @@
       "status": "complete"
     },
     {
+      "id": "P1-ARCH-DESKTOP-01",
+      "requirement": "Desktop shared-backend architecture is typed while distribution readiness remains explicitly excluded",
+      "contracts": [
+        "packages/contracts/schemas/desktop-shared-backend/v1.schema.json"
+      ],
+      "implementation": [
+        "packages/core/src/architecture-engine.js",
+        "packages/cli/bin/engine.js"
+      ],
+      "tests": [
+        {
+          "path": "test/architecture-engine.test.js",
+          "name": "desktop shared-backend assessment keeps distribution readiness explicitly Unknown"
+        }
+      ],
+      "tracking": "#136",
+      "status": "complete"
+    },
+    {
       "id": "P1-HOST-01",
       "requirement": "Codex and Claude resume Architecture and Handoff state from exact digest-bound local artifacts without prose reconstruction",
       "contracts": [

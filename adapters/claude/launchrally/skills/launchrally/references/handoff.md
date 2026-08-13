@@ -8,7 +8,7 @@ rally handoff --json --task-graph <task-graph-json> --executors <executor-descri
 
 Require `launchrally.dev/handoff-interaction/v1`. Preserve the opaque resume token across invocations. Never edit or reconstruct stored state, a Descriptor digest, a candidate batch, or a Handoff Package from terminal prose.
 
-To pause in Codex and resume in Claude, or the reverse, use only the adapter's `./resume` export to save a `launchrally.dev/host-resume-artifact/v1` file at an explicitly selected local path. The receiving adapter must read and validate that exact file before resuming. Do not paste Task state, the Handoff Package, or the opaque resume token into prose.
+To pause in Codex and resume in Claude, or the reverse, use only the adapter's `./resume` export to save a `launchrally.dev/host-resume-artifact/v1` file at an explicitly selected local path. The receiving adapter must read and validate that exact file against the owner-restricted host resume registry before resuming. Do not paste Task state, the Handoff Package, or the opaque resume token into prose.
 
 Present each candidate's environment, Tasks, effect class, target, exact tools, authentication assumptions and their unverified state, secret-reference handling, cancellation behavior, partial-failure semantics, availability, and narrowest-match recommendation. An available executable does not prove authentication. An unavailable tool or platform is not permission to install, update, downgrade, authenticate, request credentials, or invoke anything. Show installation commands only when returned from the reviewed exact-version authority; label them user-managed and do not execute them. Preserve manual/custom, defer, and cancel choices.
 

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -20,7 +20,6 @@ const MIGRATION_FILES = Object.freeze([
   ADOPTION_PATH,
   ".launchrally/phase-1/records/",
   ".launchrally/phase-1/transactions/",
-  ".launchrally/phase-1/transactions/.host-resume-key",
 ]);
 const PRESERVED_PATHS = Object.freeze([
   ".launchrally/manifest.yaml",
@@ -40,10 +39,10 @@ async function optionalStat(target) {
 async function validAdoption(root) {
   const launchrally = await optionalStat(path.join(root, ".launchrally"));
   const phase1 = await optionalStat(path.join(root, ".launchrally", "phase-1"));
-  if (
-    !launchrally?.isDirectory()
-    || launchrally.isSymbolicLink()
-  ) throw new Error("invalid_p1_adoption");
+  if (!launchrally) return false;
+  if (!launchrally.isDirectory() || launchrally.isSymbolicLink()) {
+    throw new Error("invalid_p1_adoption");
+  }
   if (!phase1) return false;
   if (!phase1.isDirectory() || phase1.isSymbolicLink()) {
     throw new Error("invalid_p1_adoption");
@@ -57,16 +56,6 @@ async function validAdoption(root) {
     if (!directoryStat?.isDirectory() || directoryStat.isSymbolicLink()) {
       throw new Error("invalid_p1_adoption");
     }
-  }
-  const keyStat = await optionalStat(path.join(
-    root,
-    ".launchrally",
-    "phase-1",
-    "transactions",
-    ".host-resume-key",
-  ));
-  if (!keyStat?.isFile() || keyStat.isSymbolicLink() || keyStat.size !== 32) {
-    throw new Error("invalid_p1_adoption");
   }
   const value = JSON.parse(await readFile(selected, "utf8"));
   assertValidPhase1Adoption(value);
@@ -134,6 +123,9 @@ function migrationState(root, source, options) {
     source: structuredClone(source),
     review_date: options.review_date,
     launcher_version: options.launcher_version,
+    desktop_shared_backend_capability_ids: structuredClone(
+      options.desktop_shared_backend_capability_ids,
+    ),
   };
 }
 
@@ -165,11 +157,6 @@ async function applyAdoption(state, fileOperations = {}) {
   try {
     await mkdir(path.join(staging, "records"), { recursive: true });
     await mkdir(path.join(staging, "transactions"), { recursive: true });
-    await writeFile(
-      path.join(staging, "transactions", ".host-resume-key"),
-      randomBytes(32),
-      { flag: "wx", mode: 0o600 },
-    );
     await writeFile(path.join(staging, "adoption.json"), `${JSON.stringify(content, null, 2)}\n`, {
       encoding: "utf8",
       flag: "wx",
@@ -227,6 +214,7 @@ export async function runArchitectureJourney(cwd, source = {}, options = {}, dep
     }
     const decision = runArchitectureDecisionEngine(root, state.source, {
       review_date: state.review_date,
+      desktop_shared_backend_capability_ids: state.desktop_shared_backend_capability_ids,
     });
     if (decision.status !== "needs_confirmation") return decision;
     try {

@@ -10,6 +10,7 @@ export async function runHumanArchitect({
   cwd,
   source,
   reviewDate,
+  desktopSharedBackendCapabilityIds,
   prompt,
   runArchitect,
 }) {
@@ -25,7 +26,10 @@ export async function runHumanArchitect({
       ],
     },
   });
-  let result = await runArchitect(cwd, source, { review_date: reviewDate });
+  let result = await runArchitect(cwd, source, {
+    review_date: reviewDate,
+    desktop_shared_backend_capability_ids: desktopSharedBackendCapabilityIds,
+  });
   if (result.status !== "needs_confirmation") return withHumanMode(result);
   if (result.migration_preview) {
     const answer = await prompt.confirmMigration(result.migration_preview);

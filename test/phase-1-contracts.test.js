@@ -16,6 +16,7 @@ import {
   CAPABILITY_CATALOG_SCHEMA,
   CAPABILITY_GRAPH_SCHEMA,
   COMPOSITE_ASSURANCE_SCHEMA,
+  DESKTOP_SHARED_BACKEND_SCHEMA,
   INTEGRATION_CONTRACT_SCHEMA,
   EXECUTION_RECEIPT_SCHEMA,
   EXECUTOR_DESCRIPTOR_SCHEMA,
@@ -39,6 +40,7 @@ import {
   assertValidCapabilityCatalog,
   assertValidCapabilityGraph,
   assertValidCompositeAssurance,
+  assertValidDesktopSharedBackend,
   assertValidIntegrationContract,
   assertValidExecutionReceipt,
   assertValidExecutorDescriptor,
@@ -175,12 +177,23 @@ async function allPositiveRecords() {
       ".launchrally/phase-1/adoption.json",
       ".launchrally/phase-1/records/",
       ".launchrally/phase-1/transactions/",
-      ".launchrally/phase-1/transactions/.host-resume-key",
     ],
     preserved_paths: [
       ".launchrally/manifest.yaml",
       ".launchrally/reports/",
       ".launchrally/evidence/",
+    ],
+  };
+  const desktopSharedBackend = {
+    schema_version: DESKTOP_SHARED_BACKEND_SCHEMA,
+    topology: "desktop_with_shared_backend",
+    capability_ids: ["runtime_execution"],
+    excluded_release_readiness: [
+      "signing",
+      "notarization",
+      "store_review",
+      "distribution",
+      "updater",
     ],
   };
   return [
@@ -208,6 +221,7 @@ async function allPositiveRecords() {
     phase1Adoption,
     phase1MigrationPreview,
     hostResumeArtifact,
+    desktopSharedBackend,
     verification.handoff_interaction,
   ];
 }
@@ -335,7 +349,7 @@ test("authenticated Journey attestation is a strict host integration contract", 
 });
 
 test("each Phase 1 contract publishes a stable standalone JSON Schema", async () => {
-  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 25);
+  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 26);
   for (const schemaVersion of PHASE_1_SCHEMA_VERSIONS) {
     const [contract, major] = schemaVersion.replace("launchrally.dev/", "").split("/v");
     const schema = JSON.parse(await readFile(
@@ -347,13 +361,53 @@ test("each Phase 1 contract publishes a stable standalone JSON Schema", async ()
   }
 });
 
+test("desktop shared-backend topology excludes desktop distribution readiness", async () => {
+  const topology = (await allPositiveRecords()).find(({ schema_version: schemaVersion }) =>
+    schemaVersion === DESKTOP_SHARED_BACKEND_SCHEMA);
+  assert.equal(assertValidDesktopSharedBackend(topology), true);
+  assert.equal(assertValidDesktopSharedBackend({
+    ...topology,
+    excluded_release_readiness: [...topology.excluded_release_readiness].reverse(),
+  }), true);
+  assert.throws(
+    () => assertValidDesktopSharedBackend({
+      ...topology,
+      excluded_release_readiness: topology.excluded_release_readiness.slice(1),
+    }),
+    (error) => error.code === "invalid_desktop_shared_backend",
+  );
+});
+
 test("Host Resume Artifacts bind the exact resumable interaction state", async () => {
   const artifact = (await allPositiveRecords()).find(({ schema_version: schemaVersion }) =>
     schemaVersion === HOST_RESUME_ARTIFACT_SCHEMA);
+  const withDigest = (changes) => {
+    const content = {
+      ...Object.fromEntries(Object.entries(artifact).filter(([key]) =>
+        !["artifact_id", "artifact_digest", "attestation"].includes(key))),
+      ...changes,
+    };
+    const digest = sha256(content);
+    return {
+      ...content,
+      artifact_id: `host_resume_${digest.slice(7, 27)}`,
+      artifact_digest: digest,
+      attestation: artifact.attestation,
+    };
+  };
 
   assert.equal(assertValidHostResumeArtifact(artifact), true);
   assert.throws(
-    () => assertValidHostResumeArtifact({ ...artifact, state: "completed" }),
+    () => assertValidHostResumeArtifact(withDigest({ state: "authority_preview" })),
+    (error) => error.code === "invalid_host_resume_artifact",
+  );
+  assert.throws(
+    () => assertValidHostResumeArtifact(withDigest({
+      portable_state: {
+        ...artifact.portable_state,
+        ciphertext: "a".repeat(220001),
+      },
+    })),
     (error) => error.code === "invalid_host_resume_artifact",
   );
 });

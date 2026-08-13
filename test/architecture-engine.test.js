@@ -249,7 +249,6 @@ test("first Architect use previews additive P1 adoption and denial preserves P0 
     ".launchrally/phase-1/adoption.json",
     ".launchrally/phase-1/records/",
     ".launchrally/phase-1/transactions/",
-    ".launchrally/phase-1/transactions/.host-resume-key",
   ]);
   assert.ok(preview.migration_preview.preserved_paths.includes(".launchrally/manifest.yaml"));
   assert.ok(preview.migration_preview.preserved_paths.includes(".launchrally/reports/"));
@@ -268,6 +267,30 @@ test("first Architect use previews additive P1 adoption and denial preserves P0 
   assert.equal(auditAfterDenial.status, "completed");
   assert.equal(auditAfterDenial.operation, "audit");
   assert.equal(auditAfterDenial.report.schema_version, "launchrally.dev/report/v2");
+});
+
+test("the initialized P0 migration preview resumes cross-host before adoption", async () => {
+  const directory = await initializedP0Fixture();
+  const source = await inputs(directory);
+  const codex = await import("../adapters/codex/launchrally/host-adapter/resume.js");
+  const claude = await import("../adapters/claude/launchrally/host-adapter/resume.js");
+  const before = await snapshotLaunchRally(directory);
+  const preview = await runArchitectureJourney(directory, source, {
+    review_date: "2026-08-13",
+    launcher_version: "0.3.2",
+  });
+  const artifactPath = path.join(directory, "migration-resume.json");
+  await codex.saveResumeArtifact(artifactPath, preview.interaction, directory);
+  assert.deepEqual(await snapshotLaunchRally(directory), before);
+
+  const resumed = await claude.resumeArtifactFile({
+    cwd: directory,
+    artifact_path: artifactPath,
+    options: { migration_confirmation: "deny", launcher_version: "0.3.2" },
+  });
+  assert.equal(resumed.status, "denied", JSON.stringify(resumed));
+  assert.equal(resumed.outcome, "p1_migration_denied");
+  assert.deepEqual(await snapshotLaunchRally(directory), before);
 });
 
 test("confirmed P1 adoption commits atomically and interruption preserves the P0 project", async () => {
@@ -494,6 +517,18 @@ test("desktop shared-backend assessment keeps distribution readiness explicitly 
   const decision = result.blueprint.decisions.find(({ capability_id: id }) =>
     id === "runtime_execution");
   assert.equal(decision.implementation_path, "existing_platform");
+  assert.deepEqual(result.desktop_topology, {
+    schema_version: "launchrally.dev/desktop-shared-backend/v1",
+    topology: "desktop_with_shared_backend",
+    capability_ids: ["runtime_execution"],
+    excluded_release_readiness: [
+      "signing",
+      "notarization",
+      "store_review",
+      "distribution",
+      "updater",
+    ],
+  });
   assert.match(decision.tradeoffs.join(" "), /signing.*notarization.*store review.*distribution.*updater/iu);
   assert.deepEqual(result.blueprint.unknowns.filter((value) =>
     value.startsWith("desktop_")), [
@@ -503,6 +538,10 @@ test("desktop shared-backend assessment keeps distribution readiness explicitly 
     "desktop_store_review_not_assessed",
     "desktop_updater_readiness_not_assessed",
   ]);
+  assert.equal(runArchitectureDecisionEngine(directory, source, {
+    review_date: "2026-08-13",
+    desktop_shared_backend_capability_ids: ["runtime_execution", "runtime_execution"],
+  }).error, "invalid_desktop_shared_backend_scope");
 });
 
 test("each Blueprint decision can be accepted or rejected independently", async () => {
@@ -555,20 +594,20 @@ test("Codex Architecture state resumes in Claude from one validated local artifa
   const blueprint = runArchitectureDecisionEngine(directory, source, {
     review_date: "2026-08-13",
   });
-  await mkdir(path.join(directory, ".launchrally", "phase-1", "transactions"), {
-    recursive: true,
-  });
-  await writeFile(
-    path.join(directory, ".launchrally", "phase-1", "transactions", ".host-resume-key"),
-    Buffer.alloc(32, 2),
-    { mode: 0o600 },
-  );
   const artifactPath = path.join(directory, "architecture-resume.json");
   const artifact = await codex.saveResumeArtifact(artifactPath, blueprint.interaction, directory);
   assert.equal(assertValidHostResumeArtifact(artifact), true);
   assert.equal(artifact.resume_token.startsWith("lrarchitect_"), true);
   assert.equal(artifact.resume_token.includes("whole_product"), false);
   assert.equal(artifact.resume_token.includes("rationale"), false);
+  await assert.rejects(
+    readdir(path.join(directory, ".launchrally")),
+    (error) => error.code === "ENOENT",
+  );
+  await assert.rejects(
+    readFile(`${artifactPath}.key`),
+    (error) => error.code === "ENOENT",
+  );
 
   const resumed = await claude.resumeArtifactFile({
     cwd: directory,
@@ -577,6 +616,7 @@ test("Codex Architecture state resumes in Claude from one validated local artifa
   });
   assert.equal(resumed.status, "partial_completion", JSON.stringify(resumed));
   assert.equal(resumed.state, "decision_confirmation");
+  assert.notEqual(resumed.resume_token, blueprint.resume_token);
   const tamperedTokenArtifact = {
     ...artifact,
     resume_token: `${blueprint.resume_token}tampered`,
@@ -650,6 +690,7 @@ test("Human flow reviews the same Blueprint and every decision independently", a
     cwd: directory,
     source,
     reviewDate: "2026-08-13",
+    desktopSharedBackendCapabilityIds: ["runtime_execution"],
     runArchitect: runArchitectureDecisionEngine,
     prompt: {
       async confirmMigration() {
@@ -666,6 +707,11 @@ test("Human flow reviews the same Blueprint and every decision independently", a
     },
   });
   assert.equal(result.status, "completed");
+  assert.deepEqual(result.desktop_topology.capability_ids, ["runtime_execution"]);
+  assert.deepEqual(
+    result.architecture_package.desktop_topology,
+    result.desktop_topology,
+  );
   assert.deepEqual(reviewed, result.blueprint.decisions.map(({ decision_id: id }) => id));
   assert.equal(result.decision_results[1].response, "reject");
   assert.deepEqual(result.human_mode, {

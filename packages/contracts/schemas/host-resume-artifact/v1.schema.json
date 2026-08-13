@@ -9,16 +9,17 @@
     "artifact_id": { "type": "string", "pattern": "^host_resume_[a-f0-9]{20}$" },
     "origin_host": { "enum": ["codex", "claude"] },
     "operation": { "enum": ["architect", "handoff"] },
-    "state": { "type": "string", "minLength": 1 },
+    "state": { "type": "string", "minLength": 1, "maxLength": 64 },
     "resume_token": { "type": "string", "minLength": 1, "maxLength": 256 },
     "source_refs": {
       "type": "array",
+      "maxItems": 32,
       "items": {
         "type": "object",
         "required": ["id", "schema_version", "digest"],
         "properties": {
-          "id": { "type": "string", "minLength": 1 },
-          "schema_version": { "type": "string", "pattern": "^launchrally\\.dev/[a-z0-9-]+/v[1-9][0-9]*$" },
+          "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "schema_version": { "type": "string", "maxLength": 128, "pattern": "^launchrally\\.dev/[a-z0-9-]+/v[1-9][0-9]*$" },
           "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
         },
         "additionalProperties": false
@@ -30,7 +31,7 @@
       "properties": {
         "algorithm": { "const": "aes-256-gcm" },
         "nonce": { "type": "string", "pattern": "^[A-Za-z0-9_-]{16}$" },
-        "ciphertext": { "type": "string", "minLength": 1, "maxLength": 349000 },
+        "ciphertext": { "type": "string", "minLength": 1, "maxLength": 220000 },
         "tag": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" }
       },
       "additionalProperties": false
