@@ -185,6 +185,7 @@ export function buildCapabilityGraph(intent, catalog, options = {}) {
     nodes: catalog.capabilities.map(({ capability_id: capabilityId }) => ({
       capability_id: capabilityId,
       environment: intent.environment,
+      release_scope: "current_release",
       requirement_state: "unknown",
       decision_state: "undecided",
       implementation_state: "unknown",

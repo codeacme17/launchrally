@@ -13,6 +13,7 @@ import {
 } from "@launchrally/contracts";
 
 import { sha256 } from "./local-history.js";
+import { createRecordReference, createReportReference } from "./record-reference.js";
 import { evaluateReportCurrentness } from "./report-currentness.js";
 
 const CAPABILITY_REQUIRED_CHECKS = Object.freeze({
@@ -47,10 +48,6 @@ const CAPABILITY_REQUIRED_CHECKS = Object.freeze({
   ]),
 });
 
-function reference(id, schemaVersion, value) {
-  return { id, schema_version: schemaVersion, digest: sha256(value) };
-}
-
 function referencesEqual(left, right) {
   return left?.id === right?.id
     && left?.schema_version === right?.schema_version
@@ -64,10 +61,6 @@ function identifierPart(value) {
 function taskId(source, sourceId) {
   const readable = identifierPart(sourceId).slice(0, 72) || "work";
   return `task_${source}_${readable}_${sha256(sourceId).slice(7, 15)}`;
-}
-
-function reportReference(report) {
-  return reference(`report_${sha256(report).slice(7, 27)}`, report.schema_version, report);
 }
 
 function baseTask({
@@ -245,7 +238,7 @@ function currentnessReasons(report, architectureBundle, reportIsCurrent) {
   }
   if (!referencesEqual(
     architectureBundle.architecture_record.bindings.source_report,
-    reportReference(report),
+    createReportReference(report),
   )) reasons.push("source_report_changed");
   return [...new Set(reasons)].sort();
 }
@@ -265,12 +258,12 @@ function validateArchitecture(report, bundle) {
     throw error;
   }
   if (
-    !referencesEqual(bundle.package.records.architecture_record, reference(
+    !referencesEqual(bundle.package.records.architecture_record, createRecordReference(
       bundle.architecture_record.record_id,
       bundle.architecture_record.schema_version,
       bundle.architecture_record,
     ))
-    || !referencesEqual(bundle.package.records.capability_graph, reference(
+    || !referencesEqual(bundle.package.records.capability_graph, createRecordReference(
       bundle.capability_graph.graph_id,
       bundle.capability_graph.schema_version,
       bundle.capability_graph,
@@ -347,9 +340,9 @@ function applyPreviousState(
     return;
   }
   assertValidTaskGraph(previousGraph);
-  const currentReportReference = reportReference(report);
+  const currentReportReference = createReportReference(report);
   const boundReportReference = architectureRecord.bindings.source_report;
-  const architectureReference = reference(
+  const architectureReference = createRecordReference(
     architectureRecord.record_id,
     architectureRecord.schema_version,
     architectureRecord,
@@ -496,8 +489,8 @@ export function generateTaskGraph(reportPackage, architectureBundle, options = {
   const graphContent = {
     revision,
     environment: report.scope.release_intent.intended_environment,
-    source_report: reportReference(report),
-    architecture_record: reference(
+    source_report: createReportReference(report),
+    architecture_record: createRecordReference(
       architectureBundle.architecture_record.record_id,
       architectureBundle.architecture_record.schema_version,
       architectureBundle.architecture_record,

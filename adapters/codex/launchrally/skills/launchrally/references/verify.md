@@ -7,3 +7,5 @@ Use `rally verify --report <path> --scope full --json`, inspect the disclosed fr
 For a limited recheck, use `--scope targeted --checks '["check.id"]'`. A targeted result has `assessment_scope: "targeted_only"`, carries no Report, and must never be presented as a whole-release Launch Ready assessment.
 
 When a full Report or `targeted_result` contains `provider_tool_recoveries`, follow [provider-tool-recovery.md](provider-tool-recovery.md). Recovery never changes the completed Verify result. A successful rediscovery starts another Verify boundary so the Provider read receives a new explicit permission decision.
+
+For Phase 1 assurance, use only a current full Report and its Evidence Index through the versioned Composite Assurance derivation. Preserve every Check's explicit environment, layer, capability binding, coverage, provenance, and currentness. A passed local, configuration, or deployment Check cannot cause a higher layer to pass. Keep Architecture Status independent from the derived Launch Assessment.

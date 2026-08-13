@@ -79,6 +79,7 @@ test("the graph keeps four state facets orthogonal and obligations inspectable",
     {
       capability_id: "identity_authentication",
       environment: "production",
+      release_scope: "current_release",
       requirement_state: "unknown",
       decision_state: "undecided",
       implementation_state: "unknown",

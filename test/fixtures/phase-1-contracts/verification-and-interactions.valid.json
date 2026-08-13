@@ -71,7 +71,7 @@
   },
   "architecture_status": {
     "schema_version": "launchrally.dev/architecture-status/v1",
-    "status_id": "architecture_status_01",
+    "status_id": "architecture_status_0e239bc179a7dd8c3586",
     "architecture_record": {
       "id": "architecture_record_01",
       "schema_version": "launchrally.dev/architecture-record/v1",
@@ -79,7 +79,7 @@
     },
     "environment": "production",
     "currentness": "current",
-    "summary": "partially_decided",
+    "summary": "undecided",
     "decision_states": [
       {
         "decision_id": "decision_identity",

@@ -39,6 +39,14 @@ export {
   createIntegrationContract,
   invalidatedOutputsForCatalogUpdate,
 } from "./capability-model.js";
+export {
+  COMPOSITE_ASSURANCE_LAYERS,
+  COMPOSITE_ASSURANCE_STATES,
+  deriveArchitectureStatus,
+  deriveCompositeAssurance,
+  deriveCompositeAssuranceFromReport,
+} from "./composite-assurance.js";
+export { createRecordReference, createReportReference } from "./record-reference.js";
 
 const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
   "Local Checks use only normalized, secret-safe repository facts.",

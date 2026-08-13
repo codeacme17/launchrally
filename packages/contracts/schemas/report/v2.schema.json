@@ -300,6 +300,7 @@
         "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
         "source": { "type": "string", "minLength": 1 },
         "target": { "type": "string", "minLength": 1 },
+        "environment": { "type": "string", "minLength": 1 },
         "collected_at": { "type": "string", "format": "date-time" },
         "freshness_class": { "enum": ["audit_time", "repository_snapshot", "confirmed_scope"] },
         "redaction_state": { "enum": ["normalized", "allowlisted", "metadata_only"] }
@@ -390,6 +391,9 @@
         "check_id": { "type": "string", "minLength": 1 },
         "check_version": { "type": "integer", "minimum": 1 },
         "risk_domain": { "$ref": "#/$defs/riskDomain" },
+        "check_layer": { "enum": ["requirement", "local_implementation", "provider_configuration", "integration_consistency", "deployment", "operational_delivery", "downstream_outcome"] },
+        "capability_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "environment": { "type": ["string", "null"], "minLength": 1 },
         "priority": { "$ref": "#/$defs/priority" },
         "severity": { "$ref": "#/$defs/severity" },
         "release_gate": { "enum": ["always", "policy", "never"] },
@@ -397,7 +401,18 @@
         "applicability": { "$ref": "#/$defs/applicabilityResult" },
         "status": { "enum": ["passed", "failed", "unverified", "not_applicable"] },
         "summary": { "type": "string", "minLength": 1 },
-        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } }
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+        "failure_basis": { "enum": ["absence", "observed_conflict"] },
+        "coverage": {
+          "type": "object",
+          "required": ["state", "required_targets", "observed_targets"],
+          "properties": {
+            "state": { "enum": ["complete", "partial", "none"] },
+            "required_targets": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+            "observed_targets": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     },
@@ -572,6 +587,8 @@
         "check_id": { "type": "string", "minLength": 1 },
         "check_version": { "type": "integer", "minimum": 1 },
         "risk_domain": { "$ref": "#/$defs/riskDomain" },
+        "check_layer": { "enum": ["requirement", "local_implementation", "provider_configuration", "integration_consistency", "deployment", "operational_delivery", "downstream_outcome"] },
+        "capability_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "permission_id": { "type": "string", "minLength": 1 },
         "applicability": { "$ref": "#/$defs/applicabilityDeclaration" },
         "required_inputs": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
