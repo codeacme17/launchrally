@@ -334,7 +334,7 @@ test("CLI help classifies providers as a supporting advisory operation", async (
   const help = JSON.parse((await execFileAsync(process.execPath, [cli, "--json"])).stdout);
 
   assert.deepEqual(help.commands, {
-    core: ["audit", "init", "plan", "verify"],
+    core: ["audit", "architect", "init", "plan", "verify"],
     bootstrap: [
       "toolchain status",
       "toolchain restore",

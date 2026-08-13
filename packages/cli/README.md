@@ -25,6 +25,8 @@ rally --version --json --cwd .
 
 Audit performs no repository write and does not create `.launchrally`. Public and Provider reads are independent and default-denied. Confirmed Init is the first project mutation, stays under LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
 
+`rally architect` is the read-only Phase 1 whole-product decision flow. It consumes a current full Report plus confirmed Product Intent, Capability Catalog, and Capability Graph files, returns a typed Blueprint before confirmation, and then accepts independent decision responses. It does not require prior Init and performs no repository or Provider writes.
+
 Exact-version npm-exec remains a no-install trial and CI fallback. Keep its full prefix on every follow-up; see the [Quickstart](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/quickstart.md) for the directly executable sequence.
 
 ## Compatibility and boundaries

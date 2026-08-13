@@ -16,4 +16,4 @@ Preserve these distinctions:
 - Local Semantic Analysis is a fresh permission above Local Safe Scan and applies only to explicitly selected supported product materials; denial or incomplete coverage remains visible.
 - The Capability Catalog covers all 13 launch domains. Derived obligations remain candidates until explicit confirmation, and Catalog changes invalidate only outputs that declare the changed capability or the whole Catalog as a dependency.
 
-These schemas do not implement `rally architect`, external execution, `rally handoff`, or active verification. Until the CLI advertises and returns their exact typed contracts, do not synthesize those operations, invoke an Executor, or infer new authority from these record definitions.
+The CLI implements typed `rally architect` Blueprint review and independent decision confirmation. The schemas do not yet implement external execution, `rally handoff`, or active verification. Until the CLI advertises and returns those exact typed contracts, do not synthesize them, invoke an Executor, or infer new authority from these record definitions.

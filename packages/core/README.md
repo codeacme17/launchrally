@@ -10,6 +10,8 @@ The additive Phase 1 Core exports `runProductIntentDiscovery` for permissioned, 
 
 The Provider-neutral capability APIs create the independently versioned 13-domain Catalog, build environment-bound Capability Graphs from confirmed Product Intent, explicitly confirm derived obligations, create synchronous or asynchronous Integration Contracts, and calculate precise declared invalidation. Requirement, decision, implementation, and Evidence states remain separate and are never collapsed into a completion percentage.
 
+`runArchitectureDecisionEngine` requires a structurally valid current full Report, confirmed Product Intent, Catalog, and Capability Graph. It returns a whole-product Blueprint before any decision confirmation, excludes hard-constraint conflicts, retains existing implementations by default, omits unreviewed currency estimates, and supports independent per-decision confirmation or rejection without repository or Provider writes.
+
 ## Install and use
 
 ```sh

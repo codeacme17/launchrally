@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash } from "node:crypto";
 import { lstat, open, realpath } from "node:fs/promises";
 import path from "node:path";
 
@@ -12,6 +12,7 @@ import {
 
 import { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
 import { scanRepository } from "./local-safe-scan.js";
+import { decodeResumeState, encodeResumeState } from "./resume-state.js";
 
 export const PRODUCT_INTENT_ANALYZER_VERSION = "product-intent-analyzer/v1";
 
@@ -70,29 +71,14 @@ const BEHAVIOR_RULES = Object.freeze([
 ]);
 
 function encodeState(state) {
-  const payload = Buffer.from(JSON.stringify(state), "utf8").toString("base64url");
-  const digest = createHash("sha256").update(payload).digest("base64url");
-  return `${payload}.${digest}`;
+  return encodeResumeState(state);
 }
 
 function decodeState(token) {
-  if (typeof token !== "string") return null;
-  const [payload, suppliedDigest, extra] = token.split(".");
-  if (!payload || !suppliedDigest || extra !== undefined) return null;
-  const expected = createHash("sha256").update(payload).digest();
-  let actual;
-  try {
-    actual = Buffer.from(suppliedDigest, "base64url");
-  } catch {
-    return null;
-  }
-  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
-  try {
-    const state = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return state?.schema_version === ARCHITECT_INTERACTION_SCHEMA ? state : null;
-  } catch {
-    return null;
-  }
+  return decodeResumeState(
+    token,
+    (state) => state?.schema_version === ARCHITECT_INTERACTION_SCHEMA,
+  );
 }
 
 function normalizeSelectedMaterials(materials) {
