@@ -35,6 +35,10 @@ const intentFixture = JSON.parse(await readFile(
   new URL("./fixtures/phase-1-contracts/product-intent-profile.valid.json", import.meta.url),
   "utf8",
 ));
+const taskGraphFixture = JSON.parse(await readFile(
+  new URL("./fixtures/phase-1-contracts/handoff.valid.json", import.meta.url),
+  "utf8",
+)).task_graph;
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
 const engine = path.resolve("packages/cli/bin/engine.js");
@@ -126,6 +130,14 @@ test("confirmed decisions create separate immutable versioned Architecture Packa
   assert.equal(assertValidArchitectureRecord(first.architecture_record), true);
   assert.equal(assertValidArchitecturePackage(first.package), true);
   assert.equal(first.architecture_record.bindings.constraints_digest.startsWith("sha256:"), true);
+  assert.deepEqual(first.architecture_record.confirmed_decisions[0], {
+    decision_id: "decision_identity",
+    decision_revision: 1,
+    capability_id: "identity_authentication",
+    implementation_path: "unknown",
+    confirmation: "explicit_user_confirmation",
+    status: "investigate",
+  });
   assert.equal(
     first.architecture_record.bindings.source_report.digest,
     architectureFixture.blueprint.source_report.digest,
@@ -138,6 +150,16 @@ test("confirmed decisions create separate immutable versioned Architecture Packa
   assert.notEqual(second.architecture_record.record_id, first.architecture_record.record_id);
   assert.equal(second.package.revision, 2);
   assert.equal(second.dependency_index.edges[0].dependent_record_ids.length, 1);
+  const withTaskGraph = bundle("2026-08-13T00:00:02.000Z", {
+    task_graph: taskGraphFixture,
+    dependencies: [{
+      source_id: "decision_identity",
+      dependent_semantics: ["architecture_record", "task_graph"],
+      evidence_ids: ["evidence_identity_configuration"],
+    }],
+  });
+  assert.equal(withTaskGraph.task_graph.architecture_record.id, withTaskGraph.architecture_record.record_id);
+  assert.equal(withTaskGraph.package.records.task_graph.id, withTaskGraph.task_graph.graph_id);
   assert.throws(
     () => createArchitecturePackageBundle(source({
       decision_results: [],

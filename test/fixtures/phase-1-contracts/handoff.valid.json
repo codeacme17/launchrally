@@ -4,22 +4,32 @@
     "graph_id": "task_graph_01",
     "revision": 1,
     "environment": "production",
+    "source_report": {
+      "id": "report_task_graph_01",
+      "schema_version": "launchrally.dev/report/v2",
+      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    },
     "architecture_record": {
       "id": "architecture_record_01",
       "schema_version": "launchrally.dev/architecture-record/v1",
       "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "currentness": {
+      "state": "current",
+      "reasons": []
     },
     "tasks": [
       {
         "task_id": "task_configure_identity",
         "task_type": "configure_capability",
         "source": "architecture_decision",
+        "source_id": "decision_identity",
         "environment": "production",
         "prerequisites": [],
         "effect_class": "provider_configuration",
         "expected_target": "identity_authentication",
         "allowed_effects": ["provider_configuration_write"],
-        "prohibited_effects": ["production_data_write", "credential_persistence"],
+        "prohibited_effects": ["credential_persistence", "deployment_write", "production_data_write", "source_write"],
         "recovery_notes": ["Inspect the Provider audit log before retrying."],
         "minimum_executor_capability": "provider_configuration_v1",
         "structured_result_schema": "launchrally.dev/execution-receipt/v1",
@@ -36,12 +46,13 @@
         "task_id": "task_verify_identity",
         "task_type": "verify_capability",
         "source": "verification_gap",
+        "source_id": "identity_configuration_gap",
         "environment": "production",
         "prerequisites": ["task_configure_identity"],
         "effect_class": "read_only",
         "expected_target": "identity_authentication",
         "allowed_effects": ["provider_configuration_read"],
-        "prohibited_effects": ["provider_configuration_write", "production_data_write"],
+        "prohibited_effects": ["credential_persistence", "deployment_write", "production_data_write", "provider_configuration_write", "source_write"],
         "recovery_notes": ["Leave the gap unverified when access is denied."],
         "minimum_executor_capability": "provider_read_v1",
         "structured_result_schema": "launchrally.dev/active-verification-result/v1",

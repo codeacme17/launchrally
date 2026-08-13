@@ -291,6 +291,24 @@ test("Task and handoff contracts expose bounded effects while receipts remain cl
     () => assertValidTaskGraph(cyclic),
     (error) => error.code === "invalid_task_graph",
   );
+  const missingDependency = structuredClone(taskGraph);
+  missingDependency.tasks[1].prerequisites = ["task_missing_dependency"];
+  assert.throws(
+    () => assertValidTaskGraph(missingDependency),
+    (error) => error.code === "invalid_task_graph",
+  );
+  const incompatibleEnvironment = structuredClone(taskGraph);
+  incompatibleEnvironment.tasks[0].environment = "staging";
+  assert.throws(
+    () => assertValidTaskGraph(incompatibleEnvironment),
+    (error) => error.code === "invalid_task_graph",
+  );
+  const secretValue = structuredClone(taskGraph);
+  secretValue.tasks[0].recovery_notes = ["Use https://test-user:test-password@example.invalid/"];
+  assert.throws(
+    () => assertValidTaskGraph(secretValue),
+    (error) => error.code === "invalid_task_graph",
+  );
   assert.throws(
     () => assertValidExecutionReceipt({
       ...receipt,
@@ -304,6 +322,43 @@ test("Task and handoff contracts expose bounded effects while receipts remain cl
   progressed.tasks[1].status = "not_started";
   progressed.ready_frontier = ["task_verify_identity"];
   assert.equal(assertValidTaskGraph(progressed), true);
+
+  const verified = structuredClone(taskGraph);
+  verified.tasks[0].status = "verified";
+  verified.tasks[0].verification_evidence = [{
+    digest: `sha256:${"7".repeat(64)}`,
+    target: "identity_configuration",
+    collected_at: "2026-08-13T00:00:00.000Z",
+    current: true,
+  }];
+  verified.tasks[1].status = "not_started";
+  verified.ready_frontier = ["task_verify_identity"];
+  assert.equal(assertValidTaskGraph(verified), true);
+
+  const hiddenProviderWrite = structuredClone(taskGraph);
+  hiddenProviderWrite.tasks[1].prohibited_effects = ["production_data_write"];
+  hiddenProviderWrite.tasks[1].allowed_effects.push("provider_configuration_write");
+  assert.throws(
+    () => assertValidTaskGraph(hiddenProviderWrite),
+    (error) => error.code === "invalid_task_graph",
+  );
+
+  const unsafeEffectFrontier = structuredClone(taskGraph);
+  unsafeEffectFrontier.tasks[0].status = "reported_succeeded";
+  unsafeEffectFrontier.tasks[1] = {
+    ...unsafeEffectFrontier.tasks[1],
+    task_type: "configure_dependent_capability",
+    source: "implementation_work",
+    effect_class: "local_source",
+    allowed_effects: ["source_write"],
+    prohibited_effects: ["provider_configuration_write", "production_data_write"],
+    status: "not_started",
+  };
+  unsafeEffectFrontier.ready_frontier = ["task_verify_identity"];
+  assert.throws(
+    () => assertValidTaskGraph(unsafeEffectFrontier),
+    (error) => error.code === "invalid_task_graph",
+  );
 });
 
 test("Architecture contracts bind explainable decisions without rewriting source records", async () => {

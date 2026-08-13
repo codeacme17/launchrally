@@ -110,6 +110,7 @@
         "src/resume-state.js",
         "src/reporting.js",
         "src/support-layers.js",
+        "src/task-graph.js",
         "src/toolchain-lifecycle.js",
         "src/verification.js"
       ]

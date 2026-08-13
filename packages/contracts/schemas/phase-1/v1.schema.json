@@ -535,6 +535,8 @@
             "properties": {
               "decision_id": { "$ref": "#/$defs/identifier" },
               "decision_revision": { "type": "integer", "minimum": 1 },
+              "capability_id": { "$ref": "#/$defs/identifier" },
+              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "deferred", "not_applicable", "unknown"] },
               "confirmation": { "const": "explicit_user_confirmation" },
               "status": { "enum": ["retain", "adopt", "replace", "defer", "investigate", "undecided"] }
             },
@@ -613,23 +615,34 @@
     },
     "taskGraph": {
       "type": "object",
-      "required": ["schema_version", "graph_id", "revision", "environment", "architecture_record", "tasks", "ready_frontier"],
+      "required": ["schema_version", "graph_id", "revision", "environment", "source_report", "architecture_record", "currentness", "tasks", "ready_frontier"],
       "properties": {
         "schema_version": { "const": "launchrally.dev/task-graph/v1" },
         "graph_id": { "$ref": "#/$defs/identifier" },
         "revision": { "type": "integer", "minimum": 1 },
         "environment": { "type": "string", "minLength": 1 },
+        "source_report": { "$ref": "#/$defs/recordReference" },
         "architecture_record": { "$ref": "#/$defs/recordReference" },
+        "currentness": {
+          "type": "object",
+          "required": ["state", "reasons"],
+          "properties": {
+            "state": { "enum": ["current", "stale"] },
+            "reasons": { "$ref": "#/$defs/stringSet" }
+          },
+          "additionalProperties": false
+        },
         "tasks": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
-            "required": ["task_id", "task_type", "source", "environment", "prerequisites", "effect_class", "expected_target", "allowed_effects", "prohibited_effects", "recovery_notes", "minimum_executor_capability", "structured_result_schema", "evidence_targets", "follow_up_verify", "cancellation_behavior", "status"],
+            "required": ["task_id", "task_type", "source", "source_id", "environment", "prerequisites", "effect_class", "expected_target", "allowed_effects", "prohibited_effects", "recovery_notes", "minimum_executor_capability", "structured_result_schema", "evidence_targets", "follow_up_verify", "cancellation_behavior", "status"],
             "properties": {
               "task_id": { "$ref": "#/$defs/identifier" },
               "task_type": { "type": "string", "minLength": 1 },
               "source": { "enum": ["finding", "verification_gap", "architecture_decision", "implementation_work"] },
+              "source_id": { "type": "string", "minLength": 1 },
               "environment": { "type": "string", "minLength": 1 },
               "prerequisites": { "$ref": "#/$defs/stringSet" },
               "effect_class": { "$ref": "#/$defs/effectClass" },
@@ -651,7 +664,22 @@
                 "additionalProperties": false
               },
               "cancellation_behavior": { "enum": ["stop_before_next_effect", "preserve_completed_prerequisites", "manual_recovery_required"] },
-              "status": { "enum": ["not_started", "blocked", "running", "reported_succeeded", "reported_failed", "cancelled", "verification_pending", "verified"] }
+              "status": { "enum": ["not_started", "blocked", "running", "reported_succeeded", "reported_failed", "cancelled", "verification_pending", "verified"] },
+              "verification_evidence": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["digest", "target", "collected_at", "current"],
+                  "properties": {
+                    "digest": { "$ref": "#/$defs/digest" },
+                    "target": { "type": "string", "minLength": 1 },
+                    "collected_at": { "type": "string", "format": "date-time" },
+                    "current": { "const": true }
+                  },
+                  "additionalProperties": false
+                }
+              }
             },
             "additionalProperties": false
           }

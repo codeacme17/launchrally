@@ -250,6 +250,18 @@ function renderHumanPlan(value) {
       `  Next: ${gap.next_action}`,
     );
   }
+  if (value.task_graph) {
+    lines.push(
+      "",
+      "Provider-neutral Task Graph",
+      `Currentness: ${value.task_graph.currentness.state}`,
+      `Tasks: ${value.task_graph.tasks.length}`,
+      `Ready frontier: ${value.task_graph.ready_frontier.join(", ") || "none"}`,
+      ...value.task_graph.tasks.map((task) =>
+        `- ${task.task_id} [${task.status}] ${task.source}:${task.source_id} — ${task.effect_class} on ${task.expected_target}`),
+      "Executor selection and write authority are not granted by planning.",
+    );
+  }
   if (value.handoff) {
     lines.push(
       "",
@@ -537,7 +549,7 @@ function help() {
       "  architect Build and independently confirm a whole-product Architecture Blueprint",
       "  architecture-package Preview or persist a confirmed immutable Architecture Package",
       "  init     Preview and confirm local adoption after a complete Audit Report",
-      "  plan     Build a deterministic read-only Launch Plan from a current Report",
+      "  plan     Build a deterministic read-only Launch Plan and optional Task Graph",
       "  verify   Recollect fresh Evidence for full or targeted verification",
       "",
       "Project Toolchain bootstrap commands:",
@@ -887,10 +899,70 @@ async function main() {
         return 2;
       }
     }
-    const result = runPlan(reportPackage, {
-      cwd,
-      handoff_requested: args.includes("--handoff"),
-    });
+    let architectureBundle;
+    let previousTaskGraph;
+    for (const [option, target, error] of [
+      ["--architecture-package", "architecture", "invalid_architecture_package_file"],
+      ["--task-graph", "task_graph", "invalid_task_graph_file"],
+    ]) {
+      const selectedPath = optionValue(option);
+      if (!selectedPath) {
+        if (args.includes(option)) {
+          print({
+            contract: CLI_INTERACTION_CONTRACT,
+            status: "execution_error",
+            operation: "plan",
+            error,
+            message: `Plan ${option} requires a readable JSON file.`,
+          });
+          return 2;
+        }
+        continue;
+      }
+      try {
+        const value = JSON.parse(await readFile(selectedPath, "utf8"));
+        if (target === "architecture") architectureBundle = value;
+        else previousTaskGraph = value;
+      } catch {
+        print({
+          contract: CLI_INTERACTION_CONTRACT,
+          status: "execution_error",
+          operation: "plan",
+          error,
+          message: `Plan ${option} could not be read and parsed.`,
+        });
+        return 2;
+      }
+    }
+    const taskUpdates = jsonOption("--task-updates");
+    if (taskUpdates.error) {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "plan",
+        error: "invalid_task_updates",
+        message: "Plan Task updates must use valid JSON.",
+      });
+      return 2;
+    }
+    let result;
+    try {
+      result = runPlan(reportPackage, {
+        cwd,
+        handoff_requested: args.includes("--handoff"),
+        ...(architectureBundle ? { architecture_bundle: architectureBundle } : {}),
+        ...(previousTaskGraph ? { previous_task_graph: previousTaskGraph } : {}),
+        ...(taskUpdates.value ? { task_updates: taskUpdates.value } : {}),
+      });
+    } catch (error) {
+      result = {
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "plan",
+        error: error.code ?? "task_graph_generation_failed",
+        message: error.message,
+      };
+    }
     print(result);
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
   }

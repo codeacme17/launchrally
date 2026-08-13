@@ -103,6 +103,8 @@ function buildConfirmedDecisions(blueprint, results) {
     return {
       decision_id: decision.decision_id,
       decision_revision: blueprint.revision,
+      capability_id: decision.capability_id,
+      implementation_path: decision.implementation_path,
       confirmation: "explicit_user_confirmation",
       status: decision.action,
     };

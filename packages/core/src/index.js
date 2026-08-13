@@ -29,6 +29,7 @@ export {
   persistArchitecturePackage,
   previewArchitecturePackagePersistence,
 } from "./architecture-package.js";
+export { generateTaskGraph, mapTaskGraphExecutors } from "./task-graph.js";
 export {
   CAPABILITY_CATALOG_DOMAINS,
   buildCapabilityGraph,
