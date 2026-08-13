@@ -228,6 +228,12 @@ function canonicalValue(value) {
   return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
 }
 
+function computeCanonicalDigest(value) {
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify(canonicalValue(value)))
+    .digest("hex")}`;
+}
+
 export function computeCapabilityCatalogDigest(catalog) {
   const content = {
     catalog_id: catalog?.catalog_id,
@@ -237,17 +243,19 @@ export function computeCapabilityCatalogDigest(catalog) {
     capabilities: catalog?.capabilities,
     provenance: catalog?.provenance,
   };
-  return `sha256:${createHash("sha256")
-    .update(JSON.stringify(canonicalValue(content)))
-    .digest("hex")}`;
+  return computeCanonicalDigest(content);
 }
 
 export function computeProviderKnowledgeDigest(knowledge) {
   const content = Object.fromEntries(Object.entries(knowledge ?? {})
     .filter(([key]) => !["knowledge_id", "digest"].includes(key)));
-  return `sha256:${createHash("sha256")
-    .update(JSON.stringify(canonicalValue(content)))
-    .digest("hex")}`;
+  return computeCanonicalDigest(content);
+}
+
+export function computeExecutorDescriptorDigest(descriptor) {
+  const value = structuredClone(descriptor ?? {});
+  if (value.trust) delete value.trust.digest;
+  return computeCanonicalDigest(value);
 }
 
 export function computeProviderKnowledgeId(knowledge) {
@@ -809,10 +817,17 @@ export function assertValidTaskGraph(graph) {
 }
 
 export function assertValidExecutorDescriptor(descriptor) {
+  const toolIds = descriptor?.tools?.map(({ tool_id: toolId }) => toolId) ?? [];
   if (
     !validatesSchema(descriptor, phase1Schema.$defs.executorDescriptor, phase1Schema)
     || !effectsAreDisjoint(descriptor)
+    || descriptor?.trust?.digest !== computeExecutorDescriptorDigest(descriptor)
+    || Date.parse(descriptor?.trust?.reviewed_at) > Date.parse(descriptor?.trust?.expires_at)
+    || new Set(toolIds).size !== toolIds.length
+    || !descriptor?.contract_versions?.includes(HANDOFF_PACKAGE_SCHEMA)
+    || !descriptor?.contract_versions?.includes(EXECUTION_RECEIPT_SCHEMA)
     || hasPersistedSensitivePayload(descriptor)
+    || hasPersistedSecretValue(descriptor)
   ) {
     const error = new Error("The Executor Descriptor is incomplete or invalid.");
     error.code = "invalid_executor_descriptor";
@@ -823,18 +838,29 @@ export function assertValidExecutorDescriptor(descriptor) {
 
 export function assertValidHandoffPackage(handoffPackage) {
   const approval = handoffPackage?.approval;
-  const validApproval = approval?.state !== "approved"
-    || (
+  const validApproval = approval?.state === "approved"
+    ? (
       approval.confirmation === "explicit_user_confirmation"
       && typeof approval.confirmed_at === "string"
-    );
+      && Date.parse(approval.confirmed_at) >= Date.parse(handoffPackage?.created_at)
+    )
+    : approval?.confirmation === null && approval?.confirmed_at === null;
+  const [effectClass] = handoffPackage?.authority_batch?.effect_classes ?? [];
+  const validBoundary = handoffPackage?.authority_batch?.effect_classes?.length === 1
+    && effectsMatchBoundary({
+      effect_class: effectClass,
+      allowed_effects: handoffPackage.authority_batch.allowed_effects,
+      prohibited_effects: handoffPackage.authority_batch.prohibited_effects,
+    });
   if (
     !validatesSchema(handoffPackage, phase1Schema.$defs.handoffPackage, phase1Schema)
     || !effectsAreDisjoint(handoffPackage?.authority_batch)
+    || !validBoundary
     || !validApproval
     || !referenceUses(handoffPackage?.task_graph, [TASK_GRAPH_SCHEMA])
     || !referenceUses(handoffPackage?.executor, [EXECUTOR_DESCRIPTOR_SCHEMA])
     || hasPersistedSensitivePayload(handoffPackage)
+    || hasPersistedSecretValue(handoffPackage)
   ) {
     const error = new Error("The Handoff Package is incomplete or invalid.");
     error.code = "invalid_handoff_package";
@@ -844,11 +870,21 @@ export function assertValidHandoffPackage(handoffPackage) {
 }
 
 export function assertValidExecutionReceipt(receipt) {
+  const codesByState = {
+    reported_succeeded: new Set(["configuration_submitted", "execution_completed"]),
+    reported_failed: new Set(["execution_failed"]),
+    cancelled: new Set(["execution_cancelled"]),
+    partial: new Set(["execution_partial", "manual_inspection_required"]),
+  };
+  const claimCodesMatchState = receipt?.task_results?.every(({ state, claim_codes: codes }) =>
+    codes.every((code) => codesByState[state]?.has(code)));
   if (
     !validatesSchema(receipt, phase1Schema.$defs.executionReceipt, phase1Schema)
+    || !claimCodesMatchState
     || !referenceUses(receipt?.handoff, [HANDOFF_PACKAGE_SCHEMA])
     || !referenceUses(receipt?.executor, [EXECUTOR_DESCRIPTOR_SCHEMA])
     || hasPersistedSensitivePayload(receipt)
+    || hasPersistedSecretValue(receipt)
   ) {
     const error = new Error("The execution receipt is incomplete or invalid.");
     error.code = "invalid_execution_receipt";
@@ -950,7 +986,8 @@ function assertValidPhase1Interaction(interaction, operation, schemaVersion, err
     && (!statusStates[interaction?.status] || statusStates[interaction.status].has(interaction.state))
     && (!requiresResume.has(interaction?.status) || typeof interaction?.resume_token === "string")
     && (!terminal.has(interaction?.status) || interaction?.resume_token === null)
-    && !hasPersistedSensitivePayload(interaction);
+    && !hasPersistedSensitivePayload(interaction)
+    && !hasPersistedSecretValue(interaction);
   if (!valid) {
     const error = new Error(`The ${operation} interaction is incomplete or invalid.`);
     error.code = errorCode;

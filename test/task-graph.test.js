@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 
 import {
   assertValidTaskGraph,
+  computeExecutorDescriptorDigest,
   computeTaskGraphReadyFrontier,
 } from "../packages/contracts/src/index.js";
 import {
@@ -454,10 +455,11 @@ test("one generic Task maps to multiple managed Executors and an explicit manual
   descriptor.allowed_effects = [...implementation.allowed_effects];
   descriptor.prohibited_effects = [...implementation.prohibited_effects];
   descriptor.result_schema = implementation.structured_result_schema;
+  descriptor.trust.digest = computeExecutorDescriptorDigest(descriptor);
   const secondDescriptor = structuredClone(descriptor);
   secondDescriptor.descriptor_id = "executor_second_managed_path";
   secondDescriptor.executor_name = "Second managed executor";
-  secondDescriptor.trust.digest = `sha256:${"6".repeat(64)}`;
+  secondDescriptor.trust.digest = computeExecutorDescriptorDigest(secondDescriptor);
 
   const mapping = mapTaskGraphExecutors(graph, [descriptor, secondDescriptor]);
   const selected = mapping.tasks.find(({ task_id }) => task_id === implementation.task_id);
@@ -477,6 +479,7 @@ test("one generic Task maps to multiple managed Executors and an explicit manual
   overAuthorized.prohibited_effects = overAuthorized.prohibited_effects.filter(
     (effect) => effect !== "provider_configuration_write",
   );
+  overAuthorized.trust.digest = computeExecutorDescriptorDigest(overAuthorized);
   assert.deepEqual(
     mapTaskGraphExecutors(graph, [overAuthorized]).tasks.find(
       ({ task_id }) => task_id === implementation.task_id,

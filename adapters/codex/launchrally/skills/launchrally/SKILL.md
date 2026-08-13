@@ -23,6 +23,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - When presenting a Capability Catalog, derived obligations, a Capability Graph, or an Integration Contract, read [references/capability-model.md](references/capability-model.md).
 - When presenting Provider Knowledge, Provider Cards, extensions, or Provider Verification Gaps, read [references/provider-knowledge.md](references/provider-knowledge.md).
 - When a typed `architect` interaction enters Blueprint review or decision confirmation, read [references/architect.md](references/architect.md).
+- When a typed external Executor handoff is requested from a current Task Graph, read [references/handoff.md](references/handoff.md).
 
 ## Preserve these invariants
 
@@ -42,6 +43,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - Present Verify scope, fresh-read permissions, Manifest Drift, and source comparison exactly as returned; only a full current Report can carry a whole-release Assessment.
 - Plugin removal never removes the user-managed Launcher, Project Toolchain, Manifest, Reports, Evidence, or history.
 - Treat every external Execution Receipt as a claim, never Machine Evidence. Require fresh environment-bound verification before changing assurance.
+- Treat Executor discovery, installation, authentication, authority confirmation, external execution, receipt review, and Verify as separate boundaries. Never infer one from another.
 - Treat Provider Knowledge as advisory. Only fresh, reviewed, source-backed Core Catalog or exactly registered Reviewed Extension records may participate in normative recommendations; Local Experimental records never gate release or grant write authority.
 
 ## Start safely
