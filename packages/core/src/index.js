@@ -16,6 +16,7 @@ import { executeWebBaseline } from "./check-catalog.js";
 import { collectPublicEvidence } from "./public-verification.js";
 import { executeProviderAdapters } from "./provider-adapters.js";
 import { createReportPackage } from "./reporting.js";
+import { collectTrustedAuthenticatedJourneyResults } from "./authenticated-journeys.js";
 
 export {
   EXECUTION_AUTHORITY_DESCRIPTOR_PATH,
@@ -55,6 +56,9 @@ export {
   planActiveVerification,
   reviewActiveVerificationObservation,
 } from "./active-verification.js";
+export {
+  resumeAuthenticatedJourneyFromHost,
+} from "./authenticated-journeys.js";
 
 const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
   "Local Checks use only normalized, secret-safe repository facts.",
@@ -123,14 +127,31 @@ export async function createInitialSnapshot(cwd, { signal } = {}) {
   };
 }
 
-export async function runAudit(cwd, version, interactionOptions = {}, { signal } = {}) {
+export async function runAudit(cwd, version, interactionOptions = {}, dependencies = {}) {
+  const { signal } = dependencies;
   throwIfAborted(signal);
   const snapshot = await createInitialSnapshot(cwd, { signal });
   throwIfAborted(signal);
   if (!interactionOptions.resume_token) {
     return createInitialAuditInteraction(snapshot);
   }
-  const interactionResult = advanceAuditInteraction(snapshot, interactionOptions);
+  let interactionResult = advanceAuditInteraction(snapshot, interactionOptions, dependencies);
+  if (
+    interactionResult.status === "needs_input"
+    && interactionResult.request?.type === "authenticated_journey_results"
+    && interactionOptions.journey_results === undefined
+  ) {
+    const collected = await collectTrustedAuthenticatedJourneyResults(
+      dependencies,
+      interactionResult.request.plan,
+    );
+    if (collected !== undefined) {
+      interactionResult = advanceAuditInteraction(snapshot, {
+        ...interactionOptions,
+        journey_results: collected,
+      }, dependencies);
+    }
+  }
   if (interactionResult.status !== "completed") return interactionResult;
   const publicPermission = interactionResult.authorization_plan.find(
     (permission) => permission.permission_id === "public_verification",

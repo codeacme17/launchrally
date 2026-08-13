@@ -42,7 +42,7 @@ const PUBLIC_EVIDENCE = Object.freeze({
 });
 
 const CORE_JOURNEY_EVIDENCE = Object.freeze({
-  accepted_kinds: ["public_observation", "authenticated_journey_observation"],
+  accepted_kinds: ["public_observation", "authenticated_journey_machine_evidence"],
   minimum_items: 1,
   provenance_required: true,
 });
@@ -608,18 +608,24 @@ const CHECKS = Object.freeze([
         );
       }
       const evidence = authenticatedResult.evidence ?? [];
-      if (evidence.length !== protectedCount) {
+      const gaps = authenticatedResult.verification_gaps ?? [];
+      if (evidence.length + gaps.length !== protectedCount) {
         return unverified(
           "partial_authenticated_evidence",
           "Authenticated Core Journey verification did not return all disclosed observations.",
           [...publicResult.evidence, ...evidence],
         );
       }
-      const unverifiedEvidence = evidence.find(({ status }) => status === "unverified");
-      if (unverifiedEvidence) {
+      if (gaps.length > 0) {
+        const unsupportedAdapter = gaps.every(({ outcome }) => outcome === "unsupported_adapter");
+        const partial = !unsupportedAdapter && (evidence.length > 0 || gaps.length > 1);
         return unverified(
-          unverifiedEvidence.outcome,
-          `Authenticated Core Journey remained ${unverifiedEvidence.outcome}.`,
+          partial ? "partial_authenticated_evidence" : gaps[0].outcome,
+          partial
+            ? "Authenticated Core Journey verification returned only partial qualifying coverage."
+            : unsupportedAdapter
+              ? "Authenticated Core Journey results lacked a verified supported host-adapter attestation."
+              : `Authenticated Core Journey remained ${gaps[0].outcome}.`,
           [...publicResult.evidence, ...evidence],
         );
       }

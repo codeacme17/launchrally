@@ -67,6 +67,11 @@
     "plan_schema": "launchrally.dev/authenticated-journey-plan/v1",
     "adapter_version": "host-agent-authenticated-journey/v1",
     "result_schema": "launchrally.dev/authenticated-journey-results/v1",
+    "attestation_schema": "launchrally.dev/authenticated-journey-attestation/v1",
+    "attestation_authority": "external_host_adapter",
+    "evidence_schema": "launchrally.dev/authenticated-journey-evidence/v1",
+    "qualifying_statuses": ["passed", "failed"],
+    "unverified_result": "verification_gap_without_evidence",
     "resume_argument": "--journey-results",
     "retained_fields": ["journey_id", "status", "outcome", "status_code", "collected_at"],
     "raw_auth_material": "excluded"

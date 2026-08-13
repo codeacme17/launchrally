@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/authenticated-journey-attestation/v1",
+  "title": "LaunchRally Authenticated Journey Host Attestation v1",
+  "x-launchrally-contract-major": 1,
+  "$ref": "../phase-1/v1.schema.json#/$defs/authenticatedJourneyAttestation"
+}

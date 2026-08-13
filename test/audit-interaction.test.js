@@ -524,7 +524,7 @@ test("protected Core Journey declarations preserve only versioned safe access as
     schema_version: "launchrally.dev/protected-journey/v1",
     method: "GET",
     path: "/control",
-    purpose: "staff Control Room loads",
+    purpose: "authenticated Core Journey",
     access: {
       authentication_class: "staff",
       anonymous_status_codes: [404],
@@ -554,7 +554,7 @@ test("protected Core Journeys split anonymous boundary and authenticated read pl
       schema_version: "launchrally.dev/protected-journey/v1",
       method: "GET",
       path: "/control",
-      purpose: "staff Control Room loads",
+      purpose: "authenticated Core Journey",
       access: {
         authentication_class: "staff",
         anonymous_status_codes: [404],
@@ -576,7 +576,7 @@ test("protected Core Journeys split anonymous boundary and authenticated read pl
       port: 443,
       path: "/control",
       method: "GET",
-      purpose: "Verify anonymous boundary for protected Core Journey: staff Control Room loads",
+      purpose: "Verify anonymous boundary for protected Core Journey: authenticated Core Journey",
       timeout_ms: 5000,
       verification_mode: "protected_anonymous_boundary",
       expected_status_codes: [404],
@@ -591,7 +591,7 @@ test("protected Core Journeys split anonymous boundary and authenticated read pl
       journey_id: "target-1:journey-1:authenticated",
       target: "https://example.com/control",
       method: "GET",
-      purpose: "staff Control Room loads",
+      purpose: "authenticated Core Journey",
       authentication_class: "staff",
       expected_status_codes: [200],
     }],
@@ -613,7 +613,7 @@ test("protected anonymous status expectations become normalized passing evidence
         schema_version: "launchrally.dev/protected-journey/v1",
         method: "GET",
         path: "/control",
-        purpose: "staff Control Room loads",
+        purpose: "authenticated Core Journey",
         access: {
           authentication_class: "staff",
           anonymous_status_codes: [404],
@@ -643,10 +643,9 @@ test("Audit requests protected journey reads as a fresh permission separate from
       schema_version: "launchrally.dev/protected-journey/v1",
       method: "GET",
       path: "/control",
-      purpose: "staff Control Room loads",
+      purpose: "authenticated Core Journey",
       access: {
         authentication_class: "staff",
-        anonymous_status_codes: [404],
         authenticated_status_codes: [200],
       },
     }],
@@ -692,10 +691,9 @@ test("Audit resumes from typed authenticated results without accepting auth mate
       schema_version: "launchrally.dev/protected-journey/v1",
       method: "GET",
       path: "/control",
-      purpose: "staff Control Room loads",
+      purpose: "authenticated Core Journey",
       access: {
         authentication_class: "staff",
-        anonymous_status_codes: [404],
         authenticated_status_codes: [200],
       },
     }],
@@ -747,11 +745,22 @@ test("Audit resumes from typed authenticated results without accepting auth mate
 
   assert.equal(completed.status, "completed", JSON.stringify(completed));
   assert.equal(completed.report.scope.access, "local_and_authenticated_read_only");
-  assert.ok(completed.evidence_index.entries.some(
-    ({ evidence_kind, normalized_artifact }) =>
-      evidence_kind === "authenticated_journey_observation"
-      && normalized_artifact.outcome === "missing_authentication",
+  assert.ok(!completed.evidence_index.entries.some(
+    ({ evidence_kind }) => evidence_kind === "authenticated_journey_machine_evidence",
   ));
+  const journeyCheck = completed.report.results.checks.find(
+    ({ check_id }) => check_id === "web.public.core-journeys",
+  );
+  assert.equal(journeyCheck.status, "unverified");
+  assert.ok(completed.report.results.verification_gaps.some(
+    ({ check_id, reason_code }) =>
+      check_id === "web.public.core-journeys" && reason_code === "unsupported_adapter",
+  ));
+  assert.deepEqual(completed.report.results.authenticated_journey_gaps, [{
+    journey_id: "target-1:journey-1:authenticated",
+    outcome: "unsupported_adapter",
+    collected_at: completed.report.results.authenticated_journey_gaps[0].collected_at,
+  }]);
 });
 
 test("confirmation requests public and Provider permissions as distinct boundaries", async () => {

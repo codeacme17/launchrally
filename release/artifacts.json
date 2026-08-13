@@ -17,6 +17,8 @@
         "schemas/active-verification-result/v1.schema.json",
         "schemas/active-verification-result/v2.schema.json",
         "schemas/architect-interaction/v1.schema.json",
+        "schemas/authenticated-journey-attestation/v1.schema.json",
+        "schemas/authenticated-journey-evidence/v1.schema.json",
         "schemas/architecture-blueprint/v1.schema.json",
         "schemas/architecture-package/v1.schema.json",
         "schemas/architecture-record/v1.schema.json",
@@ -154,12 +156,14 @@
       "path": "adapters/codex/launchrally",
       "package_files": [
         ".codex-plugin/",
+        "host-adapter/",
         "skills/"
       ],
       "files": [
         "LICENSE",
         "README.md",
         ".codex-plugin/plugin.json",
+        "host-adapter/authenticated-journey.js",
         "package.json",
         "skills/launchrally/agents/openai.yaml",
         "skills/launchrally/references/audit.md",
@@ -187,12 +191,14 @@
       "path": "adapters/claude/launchrally",
       "package_files": [
         ".claude-plugin/",
+        "host-adapter/",
         "skills/"
       ],
       "files": [
         "LICENSE",
         "README.md",
         ".claude-plugin/plugin.json",
+        "host-adapter/authenticated-journey.js",
         "package.json",
         "skills/launchrally/references/audit.md",
         "skills/launchrally/references/architect.md",

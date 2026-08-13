@@ -2,6 +2,8 @@
 
 This package installs Codex Plugin metadata plus a generated copy of the LaunchRally Agent Skill. The Skill guides Codex through the deterministic CLI's Audit → Init → Plan/Handoff → Verify journey while preserving explicit permission and write boundaries.
 
+The optional `@launchrally/codex-plugin/authenticated-journey` host runner uses only absolute references to host-owned, owner-restricted authentication files and submits normalized results directly to Core. On supported POSIX hosts, it rejects plaintext HTTP, invalid TLS peers, symbolic links, files owned by another user, group/world-readable files, and oversized values. Other hosts return a typed `runner_unavailable` Gap. It never accepts credentials as arguments or returns credentials or raw authenticated responses to the Agent.
+
 ## Status
 
 LaunchRally 0.3.2 is a **Stable** release. It is Product Complete, P0 Validated, and published on the stable channel.

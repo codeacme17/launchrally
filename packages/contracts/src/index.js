@@ -57,6 +57,10 @@ export const AUTHENTICATED_JOURNEY_RESULTS_SCHEMA =
   "launchrally.dev/authenticated-journey-results/v1";
 export const AUTHENTICATED_JOURNEY_ADAPTER_VERSION =
   "host-agent-authenticated-journey/v1";
+export const AUTHENTICATED_JOURNEY_ATTESTATION_SCHEMA =
+  "launchrally.dev/authenticated-journey-attestation/v1";
+export const AUTHENTICATED_JOURNEY_EVIDENCE_SCHEMA =
+  "launchrally.dev/authenticated-journey-evidence/v1";
 export const PRODUCT_INTENT_PROFILE_SCHEMA =
   "launchrally.dev/product-intent-profile/v1";
 export const PROVIDER_KNOWLEDGE_SCHEMA = "launchrally.dev/provider-knowledge/v1";
@@ -112,6 +116,8 @@ export const CAPABILITY_MINIMUM_ASSURANCE = Object.freeze({
   backup_recovery_retention: "outcome_verified",
 });
 export const PHASE_1_SCHEMA_VERSIONS = Object.freeze([
+  AUTHENTICATED_JOURNEY_ATTESTATION_SCHEMA,
+  AUTHENTICATED_JOURNEY_EVIDENCE_SCHEMA,
   PRODUCT_INTENT_PROFILE_SCHEMA,
   PROVIDER_KNOWLEDGE_SCHEMA,
   CAPABILITY_CATALOG_SCHEMA,
@@ -157,6 +163,20 @@ function validatesSchema(value, schema, root = schema) {
     }
     if (schema.$ref === providerDecisionCardSchema.$id) {
       return validatesSchema(value, providerDecisionCardSchema, providerDecisionCardSchema);
+    }
+    if (schema.$ref === "../phase-1/v1.schema.json#/$defs/authenticatedJourneyAttestation") {
+      return validatesSchema(
+        value,
+        phase1Schema.$defs.authenticatedJourneyAttestation,
+        phase1Schema,
+      );
+    }
+    if (schema.$ref === "../phase-1/v1.schema.json#/$defs/authenticatedJourneyEvidence") {
+      return validatesSchema(
+        value,
+        phase1Schema.$defs.authenticatedJourneyEvidence,
+        phase1Schema,
+      );
     }
     return false;
   }
@@ -241,6 +261,7 @@ function hasPersistedSensitivePayload(value) {
 }
 
 const SECRET_VALUE_PATTERN = /(?:\bsk_(?:live|test)_[A-Za-z0-9]{16,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|https?:\/\/[^\s/@:]+:[^\s/@]+@)/u;
+const AUTHENTICATED_JOURNEY_TARGET_PATTERN = /^https:\/\/[^@/?#]+\/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces)(?:\/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces))*$/u;
 
 function hasPersistedSecretValue(value) {
   if (typeof value === "string") return SECRET_VALUE_PATTERN.test(value);
@@ -263,6 +284,71 @@ function assertPhase1Schema(value, definition, message, errorCode, predicates = 
     throw error;
   }
   return true;
+}
+
+function safeEvidenceTarget(value) {
+  try {
+    const target = new URL(value);
+    return target.protocol === "https:"
+      && !target.username
+      && !target.password
+      && !target.search
+      && !target.hash
+      && AUTHENTICATED_JOURNEY_TARGET_PATTERN.test(value);
+  } catch {
+    return false;
+  }
+}
+
+function safeAuthenticatedJourneyPurpose(value) {
+  return value === "authenticated Core Journey";
+}
+
+export function assertValidAuthenticatedJourneyEvidence(evidence) {
+  return assertPhase1Schema(
+    evidence,
+    "authenticatedJourneyEvidence",
+    "The authenticated Journey Evidence is incomplete or invalid.",
+    "invalid_authenticated_journey_evidence",
+    [
+      (value) => value.status === "passed"
+        ? value.outcome === "completed"
+          && Number.isInteger(value.status_code)
+          && value.status_code >= 200
+          && value.status_code <= 299
+        : value.outcome === "unexpected_denial"
+          ? Number.isInteger(value.status_code)
+            && value.status_code >= 400
+            && value.status_code <= 499
+          : value.outcome === "redirect"
+            ? Number.isInteger(value.status_code)
+              && value.status_code >= 300
+              && value.status_code <= 399
+            : ["timeout", "execution_failure"].includes(value.outcome)
+              && value.status_code === null,
+      (value) => value.provenance.exact_target === value.target
+        && safeEvidenceTarget(value.target)
+        && safeAuthenticatedJourneyPurpose(value.purpose)
+        && value.provenance.collected_at === value.collected_at
+        && value.provenance.request_digest !== value.provenance.result_digest
+        && Date.parse(value.collected_at) >= Date.parse(value.provenance.collection_not_before)
+        && Date.parse(value.collected_at) <= Date.parse(value.provenance.collection_not_after)
+        && Date.parse(value.provenance.collection_not_after)
+          - Date.parse(value.provenance.collection_not_before) <= 15 * 60 * 1000,
+    ],
+  );
+}
+
+export function assertValidAuthenticatedJourneyAttestation(attestation) {
+  return assertPhase1Schema(
+    attestation,
+    "authenticatedJourneyAttestation",
+    "The authenticated Journey host attestation is incomplete or invalid.",
+    "invalid_authenticated_journey_attestation",
+    [
+      (value) => value.request_digest !== value.result_digest,
+    ],
+  );
 }
 
 function canonicalValue(value) {
@@ -1430,6 +1516,8 @@ export function assertValidPhase1References(record, referenceIndex) {
 }
 
 const PHASE_1_VALIDATORS = Object.freeze({
+  [AUTHENTICATED_JOURNEY_ATTESTATION_SCHEMA]: assertValidAuthenticatedJourneyAttestation,
+  [AUTHENTICATED_JOURNEY_EVIDENCE_SCHEMA]: assertValidAuthenticatedJourneyEvidence,
   [PRODUCT_INTENT_PROFILE_SCHEMA]: assertValidProductIntentProfile,
   [PROVIDER_KNOWLEDGE_SCHEMA]: assertValidProviderKnowledge,
   [CAPABILITY_CATALOG_SCHEMA]: assertValidCapabilityCatalog,

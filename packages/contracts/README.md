@@ -8,6 +8,8 @@ The Composite Assurance contract validates deterministic capability-specific der
 
 The Active Verification contracts bind reviewed recipes, versioned Integration Contracts, and exact Executor modes to independently approved `active_test` Handoff Packages. Results retain only normalized outcome facts, distinguish asynchronous business outcomes from transport acceptance, and bind qualifying Evidence to the exact Request, Handoff, Executor, Integration Contract, environment, correlation ID, observation time, and cleanup result. Production requires a production-safe recipe plus separate approval.
 
+The authenticated Journey Evidence contract qualifies only allowlisted `passed` and `failed` observations produced by the exact host adapter inside a freshly approved, declared collection window. Its provenance binds the exact target, permission, adapter, and time window. Authentication denial or unavailable host capability remains a typed Verification Gap without Evidence; Agent statements, user assertions, and Execution Receipts are not substitute Evidence.
+
 ## Status
 
 LaunchRally 0.3.2 is a **Stable** release. Its public contracts are versioned, and Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor. Consumers should reject unsupported contract major versions and pin the package version they have tested.

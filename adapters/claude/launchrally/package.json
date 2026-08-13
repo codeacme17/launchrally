@@ -11,10 +11,18 @@
     "launch-readiness"
   ],
   "license": "Apache-2.0",
+  "type": "module",
   "files": [
     ".claude-plugin/",
+    "host-adapter/",
     "skills/"
   ],
+  "exports": {
+    "./authenticated-journey": "./host-adapter/authenticated-journey.js"
+  },
+  "dependencies": {
+    "@launchrally/core": "0.3.2"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/codeacme17/launchrally.git",
