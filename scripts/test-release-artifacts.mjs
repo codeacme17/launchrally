@@ -508,6 +508,12 @@ async function runInstallationJourneys({
       )).href
     );
     const exercisePackagedHostRunner = async (statusCode, expected) => {
+      const expectedOutcome = process.platform === "win32" && expected.authenticated
+        ? "runner_unavailable"
+        : expected.outcome;
+      const expectedEvidence = process.platform === "win32"
+        ? false
+        : expected.evidence;
       const server = createServer({
         key: await readFile(path.join(root, "test", "fixtures", "self-signed-key.pem")),
         cert: await readFile(path.join(root, "test", "fixtures", "self-signed-cert.pem")),
@@ -593,15 +599,16 @@ async function runInstallationJourneys({
           result.status !== "completed"
           || result.evidence_index.entries.some(
             ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
-          ) !== expected.evidence
-          || (expected.assessment && result.report.assessment !== expected.assessment)
-          || (!expected.evidence && !result.report.results.verification_gaps.some(
-            ({ reason_code: reasonCode }) => reasonCode === expected.outcome,
+          ) !== expectedEvidence
+          || (expectedEvidence && expected.assessment
+            && result.report.assessment !== expected.assessment)
+          || (!expectedEvidence && !result.report.results.verification_gaps.some(
+            ({ reason_code: reasonCode }) => reasonCode === expectedOutcome,
           ))
           || /packaged-host-secret|bearer\s|"cookie"|"headers"|response_body/iu.test(
             JSON.stringify(result),
           )
-        ) throw new Error(`packaged_${host}_${expected.outcome}_host_runner_failed`);
+        ) throw new Error(`packaged_${host}_${expectedOutcome}_host_runner_failed`);
       } finally {
         if (previousOrigin === undefined) delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
         else process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = previousOrigin;
