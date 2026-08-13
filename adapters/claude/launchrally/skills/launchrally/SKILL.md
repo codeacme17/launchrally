@@ -11,6 +11,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 ## Route the request
 
 - For the complete Audit → optional Init → Read-only Plan → explicit Remediation Handoff → Verify flow, read [references/reference-journey.md](references/reference-journey.md).
+- For the complete Phase 1 Product Intent → Architecture → Task Graph → external Executor → fresh Verify flow, read [references/phase-1-journey.md](references/phase-1-journey.md).
 - For a first or repeated readiness assessment, read [references/audit.md](references/audit.md).
 - For post-report project adoption, read [references/init.md](references/init.md).
 - For remediation guidance or Provider choices, read [references/plan.md](references/plan.md).

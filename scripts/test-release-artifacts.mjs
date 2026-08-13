@@ -401,9 +401,31 @@ async function runInstallationJourneys({
     "references",
     "reference-journey.json",
   );
-  const [journey, claudeJourney] = await Promise.all([
+  const codexPhase1CommandsPath = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "codex-plugin",
+    "skills",
+    "launchrally",
+    "references",
+    "phase-1-command-examples.json",
+  );
+  const claudePhase1CommandsPath = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "claude-plugin",
+    "skills",
+    "launchrally",
+    "references",
+    "phase-1-command-examples.json",
+  );
+  const [journey, claudeJourney, phase1Commands, claudePhase1Commands] = await Promise.all([
     json(packagedJourneyPath),
     json(claudeJourneyPath),
+    json(codexPhase1CommandsPath),
+    json(claudePhase1CommandsPath),
   ]);
   const {
     createReferenceCoverageMatrix,
@@ -462,6 +484,12 @@ async function runInstallationJourneys({
     journey,
     "packaged_skill_journey_drift",
     "Codex and Claude packaged Skills must ship the same reference journey",
+  );
+  assertEqual(
+    claudePhase1Commands,
+    phase1Commands,
+    "packaged_phase_1_command_examples_drift",
+    "Codex and Claude packaged Skills must ship the same Phase 1 command vectors",
   );
   assertEqual(
     journey.launcher_prerequisite,
@@ -527,6 +555,24 @@ async function runInstallationJourneys({
     ...process.env,
     PATH: [npmStub, path.dirname(launcher), process.env.PATH ?? ""].join(path.delimiter),
   };
+  for (const example of phase1Commands.commands) {
+    let result;
+    try {
+      result = JSON.parse((await invokeLauncher(
+        "rally",
+        example.argv,
+        { cwd: temporaryRoot, env: launcherEnvironment },
+      )).stdout);
+    } catch (error) {
+      if (typeof error.stdout !== "string" || error.stdout.trim() === "") throw error;
+      result = JSON.parse(error.stdout);
+    }
+    if (
+      result.contract !== "launchrally.dev/cli/v2"
+      || result.operation !== example.operation
+      || result.status !== "execution_error"
+    ) throw new Error(`packed_phase_1_command_failed:${example.operation}`);
+  }
   const runProtectedSkillJourney = async (skillJourney, host) => {
     assertEqual(
       skillJourney.protected_journeys,

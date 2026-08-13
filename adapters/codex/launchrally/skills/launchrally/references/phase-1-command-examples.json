@@ -1,0 +1,30 @@
+{
+  "format": "launchrally-phase-1-command-examples",
+  "version": 1,
+  "commands": [
+    {
+      "operation": "architect",
+      "argv": ["architect", "--json", "--cwd", ".", "--report", "./launchrally-current-report.json", "--intent", "./product-intent.json", "--catalog", "./capability-catalog.json", "--graph", "./capability-graph.json", "--integrations", "./integration-contracts.json"],
+      "posix": "rally architect --json --cwd . \\\n  --report ./launchrally-current-report.json \\\n  --intent ./product-intent.json \\\n  --catalog ./capability-catalog.json \\\n  --graph ./capability-graph.json \\\n  --integrations ./integration-contracts.json",
+      "powershell": "rally architect --json --cwd . `\n  --report ./launchrally-current-report.json `\n  --intent ./product-intent.json `\n  --catalog ./capability-catalog.json `\n  --graph ./capability-graph.json `\n  --integrations ./integration-contracts.json"
+    },
+    {
+      "operation": "plan",
+      "argv": ["plan", "--json", "--cwd", ".", "--report", "./launchrally-current-report.json", "--architecture-package", "./architecture-package.json"],
+      "posix": "rally plan --json --cwd . \\\n  --report ./launchrally-current-report.json \\\n  --architecture-package ./architecture-package.json",
+      "powershell": "rally plan --json --cwd . `\n  --report ./launchrally-current-report.json `\n  --architecture-package ./architecture-package.json"
+    },
+    {
+      "operation": "handoff",
+      "argv": ["handoff", "--json", "--task-graph", "./task-graph.json", "--executors", "./executor-descriptors.json", "--tools", "./tool-observations.json", "--reviewed-executors", "./reviewed-executors.json"],
+      "posix": "rally handoff --json \\\n  --task-graph ./task-graph.json \\\n  --executors ./executor-descriptors.json \\\n  --tools ./tool-observations.json \\\n  --reviewed-executors ./reviewed-executors.json",
+      "powershell": "rally handoff --json `\n  --task-graph ./task-graph.json `\n  --executors ./executor-descriptors.json `\n  --tools ./tool-observations.json `\n  --reviewed-executors ./reviewed-executors.json"
+    },
+    {
+      "operation": "verify",
+      "argv": ["verify", "--json", "--cwd", ".", "--report", "./launchrally-manifest-source-report.json", "--scope", "full"],
+      "posix": "rally verify --json --cwd . \\\n  --report ./launchrally-manifest-source-report.json \\\n  --scope full",
+      "powershell": "rally verify --json --cwd . `\n  --report ./launchrally-manifest-source-report.json `\n  --scope full"
+    }
+  ]
+}
