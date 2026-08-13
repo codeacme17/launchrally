@@ -4,7 +4,7 @@
 
 The Task Graph contract validates a Provider-neutral DAG of environment-bound Tasks, exact source and Architecture bindings, explicit effect boundaries, cancellation behavior, currentness, verification Evidence, and a complete safe ready frontier. Completion is bound to Evidence from the current, revalidated Report rather than inline result claims. Missing or cyclic dependencies, cross-environment Tasks, hidden effects, secret values, and a `verified` state without current typed Evidence fail closed.
 
-The Composite Assurance contract validates deterministic capability-specific derivations across seven orthogonal Check layers. Every Evidence reference and capability is bound to one explicit environment; assurance states cannot skip a missing layer, Required gating is distinct from optional warnings, and Architecture Status remains independent from Launch Assessment.
+The Composite Assurance contract validates deterministic capability-specific derivations across seven orthogonal Check layers. Every Evidence reference and capability is bound to one explicit environment; assurance states cannot skip a missing layer, only current-release Required capabilities gate, and future scope remains explicit. Exact source and Architecture Status digests bind the derivation identity while Architecture Status remains independent from Launch Assessment.
 
 ## Status
 

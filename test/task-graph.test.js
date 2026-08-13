@@ -101,6 +101,7 @@ function architectureBundle(reportPackage, overrides = {}) {
   capabilityGraph.nodes.push({
     capability_id: "managed_web_delivery",
     environment: "production",
+    release_scope: "current_release",
     requirement_state: "required",
     decision_state: "adopt",
     implementation_state: "absent",

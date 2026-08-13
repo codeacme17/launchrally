@@ -80,6 +80,29 @@ export const COMPOSITE_ASSURANCE_SCHEMA = "launchrally.dev/composite-assurance/v
 export const ARCHITECT_INTERACTION_SCHEMA =
   "launchrally.dev/architect-interaction/v1";
 export const HANDOFF_INTERACTION_SCHEMA = "launchrally.dev/handoff-interaction/v1";
+export const COMPOSITE_ASSURANCE_STATES = Object.freeze([
+  "unverified",
+  "locally_evidenced",
+  "configured_not_deployed",
+  "deployed_not_operationally_verified",
+  "operationally_verified",
+  "outcome_verified",
+]);
+export const CAPABILITY_MINIMUM_ASSURANCE = Object.freeze({
+  runtime_execution: "operationally_verified",
+  identity_authentication: "operationally_verified",
+  application_data: "operationally_verified",
+  billing_entitlement: "outcome_verified",
+  object_storage: "operationally_verified",
+  communication_delivery: "outcome_verified",
+  background_work: "operationally_verified",
+  operational_observability: "operationally_verified",
+  analytics_privacy: "outcome_verified",
+  dns_tls: "operationally_verified",
+  ci_cd: "deployed_not_operationally_verified",
+  secrets_configuration: "configured_not_deployed",
+  backup_recovery_retention: "outcome_verified",
+});
 export const PHASE_1_SCHEMA_VERSIONS = Object.freeze([
   PRODUCT_INTENT_PROFILE_SCHEMA,
   PROVIDER_KNOWLEDGE_SCHEMA,
@@ -174,6 +197,14 @@ function validatesSchema(value, schema, root = schema) {
     }
   }
   return true;
+}
+
+function legacyEvidenceIndexSchema() {
+  const schema = structuredClone(evidenceIndexSchema);
+  const entry = schema.properties.entries.items;
+  entry.required = entry.required.filter((key) => key !== "environment");
+  delete entry.properties.environment;
+  return schema;
 }
 
 const PROHIBITED_PERSISTED_FIELDS = new Set([
@@ -292,13 +323,33 @@ export function assertValidReportPackage(source) {
     && reportViewSchema
     && validatesSchema(source.report, reportSchema)
     && validatesSchema(source.report_view, reportViewSchema)
-    && validatesSchema(source.evidence_index, evidenceIndexSchema)
+    && validatesSchema(
+      source.evidence_index,
+      source.report.schema_version === "launchrally.dev/report/v1"
+        ? legacyEvidenceIndexSchema()
+        : evidenceIndexSchema,
+    )
     && validRecoveries
     && source.report_view.report_id === source.report.report_id
     && source.report_view.report_schema_version === source.report.schema_version
     && source.evidence_index.report_id === source.report.report_id
     && source.report.execution.evidence_index.index_id === source.evidence_index.index_id;
-  if (!valid) {
+  const environment = source?.report?.scope?.release_intent?.intended_environment;
+  const checkEvidence = source?.report?.results?.checks?.flatMap((check) => [
+    ...check.applicability.evidence,
+    ...check.evidence,
+  ]) ?? [];
+  const hasEnvironmentBinding = source?.report?.results?.checks?.every((check) =>
+    check.environment === environment)
+    && source?.evidence_index?.entries?.every((entry) => entry.environment === environment)
+    && checkEvidence.every((reference) => reference.environment === environment);
+  const isHistoricalUnbound = source?.report?.results?.checks?.every((check) =>
+    check.environment === undefined)
+    && source?.evidence_index?.entries?.every((entry) => entry.environment === undefined)
+    && checkEvidence.every((reference) => reference.environment === undefined);
+  const environmentBinding = source?.report?.schema_version === "launchrally.dev/report/v1"
+    || typeof environment === "string" && (hasEnvironmentBinding || isHistoricalUnbound);
+  if (!valid || !environmentBinding) {
     const error = new Error("The saved Audit JSON is incomplete or invalid.");
     error.code = "invalid_report_package";
     throw error;
@@ -932,9 +983,18 @@ export function assertValidActiveVerificationResult(result) {
 }
 
 export function assertValidArchitectureStatus(status) {
+  const expectedSummary = deriveArchitectureStatusSummary(
+    status?.currentness,
+    status?.decision_states ?? [],
+  );
+  const expectedId = deriveArchitectureStatusId(status);
   if (
     !validatesSchema(status, phase1Schema.$defs.architectureStatus, phase1Schema)
     || !referenceUses(status?.architecture_record, [ARCHITECTURE_RECORD_SCHEMA])
+    || status?.summary !== expectedSummary
+    || status?.status_id !== expectedId
+    || new Set(status?.decision_states?.map(({ decision_id: decisionId }) => decisionId)).size
+      !== status?.decision_states?.length
     || hasPersistedSensitivePayload(status)
   ) {
     const error = new Error("The Architecture Status is incomplete or invalid.");
@@ -944,75 +1004,151 @@ export function assertValidArchitectureStatus(status) {
   return true;
 }
 
+export function deriveArchitectureStatusSummary(currentness, decisionStates) {
+  if (currentness !== "current") return "stale";
+  const resolved = decisionStates.filter(({ state }) =>
+    ["retain", "adopt", "replace", "defer"].includes(state)).length;
+  if (resolved === decisionStates.length) return "decided";
+  return resolved === 0 ? "undecided" : "partially_decided";
+}
+
+export function deriveArchitectureStatusId(status) {
+  const digest = computeCanonicalDigest({
+    architecture_record: status?.architecture_record,
+    environment: status?.environment,
+    currentness: status?.currentness,
+    decision_states: status?.decision_states,
+    unknowns: status?.unknowns,
+    launch_assessment: status?.launch_assessment,
+  });
+  return `architecture_status_${digest.slice(7, 27)}`;
+}
+
+function assuranceFacetPassed(facets, layer) {
+  return facets[layer].status === "passed"
+    || ["provider_configuration", "integration_consistency"].includes(layer)
+      && facets[layer].status === "not_applicable";
+}
+
+const ASSURANCE_MINIMUM_LAYERS = Object.freeze({
+  unverified: [],
+  locally_evidenced: ["requirement", "local_implementation"],
+  configured_not_deployed: [
+    "requirement",
+    "local_implementation",
+    "provider_configuration",
+    "integration_consistency",
+  ],
+  deployed_not_operationally_verified: [
+    "requirement",
+    "local_implementation",
+    "provider_configuration",
+    "integration_consistency",
+    "deployment",
+  ],
+  operationally_verified: [
+    "requirement",
+    "local_implementation",
+    "provider_configuration",
+    "integration_consistency",
+    "deployment",
+    "operational_delivery",
+  ],
+  outcome_verified: [
+    "requirement",
+    "local_implementation",
+    "provider_configuration",
+    "integration_consistency",
+    "deployment",
+    "operational_delivery",
+    "downstream_outcome",
+  ],
+});
+
+export function deriveCapabilityAssuranceState(capability) {
+  if (!["required", "optional"].includes(capability.requirement_state)) {
+    return "unverified";
+  }
+  const { facets } = capability;
+  if (
+    !assuranceFacetPassed(facets, "requirement")
+    || !assuranceFacetPassed(facets, "local_implementation")
+  ) return "unverified";
+  let state = "locally_evidenced";
+  if (
+    !assuranceFacetPassed(facets, "provider_configuration")
+    || !assuranceFacetPassed(facets, "integration_consistency")
+  ) return state;
+  if (["managed", "existing_platform"].includes(capability.implementation_path)) {
+    state = "configured_not_deployed";
+  }
+  if (!assuranceFacetPassed(facets, "deployment")) return state;
+  state = "deployed_not_operationally_verified";
+  if (!assuranceFacetPassed(facets, "operational_delivery")) return state;
+  state = "operationally_verified";
+  return assuranceFacetPassed(facets, "downstream_outcome") ? "outcome_verified" : state;
+}
+
+export function capabilityAssuranceMeetsMinimum(capability) {
+  return capability.minimum_assurance === null
+    || COMPOSITE_ASSURANCE_STATES.indexOf(capability.assurance_state)
+      >= COMPOSITE_ASSURANCE_STATES.indexOf(capability.minimum_assurance);
+}
+
+export function deriveCompositeLaunchAssessment(capabilities) {
+  const gating = capabilities.filter(({ launch_gate: launchGate }) => launchGate.gating);
+  if (gating.some(({ facets, minimum_assurance: minimumAssurance }) =>
+    ASSURANCE_MINIMUM_LAYERS[minimumAssurance]
+      .some((layer) => facets[layer].status === "failed"))) return "no_go";
+  if (gating.some(({ launch_gate: launchGate }) => !launchGate.satisfied)) {
+    return "inconclusive";
+  }
+  const nonGatingWarning = capabilities
+    .filter(({ launch_gate: launchGate }) => !launchGate.gating)
+    .some(({ facets }) => Object.values(facets)
+      .some(({ status }) => ["failed", "unverified"].includes(status)));
+  return nonGatingWarning ? "ready_with_warnings" : "launch_ready";
+}
+
 export function assertValidCompositeAssurance(assurance) {
   const capabilityIds = assurance?.capabilities?.map(
     ({ capability_id: capabilityId }) => capabilityId,
   ) ?? [];
-  const assuranceStates = [
-    "unverified",
-    "locally_evidenced",
-    "configured_not_deployed",
-    "deployed_not_operationally_verified",
-    "operationally_verified",
-    "outcome_verified",
-  ];
-  const facetPassed = (facets, layer) =>
-    ["passed", "not_applicable"].includes(facets[layer].status);
-  const expectedAssurance = (capability) => {
-    if (["deferred", "not_applicable"].includes(capability.requirement_state)) {
-      return "unverified";
-    }
-    const { facets } = capability;
-    if (!facetPassed(facets, "requirement") || !facetPassed(facets, "local_implementation")) {
-      return "unverified";
-    }
-    let state = "locally_evidenced";
-    if (
-      !facetPassed(facets, "provider_configuration")
-      || !facetPassed(facets, "integration_consistency")
-    ) return state;
-    if (["managed", "existing_platform"].includes(capability.implementation_path)) {
-      state = "configured_not_deployed";
-    }
-    if (!facetPassed(facets, "deployment")) return state;
-    state = "deployed_not_operationally_verified";
-    if (!facetPassed(facets, "operational_delivery")) return state;
-    state = "operationally_verified";
-    return facetPassed(facets, "downstream_outcome") ? "outcome_verified" : state;
-  };
   const expectedGatingIds = assurance?.capabilities?.filter(
-    ({ requirement_state: requirementState }) => requirementState === "required",
+    ({ requirement_state: requirementState, release_scope: releaseScope }) =>
+      requirementState === "required" && releaseScope === "current_release",
   ).map(({ capability_id: capabilityId }) => capabilityId) ?? [];
   const expectedCheckIds = (status) => [...new Set(assurance?.capabilities?.flatMap(
     ({ facets }) => Object.values(facets).flatMap(({ check_refs: references }) => references),
   ).filter((reference) => reference.status === status)
     .map(({ check_id: checkId }) => checkId) ?? [])];
-  const gatingCapabilities = assurance?.capabilities?.filter(
-    ({ launch_gate: launchGate }) => launchGate.gating,
-  ) ?? [];
-  const gatingFailed = gatingCapabilities.some(({ facets }) =>
-    Object.values(facets).some(({ status }) => status === "failed"));
-  const gatingUnsatisfied = gatingCapabilities.some(
-    ({ launch_gate: launchGate }) => !launchGate.satisfied,
+  const schemaValid = validatesSchema(
+    assurance,
+    phase1Schema.$defs.compositeAssurance,
+    phase1Schema,
   );
-  const nonGatingWarning = assurance?.capabilities?.filter(
-    ({ launch_gate: launchGate }) => !launchGate.gating,
-  ).some(({ facets }) => Object.values(facets)
-    .some(({ status }) => ["failed", "unverified"].includes(status)));
-  const expectedAssessment = gatingFailed
-    ? "no_go"
-    : gatingUnsatisfied
-      ? "inconclusive"
-      : nonGatingWarning
-        ? "ready_with_warnings"
-        : "launch_ready";
+  if (!schemaValid) {
+    const error = new Error("The Composite Assurance is incomplete or invalid.");
+    error.code = "invalid_composite_assurance";
+    throw error;
+  }
+  try {
+    assertValidArchitectureStatus(assurance.architecture_status.status);
+  } catch {
+    const error = new Error("The Composite Assurance is incomplete or invalid.");
+    error.code = "invalid_composite_assurance";
+    throw error;
+  }
+  const expectedAssessment = deriveCompositeLaunchAssessment(assurance.capabilities);
   const validCapabilities = assurance?.capabilities?.every((capability) => {
     const facetEntries = Object.entries(capability.facets);
-    const expectedState = expectedAssurance(capability);
-    const expectedGating = capability.requirement_state === "required";
-    const expectedSatisfied = capability.minimum_assurance === null
-      || assuranceStates.indexOf(expectedState)
-        >= assuranceStates.indexOf(capability.minimum_assurance);
+    const expectedState = deriveCapabilityAssuranceState(capability);
+    const expectedGating = capability.requirement_state === "required"
+      && capability.release_scope === "current_release";
+    const expectedSatisfied = capabilityAssuranceMeetsMinimum({
+      ...capability,
+      assurance_state: expectedState,
+    });
     return capability.environment === assurance.environment
       && facetEntries.every(([layer, facet]) => facet.layer === layer)
       && facetEntries.flatMap(([, facet]) => facet.evidence_refs)
@@ -1021,18 +1157,33 @@ export function assertValidCompositeAssurance(assurance) {
       && capability.launch_gate.gating === expectedGating
       && capability.launch_gate.satisfied === expectedSatisfied
       && (expectedGating
-        ? capability.minimum_assurance !== null
+        ? capability.minimum_assurance
+          === (CAPABILITY_MINIMUM_ASSURANCE[capability.capability_id]
+            ?? "operationally_verified")
         : capability.minimum_assurance === null);
   });
-  const valid = validatesSchema(
-    assurance,
-    phase1Schema.$defs.compositeAssurance,
-    phase1Schema,
-  )
-    && capabilityIds.length === new Set(capabilityIds).size
+  const valid = capabilityIds.length === new Set(capabilityIds).size
     && validCapabilities
-    && assurance.architecture_status.architecture_record_id
-      === assurance.source.architecture_record_id
+    && assurance.source.capability_graph.schema_version === CAPABILITY_GRAPH_SCHEMA
+    && assurance.source.architecture_record.schema_version === ARCHITECTURE_RECORD_SCHEMA
+    && assurance.source.integration_contracts.every(
+      (reference) => reference.schema_version === INTEGRATION_CONTRACT_SCHEMA,
+    )
+    && assurance.source.architecture_status.schema_version === ARCHITECTURE_STATUS_SCHEMA
+    && ((assurance.source.source_report === null)
+      === (assurance.source.evidence_index === null))
+    && assurance.architecture_status.status.environment === assurance.environment
+    && assurance.architecture_status.status.architecture_record.id
+      === assurance.source.architecture_record.id
+    && assurance.source.architecture_status.id
+      === assurance.architecture_status.status.status_id
+    && assurance.source.architecture_status.digest
+      === computeCanonicalDigest(assurance.architecture_status.status)
+    && assurance.assurance_id === `assurance_${computeCanonicalDigest({
+      policy_version: assurance.policy_version,
+      environment: assurance.environment,
+      source: assurance.source,
+    }).slice(7, 27)}`
     && JSON.stringify(assurance.launch_assessment.gating_capability_ids)
       === JSON.stringify(expectedGatingIds)
     && JSON.stringify(assurance.launch_assessment.failed_check_ids)

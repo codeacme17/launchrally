@@ -321,10 +321,11 @@
           "minItems": 1,
           "items": {
             "type": "object",
-            "required": ["capability_id", "environment", "requirement_state", "decision_state", "implementation_state", "evidence_state", "implementation_path"],
+            "required": ["capability_id", "environment", "release_scope", "requirement_state", "decision_state", "implementation_state", "evidence_state", "implementation_path"],
             "properties": {
               "capability_id": { "$ref": "#/$defs/identifier" },
               "environment": { "type": "string", "minLength": 1 },
+              "release_scope": { "enum": ["current_release", "future_release"] },
               "requirement_state": { "enum": ["required", "optional", "deferred", "not_applicable", "unknown"] },
               "decision_state": { "enum": ["retain", "adopt", "replace", "defer", "investigate", "undecided"] },
               "implementation_state": { "enum": ["present", "absent", "partial", "unknown"] },
@@ -998,11 +999,36 @@
         "environment": { "type": "string", "minLength": 1 },
         "source": {
           "type": "object",
-          "required": ["capability_graph_id", "architecture_record_id", "integration_contract_ids"],
+          "required": ["capability_graph", "architecture_record", "integration_contracts", "check_set_digest", "source_report", "evidence_index", "architecture_status"],
           "properties": {
-            "capability_graph_id": { "$ref": "#/$defs/identifier" },
-            "architecture_record_id": { "$ref": "#/$defs/identifier" },
-            "integration_contract_ids": { "$ref": "#/$defs/stringSet" }
+            "capability_graph": { "$ref": "#/$defs/recordReference" },
+            "architecture_record": { "$ref": "#/$defs/recordReference" },
+            "integration_contracts": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/recordReference" }
+            },
+            "check_set_digest": { "$ref": "#/$defs/digest" },
+            "source_report": {
+              "type": ["object", "null"],
+              "required": ["id", "schema_version", "digest"],
+              "properties": {
+                "id": { "$ref": "#/$defs/identifier" },
+                "schema_version": { "enum": ["launchrally.dev/report/v1", "launchrally.dev/report/v2"] },
+                "digest": { "$ref": "#/$defs/digest" }
+              },
+              "additionalProperties": false
+            },
+            "evidence_index": {
+              "type": ["object", "null"],
+              "required": ["id", "schema_version", "digest"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1 },
+                "schema_version": { "const": "launchrally.dev/evidence-index/v1" },
+                "digest": { "$ref": "#/$defs/digest" }
+              },
+              "additionalProperties": false
+            },
+            "architecture_status": { "$ref": "#/$defs/recordReference" }
           },
           "additionalProperties": false
         },
@@ -1011,10 +1037,11 @@
           "minItems": 1,
           "items": {
             "type": "object",
-            "required": ["capability_id", "environment", "requirement_state", "decision_ref", "implementation_path", "integration_contract_ids", "minimum_assurance", "facets", "assurance_state", "launch_gate"],
+            "required": ["capability_id", "environment", "release_scope", "requirement_state", "decision_ref", "implementation_path", "integration_contract_ids", "minimum_assurance", "facets", "assurance_state", "launch_gate"],
             "properties": {
               "capability_id": { "$ref": "#/$defs/identifier" },
               "environment": { "type": "string", "minLength": 1 },
+              "release_scope": { "enum": ["current_release", "future_release"] },
               "requirement_state": { "enum": ["required", "optional", "deferred", "not_applicable", "unknown"] },
               "decision_ref": {
                 "type": ["object", "null"],
@@ -1069,10 +1096,10 @@
         },
         "architecture_status": {
           "type": "object",
-          "required": ["independent", "architecture_record_id"],
+          "required": ["independent", "status"],
           "properties": {
             "independent": { "const": true },
-            "architecture_record_id": { "$ref": "#/$defs/identifier" }
+            "status": { "$ref": "#/$defs/architectureStatus" }
           },
           "additionalProperties": false
         }

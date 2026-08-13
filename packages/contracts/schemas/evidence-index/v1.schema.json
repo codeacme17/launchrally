@@ -19,6 +19,7 @@
           "evidence_kind": { "enum": ["file", "local_observation", "release_intent", "project_fact", "public_observation", "authenticated_journey_observation", "machine_evidence"] },
           "source": { "type": "string", "minLength": 1 },
           "target": { "type": "string", "minLength": 1 },
+          "environment": { "type": "string", "minLength": 1 },
           "collected_at": { "type": "string", "format": "date-time" },
           "freshness_class": { "enum": ["audit_time", "repository_snapshot", "confirmed_scope"] },
           "redaction_state": { "enum": ["normalized", "allowlisted", "metadata_only"] },

@@ -163,6 +163,7 @@
       {
         "capability_id": "identity_authentication",
         "environment": "production",
+        "release_scope": "current_release",
         "requirement_state": "required",
         "decision_state": "investigate",
         "implementation_state": "unknown",

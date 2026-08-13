@@ -16,6 +16,7 @@ import {
 
 import { sha256 } from "./local-history.js";
 import { createArchitecturePackageBundle } from "./architecture-package.js";
+import { createRecordReference, createReportReference } from "./record-reference.js";
 import { evaluateReportCurrentness } from "./report-currentness.js";
 import { decodeResumeState, encodeResumeState } from "./resume-state.js";
 
@@ -80,14 +81,6 @@ const PROVIDER_NEUTRAL_IMPLEMENTATIONS = Object.freeze({
 
 function decodeState(token) {
   return decodeResumeState(token, (state) => state?.state_version === STATE_VERSION);
-}
-
-function reference(id, schemaVersion, value) {
-  return { id, schema_version: schemaVersion, digest: sha256(value) };
-}
-
-function reportReference(report) {
-  return reference(`report_${sha256(report).slice(7, 27)}`, report.schema_version, report);
 }
 
 function interaction(status, state, resumeToken, sourceRefs, request) {
@@ -374,9 +367,13 @@ function blueprint(source, options) {
     }).slice(7, 27)}`,
     revision: 1,
     environment: intent.environment,
-    source_report: reportReference(report),
-    product_intent: reference(intent.profile_id, PRODUCT_INTENT_PROFILE_SCHEMA, intent),
-    capability_graph: reference(graph.graph_id, CAPABILITY_GRAPH_SCHEMA, graph),
+    source_report: createReportReference(report),
+    product_intent: createRecordReference(
+      intent.profile_id,
+      PRODUCT_INTENT_PROFILE_SCHEMA,
+      intent,
+    ),
+    capability_graph: createRecordReference(graph.graph_id, CAPABILITY_GRAPH_SCHEMA, graph),
     constraints: { hard: [...hard], preferences: [...intent.desired_intent.preferences] },
     decisions,
     whole_product: {

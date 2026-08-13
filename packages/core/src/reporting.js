@@ -129,7 +129,7 @@ function evidenceMetadata(evidence, createdAt) {
   throw error;
 }
 
-function createEvidenceRegistry({ reportId, createdAt, id, repositoryDigests }) {
+function createEvidenceRegistry({ reportId, createdAt, environment, id, repositoryDigests }) {
   const byDigest = new Map();
 
   function reference(evidence) {
@@ -144,6 +144,7 @@ function createEvidenceRegistry({ reportId, createdAt, id, repositoryDigests }) 
         digest: artifactDigest,
         evidence_kind: evidence.kind,
         ...evidenceMetadata(evidence, createdAt),
+        environment,
         normalized_artifact: normalizedArtifact,
       });
     }
@@ -420,6 +421,7 @@ export function createReportPackage({
   const evidenceRegistry = createEvidenceRegistry({
     reportId,
     createdAt,
+    environment: audit_brief.intended_environment.value,
     id,
     repositoryDigests: repository_digests,
   });

@@ -61,6 +61,18 @@ async function completeAudit(directory, finalOptions = {}) {
   });
 }
 
+function stripEvidenceEnvironment(value) {
+  if (Array.isArray(value)) {
+    value.forEach(stripEvidenceEnvironment);
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  if ("digest" in value && "source" in value && "target" in value) {
+    delete value.environment;
+  }
+  Object.values(value).forEach(stripEvidenceEnvironment);
+}
+
 test("init previews the canonical deterministic Manifest v2 YAML", async () => {
   const directory = await fixture();
   const audit = await completeAudit(directory);
@@ -310,6 +322,7 @@ test("new Reports bind Check Catalog v2 while historical Report v1 remains reada
   assert.equal(assertValidReportPackage(current), true);
 
   const historical = structuredClone(current);
+  stripEvidenceEnvironment(historical);
   historical.report.schema_version = "launchrally.dev/report/v1";
   historical.report.provenance.check_catalog_version = "web-baseline-check-catalog/v1";
   historical.report.catalog.versions.check_catalog = "web-baseline-check-catalog/v1";
@@ -323,6 +336,15 @@ test("new Reports bind Check Catalog v2 while historical Report v1 remains reada
       );
     delete declaration.pass_evidence_requirement;
     delete declaration.failure_evidence_requirement;
+    delete declaration.check_layer;
+    delete declaration.capability_ids;
+  }
+  for (const check of historical.report.results.checks) {
+    delete check.check_layer;
+    delete check.capability_ids;
+    delete check.environment;
+    delete check.failure_basis;
+    delete check.coverage;
   }
   historical.report_view.schema_version = "launchrally.dev/report-view/v1";
   historical.report_view.report_schema_version = "launchrally.dev/report/v1";
