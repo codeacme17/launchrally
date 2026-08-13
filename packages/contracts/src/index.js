@@ -197,6 +197,15 @@ function hasPersistedSensitivePayload(value) {
     || hasPersistedSensitivePayload(child));
 }
 
+const SECRET_VALUE_PATTERN = /(?:\bsk_(?:live|test)_[A-Za-z0-9]{16,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|https?:\/\/[^\s/@:]+:[^\s/@]+@)/u;
+
+function hasPersistedSecretValue(value) {
+  if (typeof value === "string") return SECRET_VALUE_PATTERN.test(value);
+  if (Array.isArray(value)) return value.some(hasPersistedSecretValue);
+  if (!value || typeof value !== "object") return false;
+  return Object.values(value).some(hasPersistedSecretValue);
+}
+
 function referenceUses(reference, schemaVersions) {
   return schemaVersions.includes(reference?.schema_version);
 }
@@ -288,7 +297,15 @@ export function assertValidReportPackage(source) {
 }
 
 export function assertValidLaunchPlan(plan) {
-  if (!validatesSchema(plan, launchPlanSchema)) {
+  let validTaskGraph = true;
+  if (plan?.task_graph !== undefined) {
+    try {
+      assertValidTaskGraph(plan.task_graph);
+    } catch {
+      validTaskGraph = false;
+    }
+  }
+  if (!validatesSchema(plan, launchPlanSchema) || !validTaskGraph) {
     const error = new Error("The Launch Plan is incomplete or invalid.");
     error.code = "invalid_launch_plan";
     throw error;
@@ -680,31 +697,109 @@ function taskGraphIsAcyclic(tasks) {
   return tasks.every(({ task_id: taskId }) => visit(taskId));
 }
 
-const PREREQUISITE_COMPLETE_STATES = new Set([
-  "reported_succeeded",
-  "verification_pending",
-  "verified",
-]);
+export const TASK_EFFECT_BOUNDARIES = Object.freeze({
+  read_only: Object.freeze({
+    allowed_effects: Object.freeze([
+      "active_test_observation",
+      "provider_configuration_read",
+      "public_read",
+      "repository_read",
+    ]),
+    prohibited_effects: Object.freeze([
+      "credential_persistence",
+      "deployment_write",
+      "production_data_write",
+      "provider_configuration_write",
+      "source_write",
+    ]),
+  }),
+  local_source: Object.freeze({
+    allowed_effects: Object.freeze(["source_write"]),
+    prohibited_effects: Object.freeze(["credential_persistence", "deployment_write", "production_data_write", "provider_configuration_write"]),
+  }),
+  provider_configuration: Object.freeze({
+    allowed_effects: Object.freeze(["provider_configuration_write"]),
+    prohibited_effects: Object.freeze(["credential_persistence", "deployment_write", "production_data_write", "source_write"]),
+  }),
+  secret: Object.freeze({
+    allowed_effects: Object.freeze(["secret_reference_use"]),
+    prohibited_effects: Object.freeze(["credential_persistence", "deployment_write", "production_data_write", "provider_configuration_write", "source_write"]),
+  }),
+  deployment: Object.freeze({
+    allowed_effects: Object.freeze(["deployment_write"]),
+    prohibited_effects: Object.freeze(["credential_persistence", "production_data_write", "provider_configuration_write", "source_write"]),
+  }),
+  production_data: Object.freeze({
+    allowed_effects: Object.freeze(["production_data_write"]),
+    prohibited_effects: Object.freeze(["credential_persistence", "deployment_write", "provider_configuration_write", "source_write"]),
+  }),
+  active_test: Object.freeze({
+    allowed_effects: Object.freeze(["active_test_execution"]),
+    prohibited_effects: Object.freeze(["credential_persistence", "deployment_write", "production_data_write", "provider_configuration_write", "source_write"]),
+  }),
+});
+const KNOWN_TASK_EFFECTS = new Set(Object.values(TASK_EFFECT_BOUNDARIES).flatMap((boundary) => [
+  ...boundary.allowed_effects,
+  ...boundary.prohibited_effects,
+]));
 
 function effectsAreDisjoint(value) {
   const allowed = new Set(value?.allowed_effects ?? []);
   return (value?.prohibited_effects ?? []).every((effect) => !allowed.has(effect));
 }
 
+function effectsMatchBoundary(task) {
+  const boundary = TASK_EFFECT_BOUNDARIES[task?.effect_class];
+  const allowed = new Set(boundary?.allowed_effects ?? []);
+  const prohibited = new Set(task?.prohibited_effects ?? []);
+  return boundary
+    && task.allowed_effects.every((effect) => allowed.has(effect))
+    && task.prohibited_effects.every((effect) => KNOWN_TASK_EFFECTS.has(effect))
+    && boundary.prohibited_effects.every((effect) => prohibited.has(effect));
+}
+
+function prerequisiteAllows(task, prerequisite) {
+  if (prerequisite?.status === "verified") return true;
+  return task?.effect_class === "read_only"
+    && ["reported_succeeded", "verification_pending"].includes(prerequisite?.status);
+}
+
+export function computeTaskGraphReadyFrontier(tasks) {
+  const taskById = new Map(tasks.map((task) => [task.task_id, task]));
+  return tasks.filter((task) =>
+    task.status === "not_started"
+    && task.prerequisites.every((prerequisiteId) =>
+      prerequisiteAllows(task, taskById.get(prerequisiteId))))
+    .map(({ task_id: taskId }) => taskId)
+    .sort();
+}
+
 export function assertValidTaskGraph(graph) {
   const tasks = graph?.tasks ?? [];
-  const taskById = new Map(tasks.map((task) => [task.task_id, task]));
+  const readyFrontier = computeTaskGraphReadyFrontier(tasks);
+  const currentnessIsConsistent = graph?.currentness?.state === "current"
+    ? graph.currentness.reasons.length === 0
+    : graph?.currentness?.state === "stale"
+      && graph.currentness.reasons.length > 0
+      && graph.ready_frontier.length === 0;
   const valid = validatesSchema(graph, phase1Schema.$defs.taskGraph, phase1Schema)
-    && tasks.every((task) => task.environment === graph.environment && effectsAreDisjoint(task))
+    && tasks.every((task) =>
+      task.environment === graph.environment
+      && effectsAreDisjoint(task)
+      && effectsMatchBoundary(task)
+      && (task.status === "verified"
+        ? task.verification_evidence?.length > 0
+        : task.verification_evidence === undefined))
     && taskGraphIsAcyclic(tasks)
-    && graph.ready_frontier.every((taskId) => {
-      const task = taskById.get(taskId);
-      return task?.status === "not_started"
-        && task.prerequisites.every((prerequisiteId) =>
-          PREREQUISITE_COMPLETE_STATES.has(taskById.get(prerequisiteId)?.status));
-    })
+    && currentnessIsConsistent
+    && (
+      graph.currentness.state === "stale"
+      || JSON.stringify([...graph.ready_frontier].sort()) === JSON.stringify(readyFrontier)
+    )
+    && referenceUses(graph?.source_report, ["launchrally.dev/report/v1", REPORT_SCHEMA])
     && referenceUses(graph?.architecture_record, [ARCHITECTURE_RECORD_SCHEMA])
-    && !hasPersistedSensitivePayload(graph);
+    && !hasPersistedSensitivePayload(graph)
+    && !hasPersistedSecretValue(graph);
   if (!valid) {
     const error = new Error("The Task Graph is incomplete or invalid.");
     error.code = "invalid_task_graph";

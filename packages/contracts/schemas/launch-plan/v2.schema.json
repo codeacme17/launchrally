@@ -26,6 +26,7 @@
       "type": "array",
       "items": { "$ref": "#/$defs/verificationGapWork" }
     },
+    "task_graph": { "type": "object" },
     "handoff": { "$ref": "#/$defs/handoff" },
     "next": { "$ref": "#/$defs/next" }
   },

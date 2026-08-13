@@ -1,6 +1,7 @@
 const OPTIONS_WITH_VALUES = new Set([
   "--answers",
   "--alternatives",
+  "--architecture-package",
   "--catalog",
   "--confirm",
   "--constraints",
@@ -23,6 +24,8 @@ const OPTIONS_WITH_VALUES = new Set([
   "--resume",
   "--scope",
   "--select",
+  "--task-graph",
+  "--task-updates",
   "--to",
 ]);
 
