@@ -18,6 +18,7 @@ import {
   ARCHITECTURE_RECORD_SCHEMA,
   CAPABILITY_CATALOG_SCHEMA,
   CAPABILITY_GRAPH_SCHEMA,
+  DESKTOP_SHARED_BACKEND_SCHEMA,
   INTEGRATION_CONTRACT_SCHEMA,
   PRODUCT_INTENT_PROFILE_SCHEMA,
   PROVIDER_KNOWLEDGE_SCHEMA,
@@ -27,6 +28,7 @@ import {
   assertValidArchitectureRecord,
   assertValidCapabilityCatalog,
   assertValidCapabilityGraph,
+  assertValidDesktopSharedBackend,
   assertValidIntegrationContract,
   assertValidProductIntentProfile,
   assertValidTaskGraph,
@@ -117,7 +119,7 @@ function buildConfirmedDecisions(blueprint, results) {
   return confirmed;
 }
 
-function buildDependencyIndex(input, confirmed, recordId, taskGraph) {
+function buildDependencyIndex(input, confirmed, recordId, taskGraph, desktopTopology) {
   const confirmedIds = new Set(confirmed.map(({ decision_id: decisionId }) => decisionId));
   const dependencies = input.dependencies ?? [];
   if (
@@ -157,12 +159,19 @@ function buildDependencyIndex(input, confirmed, recordId, taskGraph) {
   }).sort((left, right) => left.source_id.localeCompare(right.source_id));
   return {
     schema_version: "launchrally.dev/architecture-dependency-index/v1",
+    desktop_topology: desktopTopology === null
+      ? null
+      : reference(
+        `desktop_topology_${sha256(desktopTopology).slice(7, 23)}`,
+        DESKTOP_SHARED_BACKEND_SCHEMA,
+        desktopTopology,
+      ),
     edges,
   };
 }
 
 function assertBundle(value) {
-  const expectedKeys = [
+  const legacyKeys = [
     "architecture_record",
     "capability_graph",
     "dependency_index",
@@ -171,11 +180,16 @@ function assertBundle(value) {
     "product_intent",
     "task_graph",
   ];
+  const expectedKeys = [...legacyKeys, "desktop_topology"].sort();
+  const actualKeys = Object.keys(value ?? {}).sort();
   if (
     !value
     || typeof value !== "object"
     || Array.isArray(value)
-    || canonicalJson(Object.keys(value).sort()) !== canonicalJson(expectedKeys)
+    || ![
+      canonicalJson(legacyKeys.sort()),
+      canonicalJson(expectedKeys),
+    ].includes(canonicalJson(actualKeys))
   ) {
     const error = new Error("The Architecture Package bundle has an unsupported shape.");
     error.code = "invalid_architecture_package_bundle";
@@ -185,11 +199,24 @@ function assertBundle(value) {
   assertValidCapabilityGraph(value.capability_graph);
   assertValidArchitectureRecord(value.architecture_record);
   assertValidArchitecturePackage(value.package);
+  const desktopTopology = value.desktop_topology ?? null;
+  if (desktopTopology !== null) assertValidDesktopSharedBackend(desktopTopology);
   if (value.task_graph !== null) assertValidTaskGraph(value.task_graph);
   if (
     value.dependency_index?.schema_version
       !== "launchrally.dev/architecture-dependency-index/v1"
     || !Array.isArray(value.dependency_index?.edges)
+    || (desktopTopology === null
+      ? value.dependency_index?.desktop_topology !== null
+        && value.dependency_index?.desktop_topology !== undefined
+      : !referencesEqual(
+        value.dependency_index?.desktop_topology,
+        reference(
+          `desktop_topology_${sha256(desktopTopology).slice(7, 23)}`,
+          DESKTOP_SHARED_BACKEND_SCHEMA,
+          desktopTopology,
+        ),
+      ))
     || (value.previous_package !== null && !suppliedReferenceIsValid(value.previous_package))
   ) {
     const error = new Error("The Architecture dependency index is incomplete or invalid.");
@@ -228,6 +255,8 @@ export function createArchitecturePackageBundle(input, options = {}) {
     assertValidIntegrationContract(contract);
   }
   assertProviderKnowledgeReferences(input?.provider_knowledge_refs ?? []);
+  const desktopTopology = input?.desktop_topology ?? null;
+  if (desktopTopology !== null) assertValidDesktopSharedBackend(desktopTopology);
   if (input?.previous_package) {
     assertValidArchitecturePackage(input.previous_package);
     if (input.previous_package.environment !== input.blueprint?.environment) {
@@ -298,10 +327,17 @@ export function createArchitecturePackageBundle(input, options = {}) {
       architecture_record: reference(recordId, ARCHITECTURE_RECORD_SCHEMA, architectureRecord),
     };
   if (taskGraph !== null) assertValidTaskGraph(taskGraph);
-  const dependencyIndex = buildDependencyIndex(input, confirmedDecisions, recordId, taskGraph);
+  const dependencyIndex = buildDependencyIndex(
+    input,
+    confirmedDecisions,
+    recordId,
+    taskGraph,
+    desktopTopology,
+  );
   const packageId = `architecture_package_${sha256({
     architecture_record: architectureRecord,
     dependency_index: dependencyIndex,
+    desktop_topology: desktopTopology === null ? null : structuredClone(desktopTopology),
   }).slice(7, 23)}`;
   const architecturePackage = {
     schema_version: ARCHITECTURE_PACKAGE_SCHEMA,
@@ -343,6 +379,7 @@ export function createArchitecturePackageBundle(input, options = {}) {
     architecture_record: architectureRecord,
     task_graph: taskGraph === null ? null : structuredClone(taskGraph),
     dependency_index: dependencyIndex,
+    desktop_topology: desktopTopology === null ? null : structuredClone(desktopTopology),
   };
   assertBundle(value);
   return value;
@@ -379,6 +416,12 @@ export function evaluateArchitecturePackageCurrentness(bundle, current = {}) {
     ["provider_knowledge", bindings.provider_knowledge, current.provider_knowledge, referenceSetEqual],
     ["constraints", bindings.constraints_digest, current.constraints_digest, (left, right) =>
       left === right],
+    [
+      "desktop_topology",
+      bundle.dependency_index.desktop_topology,
+      current.desktop_topology,
+      referencesEqual,
+    ],
   ];
   const stale = [];
   for (const [name, bound, candidate, compare] of inputChecks) {
@@ -472,11 +515,15 @@ function pointerMatchesPredecessor(pointer, predecessor) {
 }
 
 function packageFiles(bundle) {
+  const desktopTopology = bundle.desktop_topology ?? null;
   return [
     ["package.json", bundle.package],
     ["capability-graph.json", bundle.capability_graph],
     ["architecture-record.json", bundle.architecture_record],
     ["dependency-index.json", bundle.dependency_index],
+    ...(desktopTopology === null
+      ? []
+      : [["desktop-topology.json", desktopTopology]]),
     ...(bundle.task_graph === null ? [] : [["task-graph.json", bundle.task_graph]]),
   ].map(([name, value]) => ({ name, content: `${canonicalJson(value)}\n` }));
 }

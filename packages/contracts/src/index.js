@@ -25,6 +25,12 @@ const providerToolRecoverySchema = require(
   "../schemas/provider-tool-recovery/v1.schema.json",
 );
 const phase1Schema = require("../schemas/phase-1/v1.schema.json");
+const phase1AdoptionSchema = require("../schemas/phase-1-adoption/v1.schema.json");
+const phase1MigrationPreviewSchema = require(
+  "../schemas/phase-1-migration-preview/v1.schema.json",
+);
+const hostResumeArtifactSchema = require("../schemas/host-resume-artifact/v1.schema.json");
+const desktopSharedBackendSchema = require("../schemas/desktop-shared-backend/v1.schema.json");
 
 export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v2";
 export const EXECUTION_AUTHORITY_CONTRACT = "launchrally.dev/execution-authority/v1";
@@ -91,6 +97,11 @@ export const ARCHITECTURE_STATUS_SCHEMA = "launchrally.dev/architecture-status/v
 export const COMPOSITE_ASSURANCE_SCHEMA = "launchrally.dev/composite-assurance/v1";
 export const ARCHITECT_INTERACTION_SCHEMA =
   "launchrally.dev/architect-interaction/v1";
+export const HOST_RESUME_ARTIFACT_SCHEMA = "launchrally.dev/host-resume-artifact/v1";
+export const DESKTOP_SHARED_BACKEND_SCHEMA = "launchrally.dev/desktop-shared-backend/v1";
+export const PHASE_1_ADOPTION_SCHEMA = "launchrally.dev/phase-1-adoption/v1";
+export const PHASE_1_MIGRATION_PREVIEW_SCHEMA =
+  "launchrally.dev/phase-1-migration-preview/v1";
 export const HANDOFF_INTERACTION_SCHEMA = "launchrally.dev/handoff-interaction/v1";
 export const COMPOSITE_ASSURANCE_STATES = Object.freeze([
   "unverified",
@@ -137,6 +148,10 @@ export const PHASE_1_SCHEMA_VERSIONS = Object.freeze([
   COMPOSITE_ASSURANCE_SCHEMA,
   ARCHITECTURE_STATUS_SCHEMA,
   ARCHITECT_INTERACTION_SCHEMA,
+  PHASE_1_ADOPTION_SCHEMA,
+  PHASE_1_MIGRATION_PREVIEW_SCHEMA,
+  HOST_RESUME_ARTIFACT_SCHEMA,
+  DESKTOP_SHARED_BACKEND_SCHEMA,
   HANDOFF_INTERACTION_SCHEMA,
 ]);
 
@@ -192,6 +207,7 @@ function validatesSchema(value, schema, root = schema) {
   if (schema.enum && !schema.enum.some((candidate) => Object.is(value, candidate))) return false;
   if (typeof value === "string") {
     if (schema.minLength !== undefined && value.length < schema.minLength) return false;
+    if (schema.maxLength !== undefined && [...value].length > schema.maxLength) return false;
     if (schema.pattern && !new RegExp(schema.pattern, "u").test(value)) return false;
     if (schema.format === "date-time" && Number.isNaN(Date.parse(value))) return false;
     if (schema.format === "uri") {
@@ -1468,6 +1484,83 @@ export function assertValidArchitectInteraction(interaction) {
   );
 }
 
+export function assertValidHostResumeArtifact(artifact) {
+  const content = artifact && typeof artifact === "object" && !Array.isArray(artifact)
+    ? Object.fromEntries(Object.entries(artifact).filter(([key]) =>
+      !["artifact_id", "artifact_digest", "attestation"].includes(key)))
+    : null;
+  const expectedDigest = content ? computeCanonicalDigest(content) : null;
+  const validStates = artifact?.operation === "architect"
+    ? new Set(["intent_discovery", "blueprint_review", "decision_confirmation"])
+    : artifact?.operation === "handoff"
+      ? new Set(["executor_discovery", "authority_preview", "receipt_review", "verification_pending"])
+      : new Set();
+  const valid = validatesSchema(artifact, hostResumeArtifactSchema, hostResumeArtifactSchema)
+    && validStates.has(artifact?.state)
+    && artifact?.artifact_digest === expectedDigest
+    && artifact?.artifact_id === `host_resume_${expectedDigest.slice(7, 27)}`
+    && !hasPersistedSensitivePayload(artifact)
+    && !hasPersistedSecretValue(artifact);
+  if (!valid) {
+    const error = new Error("The Host Resume Artifact is incomplete or invalid.");
+    error.code = "invalid_host_resume_artifact";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidDesktopSharedBackend(value) {
+  const requiredExclusions = ["signing", "notarization", "store_review", "distribution", "updater"];
+  const valid = validatesSchema(value, desktopSharedBackendSchema, desktopSharedBackendSchema)
+    && JSON.stringify([...(value?.excluded_release_readiness ?? [])].sort())
+      === JSON.stringify([...requiredExclusions].sort())
+    && !hasPersistedSensitivePayload(value)
+    && !hasPersistedSecretValue(value);
+  if (!valid) {
+    const error = new Error("The Desktop Shared Backend topology is incomplete or invalid.");
+    error.code = "invalid_desktop_shared_backend";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidPhase1Adoption(adoption) {
+  const valid = validatesSchema(adoption, phase1AdoptionSchema, phase1AdoptionSchema)
+    && JSON.stringify(adoption?.preserved_contracts) === JSON.stringify([
+      "launchrally.dev/manifest/v2",
+      "launchrally.dev/report/v2",
+      "launchrally.dev/evidence-index/v1",
+    ])
+    && !hasPersistedSensitivePayload(adoption)
+    && !hasPersistedSecretValue(adoption);
+  if (!valid) {
+    const error = new Error("The Phase 1 Adoption record is incomplete or invalid.");
+    error.code = "invalid_phase_1_adoption";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidPhase1MigrationPreview(preview) {
+  const valid = validatesSchema(preview, phase1MigrationPreviewSchema, phase1MigrationPreviewSchema)
+    && JSON.stringify(preview?.files) === JSON.stringify([
+      ".launchrally/phase-1/adoption.json",
+      ".launchrally/phase-1/records/",
+      ".launchrally/phase-1/transactions/",
+    ])
+    && JSON.stringify(preview?.preserved_paths) === JSON.stringify([
+      ".launchrally/manifest.yaml",
+      ".launchrally/reports/",
+      ".launchrally/evidence/",
+    ]);
+  if (!valid) {
+    const error = new Error("The Phase 1 Migration Preview is incomplete or invalid.");
+    error.code = "invalid_phase_1_migration_preview";
+    throw error;
+  }
+  return true;
+}
+
 export function assertValidHandoffInteraction(interaction) {
   return assertValidPhase1Interaction(
     interaction,
@@ -1537,6 +1630,10 @@ const PHASE_1_VALIDATORS = Object.freeze({
   [COMPOSITE_ASSURANCE_SCHEMA]: assertValidCompositeAssurance,
   [ARCHITECTURE_STATUS_SCHEMA]: assertValidArchitectureStatus,
   [ARCHITECT_INTERACTION_SCHEMA]: assertValidArchitectInteraction,
+  [PHASE_1_ADOPTION_SCHEMA]: assertValidPhase1Adoption,
+  [PHASE_1_MIGRATION_PREVIEW_SCHEMA]: assertValidPhase1MigrationPreview,
+  [HOST_RESUME_ARTIFACT_SCHEMA]: assertValidHostResumeArtifact,
+  [DESKTOP_SHARED_BACKEND_SCHEMA]: assertValidDesktopSharedBackend,
   [HANDOFF_INTERACTION_SCHEMA]: assertValidHandoffInteraction,
 });
 

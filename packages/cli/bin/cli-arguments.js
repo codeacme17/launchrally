@@ -6,6 +6,7 @@ const OPTIONS_WITH_VALUES = new Set([
   "--confirm",
   "--constraints",
   "--decisions",
+  "--desktop-shared-backend-capabilities",
   "--executors",
   "--checks",
   "--choice",

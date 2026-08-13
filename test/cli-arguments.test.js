@@ -17,6 +17,7 @@ test("Launcher and Engine command classification skips every valued option", () 
     "--choice",
     "--cwd",
     "--decisions",
+    "--desktop-shared-backend-capabilities",
     "--gap",
     "--graph",
     "--intent",

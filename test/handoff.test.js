@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -823,6 +823,48 @@ test("opaque handoff state resumes across independent Core calls", async () => {
   });
   assert.equal(resumed.status, "needs_confirmation");
   assert.equal(resumed.state, "authority_preview");
+});
+
+test("Claude Handoff state resumes in Codex from one validated local artifact", async () => {
+  const claude = await import("../adapters/claude/launchrally/host-adapter/resume.js");
+  const codex = await import("../adapters/codex/launchrally/host-adapter/resume.js");
+  const discovered = await runHandoff(source(), {}, {
+    platform: "linux-x64",
+    now: "2026-08-13T00:00:00.000Z",
+  });
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-handoff-resume-"));
+  const artifactPath = path.join(directory, "handoff-resume.json");
+  await claude.saveResumeArtifact(artifactPath, discovered.interaction, directory);
+  const resumed = await codex.resumeArtifactFile({
+    cwd: directory,
+    artifact_path: artifactPath,
+    options: {
+      selection: discovered.request.choices[0],
+      now: "2026-08-13T00:00:00.000Z",
+    },
+  });
+  assert.equal(resumed.status, "needs_confirmation", JSON.stringify(resumed));
+  assert.equal(resumed.state, "authority_preview");
+  assert.equal(resumed.handoff_package.approval.state, "required");
+  assert.notEqual(resumed.resume_token, discovered.resume_token);
+
+  const confirmed = await runHandoff({}, {
+    resume_token: resumed.resume_token,
+    confirmation: "confirm",
+  }, {
+    platform: "linux-x64",
+    now: "2026-08-13T00:00:00.000Z",
+  });
+  assert.equal(confirmed.state, "receipt_review", JSON.stringify(confirmed));
+  const receiptReviewed = await runHandoff({}, {
+    resume_token: confirmed.resume_token,
+    receipt: receiptFor(confirmed),
+  }, {
+    platform: "linux-x64",
+    now: "2026-08-13T00:01:00.000Z",
+  });
+  assert.equal(receiptReviewed.status, "partial_completion", JSON.stringify(receiptReviewed));
+  assert.equal(receiptReviewed.request.kind, "fresh_verification");
 });
 
 test("the public JSON CLI exposes typed discovery and resumable authority preview", async () => {

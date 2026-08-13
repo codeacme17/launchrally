@@ -2,7 +2,7 @@
 
 Phase 1 records use the exact schema version declared in each object. Validate them through `@launchrally/contracts`; do not reconstruct a record from terminal prose or accept an unknown major or enum value.
 
-The contract foundation defines Product Intent Profile, Provider Knowledge, Capability Catalog and Graph, Integration Contract, Architecture Blueprint and Record, Architecture Package, Task Graph, Executor Descriptor, Handoff Package, Execution Receipt, active-verification request and result, Composite Assurance, Architecture Status, and typed `architect` and `handoff` interactions.
+The contract foundation defines Product Intent Profile, Provider Knowledge, Capability Catalog and Graph, Integration Contract, Architecture Blueprint and Record, Architecture Package, Desktop Shared Backend topology, Task Graph, Executor Descriptor, Handoff Package, Execution Receipt, active-verification request and result, Composite Assurance, Architecture Status, Host Resume Artifact, and typed `architect` and `handoff` interactions.
 
 Preserve these distinctions:
 
@@ -19,5 +19,9 @@ Preserve these distinctions:
 - Provider Knowledge is versioned independently from the Capability Catalog, remains advisory and non-Evidence, and is bound to exact source provenance, trust tier, review/expiry dates, and digest.
 
 The CLI implements typed `rally architect` Blueprint review and independent decision confirmation. `rally plan` can combine a current Report and immutable Architecture Package into a typed Provider-neutral Task Graph, including deterministic safe-frontier recomputation. Task generation and compatible Executor mapping grant no execution authority.
+
+An initialized Phase 0 project remains usable without Phase 1 adoption. The first `rally architect` invocation previews the exact additive `.launchrally/phase-1/` paths and must receive explicit migration confirmation before writing them. Denial or interruption preserves the Manifest, Reports, Evidence, and toolchain byte-for-byte. Adoption metadata never relabels historical Phase 0 records.
+
+Codex and Claude can exchange an Architecture or Handoff pause only through a validated local `launchrally.dev/host-resume-artifact/v1` file produced by the adapter's `./resume` export. Write it to an explicitly selected local path and have the other host read that path; never copy resume state through prose or edit the file. Architecture and Handoff use the durable owner-restricted `~/.launchrally/host-resume-v1/` registry without writing project state or a verification key beside the selected artifact. The registry retains the key plus encrypted resumable state. The sealed artifact binds the exact opaque token, interaction state, source references, origin host, and digest. Its plaintext contains no Blueprint rationale or Task prose. Keep the artifact local and remove it when no longer needed. The registry persists independently of Plugin/Launcher removal so retained artifacts remain resumable; manually deleting it removes all pending state and invalidates every retained Host Resume Artifact.
 
 `rally handoff` implements typed external Executor discovery, bounded authority preview, explicit confirmation, and claim-only receipt review. Accept only exact, current Descriptor bindings and exact tool observations. The Handoff Package is the authority source; prose is derived presentation. LaunchRally does not invoke the Executor. A receipt can update a Task only to a reported, cancelled, or failed claim state and must route to fresh Verify before assurance changes. Active verification uses the separate Core interface and must not be synthesized from an ordinary handoff result.

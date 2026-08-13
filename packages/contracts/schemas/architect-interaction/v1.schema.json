@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchrally.dev/architect-interaction/v1",
   "$ref": "../phase-1/v1.schema.json#/$defs/phase1Interaction",
+  "properties": {
+    "operation": { "const": "architect" },
+    "state": { "enum": ["intent_discovery", "blueprint_review", "decision_confirmation", "completed"] }
+  },
   "x-launchrally-operation": "architect",
   "x-launchrally-contract-major": 1
 }

@@ -2,11 +2,15 @@
 
 Use `rally architect` only with a structurally valid current full Report, a confirmed Product Intent Profile, the matching Capability Catalog, and the matching Capability Graph. Prior Init is not required. Treat `stale_input` as a stop condition that requires a fresh Audit or Verify.
 
+For an initialized Phase 0 project with no Phase 1 adoption record, first present the standalone `launchrally.dev/phase-1-migration-preview/v1` record exactly as returned. Confirm only after the builder accepts every listed path. `deny` and `cancel` leave existing Phase 0 behavior and records unchanged; an interrupted transaction may be retried. Adoption is additive and must not rewrite or relabel the Manifest, Reports, Evidence, or prior history.
+
 Present the complete whole-product Blueprint before requesting any decision confirmation. Keep hard constraints separate from preferences. A hard-constraint conflict is excluded and can never be recommended. Describe recommendations as fit under the confirmed constraints, never as a universal best Provider or as the output of an opaque score.
 
 Use only the Provider Knowledge assessment's eligible records for normative Provider recommendations. Keep stale, unregistered, non-normative-source, and Local Experimental Cards advisory and present their Provider Verification Gaps. A Knowledge reference records recommendation provenance; it is never Machine Evidence.
 
 Preserve the Blueprint's integration compatibility, operational burden, cost drivers and assumptions, data flow and residency, failure domains, Provider concentration, lock-in and exit, duplication, migration cost, Unknowns, trade-offs, assumptions, and reevaluation triggers. A null currency estimate means no current official pricing was reviewed; never invent an exact bill.
+
+For `desktop_with_shared_backend`, pass the exact reviewed capability IDs through `--desktop-shared-backend-capabilities '<json-array>'` in Agent Mode and require the returned `launchrally.dev/desktop-shared-backend/v1` topology record. Assess the shared backend independently. Always keep signing, notarization, store review, distribution, and updater readiness explicitly Unknown unless separately verified; a working shared backend does not prove a distributable desktop release.
 
 Existing implementations default to retain. Replacement requires a positive rationale. After Blueprint confirmation, present each decision independently and submit only the builder's exact `confirm` or `reject` response. Partial completion is resumable and does not imply acceptance of pending or rejected decisions.
 

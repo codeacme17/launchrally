@@ -24,6 +24,14 @@ export {
 } from "./execution-authority.js";
 export { runToolchainLifecycle } from "./toolchain-lifecycle.js";
 export { runArchitectureDecisionEngine } from "./architecture-engine.js";
+export { runArchitectureJourney } from "./architecture-journey.js";
+export {
+  createHostResumeArtifact,
+  readHostResumeArtifact,
+  resumeFromHostArtifact,
+  resumeFromHostArtifactFile,
+  writeHostResumeArtifact,
+} from "./host-resume.js";
 export {
   createArchitecturePackageBundle,
   evaluateArchitecturePackageCurrentness,

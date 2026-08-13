@@ -1,8 +1,4 @@
 import { createRequire } from "node:module";
-import { randomBytes } from "node:crypto";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
 
 import {
   EXECUTOR_DESCRIPTOR_SCHEMA,
@@ -20,6 +16,7 @@ import { sha256 } from "./local-history.js";
 import { createHandoffAuthorityBatch } from "./handoff-authority.js";
 import { recordReferencesEqual } from "./record-reference.js";
 import { mapTaskGraphExecutors } from "./task-graph.js";
+import { loadHostState, saveHostState, storeHostState } from "./host-state.js";
 
 const require = createRequire(import.meta.url);
 const executorInstallationAuthorities = require("../executor-installation/v1/authority.json");
@@ -28,7 +25,6 @@ const INSTALLATION_AUTHORITY_BY_ID = new Map(executorInstallationAuthorities.map
   Object.freeze(authority),
 ]));
 const CORE_EXECUTOR_DESCRIPTOR_DIGESTS = new Map();
-const STATE_TOKEN = /^lrhandoff_([A-Za-z0-9]{6}|[A-Za-z0-9]{12})_([A-Za-z0-9_-]{43})$/u;
 
 const SAFETY = Object.freeze({
   installation_executed: false,
@@ -107,45 +103,17 @@ function recoveryFor(state, includeInstructions = false, assessmentTime = state.
   };
 }
 
-function statePathForToken(token) {
-  if (typeof token !== "string") return null;
-  const match = token.match(STATE_TOKEN);
-  return match
-    ? path.join(os.tmpdir(), `launchrally-handoff-${match[1]}`, `${match[2]}.json`)
-    : null;
+export async function storeHandoffState(state) {
+  return storeHostState("handoff", state);
 }
 
-async function storeState(state) {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-handoff-"));
-  const directoryToken = path.basename(directory).slice("launchrally-handoff-".length);
-  const fileToken = randomBytes(32).toString("base64url");
-  await writeFile(path.join(directory, `${fileToken}.json`), `${JSON.stringify(state)}\n`, {
-    encoding: "utf8",
-    flag: "wx",
-    mode: 0o600,
-  });
-  return `lrhandoff_${directoryToken}_${fileToken}`;
+export async function loadHandoffState(token) {
+  const state = loadHostState("handoff", token);
+  return state?.state_version === "executor-handoff/v1" ? state : null;
 }
 
-async function loadState(token) {
-  const statePath = statePathForToken(token);
-  if (!statePath) return null;
-  try {
-    const state = JSON.parse(await readFile(statePath, "utf8"));
-    return state?.state_version === "executor-handoff/v1" ? state : null;
-  } catch {
-    return null;
-  }
-}
-
-async function saveState(state, token) {
-  const statePath = statePathForToken(token);
-  if (!statePath) return false;
-  await writeFile(statePath, `${JSON.stringify(state)}\n`, {
-    encoding: "utf8",
-    mode: 0o600,
-  });
-  return true;
+export async function saveHandoffState(state, token) {
+  return saveHostState("handoff", state, token);
 }
 
 function result(status, state, resumeToken, sourceRefs, request, preview, extra = {}) {
@@ -492,9 +460,9 @@ function staleResult(state, token) {
 }
 
 export async function runHandoff(source = {}, options = {}, dependencies = {}) {
-  const store = dependencies.store_state ?? storeState;
-  const load = dependencies.load_state ?? loadState;
-  const save = dependencies.save_state ?? saveState;
+  const store = dependencies.store_state ?? storeHandoffState;
+  const load = dependencies.load_state ?? loadHandoffState;
+  const save = dependencies.save_state ?? saveHandoffState;
   if (options.resume_token) {
     const state = await load(options.resume_token);
     if (!state) {

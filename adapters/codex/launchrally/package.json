@@ -18,7 +18,8 @@
     "skills/"
   ],
   "exports": {
-    "./authenticated-journey": "./host-adapter/authenticated-journey.js"
+    "./authenticated-journey": "./host-adapter/authenticated-journey.js",
+    "./resume": "./host-adapter/resume.js"
   },
   "dependencies": {
     "@launchrally/core": "0.3.2"

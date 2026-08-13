@@ -34,6 +34,74 @@
       ],
       "tracking": "#135",
       "status": "complete"
+    },
+    {
+      "id": "P1-COMPAT-01",
+      "requirement": "Initialized Phase 0 projects remain usable until an explicitly confirmed additive, transactional Phase 1 migration preserves every existing Manifest, Report, Evidence, and history record",
+      "contracts": [
+        "packages/contracts/schemas/architect-interaction/v1.schema.json",
+        "packages/contracts/schemas/phase-1-adoption/v1.schema.json",
+        "packages/contracts/schemas/phase-1-migration-preview/v1.schema.json"
+      ],
+      "implementation": [
+        "packages/core/src/architecture-journey.js",
+        "packages/cli/bin/human-architect.js"
+      ],
+      "tests": [
+        {
+          "path": "test/architecture-engine.test.js",
+          "name": "first Architect use previews additive P1 adoption and denial preserves P0 bytes"
+        },
+        {
+          "path": "test/architecture-engine.test.js",
+          "name": "confirmed P1 adoption commits atomically and interruption preserves the P0 project"
+        }
+      ],
+      "tracking": "#136",
+      "status": "complete"
+    },
+    {
+      "id": "P1-ARCH-DESKTOP-01",
+      "requirement": "Desktop shared-backend architecture is typed while distribution readiness remains explicitly excluded",
+      "contracts": [
+        "packages/contracts/schemas/desktop-shared-backend/v1.schema.json"
+      ],
+      "implementation": [
+        "packages/core/src/architecture-engine.js",
+        "packages/cli/bin/engine.js"
+      ],
+      "tests": [
+        {
+          "path": "test/architecture-engine.test.js",
+          "name": "desktop shared-backend assessment keeps distribution readiness explicitly Unknown"
+        }
+      ],
+      "tracking": "#136",
+      "status": "complete"
+    },
+    {
+      "id": "P1-HOST-01",
+      "requirement": "Codex and Claude resume Architecture and Handoff state from exact digest-bound local artifacts without prose reconstruction",
+      "contracts": [
+        "packages/contracts/schemas/host-resume-artifact/v1.schema.json"
+      ],
+      "implementation": [
+        "packages/core/src/host-resume.js",
+        "adapters/codex/launchrally/host-adapter/resume.js",
+        "adapters/claude/launchrally/host-adapter/resume.js"
+      ],
+      "tests": [
+        {
+          "path": "test/architecture-engine.test.js",
+          "name": "Codex Architecture state resumes in Claude from one validated local artifact"
+        },
+        {
+          "path": "test/handoff.test.js",
+          "name": "Claude Handoff state resumes in Codex from one validated local artifact"
+        }
+      ],
+      "tracking": "#136",
+      "status": "complete"
     }
   ]
 }

@@ -205,6 +205,32 @@ test("currentness invalidates only declared decision dependencies and reassesses
   }).state, "needs_reassessment");
 });
 
+test("desktop topology is immutable Package state and participates in currentness", () => {
+  const desktopTopology = {
+    schema_version: "launchrally.dev/desktop-shared-backend/v1",
+    topology: "desktop_with_shared_backend",
+    capability_ids: ["runtime_execution"],
+    excluded_release_readiness: [
+      "signing",
+      "notarization",
+      "store_review",
+      "distribution",
+      "updater",
+    ],
+  };
+  const value = bundle("2026-08-13T00:00:00.000Z", {
+    desktop_topology: desktopTopology,
+  });
+  assert.deepEqual(value.desktop_topology, desktopTopology);
+  assert.equal(value.dependency_index.desktop_topology.digest, sha256(desktopTopology));
+  assert.equal(evaluateArchitecturePackageCurrentness(value, {
+    desktop_topology: {
+      ...value.dependency_index.desktop_topology,
+      digest: `sha256:${"8".repeat(64)}`,
+    },
+  }).state, "needs_reassessment");
+});
+
 test("pre-Init architecture is output-only unless an explicit output path is selected", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architecture-output-"));
   const value = bundle();

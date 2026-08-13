@@ -16,7 +16,7 @@ import {
   resolveExecutionAuthority,
   persistArchitecturePackage,
   runAudit,
-  runArchitectureDecisionEngine,
+  runArchitectureJourney,
   runHandoff,
   runInit,
   runPlan,
@@ -591,6 +591,7 @@ function help() {
       "Core commands:",
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
       "  architect Build and independently confirm a whole-product Architecture Blueprint",
+      "            --desktop-shared-backend-capabilities <json-array> records the reviewed desktop topology while excluding distribution readiness",
       "  architecture-package Preview or persist a confirmed immutable Architecture Package",
       "  handoff  Discover, preview, and confirm bounded external Executor authority",
       "  init     Preview and confirm local adoption after a complete Audit Report",
@@ -804,8 +805,9 @@ async function main() {
       return 2;
     }
     const alternatives = jsonOption("--alternatives");
+    const desktopSharedBackend = jsonOption("--desktop-shared-backend-capabilities");
     const decisionResponses = jsonOption("--decisions");
-    if (alternatives.error || decisionResponses.error) {
+    if (alternatives.error || desktopSharedBackend.error || decisionResponses.error) {
       print({
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
@@ -838,8 +840,13 @@ async function main() {
           cwd,
           source,
           reviewDate: optionValue("--review-date"),
-          runArchitect: runArchitectureDecisionEngine,
+          desktopSharedBackendCapabilityIds: desktopSharedBackend.value,
+          runArchitect: runArchitectureJourney,
           prompt: {
+            async confirmMigration(preview) {
+              process.stdout.write(`${JSON.stringify(preview, null, 2)}\n`);
+              return choose("Adopt additive Phase 1 local records while preserving Phase 0 history?");
+            },
             async confirmBlueprint(blueprint) {
               process.stdout.write(`${JSON.stringify(blueprint, null, 2)}\n`);
               return choose("Confirm this whole-product Blueprint?");
@@ -856,11 +863,14 @@ async function main() {
         readline.close();
       }
     }
-    const result = runArchitectureDecisionEngine(cwd, source, {
+    const result = await runArchitectureJourney(cwd, source, {
       review_date: optionValue("--review-date"),
+      launcher_version: VERSION,
       resume_token: optionValue("--resume"),
+      migration_confirmation: optionValue("--confirm"),
       blueprint_confirmation: optionValue("--confirm"),
       decision_responses: decisionResponses.value,
+      desktop_shared_backend_capability_ids: desktopSharedBackend.value,
     });
     print(result);
     return ["unavailable", "execution_error", "stale_input"].includes(result.status) ? 2 : 0;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,18 +9,25 @@ import { promisify } from "node:util";
 import {
   assertValidArchitectInteraction,
   assertValidArchitectureBlueprint,
+  assertValidHostResumeArtifact,
   assertValidIntegrationContract,
 } from "../packages/contracts/src/index.js";
 import {
   buildCapabilityGraph,
   createCapabilityCatalog,
+  resolveExecutionAuthority,
   runArchitectureDecisionEngine,
+  runArchitectureJourney,
   runAudit,
 } from "../packages/core/src/index.js";
 import {
   normalizeArchitectAnswer,
   runHumanArchitect,
 } from "../packages/cli/bin/human-architect.js";
+import {
+  materializeExactToolchain,
+  writeExactToolchain,
+} from "./helpers/exact-toolchain.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
@@ -32,6 +39,59 @@ async function fixture() {
     scripts: { build: "vite build" },
   }, null, 2)}\n`);
   return directory;
+}
+
+async function initializedP0Fixture() {
+  const directory = await fixture();
+  const launchrally = path.join(directory, ".launchrally");
+  await mkdir(path.join(launchrally, "reports"), { recursive: true });
+  await mkdir(path.join(launchrally, "evidence"), { recursive: true });
+  const unknown = { state: "unknown", reason: "fixture" };
+  await writeFile(path.join(launchrally, "manifest.yaml"), `${JSON.stringify({
+    schema_version: "launchrally.dev/manifest/v2",
+    project: { name: unknown, type: unknown, package_manager: unknown },
+    release: {
+      intended_environment: unknown,
+      production_targets: unknown,
+      core_journeys: unknown,
+    },
+    execution: {
+      source_report_id: unknown,
+      assessment: unknown,
+      public_verification: unknown,
+    },
+    support: { layers: unknown },
+    providers: { roles: unknown },
+  })}\n`);
+  await writeFile(path.join(launchrally, "reports", "p0-report.json"), "{\"phase\":\"p0\"}\n");
+  await writeFile(path.join(launchrally, "evidence", "p0-evidence.json"), "{\"phase\":\"p0\"}\n");
+  await writeExactToolchain(directory);
+  await materializeExactToolchain(directory);
+  await writeFile(path.join(launchrally, "toolchain", "authority.json"), `${JSON.stringify({
+    contract: "launchrally.dev/execution-authority/v1",
+    engine: {
+      package: "@launchrally/cli",
+      version: "0.3.2",
+      entrypoint: "bin/engine.js",
+    },
+  })}\n`);
+  return directory;
+}
+
+async function snapshotLaunchRally(directory) {
+  const root = path.join(directory, ".launchrally");
+  const files = [];
+  async function walk(current, relative = "") {
+    for (const entry of (await readdir(current, { withFileTypes: true }))
+      .sort((left, right) => left.name.localeCompare(right.name))) {
+      const nextRelative = relative ? `${relative}/${entry.name}` : entry.name;
+      const selected = path.join(current, entry.name);
+      if (entry.isDirectory()) await walk(selected, nextRelative);
+      else files.push([nextRelative, await readFile(selected, "utf8")]);
+    }
+  }
+  await walk(root);
+  return files;
 }
 
 async function completeAudit(directory) {
@@ -158,6 +218,134 @@ test("Architect requires a current full Report and produces the whole Blueprint 
     runArchitectureDecisionEngine(directory, source).status,
     "stale_input",
   );
+});
+
+test("first Architect use previews additive P1 adoption and denial preserves P0 bytes", async () => {
+  const directory = await initializedP0Fixture();
+  const authority = await resolveExecutionAuthority({
+    cwd: directory,
+    launcher_version: "0.3.2",
+  });
+  assert.equal(authority.state, "ready", JSON.stringify(authority));
+  assert.equal(authority.source, "project_toolchain", JSON.stringify(authority));
+  const before = await snapshotLaunchRally(directory);
+  const source = await inputs(directory);
+  await assert.rejects(readFile(path.join(
+    directory,
+    ".launchrally/phase-1/adoption.json",
+  ), "utf8"), (error) => error.code === "ENOENT");
+  const preview = await runArchitectureJourney(directory, source, {
+    review_date: "2026-08-13",
+    launcher_version: "0.3.2",
+  });
+
+  assert.equal(preview.status, "needs_confirmation", JSON.stringify(preview));
+  assert.equal(preview.state, "blueprint_review");
+  assert.deepEqual(preview.request, {
+    kind: "p1_migration_confirmation",
+    choices: ["confirm", "deny", "cancel"],
+  });
+  assert.deepEqual(preview.migration_preview.files, [
+    ".launchrally/phase-1/adoption.json",
+    ".launchrally/phase-1/records/",
+    ".launchrally/phase-1/transactions/",
+  ]);
+  assert.ok(preview.migration_preview.preserved_paths.includes(".launchrally/manifest.yaml"));
+  assert.ok(preview.migration_preview.preserved_paths.includes(".launchrally/reports/"));
+  assert.ok(preview.migration_preview.preserved_paths.includes(".launchrally/evidence/"));
+  assert.deepEqual(await snapshotLaunchRally(directory), before);
+
+  const denied = await runArchitectureJourney(directory, {}, {
+    resume_token: preview.resume_token,
+    migration_confirmation: "deny",
+    launcher_version: "0.3.2",
+  });
+  assert.equal(denied.status, "denied");
+  assert.equal(denied.outcome, "p1_migration_denied");
+  assert.deepEqual(await snapshotLaunchRally(directory), before);
+  const auditAfterDenial = await completeAudit(directory);
+  assert.equal(auditAfterDenial.status, "completed");
+  assert.equal(auditAfterDenial.operation, "audit");
+  assert.equal(auditAfterDenial.report.schema_version, "launchrally.dev/report/v2");
+});
+
+test("the initialized P0 migration preview resumes cross-host before adoption", async () => {
+  const directory = await initializedP0Fixture();
+  const source = await inputs(directory);
+  const codex = await import("../adapters/codex/launchrally/host-adapter/resume.js");
+  const claude = await import("../adapters/claude/launchrally/host-adapter/resume.js");
+  const before = await snapshotLaunchRally(directory);
+  const preview = await runArchitectureJourney(directory, source, {
+    review_date: "2026-08-13",
+    launcher_version: "0.3.2",
+  });
+  const artifactPath = path.join(directory, "migration-resume.json");
+  await codex.saveResumeArtifact(artifactPath, preview.interaction, directory);
+  assert.deepEqual(await snapshotLaunchRally(directory), before);
+
+  const resumed = await claude.resumeArtifactFile({
+    cwd: directory,
+    artifact_path: artifactPath,
+    options: { migration_confirmation: "deny", launcher_version: "0.3.2" },
+  });
+  assert.equal(resumed.status, "denied", JSON.stringify(resumed));
+  assert.equal(resumed.outcome, "p1_migration_denied");
+  assert.deepEqual(await snapshotLaunchRally(directory), before);
+});
+
+test("confirmed P1 adoption commits atomically and interruption preserves the P0 project", async () => {
+  const interruptedDirectory = await initializedP0Fixture();
+  const interruptedSource = await inputs(interruptedDirectory);
+  const interruptedBefore = await snapshotLaunchRally(interruptedDirectory);
+  const interruptedPreview = await runArchitectureJourney(
+    interruptedDirectory,
+    interruptedSource,
+    { review_date: "2026-08-13", launcher_version: "0.3.2" },
+  );
+  const interrupted = await runArchitectureJourney(interruptedDirectory, {}, {
+    resume_token: interruptedPreview.resume_token,
+    migration_confirmation: "confirm",
+    launcher_version: "0.3.2",
+    file_operations: {
+      async before_migration_commit() {
+        const error = new Error("simulated interruption");
+        error.code = "simulated_migration_interruption";
+        throw error;
+      },
+    },
+  });
+  assert.equal(interrupted.status, "execution_error", JSON.stringify(interrupted));
+  assert.equal(interrupted.error, "simulated_migration_interruption");
+  assert.deepEqual(await snapshotLaunchRally(interruptedDirectory), interruptedBefore);
+
+  const directory = await initializedP0Fixture();
+  const source = await inputs(directory);
+  const before = await snapshotLaunchRally(directory);
+  const preview = await runArchitectureJourney(directory, source, {
+    review_date: "2026-08-13",
+    launcher_version: "0.3.2",
+  });
+  const confirmed = await runArchitectureJourney(directory, {}, {
+    resume_token: preview.resume_token,
+    migration_confirmation: "confirm",
+    launcher_version: "0.3.2",
+  });
+  assert.equal(confirmed.status, "needs_confirmation", JSON.stringify(confirmed));
+  assert.equal(confirmed.state, "blueprint_review");
+  const adoption = JSON.parse(await readFile(path.join(
+    directory,
+    ".launchrally/phase-1/adoption.json",
+  ), "utf8"));
+  assert.equal(adoption.schema_version, "launchrally.dev/phase-1-adoption/v1");
+  assert.equal(adoption.historical_reports_relabelled, false);
+  assert.equal(
+    runArchitectureDecisionEngine(directory, source, { review_date: "2026-08-13" }).status,
+    "needs_confirmation",
+  );
+  const after = await snapshotLaunchRally(directory);
+  for (const [relative, content] of before) {
+    assert.equal(after.find(([candidate]) => candidate === relative)?.[1], content, relative);
+  }
 });
 
 test("hard-constraint violations are excluded and never recommended", async () => {
@@ -314,6 +502,48 @@ test("Integration compatibility derives incompatible and unknown conclusions", a
   assert.match(result.blueprint.whole_product.integration_compatibility, /unknown=1/u);
 });
 
+test("desktop shared-backend assessment keeps distribution readiness explicitly Unknown", async () => {
+  const directory = await fixture();
+  const source = await inputs(directory);
+  const runtime = source.capability_graph.nodes.find(({ capability_id: id }) =>
+    id === "runtime_execution");
+  runtime.implementation_state = "present";
+  runtime.implementation_path = "existing_platform";
+  const result = runArchitectureDecisionEngine(directory, source, {
+    review_date: "2026-08-13",
+    desktop_shared_backend_capability_ids: ["runtime_execution"],
+  });
+  assert.equal(result.status, "needs_confirmation", JSON.stringify(result));
+  const decision = result.blueprint.decisions.find(({ capability_id: id }) =>
+    id === "runtime_execution");
+  assert.equal(decision.implementation_path, "existing_platform");
+  assert.deepEqual(result.desktop_topology, {
+    schema_version: "launchrally.dev/desktop-shared-backend/v1",
+    topology: "desktop_with_shared_backend",
+    capability_ids: ["runtime_execution"],
+    excluded_release_readiness: [
+      "signing",
+      "notarization",
+      "store_review",
+      "distribution",
+      "updater",
+    ],
+  });
+  assert.match(decision.tradeoffs.join(" "), /signing.*notarization.*store review.*distribution.*updater/iu);
+  assert.deepEqual(result.blueprint.unknowns.filter((value) =>
+    value.startsWith("desktop_")), [
+    "desktop_distribution_not_assessed",
+    "desktop_notarization_not_assessed",
+    "desktop_signing_not_assessed",
+    "desktop_store_review_not_assessed",
+    "desktop_updater_readiness_not_assessed",
+  ]);
+  assert.equal(runArchitectureDecisionEngine(directory, source, {
+    review_date: "2026-08-13",
+    desktop_shared_backend_capability_ids: ["runtime_execution", "runtime_execution"],
+  }).error, "invalid_desktop_shared_backend_scope");
+});
+
 test("each Blueprint decision can be accepted or rejected independently", async () => {
   const directory = await fixture();
   const source = await inputs(directory);
@@ -353,6 +583,75 @@ test("each Blueprint decision can be accepted or rejected independently", async 
   assert.equal(
     completed.architecture_package.architecture_record.confirmed_decisions.length,
     review.pending_decision_ids.length - 1,
+  );
+});
+
+test("Codex Architecture state resumes in Claude from one validated local artifact", async () => {
+  const directory = await fixture();
+  const source = await inputs(directory);
+  const codex = await import("../adapters/codex/launchrally/host-adapter/resume.js");
+  const claude = await import("../adapters/claude/launchrally/host-adapter/resume.js");
+  const blueprint = runArchitectureDecisionEngine(directory, source, {
+    review_date: "2026-08-13",
+  });
+  const artifactPath = path.join(directory, "architecture-resume.json");
+  const artifact = await codex.saveResumeArtifact(artifactPath, blueprint.interaction, directory);
+  assert.equal(assertValidHostResumeArtifact(artifact), true);
+  assert.equal(artifact.resume_token.startsWith("lrarchitect_"), true);
+  assert.equal(artifact.resume_token.includes("whole_product"), false);
+  assert.equal(artifact.resume_token.includes("rationale"), false);
+  await assert.rejects(
+    readdir(path.join(directory, ".launchrally")),
+    (error) => error.code === "ENOENT",
+  );
+  await assert.rejects(
+    readFile(`${artifactPath}.key`),
+    (error) => error.code === "ENOENT",
+  );
+
+  const resumed = await claude.resumeArtifactFile({
+    cwd: directory,
+    artifact_path: artifactPath,
+    options: { blueprint_confirmation: "confirm" },
+  });
+  assert.equal(resumed.status, "partial_completion", JSON.stringify(resumed));
+  assert.equal(resumed.state, "decision_confirmation");
+  assert.notEqual(resumed.resume_token, blueprint.resume_token);
+  const tamperedTokenArtifact = {
+    ...artifact,
+    resume_token: `${blueprint.resume_token}tampered`,
+  };
+  await assert.rejects(
+    claude.resumeArtifact({
+      cwd: directory,
+      artifact: tamperedTokenArtifact,
+      options: { blueprint_confirmation: "confirm" },
+    }),
+    (error) => error.code === "invalid_host_resume_artifact",
+  );
+  await assert.rejects(
+    codex.saveResumeArtifact(artifactPath, blueprint.interaction, directory),
+    (error) => error.code === "host_resume_artifact_exists",
+  );
+  const redirectedDirectory = path.join(directory, "redirected-resume");
+  const actualDirectory = path.join(directory, "actual-resume");
+  await mkdir(actualDirectory);
+  await symlink(actualDirectory, redirectedDirectory);
+  await assert.rejects(
+    codex.saveResumeArtifact(
+      path.join(redirectedDirectory, "resume.json"),
+      blueprint.interaction,
+      directory,
+    ),
+    (error) => error.code === "unsafe_host_resume_artifact",
+  );
+  await assert.rejects(
+    claude.resumeArtifact({
+      cwd: directory,
+      artifact: { ...artifact, state: "completed" },
+      options: { blueprint_confirmation: "confirm" },
+    }),
+    (error) => error.code === "invalid_host_resume_artifact",
   );
 });
 
@@ -403,8 +702,12 @@ test("Human flow reviews the same Blueprint and every decision independently", a
     cwd: directory,
     source,
     reviewDate: "2026-08-13",
+    desktopSharedBackendCapabilityIds: ["runtime_execution"],
     runArchitect: runArchitectureDecisionEngine,
     prompt: {
+      async confirmMigration() {
+        assert.fail("pre-Init flow must not request migration");
+      },
       async confirmBlueprint(blueprint) {
         assert.equal(assertValidArchitectureBlueprint(blueprint), true);
         return "confirm";
@@ -416,8 +719,22 @@ test("Human flow reviews the same Blueprint and every decision independently", a
     },
   });
   assert.equal(result.status, "completed");
+  assert.deepEqual(result.desktop_topology.capability_ids, ["runtime_execution"]);
+  assert.deepEqual(
+    result.architecture_package.desktop_topology,
+    result.desktop_topology,
+  );
   assert.deepEqual(reviewed, result.blueprint.decisions.map(({ decision_id: id }) => id));
   assert.equal(result.decision_results[1].response, "reject");
+  assert.deepEqual(result.human_mode, {
+    typed_interactions: true,
+    external_agent_automation: false,
+    cross_host_resume: false,
+    unavailable_capabilities: [
+      "external_executor_automation",
+      "cross_host_agent_resume",
+    ],
+  });
   assert.equal(normalizeArchitectAnswer(" YES "), "confirm");
   assert.equal(normalizeArchitectAnswer("n"), "reject");
   assert.equal(normalizeArchitectAnswer("cancel"), "cancel");

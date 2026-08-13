@@ -2,6 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchrally.dev/handoff-interaction/v1",
   "$ref": "../phase-1/v1.schema.json#/$defs/phase1Interaction",
+  "properties": {
+    "operation": { "const": "handoff" },
+    "state": { "enum": ["executor_discovery", "authority_preview", "receipt_review", "verification_pending", "completed"] }
+  },
   "x-launchrally-operation": "handoff",
   "x-launchrally-contract-major": 1
 }
