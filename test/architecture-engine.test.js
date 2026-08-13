@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -632,6 +632,18 @@ test("Codex Architecture state resumes in Claude from one validated local artifa
   await assert.rejects(
     codex.saveResumeArtifact(artifactPath, blueprint.interaction, directory),
     (error) => error.code === "host_resume_artifact_exists",
+  );
+  const redirectedDirectory = path.join(directory, "redirected-resume");
+  const actualDirectory = path.join(directory, "actual-resume");
+  await mkdir(actualDirectory);
+  await symlink(actualDirectory, redirectedDirectory);
+  await assert.rejects(
+    codex.saveResumeArtifact(
+      path.join(redirectedDirectory, "resume.json"),
+      blueprint.interaction,
+      directory,
+    ),
+    (error) => error.code === "unsafe_host_resume_artifact",
   );
   await assert.rejects(
     claude.resumeArtifact({

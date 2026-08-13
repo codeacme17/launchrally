@@ -26,12 +26,45 @@ const HOSTS = new Set(["codex", "claude"]);
 const MAX_ARTIFACT_BYTES = 256 * 1024;
 
 async function canonicalArtifactPath(selectedPath) {
-  const parent = await realpath(path.dirname(path.resolve(selectedPath)));
+  const resolved = path.resolve(selectedPath);
+  const originalParent = path.dirname(resolved);
+  const parsed = path.parse(originalParent);
+  let checked = parsed.root;
+  for (const component of originalParent.slice(parsed.root.length).split(path.sep).filter(Boolean)) {
+    const next = path.join(checked, component);
+    const stat = await lstat(next);
+    if (stat.isSymbolicLink()) {
+      const owner = await lstat(checked);
+      if (
+        process.platform === "win32"
+        || stat.uid !== 0
+        || (owner.mode & 0o022) !== 0
+      ) {
+        throw invalid("unsafe_host_resume_artifact", "The Host Resume Artifact parent is unsafe.");
+      }
+      checked = await realpath(next);
+    } else {
+      if (!stat.isDirectory()) {
+        throw invalid("unsafe_host_resume_artifact", "The Host Resume Artifact parent is unsafe.");
+      }
+      checked = next;
+    }
+  }
+  const parent = await realpath(originalParent);
   const stat = await lstat(parent);
   if (!stat.isDirectory() || stat.isSymbolicLink()) {
     throw invalid("unsafe_host_resume_artifact", "The Host Resume Artifact parent is unsafe.");
   }
-  return path.join(parent, path.basename(selectedPath));
+  return path.join(parent, path.basename(resolved));
+}
+
+function assertCrossHostResumeAvailable() {
+  if (process.platform === "win32") {
+    throw invalid(
+      "host_resume_unavailable",
+      "Cross-host resume requires a protected host key store on this platform.",
+    );
+  }
 }
 
 function invalid(code, message) {
@@ -118,6 +151,7 @@ async function trustedState(operation, resumeToken) {
 }
 
 async function createArtifact(host, interaction, suppliedKey) {
+  assertCrossHostResumeAvailable();
   if (!HOSTS.has(host) || !interaction?.resume_token) {
     throw invalid("invalid_host_resume_source", "A supported resumable interaction is required.");
   }
@@ -198,6 +232,7 @@ export async function writeHostResumeArtifact(selectedPath, cwd, host, interacti
 }
 
 export async function readHostResumeArtifact(selectedPath) {
+  assertCrossHostResumeAvailable();
   let handle;
   try {
     handle = await safeArtifactHandle(await canonicalArtifactPath(selectedPath));
@@ -215,6 +250,7 @@ export async function readHostResumeArtifact(selectedPath) {
 }
 
 async function verifyArtifact(artifact, suppliedKey) {
+  assertCrossHostResumeAvailable();
   assertValidHostResumeArtifact(artifact);
   const key = suppliedKey ?? getHostResumeKey();
   const expected = Buffer.from(attestation(key, artifactContent(artifact)));

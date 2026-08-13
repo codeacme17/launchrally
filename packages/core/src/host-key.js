@@ -42,11 +42,6 @@ export function ensurePrivateDirectory(selected) {
 }
 
 export function getHostResumeKey() {
-  if (process.platform === "win32") {
-    const error = new Error("Cross-host resume requires a protected host key store.");
-    error.code = "host_resume_unavailable";
-    throw error;
-  }
   ensurePrivateDirectory(HOST_RESUME_ROOT);
   ensurePrivateDirectory(HOST_RESUME_DIRECTORY);
   const temporary = path.join(HOST_RESUME_DIRECTORY, `.key-${randomUUID()}`);

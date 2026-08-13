@@ -92,6 +92,8 @@ export function loadHostState(kind, token) {
   const selected = selectedState(kind, token);
   if (!selected) return null;
   try {
+    getHostResumeKey();
+    ensurePrivateDirectory(stateDirectory(kind));
     return openState(safeRead(selected));
   } catch {
     return null;
@@ -101,6 +103,8 @@ export function loadHostState(kind, token) {
 export function saveHostState(kind, state, token) {
   const selected = selectedState(kind, token);
   if (!selected) return false;
+  getHostResumeKey();
+  ensurePrivateDirectory(stateDirectory(kind));
   const temporary = `${selected}.tmp-${randomUUID()}`;
   try {
     const handle = openSync(temporary, "wx", 0o600);
