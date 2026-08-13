@@ -12,3 +12,9 @@ export function createReportReference(report) {
     digest,
   };
 }
+
+export function recordReferencesEqual(left, right) {
+  return left?.id === right?.id
+    && left?.schema_version === right?.schema_version
+    && left?.digest === right?.digest;
+}

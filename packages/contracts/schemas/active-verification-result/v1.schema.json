@@ -1,6 +1,28 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchrally.dev/active-verification-result/v1",
-  "$ref": "../phase-1/v1.schema.json#/$defs/activeVerificationResult",
+  "allOf": [
+    { "$ref": "../phase-1/v1.schema.json#/$defs/activeVerificationResult" },
+    {
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/active-verification-result/v1" },
+        "observation": {
+          "not": { "required": ["replay"] }
+        }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["handoff"] },
+          { "required": ["executor"] },
+          { "required": ["integration_contract"] },
+          { "required": ["observation_provenance"] },
+          { "required": ["capability_id"] },
+          { "required": ["recipe_id"] },
+          { "required": ["evidence"] },
+          { "required": ["verification_gap"] }
+        ]
+      }
+    }
+  ],
   "x-launchrally-contract-major": 1
 }

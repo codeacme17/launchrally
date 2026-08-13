@@ -477,14 +477,13 @@ test("Tasks batch only across the same real authority boundary and prefer the na
   );
 });
 
-test("every write and active-test effect class is disclosed in a separately approvable batch", async () => {
+test("every ordinary write effect class is disclosed in a separately approvable batch", async () => {
   const effectClasses = [
     "local_source",
     "provider_configuration",
     "secret",
     "deployment",
     "production_data",
-    "active_test",
   ];
   const handoffSource = source();
   const template = handoffSource.task_graph.tasks[0];
@@ -542,6 +541,31 @@ test("every write and active-test effect class is disclosed in a separately appr
     assert.equal(preview.handoff_package.authority_batch.target, `target_${effectClass}`);
     assert.equal(preview.handoff_package.approval.state, "required");
   }
+});
+
+test("ordinary Handoff leaves active tests to the Active Verification interface", async () => {
+  const handoffSource = source();
+  const task = handoffSource.task_graph.tasks[0];
+  task.task_id = "task_active_test";
+  task.task_type = "actively_verify_webhook";
+  task.effect_class = "active_test";
+  task.allowed_effects = [...TASK_EFFECT_BOUNDARIES.active_test.allowed_effects];
+  task.prohibited_effects = [...TASK_EFFECT_BOUNDARIES.active_test.prohibited_effects];
+  handoffSource.task_graph.tasks = [task];
+  handoffSource.task_graph.ready_frontier = [task.task_id];
+  handoffSource.executor_descriptors[0].supported_task_types = [task.task_type];
+  handoffSource.executor_descriptors[0].allowed_effects = [...task.allowed_effects];
+  handoffSource.executor_descriptors[0].prohibited_effects = [...task.prohibited_effects];
+  handoffSource.executor_descriptors[0].trust.digest = computeExecutorDescriptorDigest(
+    handoffSource.executor_descriptors[0],
+  );
+  handoffSource.reviewed_executors[0].digest =
+    handoffSource.executor_descriptors[0].trust.digest;
+
+  const result = await runHandoff(handoffSource, {}, stateStore().dependencies);
+  assert.equal(result.status, "needs_input");
+  assert.equal(result.candidates.length, 0);
+  assert.equal(result.manual_path.authority_granted, false);
 });
 
 test("a missing Executor tool offers only reviewed guidance, manual instructions, defer, or cancel", async () => {

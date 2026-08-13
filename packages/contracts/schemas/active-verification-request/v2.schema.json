@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/active-verification-request/v2",
+  "allOf": [
+    { "$ref": "../phase-1/v1.schema.json#/$defs/activeVerificationRequest" },
+    {
+      "required": ["environment_class", "integration_contract", "expected_conditions"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/active-verification-request/v2" }
+      }
+    }
+  ],
+  "x-launchrally-contract-major": 2
+}

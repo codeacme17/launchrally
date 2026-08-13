@@ -1,14 +1,20 @@
 {
   "request": {
-    "schema_version": "launchrally.dev/active-verification-request/v1",
+    "schema_version": "launchrally.dev/active-verification-request/v2",
     "request_id": "active_verify_01",
     "revision": 1,
     "environment": "staging",
+    "environment_class": "non_production",
     "capability_id": "identity_authentication",
     "recipe": {
       "recipe_id": "recipe_identity_login",
       "recipe_version": "1.0.0",
       "trust_tier": "core_catalog"
+    },
+    "integration_contract": {
+      "id": "integration_identity_session",
+      "schema_version": "launchrally.dev/integration-contract/v1",
+      "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
     },
     "executor_mode": "synthetic_identity_login",
     "approval": {
@@ -27,6 +33,17 @@
       "allowed": ["synthetic_user_create", "synthetic_user_delete"],
       "prohibited": ["real_user_mutation", "business_payload_write"]
     },
+    "expected_conditions": {
+      "transport_status": "accepted",
+      "business_outcome": "observed_success",
+      "timing": "within_window",
+      "retry_state": "not_exhausted",
+      "maximum_duplicate_count": 0,
+      "ordering": "as_expected",
+      "replay": "not_observed",
+      "eventual_consistency": "observed",
+      "failure_visible": false
+    },
     "observation_window_ms": 30000,
     "timeout_ms": 45000,
     "cleanup_strategy": "delete_synthetic_user",
@@ -36,14 +53,43 @@
     }
   },
   "result": {
-    "schema_version": "launchrally.dev/active-verification-result/v1",
+    "schema_version": "launchrally.dev/active-verification-result/v2",
     "result_id": "active_result_01",
     "request": {
       "id": "active_verify_01",
-      "schema_version": "launchrally.dev/active-verification-request/v1",
+      "schema_version": "launchrally.dev/active-verification-request/v2",
       "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
     },
+    "handoff": {
+      "id": "handoff_active_verify_01",
+      "schema_version": "launchrally.dev/handoff-package/v1",
+      "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    "executor": {
+      "id": "executor_active_verify_01",
+      "schema_version": "launchrally.dev/executor-descriptor/v1",
+      "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    "integration_contract": {
+      "id": "integration_identity_session",
+      "schema_version": "launchrally.dev/integration-contract/v1",
+      "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    },
+    "observation_provenance": {
+      "attestation_id": "attestation_executor_observation_01",
+      "observation_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+      "normalized_result_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "executor": {
+        "id": "executor_active_verify_01",
+        "schema_version": "launchrally.dev/executor-descriptor/v1",
+        "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "collected_at": "2026-08-13T00:00:30.000Z",
+      "verification": "external_executor_verified"
+    },
     "environment": "staging",
+    "capability_id": "identity_authentication",
+    "recipe_id": "recipe_identity_login",
     "outcome": "observed_success",
     "correlation_id": "corr_01hphase1",
     "expected_effect_class": "identity_session_created",
@@ -54,6 +100,7 @@
       "retry_count": 0,
       "duplicate_count": 0,
       "ordering": "as_expected",
+      "replay": "not_observed",
       "eventual_consistency": "observed",
       "failure_visible": false
     },
@@ -67,7 +114,19 @@
       "payloads_retained": false,
       "messages_retained": false,
       "database_rows_retained": false
-    }
+    },
+    "evidence": {
+      "recipe_id": "recipe_identity_login",
+      "capability_id": "identity_authentication",
+      "environment": "staging",
+      "correlation_id": "corr_01hphase1",
+      "expected_effect_class": "identity_session_created",
+      "observed": true,
+      "latency_ms": 420,
+      "cleanup_status": "succeeded",
+      "collected_at": "2026-08-13T00:00:30.000Z"
+    },
+    "verification_gap": null
   },
   "architecture_status": {
     "schema_version": "launchrally.dev/architecture-status/v1",

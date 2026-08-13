@@ -72,6 +72,23 @@ async function allPositiveRecords() {
   );
   const verification = await readFixture("verification-and-interactions.valid.json");
   const compositeAssurance = await readFixture("composite-assurance.valid.json");
+  const legacyRequest = structuredClone(verification.request);
+  legacyRequest.schema_version = "launchrally.dev/active-verification-request/v1";
+  delete legacyRequest.environment_class;
+  delete legacyRequest.integration_contract;
+  delete legacyRequest.expected_conditions;
+  const legacyResult = structuredClone(verification.result);
+  legacyResult.schema_version = "launchrally.dev/active-verification-result/v1";
+  legacyResult.request.schema_version = "launchrally.dev/active-verification-request/v1";
+  delete legacyResult.handoff;
+  delete legacyResult.executor;
+  delete legacyResult.integration_contract;
+  delete legacyResult.observation_provenance;
+  delete legacyResult.capability_id;
+  delete legacyResult.recipe_id;
+  delete legacyResult.observation.replay;
+  delete legacyResult.evidence;
+  delete legacyResult.verification_gap;
   return [
     intent,
     CORE_PROVIDER_KNOWLEDGE,
@@ -85,6 +102,8 @@ async function allPositiveRecords() {
     executor,
     handoff,
     receipt,
+    legacyRequest,
+    legacyResult,
     verification.request,
     verification.result,
     compositeAssurance,
@@ -113,15 +132,15 @@ test("Product Intent Profile keeps confirmed intent separate from observations",
 });
 
 test("each Phase 1 contract publishes a stable standalone JSON Schema", async () => {
-  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 18);
+  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 20);
   for (const schemaVersion of PHASE_1_SCHEMA_VERSIONS) {
-    const contract = schemaVersion.replace("launchrally.dev/", "").replace("/v1", "");
+    const [contract, major] = schemaVersion.replace("launchrally.dev/", "").split("/v");
     const schema = JSON.parse(await readFile(
-      path.resolve(`packages/contracts/schemas/${contract}/v1.schema.json`),
+      path.resolve(`packages/contracts/schemas/${contract}/v${major}.schema.json`),
       "utf8",
     ));
     assert.equal(schema.$id, `https://${schemaVersion}`, contract);
-    assert.equal(schema["x-launchrally-contract-major"], 1, contract);
+    assert.equal(schema["x-launchrally-contract-major"], Number(major), contract);
   }
 });
 
@@ -226,11 +245,11 @@ test("Active verification and interaction contracts keep outcomes typed and envi
 
   assert.equal(
     ACTIVE_VERIFICATION_REQUEST_SCHEMA,
-    "launchrally.dev/active-verification-request/v1",
+    "launchrally.dev/active-verification-request/v2",
   );
   assert.equal(
     ACTIVE_VERIFICATION_RESULT_SCHEMA,
-    "launchrally.dev/active-verification-result/v1",
+    "launchrally.dev/active-verification-result/v2",
   );
   assert.equal(ARCHITECTURE_STATUS_SCHEMA, "launchrally.dev/architecture-status/v1");
   assert.equal(ARCHITECT_INTERACTION_SCHEMA, "launchrally.dev/architect-interaction/v1");
@@ -241,6 +260,27 @@ test("Active verification and interaction contracts keep outcomes typed and envi
   assert.equal(assertValidArchitectInteraction(fixture.architect_interaction), true);
   assert.equal(assertValidHandoffInteraction(fixture.handoff_interaction), true);
   assert.equal(fixture.architecture_status.launch_assessment.independent, true);
+
+  const legacyRequest = JSON.parse(JSON.stringify(fixture.request));
+  legacyRequest.schema_version = "launchrally.dev/active-verification-request/v1";
+  delete legacyRequest.environment_class;
+  delete legacyRequest.integration_contract;
+  delete legacyRequest.expected_conditions;
+  assert.equal(assertValidActiveVerificationRequest(legacyRequest), true);
+
+  const legacyResult = JSON.parse(JSON.stringify(fixture.result));
+  legacyResult.schema_version = "launchrally.dev/active-verification-result/v1";
+  legacyResult.request.schema_version = "launchrally.dev/active-verification-request/v1";
+  delete legacyResult.handoff;
+  delete legacyResult.executor;
+  delete legacyResult.integration_contract;
+  delete legacyResult.observation_provenance;
+  delete legacyResult.capability_id;
+  delete legacyResult.recipe_id;
+  delete legacyResult.observation.replay;
+  delete legacyResult.evidence;
+  delete legacyResult.verification_gap;
+  assert.equal(assertValidActiveVerificationResult(legacyResult), true);
 
   const partiallyConfirmedArchitecture = {
     ...fixture.architect_interaction,

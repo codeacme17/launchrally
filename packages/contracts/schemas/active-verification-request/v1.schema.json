@@ -1,6 +1,20 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://launchrally.dev/active-verification-request/v1",
-  "$ref": "../phase-1/v1.schema.json#/$defs/activeVerificationRequest",
+  "allOf": [
+    { "$ref": "../phase-1/v1.schema.json#/$defs/activeVerificationRequest" },
+    {
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/active-verification-request/v1" }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["environment_class"] },
+          { "required": ["integration_contract"] },
+          { "required": ["expected_conditions"] }
+        ]
+      }
+    }
+  ],
   "x-launchrally-contract-major": 1
 }
