@@ -7,12 +7,12 @@ import {
   writeHostResumeArtifact,
 } from "@launchrally/core";
 
-export function createResumeArtifact(interaction) {
-  return createHostResumeArtifact("claude", interaction);
+export function createResumeArtifact(interaction, cwd = process.cwd()) {
+  return createHostResumeArtifact(cwd, "claude", interaction);
 }
 
-export function saveResumeArtifact(selectedPath, interaction) {
-  return writeHostResumeArtifact(selectedPath, "claude", interaction);
+export function saveResumeArtifact(selectedPath, interaction, cwd = process.cwd()) {
+  return writeHostResumeArtifact(selectedPath, cwd, "claude", interaction);
 }
 
 export function resumeArtifact({ cwd, artifact, options }) {

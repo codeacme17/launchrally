@@ -40,7 +40,8 @@
       "requirement": "Initialized Phase 0 projects remain usable until an explicitly confirmed additive, transactional Phase 1 migration preserves every existing Manifest, Report, Evidence, and history record",
       "contracts": [
         "packages/contracts/schemas/architect-interaction/v1.schema.json",
-        "packages/contracts/schemas/phase-1-adoption/v1.schema.json"
+        "packages/contracts/schemas/phase-1-adoption/v1.schema.json",
+        "packages/contracts/schemas/phase-1-migration-preview/v1.schema.json"
       ],
       "implementation": [
         "packages/core/src/architecture-journey.js",

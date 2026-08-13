@@ -240,19 +240,20 @@ test("first Architect use previews additive P1 adoption and denial preserves P0 
   });
 
   assert.equal(preview.status, "needs_confirmation", JSON.stringify(preview));
-  assert.equal(preview.state, "p1_migration_preview");
+  assert.equal(preview.state, "blueprint_review");
   assert.deepEqual(preview.request, {
     kind: "p1_migration_confirmation",
     choices: ["confirm", "deny", "cancel"],
   });
-  assert.deepEqual(preview.preview.files, [
+  assert.deepEqual(preview.migration_preview.files, [
     ".launchrally/phase-1/adoption.json",
     ".launchrally/phase-1/records/",
     ".launchrally/phase-1/transactions/",
+    ".launchrally/phase-1/transactions/.host-resume-key",
   ]);
-  assert.ok(preview.preview.preserved_paths.includes(".launchrally/manifest.yaml"));
-  assert.ok(preview.preview.preserved_paths.includes(".launchrally/reports/"));
-  assert.ok(preview.preview.preserved_paths.includes(".launchrally/evidence/"));
+  assert.ok(preview.migration_preview.preserved_paths.includes(".launchrally/manifest.yaml"));
+  assert.ok(preview.migration_preview.preserved_paths.includes(".launchrally/reports/"));
+  assert.ok(preview.migration_preview.preserved_paths.includes(".launchrally/evidence/"));
   assert.deepEqual(await snapshotLaunchRally(directory), before);
 
   const denied = await runArchitectureJourney(directory, {}, {
@@ -484,14 +485,15 @@ test("desktop shared-backend assessment keeps distribution readiness explicitly 
   const runtime = source.capability_graph.nodes.find(({ capability_id: id }) =>
     id === "runtime_execution");
   runtime.implementation_state = "present";
-  runtime.implementation_path = "desktop_with_shared_backend";
+  runtime.implementation_path = "existing_platform";
   const result = runArchitectureDecisionEngine(directory, source, {
     review_date: "2026-08-13",
+    desktop_shared_backend_capability_ids: ["runtime_execution"],
   });
   assert.equal(result.status, "needs_confirmation", JSON.stringify(result));
   const decision = result.blueprint.decisions.find(({ capability_id: id }) =>
     id === "runtime_execution");
-  assert.equal(decision.implementation_path, "desktop_with_shared_backend");
+  assert.equal(decision.implementation_path, "existing_platform");
   assert.match(decision.tradeoffs.join(" "), /signing.*notarization.*store review.*distribution.*updater/iu);
   assert.deepEqual(result.blueprint.unknowns.filter((value) =>
     value.startsWith("desktop_")), [
@@ -553,11 +555,20 @@ test("Codex Architecture state resumes in Claude from one validated local artifa
   const blueprint = runArchitectureDecisionEngine(directory, source, {
     review_date: "2026-08-13",
   });
+  await mkdir(path.join(directory, ".launchrally", "phase-1", "transactions"), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(directory, ".launchrally", "phase-1", "transactions", ".host-resume-key"),
+    Buffer.alloc(32, 2),
+    { mode: 0o600 },
+  );
   const artifactPath = path.join(directory, "architecture-resume.json");
-  const artifact = await codex.saveResumeArtifact(artifactPath, blueprint.interaction);
+  const artifact = await codex.saveResumeArtifact(artifactPath, blueprint.interaction, directory);
   assert.equal(assertValidHostResumeArtifact(artifact), true);
-  assert.equal(JSON.stringify(artifact).includes("whole_product"), false);
-  assert.equal(JSON.stringify(artifact).includes("rationale"), false);
+  assert.equal(artifact.resume_token.startsWith("lrarchitect_"), true);
+  assert.equal(artifact.resume_token.includes("whole_product"), false);
+  assert.equal(artifact.resume_token.includes("rationale"), false);
 
   const resumed = await claude.resumeArtifactFile({
     cwd: directory,
@@ -566,20 +577,20 @@ test("Codex Architecture state resumes in Claude from one validated local artifa
   });
   assert.equal(resumed.status, "partial_completion", JSON.stringify(resumed));
   assert.equal(resumed.state, "decision_confirmation");
-  const tamperedTokenArtifact = codex.createResumeArtifact({
-    ...blueprint.interaction,
+  const tamperedTokenArtifact = {
+    ...artifact,
     resume_token: `${blueprint.resume_token}tampered`,
-  });
+  };
   await assert.rejects(
     claude.resumeArtifact({
       cwd: directory,
       artifact: tamperedTokenArtifact,
       options: { blueprint_confirmation: "confirm" },
     }),
-    (error) => error.code === "stale_host_resume_artifact",
+    (error) => error.code === "invalid_host_resume_artifact",
   );
   await assert.rejects(
-    codex.saveResumeArtifact(artifactPath, blueprint.interaction),
+    codex.saveResumeArtifact(artifactPath, blueprint.interaction, directory),
     (error) => error.code === "host_resume_artifact_exists",
   );
   await assert.rejects(

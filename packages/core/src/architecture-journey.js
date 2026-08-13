@@ -1,15 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import {
   ARCHITECT_INTERACTION_SCHEMA,
+  PHASE_1_MIGRATION_PREVIEW_SCHEMA,
   assertValidArchitectInteraction,
   assertValidPhase1Adoption,
+  assertValidPhase1MigrationPreview,
 } from "@launchrally/contracts";
 
 import { resolveExecutionAuthority } from "./execution-authority.js";
-import { decodeResumeState, encodeResumeState } from "./resume-state.js";
+import { loadArchitectureState, storeArchitectureState } from "./architecture-state.js";
 import { runArchitectureDecisionEngine } from "./architecture-engine.js";
 
 const STATE_VERSION = "architecture-journey/v1";
@@ -18,6 +20,7 @@ const MIGRATION_FILES = Object.freeze([
   ADOPTION_PATH,
   ".launchrally/phase-1/records/",
   ".launchrally/phase-1/transactions/",
+  ".launchrally/phase-1/transactions/.host-resume-key",
 ]);
 const PRESERVED_PATHS = Object.freeze([
   ".launchrally/manifest.yaml",
@@ -35,15 +38,35 @@ async function optionalStat(target) {
 }
 
 async function validAdoption(root) {
+  const launchrally = await optionalStat(path.join(root, ".launchrally"));
+  const phase1 = await optionalStat(path.join(root, ".launchrally", "phase-1"));
+  if (
+    !launchrally?.isDirectory()
+    || launchrally.isSymbolicLink()
+  ) throw new Error("invalid_p1_adoption");
+  if (!phase1) return false;
+  if (!phase1.isDirectory() || phase1.isSymbolicLink()) {
+    throw new Error("invalid_p1_adoption");
+  }
   const selected = path.join(root, ADOPTION_PATH);
   const stat = await optionalStat(selected);
-  if (!stat) return false;
+  if (!stat) throw new Error("invalid_p1_adoption");
   if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("invalid_p1_adoption");
   for (const directory of ["records", "transactions"]) {
     const directoryStat = await optionalStat(path.join(root, ".launchrally", "phase-1", directory));
     if (!directoryStat?.isDirectory() || directoryStat.isSymbolicLink()) {
       throw new Error("invalid_p1_adoption");
     }
+  }
+  const keyStat = await optionalStat(path.join(
+    root,
+    ".launchrally",
+    "phase-1",
+    "transactions",
+    ".host-resume-key",
+  ));
+  if (!keyStat?.isFile() || keyStat.isSymbolicLink() || keyStat.size !== 32) {
+    throw new Error("invalid_p1_adoption");
   }
   const value = JSON.parse(await readFile(selected, "utf8"));
   assertValidPhase1Adoption(value);
@@ -63,14 +86,19 @@ async function initializedP0Project(root, launcherVersion) {
 }
 
 function adoptionInteraction(status, state, token, request, extra = {}) {
+  const migrationPreview = {
+    schema_version: PHASE_1_MIGRATION_PREVIEW_SCHEMA,
+    migration: "additive",
+    files: [...MIGRATION_FILES],
+    preserved_paths: [...PRESERVED_PATHS],
+  };
+  assertValidPhase1MigrationPreview(migrationPreview);
   const preview = {
     effect_classes: ["local_source"],
     user_visible_effects: [
       "Add Phase 1 adoption metadata and empty local record/transaction directories.",
       "Preserve the Manifest plus immutable Phase 0 Report and Evidence history byte-for-byte.",
     ],
-    files: [...MIGRATION_FILES],
-    preserved_paths: [...PRESERVED_PATHS],
   };
   const interaction = {
     schema_version: ARCHITECT_INTERACTION_SCHEMA,
@@ -92,6 +120,7 @@ function adoptionInteraction(status, state, token, request, extra = {}) {
     resume_token: token,
     request,
     preview,
+    migration_preview: migrationPreview,
     interaction,
     ...extra,
   };
@@ -136,6 +165,11 @@ async function applyAdoption(state, fileOperations = {}) {
   try {
     await mkdir(path.join(staging, "records"), { recursive: true });
     await mkdir(path.join(staging, "transactions"), { recursive: true });
+    await writeFile(
+      path.join(staging, "transactions", ".host-resume-key"),
+      randomBytes(32),
+      { flag: "wx", mode: 0o600 },
+    );
     await writeFile(path.join(staging, "adoption.json"), `${JSON.stringify(content, null, 2)}\n`, {
       encoding: "utf8",
       flag: "wx",
@@ -148,14 +182,14 @@ async function applyAdoption(state, fileOperations = {}) {
   }
 }
 
-export async function runArchitectureJourney(cwd, source = {}, options = {}) {
+export async function runArchitectureJourney(cwd, source = {}, options = {}, dependencies = {}) {
   const selectedRoot = path.resolve(cwd);
   const root = await realpath(selectedRoot);
   const launcherVersion = options.launcher_version ?? "0.3.2";
   if (options.resume_token) {
-    const state = decodeResumeState(options.resume_token, (candidate) =>
-      candidate?.state_version === STATE_VERSION);
-    if (!state) return runArchitectureDecisionEngine(selectedRoot, source, options);
+    const candidate = (dependencies.load_state ?? loadArchitectureState)(options.resume_token);
+    const state = candidate?.state_version === STATE_VERSION ? candidate : null;
+    if (!state) return runArchitectureDecisionEngine(selectedRoot, source, options, dependencies);
     if (state.root !== root || state.stage !== "p1_migration_preview") {
       return {
         contract: ARCHITECT_INTERACTION_SCHEMA,
@@ -167,7 +201,7 @@ export async function runArchitectureJourney(cwd, source = {}, options = {}) {
     if (["deny", "cancel"].includes(options.migration_confirmation)) {
       return adoptionInteraction(
         options.migration_confirmation === "deny" ? "denied" : "cancelled",
-        "p1_migration_preview",
+        "blueprint_review",
         null,
         { kind: "none", choices: ["none"] },
         { outcome: options.migration_confirmation === "deny"
@@ -178,7 +212,7 @@ export async function runArchitectureJourney(cwd, source = {}, options = {}) {
     if (options.migration_confirmation !== "confirm") {
       return adoptionInteraction(
         "needs_confirmation",
-        "p1_migration_preview",
+        "blueprint_review",
         options.resume_token,
         { kind: "p1_migration_confirmation", choices: ["confirm", "deny", "cancel"] },
       );
@@ -223,10 +257,10 @@ export async function runArchitectureJourney(cwd, source = {}, options = {}) {
     const state = migrationState(root, source, { ...options, launcher_version: launcherVersion });
     return adoptionInteraction(
       "needs_confirmation",
-      "p1_migration_preview",
-      encodeResumeState(state),
+      "blueprint_review",
+      storeArchitectureState(state),
       { kind: "p1_migration_confirmation", choices: ["confirm", "deny", "cancel"] },
     );
   }
-  return runArchitectureDecisionEngine(root, source, options);
+  return runArchitectureDecisionEngine(root, source, options, dependencies);
 }

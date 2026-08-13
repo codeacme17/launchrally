@@ -27,8 +27,8 @@ export async function runHumanArchitect({
   });
   let result = await runArchitect(cwd, source, { review_date: reviewDate });
   if (result.status !== "needs_confirmation") return withHumanMode(result);
-  if (result.state === "p1_migration_preview") {
-    const answer = await prompt.confirmMigration(result.preview);
+  if (result.migration_preview) {
+    const answer = await prompt.confirmMigration(result.migration_preview);
     const migrationConfirmation = answer === "reject" ? "deny" : answer;
     result = await runArchitect(cwd, {}, {
       resume_token: result.resume_token,

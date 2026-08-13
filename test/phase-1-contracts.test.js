@@ -24,6 +24,7 @@ import {
   HOST_RESUME_ARTIFACT_SCHEMA,
   PHASE_1_SCHEMA_VERSIONS,
   PHASE_1_ADOPTION_SCHEMA,
+  PHASE_1_MIGRATION_PREVIEW_SCHEMA,
   PRODUCT_INTENT_PROFILE_SCHEMA,
   TASK_GRAPH_SCHEMA,
   assertValidArchitectureBlueprint,
@@ -48,14 +49,15 @@ import {
   assertValidPhase1References,
   assertValidPhase1Record,
   assertValidPhase1Adoption,
+  assertValidPhase1MigrationPreview,
   assertValidProductIntentProfile,
   assertValidTaskGraph,
   computeExecutorDescriptorDigest,
 } from "../packages/contracts/src/index.js";
 import {
   CORE_PROVIDER_KNOWLEDGE,
-  createHostResumeArtifact,
 } from "../packages/core/src/index.js";
+import { sha256 } from "../packages/core/src/local-history.js";
 
 const fixtures = path.resolve("test/fixtures/phase-1-contracts");
 
@@ -133,10 +135,27 @@ async function allPositiveRecords() {
     result_digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     issued_at: "2026-08-12T06:00:00.000Z",
   };
-  const hostResumeArtifact = createHostResumeArtifact(
-    "codex",
-    verification.architect_interaction,
-  );
+  const hostResumeContent = {
+    schema_version: HOST_RESUME_ARTIFACT_SCHEMA,
+    origin_host: "codex",
+    operation: "architect",
+    state: verification.architect_interaction.state,
+    resume_token: verification.architect_interaction.resume_token,
+    source_refs: verification.architect_interaction.source_refs,
+    portable_state: {
+      algorithm: "aes-256-gcm",
+      nonce: "a".repeat(16),
+      ciphertext: "a",
+      tag: "a".repeat(22),
+    },
+  };
+  const hostResumeDigest = sha256(hostResumeContent);
+  const hostResumeArtifact = {
+    ...hostResumeContent,
+    artifact_id: `host_resume_${hostResumeDigest.slice(7, 27)}`,
+    artifact_digest: hostResumeDigest,
+    attestation: "a".repeat(43),
+  };
   const phase1Adoption = {
     schema_version: PHASE_1_ADOPTION_SCHEMA,
     adopted: true,
@@ -148,6 +167,21 @@ async function allPositiveRecords() {
       "launchrally.dev/evidence-index/v1",
     ],
     historical_reports_relabelled: false,
+  };
+  const phase1MigrationPreview = {
+    schema_version: PHASE_1_MIGRATION_PREVIEW_SCHEMA,
+    migration: "additive",
+    files: [
+      ".launchrally/phase-1/adoption.json",
+      ".launchrally/phase-1/records/",
+      ".launchrally/phase-1/transactions/",
+      ".launchrally/phase-1/transactions/.host-resume-key",
+    ],
+    preserved_paths: [
+      ".launchrally/manifest.yaml",
+      ".launchrally/reports/",
+      ".launchrally/evidence/",
+    ],
   };
   return [
     authenticatedJourneyAttestation,
@@ -172,6 +206,7 @@ async function allPositiveRecords() {
     verification.architecture_status,
     verification.architect_interaction,
     phase1Adoption,
+    phase1MigrationPreview,
     hostResumeArtifact,
     verification.handoff_interaction,
   ];
@@ -300,7 +335,7 @@ test("authenticated Journey attestation is a strict host integration contract", 
 });
 
 test("each Phase 1 contract publishes a stable standalone JSON Schema", async () => {
-  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 24);
+  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 25);
   for (const schemaVersion of PHASE_1_SCHEMA_VERSIONS) {
     const [contract, major] = schemaVersion.replace("launchrally.dev/", "").split("/v");
     const schema = JSON.parse(await readFile(
@@ -331,6 +366,17 @@ test("Phase 1 adoption remains additive and cannot relabel historical records", 
   assert.throws(
     () => assertValidPhase1Adoption({ ...adoption, historical_reports_relabelled: true }),
     (error) => error.code === "invalid_phase_1_adoption",
+  );
+});
+
+test("Phase 1 migration preview binds every additive and preserved path", async () => {
+  const preview = (await allPositiveRecords()).find(({ schema_version: schemaVersion }) =>
+    schemaVersion === PHASE_1_MIGRATION_PREVIEW_SCHEMA);
+
+  assert.equal(assertValidPhase1MigrationPreview(preview), true);
+  assert.throws(
+    () => assertValidPhase1MigrationPreview({ ...preview, files: [".launchrally/phase-1/"] }),
+    (error) => error.code === "invalid_phase_1_migration_preview",
   );
 });
 

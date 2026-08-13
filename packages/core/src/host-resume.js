@@ -1,6 +1,13 @@
-import { randomUUID } from "node:crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHmac,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from "node:crypto";
 import { constants } from "node:fs";
-import { link, lstat, open, rm } from "node:fs/promises";
+import { link, lstat, open, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -10,22 +17,26 @@ import {
   assertValidHostResumeArtifact,
 } from "@launchrally/contracts";
 
+import { loadArchitectureState } from "./architecture-state.js";
+import { loadHandoffState } from "./handoff.js";
 import { sha256 } from "./local-history.js";
 
 const HOSTS = new Set(["codex", "claude"]);
 const MAX_ARTIFACT_BYTES = 256 * 1024;
+const KEY_PATH = ".launchrally/phase-1/transactions/.host-resume-key";
+
+function invalid(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
 
 async function safeArtifactHandle(selectedPath) {
   const stat = await lstat(selectedPath);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_ARTIFACT_BYTES) {
-    const error = new Error("The Host Resume Artifact path is unsafe.");
-    error.code = "unsafe_host_resume_artifact";
-    throw error;
+    throw invalid("unsafe_host_resume_artifact", "The Host Resume Artifact path is unsafe.");
   }
-  const handle = await open(
-    selectedPath,
-    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
-  );
+  const handle = await open(selectedPath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
   const opened = await handle.stat();
   if (
     !opened.isFile()
@@ -35,26 +46,104 @@ async function safeArtifactHandle(selectedPath) {
       && (opened.uid !== process.getuid() || (opened.mode & 0o077) !== 0))
   ) {
     await handle.close();
-    const error = new Error("The Host Resume Artifact changed while it was opened.");
-    error.code = "unsafe_host_resume_artifact";
-    throw error;
+    throw invalid(
+      "unsafe_host_resume_artifact",
+      "The Host Resume Artifact changed while it was opened.",
+    );
   }
   return handle;
 }
 
-export function createHostResumeArtifact(host, interaction) {
+async function resumeKey(cwd) {
+  const selected = path.join(path.resolve(cwd), KEY_PATH);
+  const stat = await lstat(selected);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== 32) {
+    throw invalid("host_resume_unavailable", "Phase 1 host resume is not available.");
+  }
+  const handle = await open(selected, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const opened = await handle.stat();
+    if (
+      opened.dev !== stat.dev
+      || opened.ino !== stat.ino
+      || (process.platform !== "win32"
+        && (opened.uid !== process.getuid() || (opened.mode & 0o077) !== 0))
+    ) throw invalid("host_resume_unavailable", "Phase 1 host resume is not available.");
+    return handle.readFile();
+  } finally {
+    await handle.close();
+  }
+}
+
+function artifactContent(artifact) {
+  return Object.fromEntries(Object.entries(artifact).filter(([key]) =>
+    !["artifact_id", "artifact_digest", "attestation"].includes(key)));
+}
+
+function attestation(key, content) {
+  return createHmac("sha256", key).update(JSON.stringify(content)).digest("base64url");
+}
+
+function sealState(key, state) {
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, nonce);
+  const ciphertext = Buffer.concat([
+    cipher.update(JSON.stringify(state), "utf8"),
+    cipher.final(),
+  ]);
+  return {
+    algorithm: "aes-256-gcm",
+    nonce: nonce.toString("base64url"),
+    ciphertext: ciphertext.toString("base64url"),
+    tag: cipher.getAuthTag().toString("base64url"),
+  };
+}
+
+function openState(key, sealed) {
+  try {
+    const decipher = createDecipheriv(
+      "aes-256-gcm",
+      key,
+      Buffer.from(sealed.nonce, "base64url"),
+    );
+    decipher.setAuthTag(Buffer.from(sealed.tag, "base64url"));
+    return JSON.parse(Buffer.concat([
+      decipher.update(Buffer.from(sealed.ciphertext, "base64url")),
+      decipher.final(),
+    ]).toString("utf8"));
+  } catch {
+    throw invalid("invalid_host_resume_attestation", "The portable state is untrusted.");
+  }
+}
+
+function sourceRefsForState(state) {
+  return structuredClone(state?.source_refs ?? []);
+}
+
+async function trustedState(operation, resumeToken) {
+  if (operation === "handoff") return loadHandoffState(resumeToken);
+  return loadArchitectureState(resumeToken);
+}
+
+export async function createHostResumeArtifact(cwd, host, interaction) {
   if (!HOSTS.has(host) || !interaction?.resume_token) {
-    const error = new Error("A supported host and resumable interaction are required.");
-    error.code = "invalid_host_resume_source";
-    throw error;
+    throw invalid("invalid_host_resume_source", "A supported resumable interaction is required.");
   }
   if (interaction.operation === "architect") assertValidArchitectInteraction(interaction);
   else if (interaction.operation === "handoff") assertValidHandoffInteraction(interaction);
-  else {
-    const error = new Error("Only Architecture and Handoff interactions are cross-host resumable.");
-    error.code = "unsupported_host_resume_operation";
-    throw error;
+  else throw invalid(
+    "unsupported_host_resume_operation",
+    "Only Architecture and Handoff interactions are cross-host resumable.",
+  );
+  const state = await trustedState(interaction.operation, interaction.resume_token);
+  if (!state) {
+    throw invalid("stale_host_resume_artifact", "The local interaction state is unavailable.");
   }
+  if (
+    state.stage !== interaction.state
+    || JSON.stringify(sourceRefsForState(state)) !== JSON.stringify(interaction.source_refs)
+  ) throw invalid("invalid_host_resume_source", "The interaction does not match local state.");
+  const key = await resumeKey(cwd);
   const content = {
     schema_version: HOST_RESUME_ARTIFACT_SCHEMA,
     origin_host: host,
@@ -62,24 +151,28 @@ export function createHostResumeArtifact(host, interaction) {
     state: interaction.state,
     resume_token: interaction.resume_token,
     source_refs: structuredClone(interaction.source_refs),
+    portable_state: sealState(key, state),
   };
   const artifactDigest = sha256(content);
   const artifact = {
     ...content,
     artifact_id: `host_resume_${artifactDigest.slice(7, 27)}`,
     artifact_digest: artifactDigest,
+    attestation: attestation(key, content),
   };
+  const bytes = Buffer.byteLength(`${JSON.stringify(artifact)}\n`);
+  if (bytes > MAX_ARTIFACT_BYTES) {
+    throw invalid("host_resume_artifact_too_large", "The Host Resume Artifact is too large.");
+  }
   assertValidHostResumeArtifact(artifact);
   return artifact;
 }
 
-export async function writeHostResumeArtifact(selectedPath, host, interaction) {
-  const artifact = createHostResumeArtifact(host, interaction);
+export async function writeHostResumeArtifact(selectedPath, cwd, host, interaction) {
+  const artifact = await createHostResumeArtifact(cwd, host, interaction);
   const target = path.resolve(selectedPath);
   await lstat(target).then(() => {
-    const conflict = new Error("The Host Resume Artifact output already exists.");
-    conflict.code = "host_resume_artifact_exists";
-    throw conflict;
+    throw invalid("host_resume_artifact_exists", "The Host Resume Artifact output exists.");
   }, (error) => {
     if (error?.code !== "ENOENT") throw error;
   });
@@ -97,9 +190,7 @@ export async function writeHostResumeArtifact(selectedPath, host, interaction) {
   } catch (error) {
     await rm(temporary, { force: true }).catch(() => {});
     if (error?.code === "EEXIST") {
-      const conflict = new Error("The Host Resume Artifact output already exists.");
-      conflict.code = "host_resume_artifact_exists";
-      throw conflict;
+      throw invalid("host_resume_artifact_exists", "The Host Resume Artifact output exists.");
     }
     throw error;
   }
@@ -117,12 +208,34 @@ export async function readHostResumeArtifact(selectedPath) {
     if (["invalid_host_resume_artifact", "unsafe_host_resume_artifact"].includes(error?.code)) {
       throw error;
     }
-    const invalid = new Error("The Host Resume Artifact could not be read safely.");
-    invalid.code = "invalid_host_resume_artifact";
-    throw invalid;
+    throw invalid("invalid_host_resume_artifact", "The Host Resume Artifact could not be read.");
   } finally {
     await handle?.close();
   }
+}
+
+async function verifyArtifact(cwd, artifact) {
+  assertValidHostResumeArtifact(artifact);
+  const key = await resumeKey(cwd);
+  const expected = Buffer.from(attestation(key, artifactContent(artifact)));
+  const actual = Buffer.from(artifact.attestation);
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+    throw invalid("invalid_host_resume_attestation", "The Host Resume Artifact is untrusted.");
+  }
+  const state = openState(key, artifact.portable_state);
+  if (artifact.operation === "handoff") {
+    if (
+      state?.stage !== artifact.state
+      || JSON.stringify(sourceRefsForState(state)) !== JSON.stringify(artifact.source_refs)
+    ) throw invalid("invalid_host_resume_artifact", "The Handoff state binding is invalid.");
+  } else if (
+    state?.stage !== artifact.state
+    || JSON.stringify(sourceRefsForState(state))
+      !== JSON.stringify(artifact.source_refs)
+  ) {
+    throw invalid("invalid_host_resume_artifact", "The Architecture state binding is invalid.");
+  }
+  return state;
 }
 
 export async function resumeFromHostArtifact({
@@ -133,44 +246,30 @@ export async function resumeFromHostArtifact({
   run_architect: runArchitect,
   run_handoff: runHandoff,
 }) {
-  if (!HOSTS.has(host)) {
-    const error = new Error("The target host is unsupported.");
-    error.code = "unsupported_host_resume_target";
-    throw error;
-  }
-  assertValidHostResumeArtifact(artifact);
+  if (!HOSTS.has(host)) throw invalid("unsupported_host_resume_target", "Unsupported host.");
+  const portableState = await verifyArtifact(cwd, artifact);
   if (artifact.origin_host === host) {
-    const error = new Error("Cross-host resume requires a different supported target host.");
-    error.code = "same_host_resume_artifact";
-    throw error;
+    throw invalid("same_host_resume_artifact", "Cross-host resume needs another host.");
   }
   const resumeOptions = { ...options, resume_token: artifact.resume_token };
   if (artifact.operation === "architect") {
-    if (typeof runArchitect !== "function") {
-      const error = new Error("The Architecture resume capability is unavailable in this host.");
-      error.code = "host_capability_unavailable";
-      throw error;
-    }
-    const result = await runArchitect(cwd, {}, resumeOptions);
+    const result = await runArchitect(cwd, {}, resumeOptions, {
+      load_state: (token) => token === artifact.resume_token
+        ? structuredClone(portableState)
+        : null,
+    });
     if (result?.error === "invalid_resume_token") {
-      const error = new Error("The Host Resume Artifact does not match current local state.");
-      error.code = "stale_host_resume_artifact";
-      throw error;
+      throw invalid("stale_host_resume_artifact", "The Architecture state is unavailable.");
     }
     return result;
   }
-  if (typeof runHandoff !== "function") {
-    const error = new Error("The Handoff resume capability is unavailable in this host.");
-    error.code = "host_capability_unavailable";
-    throw error;
-  }
-  const result = await runHandoff({}, resumeOptions);
-  if (result?.error === "invalid_resume_token") {
-    const error = new Error("The Host Resume Artifact does not match current local state.");
-    error.code = "stale_host_resume_artifact";
-    throw error;
-  }
-  return result;
+  return runHandoff({}, resumeOptions, {
+    load_state: async (token) => token === artifact.resume_token
+      ? structuredClone(portableState)
+      : null,
+    save_state: async () => true,
+    now: options.now,
+  });
 }
 
 export async function resumeFromHostArtifactFile({ artifact_path: artifactPath, ...options }) {

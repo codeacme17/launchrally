@@ -127,7 +127,7 @@ async function storeState(state) {
   return `lrhandoff_${directoryToken}_${fileToken}`;
 }
 
-async function loadState(token) {
+export async function loadHandoffState(token) {
   const statePath = statePathForToken(token);
   if (!statePath) return null;
   try {
@@ -138,7 +138,7 @@ async function loadState(token) {
   }
 }
 
-async function saveState(state, token) {
+export async function saveHandoffState(state, token) {
   const statePath = statePathForToken(token);
   if (!statePath) return false;
   await writeFile(statePath, `${JSON.stringify(state)}\n`, {
@@ -493,8 +493,8 @@ function staleResult(state, token) {
 
 export async function runHandoff(source = {}, options = {}, dependencies = {}) {
   const store = dependencies.store_state ?? storeState;
-  const load = dependencies.load_state ?? loadState;
-  const save = dependencies.save_state ?? saveState;
+  const load = dependencies.load_state ?? loadHandoffState;
+  const save = dependencies.save_state ?? saveHandoffState;
   if (options.resume_token) {
     const state = await load(options.resume_token);
     if (!state) {

@@ -26,6 +26,9 @@ const providerToolRecoverySchema = require(
 );
 const phase1Schema = require("../schemas/phase-1/v1.schema.json");
 const phase1AdoptionSchema = require("../schemas/phase-1-adoption/v1.schema.json");
+const phase1MigrationPreviewSchema = require(
+  "../schemas/phase-1-migration-preview/v1.schema.json",
+);
 const hostResumeArtifactSchema = require("../schemas/host-resume-artifact/v1.schema.json");
 
 export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v2";
@@ -95,6 +98,8 @@ export const ARCHITECT_INTERACTION_SCHEMA =
   "launchrally.dev/architect-interaction/v1";
 export const HOST_RESUME_ARTIFACT_SCHEMA = "launchrally.dev/host-resume-artifact/v1";
 export const PHASE_1_ADOPTION_SCHEMA = "launchrally.dev/phase-1-adoption/v1";
+export const PHASE_1_MIGRATION_PREVIEW_SCHEMA =
+  "launchrally.dev/phase-1-migration-preview/v1";
 export const HANDOFF_INTERACTION_SCHEMA = "launchrally.dev/handoff-interaction/v1";
 export const COMPOSITE_ASSURANCE_STATES = Object.freeze([
   "unverified",
@@ -142,6 +147,7 @@ export const PHASE_1_SCHEMA_VERSIONS = Object.freeze([
   ARCHITECTURE_STATUS_SCHEMA,
   ARCHITECT_INTERACTION_SCHEMA,
   PHASE_1_ADOPTION_SCHEMA,
+  PHASE_1_MIGRATION_PREVIEW_SCHEMA,
   HOST_RESUME_ARTIFACT_SCHEMA,
   HANDOFF_INTERACTION_SCHEMA,
 ]);
@@ -1415,7 +1421,6 @@ function assertValidPhase1Interaction(interaction, operation, schemaVersion, err
   const operationStates = {
     architect: new Set([
       "intent_discovery",
-      "p1_migration_preview",
       "blueprint_review",
       "decision_confirmation",
       "completed",
@@ -1433,7 +1438,6 @@ function assertValidPhase1Interaction(interaction, operation, schemaVersion, err
     needs_permission: new Set(["intent_discovery", "authority_preview"]),
     needs_confirmation: new Set([
       "intent_discovery",
-      "p1_migration_preview",
       "blueprint_review",
       "decision_confirmation",
       "authority_preview",
@@ -1479,7 +1483,7 @@ export function assertValidArchitectInteraction(interaction) {
 export function assertValidHostResumeArtifact(artifact) {
   const content = artifact && typeof artifact === "object" && !Array.isArray(artifact)
     ? Object.fromEntries(Object.entries(artifact).filter(([key]) =>
-      !["artifact_id", "artifact_digest"].includes(key)))
+      !["artifact_id", "artifact_digest", "attestation"].includes(key)))
     : null;
   const expectedDigest = content ? computeCanonicalDigest(content) : null;
   const valid = validatesSchema(artifact, hostResumeArtifactSchema, hostResumeArtifactSchema)
@@ -1507,6 +1511,27 @@ export function assertValidPhase1Adoption(adoption) {
   if (!valid) {
     const error = new Error("The Phase 1 Adoption record is incomplete or invalid.");
     error.code = "invalid_phase_1_adoption";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidPhase1MigrationPreview(preview) {
+  const valid = validatesSchema(preview, phase1MigrationPreviewSchema, phase1MigrationPreviewSchema)
+    && JSON.stringify(preview?.files) === JSON.stringify([
+      ".launchrally/phase-1/adoption.json",
+      ".launchrally/phase-1/records/",
+      ".launchrally/phase-1/transactions/",
+      ".launchrally/phase-1/transactions/.host-resume-key",
+    ])
+    && JSON.stringify(preview?.preserved_paths) === JSON.stringify([
+      ".launchrally/manifest.yaml",
+      ".launchrally/reports/",
+      ".launchrally/evidence/",
+    ]);
+  if (!valid) {
+    const error = new Error("The Phase 1 Migration Preview is incomplete or invalid.");
+    error.code = "invalid_phase_1_migration_preview";
     throw error;
   }
   return true;
@@ -1582,6 +1607,7 @@ const PHASE_1_VALIDATORS = Object.freeze({
   [ARCHITECTURE_STATUS_SCHEMA]: assertValidArchitectureStatus,
   [ARCHITECT_INTERACTION_SCHEMA]: assertValidArchitectInteraction,
   [PHASE_1_ADOPTION_SCHEMA]: assertValidPhase1Adoption,
+  [PHASE_1_MIGRATION_PREVIEW_SCHEMA]: assertValidPhase1MigrationPreview,
   [HOST_RESUME_ARTIFACT_SCHEMA]: assertValidHostResumeArtifact,
   [HANDOFF_INTERACTION_SCHEMA]: assertValidHandoffInteraction,
 });

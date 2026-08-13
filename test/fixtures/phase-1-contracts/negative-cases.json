@@ -21,6 +21,7 @@
   { "schema_version": "launchrally.dev/architecture-status/v1", "path": "launch_assessment.independent", "value": false },
   { "schema_version": "launchrally.dev/architect-interaction/v1", "path": "state", "value": "receipt_review" },
   { "schema_version": "launchrally.dev/phase-1-adoption/v1", "path": "historical_reports_relabelled", "value": true },
+  { "schema_version": "launchrally.dev/phase-1-migration-preview/v1", "path": "migration", "value": "destructive" },
   { "schema_version": "launchrally.dev/host-resume-artifact/v1", "path": "state", "value": "completed" },
   { "schema_version": "launchrally.dev/handoff-interaction/v1", "path": "state", "value": "blueprint_review" }
 ]

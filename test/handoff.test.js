@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -834,9 +834,17 @@ test("Claude Handoff state resumes in Codex from one validated local artifact", 
   });
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-handoff-resume-"));
   const artifactPath = path.join(directory, "handoff-resume.json");
-  await claude.saveResumeArtifact(artifactPath, discovered.interaction);
+  await mkdir(path.join(directory, ".launchrally", "phase-1", "transactions"), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(directory, ".launchrally", "phase-1", "transactions", ".host-resume-key"),
+    Buffer.alloc(32, 1),
+    { mode: 0o600 },
+  );
+  await claude.saveResumeArtifact(artifactPath, discovered.interaction, directory);
   const resumed = await codex.resumeArtifactFile({
-    cwd: process.cwd(),
+    cwd: directory,
     artifact_path: artifactPath,
     options: { selection: discovered.request.choices[0] },
   });
