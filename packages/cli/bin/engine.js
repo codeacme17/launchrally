@@ -288,7 +288,7 @@ function renderHumanHandoff(value) {
     lines.push(
       "Compatible authority batches:",
       ...value.candidates.map((candidate) =>
-        `- ${candidate.batch_id}: ${candidate.executor_id}; ${candidate.effect_class} on ${candidate.target}; cancellation ${candidate.cancellation}; partial failure ${candidate.partial_failure}; ${candidate.available ? "available" : "unavailable"}${candidate.recommended ? "; recommended narrowest match" : ""}`),
+        `- ${candidate.batch_id}: ${candidate.executor_id}; ${candidate.effect_class} on ${candidate.target}; tools ${candidate.tools.map(({ executable, exact_version: version }) => `${executable}@${version}`).join(", ")}; authentication ${candidate.authentication_state} (${candidate.auth_assumptions.join(", ")}); secret handling ${candidate.secret_handling}; cancellation ${candidate.cancellation}; partial failure ${candidate.partial_failure}; ${candidate.available ? "available" : "unavailable"}${candidate.recommended ? "; recommended narrowest match" : ""}`),
     );
   }
   if (value.handoff_package) {
@@ -297,6 +297,8 @@ function renderHumanHandoff(value) {
       `Approval: ${value.handoff_package.approval.state}`,
       `Cancellation: ${value.handoff_package.authority_batch.coordination.cancellation}`,
       `Partial failure: ${value.handoff_package.authority_batch.coordination.partial_failure}`,
+      `Authentication: ${value.handoff_package.authority_batch.executor_requirements.authentication_state} (${value.handoff_package.authority_batch.executor_requirements.auth_assumptions.join(", ")})`,
+      `Secret handling: ${value.handoff_package.authority_batch.executor_requirements.secret_handling}`,
       ...value.handoff_package.authority_batch.user_visible_effects.map((effect) =>
         `- ${effect}`),
     );

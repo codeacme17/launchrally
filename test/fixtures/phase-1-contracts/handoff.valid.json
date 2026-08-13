@@ -7,7 +7,7 @@
     "source_report": {
       "id": "report_task_graph_01",
       "schema_version": "launchrally.dev/report/v2",
-      "digest": "sha256:c5fc4dff8267dc3c6b4e5aa2a9b61eaa4de27904de529238e81a2e02e182e945"
+      "digest": "sha256:26a4de50fd022ac618a2ae2b261517c90d3d74213f54156c0da8fa3a76bc4a9c"
     },
     "architecture_record": {
       "id": "architecture_record_01",
@@ -124,6 +124,16 @@
         "cancellation": "supported_between_effects",
         "task_cancellation_behaviors": ["stop_before_next_effect"],
         "partial_failure": "reported_per_task"
+      },
+      "executor_requirements": {
+        "tools": [{
+          "tool_id": "codex_cli",
+          "executable": "codex",
+          "exact_version": "0.147.0"
+        }],
+        "auth_assumptions": ["user_completes_login_outside_launchrally"],
+        "authentication_state": "user_managed_unverified",
+        "secret_handling": "external_reference_only"
       }
     },
     "approval": {

@@ -256,6 +256,14 @@ function candidatesFor(source, platform) {
         cancellation: descriptor.cancellation,
         task_cancellation_behaviors: [task.cancellation_behavior],
         partial_failure: descriptor.partial_failure,
+        tools: descriptor.tools.map(({ tool_id: toolId, executable, exact_version: version }) => ({
+          tool_id: toolId,
+          executable,
+          exact_version: version,
+        })),
+        auth_assumptions: [...descriptor.auth_assumptions],
+        authentication_state: "user_managed_unverified",
+        secret_handling: descriptor.secret_handling,
         recommended: false,
         authority_width: descriptor.supported_task_types.length
           + descriptor.platforms.length
@@ -327,13 +335,19 @@ function authorityBatch(state, candidate) {
     prohibited_effects: [...new Set(
       tasks.flatMap(({ prohibited_effects: effects }) => effects),
     )].sort(),
-    user_visible_effects: tasks.map(visibleEffect),
+    user_visible_effects: [...new Set(tasks.map(visibleEffect))],
     coordination: {
       cancellation: candidate.cancellation,
       task_cancellation_behaviors: [...new Set(
         tasks.map(({ cancellation_behavior: behavior }) => behavior),
       )].sort(),
       partial_failure: candidate.partial_failure,
+    },
+    executor_requirements: {
+      tools: structuredClone(candidate.tools),
+      auth_assumptions: [...candidate.auth_assumptions],
+      authentication_state: candidate.authentication_state,
+      secret_handling: candidate.secret_handling,
     },
   };
 }
@@ -784,10 +798,9 @@ export async function runHandoff(source = {}, options = {}, dependencies = {}) {
       const taskUpdates = taskUpdatesForReceipt(receipt);
       const descriptor = state.executor_descriptors.find(({ descriptor_id: id }) =>
         id === state.handoff_package.executor.id);
-      if (
-        receipt.task_results.some(({ state: receiptState }) => receiptState === "partial")
-        && descriptor.partial_failure === "all_or_nothing"
-      ) {
+      const receiptStates = new Set(receipt.task_results.map(({ state }) => state));
+      if (descriptor.partial_failure === "all_or_nothing"
+        && (receiptStates.has("partial") || receiptStates.size > 1)) {
         return {
           contract: HANDOFF_INTERACTION_SCHEMA,
           status: "execution_error",

@@ -750,7 +750,7 @@
         "executor": { "$ref": "#/$defs/recordReference" },
         "authority_batch": {
           "type": "object",
-          "required": ["effect_classes", "target", "allowed_effects", "prohibited_effects", "user_visible_effects", "coordination"],
+          "required": ["effect_classes", "target", "allowed_effects", "prohibited_effects", "user_visible_effects", "coordination", "executor_requirements"],
           "properties": {
             "effect_classes": {
               "type": "array",
@@ -774,6 +774,30 @@
                   "items": { "enum": ["stop_before_next_effect", "preserve_completed_prerequisites", "manual_recovery_required"] }
                 },
                 "partial_failure": { "enum": ["all_or_nothing", "reported_per_task", "manual_inspection_required"] }
+              },
+              "additionalProperties": false
+            },
+            "executor_requirements": {
+              "type": "object",
+              "required": ["tools", "auth_assumptions", "authentication_state", "secret_handling"],
+              "properties": {
+                "tools": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": ["tool_id", "executable", "exact_version"],
+                    "properties": {
+                      "tool_id": { "$ref": "#/$defs/identifier" },
+                      "executable": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+                      "exact_version": { "type": "string", "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$" }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "auth_assumptions": { "$ref": "#/$defs/nonEmptyStrings" },
+                "authentication_state": { "const": "user_managed_unverified" },
+                "secret_handling": { "enum": ["no_secret_required", "external_reference_only", "executor_managed"] }
               },
               "additionalProperties": false
             }

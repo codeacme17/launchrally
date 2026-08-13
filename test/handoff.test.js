@@ -108,11 +108,7 @@ function receiptFor(confirmed, state = "reported_succeeded") {
     task_results: [{
       task_id: "task_configure_identity",
       state,
-      claim_codes: [state === "reported_succeeded"
-        ? "configuration_submitted"
-        : state === "reported_failed"
-          ? "execution_failed"
-          : state === "cancelled" ? "execution_cancelled" : "execution_partial"],
+      claim_codes: [claimCodeForState(state)],
     }],
     classification: {
       claim_only: true,
@@ -126,6 +122,14 @@ function receiptFor(confirmed, state = "reported_succeeded") {
       sensitive_data_retained: false,
     },
   };
+}
+
+function claimCodeForState(state) {
+  return state === "reported_succeeded"
+    ? "configuration_submitted"
+    : state === "reported_failed"
+      ? "execution_failed"
+      : state === "cancelled" ? "execution_cancelled" : "execution_partial";
 }
 
 test("Executor discovery exposes compatible authority batches without granting authority", async () => {
@@ -149,6 +153,14 @@ test("Executor discovery exposes compatible authority batches without granting a
     cancellation: "supported_between_effects",
     task_cancellation_behaviors: ["stop_before_next_effect"],
     partial_failure: "reported_per_task",
+    tools: [{
+      tool_id: "codex_cli",
+      executable: "codex",
+      exact_version: "0.147.0",
+    }],
+    auth_assumptions: ["user_completes_login_outside_launchrally"],
+    authentication_state: "user_managed_unverified",
+    secret_handling: "external_reference_only",
     recommended: true,
   });
   assert.deepEqual(result.safety, {
@@ -195,6 +207,16 @@ test("selecting a compatible batch previews one exact unapproved Handoff Package
       cancellation: "supported_between_effects",
       task_cancellation_behaviors: ["stop_before_next_effect"],
       partial_failure: "reported_per_task",
+    },
+    executor_requirements: {
+      tools: [{
+        tool_id: "codex_cli",
+        executable: "codex",
+        exact_version: "0.147.0",
+      }],
+      auth_assumptions: ["user_completes_login_outside_launchrally"],
+      authentication_state: "user_managed_unverified",
+      secret_handling: "external_reference_only",
     },
   });
   assert.equal(selected.safety.authority_granted, false);
@@ -621,6 +643,43 @@ test("Executor cancellation and partial-failure semantics are compatibility and 
     receipt: receiptFor(confirmed, "partial"),
   }, store.dependencies);
   assert.equal(rejected.error, "execution_receipt_partial_failure_mismatch");
+
+  const mixedSource = source();
+  const secondTask = {
+    ...structuredClone(mixedSource.task_graph.tasks[0]),
+    task_id: "task_configure_identity_second",
+    source_id: "decision_identity_second",
+  };
+  mixedSource.task_graph.tasks.push(secondTask);
+  mixedSource.task_graph.ready_frontier.push(secondTask.task_id);
+  mixedSource.task_graph.ready_frontier.sort();
+  mixedSource.executor_descriptors[0].partial_failure = "all_or_nothing";
+  mixedSource.executor_descriptors[0].trust.digest = computeExecutorDescriptorDigest(
+    mixedSource.executor_descriptors[0],
+  );
+  mixedSource.reviewed_executors[0].digest =
+    mixedSource.executor_descriptors[0].trust.digest;
+  const mixedStore = stateStore();
+  const mixedDiscovered = await runHandoff(mixedSource, {}, mixedStore.dependencies);
+  const mixedSelected = await runHandoff({}, {
+    resume_token: mixedDiscovered.resume_token,
+    selection: mixedDiscovered.request.choices[0],
+  }, mixedStore.dependencies);
+  const mixedConfirmed = await runHandoff({}, {
+    resume_token: mixedSelected.resume_token,
+    confirmation: "confirm",
+  }, mixedStore.dependencies);
+  const mixedReceipt = receiptFor(mixedConfirmed);
+  mixedReceipt.task_results = mixedConfirmed.handoff_package.task_ids.map((taskId, index) => ({
+    task_id: taskId,
+    state: index === 0 ? "reported_succeeded" : "reported_failed",
+    claim_codes: [index === 0 ? "configuration_submitted" : "execution_failed"],
+  }));
+  const mixedRejected = await runHandoff({}, {
+    resume_token: mixedConfirmed.resume_token,
+    receipt: mixedReceipt,
+  }, mixedStore.dependencies);
+  assert.equal(mixedRejected.error, "execution_receipt_partial_failure_mismatch");
 });
 
 test("no compatible managed Executor retains only a no-authority manual/custom path", async () => {
@@ -809,4 +868,6 @@ test("the public JSON CLI exposes typed discovery and resumable authority previe
   assert.match(human.stdout, /provider_configuration on identity_authentication/u);
   assert.match(human.stdout, /cancellation supported_between_effects/u);
   assert.match(human.stdout, /partial failure reported_per_task/u);
+  assert.match(human.stdout, /authentication user_managed_unverified/u);
+  assert.match(human.stdout, /secret handling external_reference_only/u);
 });
