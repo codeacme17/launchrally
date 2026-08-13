@@ -54,6 +54,11 @@ function visibleEffect(task) {
   return `The external Executor may perform ${task.allowed_effects.join(", ")} on ${task.expected_target}.`;
 }
 
+function cancellationIsCompatible(task, descriptor) {
+  return task.cancellation_behavior === "manual_recovery_required"
+    || descriptor.cancellation !== "unsupported";
+}
+
 function now(dependencies) {
   return typeof dependencies.now === "function"
     ? dependencies.now()
@@ -201,6 +206,7 @@ function candidatesFor(source, platform) {
       if (
         !descriptor.contract_versions.includes(HANDOFF_PACKAGE_SCHEMA)
         || !descriptor.contract_versions.includes(descriptor.result_schema)
+        || !cancellationIsCompatible(task, descriptor)
       ) continue;
       const trustCurrent = trustIsCurrent(descriptor.trust, source.assessment_time);
       const trustAccepted = descriptor.trust.tier === "core_catalog"
@@ -237,6 +243,7 @@ function candidatesFor(source, platform) {
         task.expected_target,
         task.allowed_effects,
         task.prohibited_effects,
+        task.cancellation_behavior,
       ]);
       const group = groups.get(key) ?? {
         executor_id: executorId,
@@ -246,6 +253,9 @@ function candidatesFor(source, platform) {
         target: task.expected_target,
         available: platformAvailable && toolsAvailable,
         unavailable_reason: unavailableReason,
+        cancellation: descriptor.cancellation,
+        task_cancellation_behaviors: [task.cancellation_behavior],
+        partial_failure: descriptor.partial_failure,
         recommended: false,
         authority_width: descriptor.supported_task_types.length
           + descriptor.platforms.length
@@ -274,6 +284,9 @@ function candidatesFor(source, platform) {
       candidate.environment,
       candidate.effect_class,
       candidate.target,
+      candidate.cancellation,
+      candidate.task_cancellation_behaviors,
+      candidate.partial_failure,
     ]);
     const current = authorityGroups.get(key);
     if (
@@ -315,6 +328,13 @@ function authorityBatch(state, candidate) {
       tasks.flatMap(({ prohibited_effects: effects }) => effects),
     )].sort(),
     user_visible_effects: tasks.map(visibleEffect),
+    coordination: {
+      cancellation: candidate.cancellation,
+      task_cancellation_behaviors: [...new Set(
+        tasks.map(({ cancellation_behavior: behavior }) => behavior),
+      )].sort(),
+      partial_failure: candidate.partial_failure,
+    },
   };
 }
 
@@ -337,6 +357,22 @@ function taskUpdatesForReceipt(receipt) {
   return receipt.task_results.map(({ task_id: taskId, state: receiptState }) => ({
     task_id: taskId,
     status: receiptState === "partial" ? "reported_failed" : receiptState,
+  }));
+}
+
+function executionOutcomesForReceipt(receipt, descriptor) {
+  return receipt.task_results.map(({ task_id: taskId, state, claim_codes: claimCodes }) => ({
+    task_id: taskId,
+    receipt_state: state,
+    claim_codes: [...claimCodes],
+    remaining_work: state === "partial"
+      ? {
+        state: "required",
+        coordination: descriptor.partial_failure === "manual_inspection_required"
+          ? "manual_inspection_required"
+          : "retry_unfinished_effects",
+      }
+      : { state: "none", coordination: "none" },
   }));
 }
 
@@ -400,7 +436,9 @@ function storedStateIsValid(state) {
     assertValidExecutionReceipt(state.execution_receipt);
     return receiptIsBoundToPackage(state.execution_receipt, state.handoff_package)
       && JSON.stringify(state.task_updates)
-        === JSON.stringify(taskUpdatesForReceipt(state.execution_receipt));
+        === JSON.stringify(taskUpdatesForReceipt(state.execution_receipt))
+      && JSON.stringify(state.execution_outcomes)
+        === JSON.stringify(executionOutcomesForReceipt(state.execution_receipt, descriptor));
   } catch {
     return false;
   }
@@ -558,6 +596,7 @@ export async function runHandoff(source = {}, options = {}, dependencies = {}) {
         handoff_package: structuredClone(state.handoff_package),
         execution_receipt: structuredClone(state.execution_receipt),
         task_updates: structuredClone(state.task_updates),
+        execution_outcomes: structuredClone(state.execution_outcomes),
         safety: { ...SAFETY, authority_granted: true },
       };
       if (choice === "verify") {
@@ -743,11 +782,26 @@ export async function runHandoff(source = {}, options = {}, dependencies = {}) {
         };
       }
       const taskUpdates = taskUpdatesForReceipt(receipt);
+      const descriptor = state.executor_descriptors.find(({ descriptor_id: id }) =>
+        id === state.handoff_package.executor.id);
+      if (
+        receipt.task_results.some(({ state: receiptState }) => receiptState === "partial")
+        && descriptor.partial_failure === "all_or_nothing"
+      ) {
+        return {
+          contract: HANDOFF_INTERACTION_SCHEMA,
+          status: "execution_error",
+          operation: "handoff",
+          error: "execution_receipt_partial_failure_mismatch",
+        };
+      }
+      const executionOutcomes = executionOutcomesForReceipt(receipt, descriptor);
       const next = {
         ...state,
         stage: "verification_pending",
         execution_receipt: structuredClone(receipt),
         task_updates: structuredClone(taskUpdates),
+        execution_outcomes: structuredClone(executionOutcomes),
       };
       await save(next, options.resume_token);
       return result(
@@ -769,6 +823,7 @@ export async function runHandoff(source = {}, options = {}, dependencies = {}) {
           handoff_package: structuredClone(handoffPackage),
           execution_receipt: structuredClone(receipt),
           task_updates: taskUpdates,
+          execution_outcomes: executionOutcomes,
           safety: { ...SAFETY, authority_granted: true },
         },
       );

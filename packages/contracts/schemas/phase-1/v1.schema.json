@@ -750,7 +750,7 @@
         "executor": { "$ref": "#/$defs/recordReference" },
         "authority_batch": {
           "type": "object",
-          "required": ["effect_classes", "target", "allowed_effects", "prohibited_effects", "user_visible_effects"],
+          "required": ["effect_classes", "target", "allowed_effects", "prohibited_effects", "user_visible_effects", "coordination"],
           "properties": {
             "effect_classes": {
               "type": "array",
@@ -761,7 +761,22 @@
             "target": { "type": "string", "minLength": 1 },
             "allowed_effects": { "$ref": "#/$defs/nonEmptyStrings" },
             "prohibited_effects": { "$ref": "#/$defs/nonEmptyStrings" },
-            "user_visible_effects": { "$ref": "#/$defs/nonEmptyStrings" }
+            "user_visible_effects": { "$ref": "#/$defs/nonEmptyStrings" },
+            "coordination": {
+              "type": "object",
+              "required": ["cancellation", "task_cancellation_behaviors", "partial_failure"],
+              "properties": {
+                "cancellation": { "enum": ["unsupported", "supported_between_effects", "supported_during_effect"] },
+                "task_cancellation_behaviors": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": { "enum": ["stop_before_next_effect", "preserve_completed_prerequisites", "manual_recovery_required"] }
+                },
+                "partial_failure": { "enum": ["all_or_nothing", "reported_per_task", "manual_inspection_required"] }
+              },
+              "additionalProperties": false
+            }
           },
           "additionalProperties": false
         },
@@ -797,7 +812,14 @@
             "properties": {
               "task_id": { "$ref": "#/$defs/identifier" },
               "state": { "enum": ["reported_succeeded", "reported_failed", "cancelled", "partial"] },
-              "claim_codes": { "$ref": "#/$defs/nonEmptyStrings" }
+              "claim_codes": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": ["configuration_submitted", "execution_completed", "execution_failed", "execution_cancelled", "execution_partial", "manual_inspection_required"]
+                }
+              }
             },
             "additionalProperties": false
           }

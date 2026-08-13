@@ -7,7 +7,7 @@
     "source_report": {
       "id": "report_task_graph_01",
       "schema_version": "launchrally.dev/report/v2",
-      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      "digest": "sha256:c5fc4dff8267dc3c6b4e5aa2a9b61eaa4de27904de529238e81a2e02e182e945"
     },
     "architecture_record": {
       "id": "architecture_record_01",
@@ -119,7 +119,12 @@
       "target": "identity_authentication",
       "allowed_effects": ["provider_configuration_write"],
       "prohibited_effects": ["credential_persistence", "deployment_write", "production_data_write", "source_write"],
-      "user_visible_effects": ["The external Executor may change identity Provider configuration."]
+      "user_visible_effects": ["The external Executor may change identity Provider configuration."],
+      "coordination": {
+        "cancellation": "supported_between_effects",
+        "task_cancellation_behaviors": ["stop_before_next_effect"],
+        "partial_failure": "reported_per_task"
+      }
     },
     "approval": {
       "state": "approved",

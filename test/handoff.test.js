@@ -4,6 +4,7 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import {
@@ -19,6 +20,10 @@ const fixture = JSON.parse(await readFile(
 ));
 const execFileAsync = promisify(execFile);
 const engine = path.resolve("packages/cli/bin/engine.js");
+const cliClockArguments = [
+  "--import",
+  pathToFileURL(path.resolve("test/helpers/fixed-provider-knowledge-clock.js")).href,
+];
 
 function descriptor() {
   const value = structuredClone(fixture.executor);
@@ -103,7 +108,11 @@ function receiptFor(confirmed, state = "reported_succeeded") {
     task_results: [{
       task_id: "task_configure_identity",
       state,
-      claim_codes: ["configuration_submitted"],
+      claim_codes: [state === "reported_succeeded"
+        ? "configuration_submitted"
+        : state === "reported_failed"
+          ? "execution_failed"
+          : state === "cancelled" ? "execution_cancelled" : "execution_partial"],
     }],
     classification: {
       claim_only: true,
@@ -137,6 +146,9 @@ test("Executor discovery exposes compatible authority batches without granting a
     effect_class: "provider_configuration",
     target: "identity_authentication",
     available: true,
+    cancellation: "supported_between_effects",
+    task_cancellation_behaviors: ["stop_before_next_effect"],
+    partial_failure: "reported_per_task",
     recommended: true,
   });
   assert.deepEqual(result.safety, {
@@ -179,6 +191,11 @@ test("selecting a compatible batch previews one exact unapproved Handoff Package
     user_visible_effects: [
       "The external Executor may perform provider_configuration_write on identity_authentication.",
     ],
+    coordination: {
+      cancellation: "supported_between_effects",
+      task_cancellation_behaviors: ["stop_before_next_effect"],
+      partial_failure: "reported_per_task",
+    },
   });
   assert.equal(selected.safety.authority_granted, false);
 });
@@ -296,9 +313,7 @@ test("a normalized receipt remains a claim and produces only unverified Task upd
   const secretStore = stateStore();
   const secretConfirmed = await confirmedHandoff(secretStore);
   const secretReceipt = receiptFor(secretConfirmed);
-  secretReceipt.task_results[0].claim_codes = [
-    "https://test-user:test-password@example.invalid/",
-  ];
+  secretReceipt.task_results[0].claim_codes = ["ghp_012345678901234567890123456789012345"];
   const secretRejected = await runHandoff({}, {
     resume_token: secretConfirmed.resume_token,
     receipt: secretReceipt,
@@ -319,6 +334,15 @@ test("partial failure stays typed and cannot be promoted to Evidence", async () 
   assert.deepEqual(reviewed.task_updates, [{
     task_id: "task_configure_identity",
     status: "reported_failed",
+  }]);
+  assert.deepEqual(reviewed.execution_outcomes, [{
+    task_id: "task_configure_identity",
+    receipt_state: "partial",
+    claim_codes: ["execution_partial"],
+    remaining_work: {
+      state: "required",
+      coordination: "retry_unfinished_effects",
+    },
   }]);
   assert.equal(reviewed.task_updates[0].verification_evidence, undefined);
 });
@@ -561,6 +585,44 @@ test("unsupported versions and platforms are reported as distinct typed recovery
   assert.equal(platformResult.recovery.reason, "unsupported_platform");
 });
 
+test("Executor cancellation and partial-failure semantics are compatibility and receipt boundaries", async () => {
+  const unsupported = source();
+  unsupported.executor_descriptors[0].cancellation = "unsupported";
+  unsupported.executor_descriptors[0].trust.digest = computeExecutorDescriptorDigest(
+    unsupported.executor_descriptors[0],
+  );
+  unsupported.reviewed_executors[0].digest = unsupported.executor_descriptors[0].trust.digest;
+  const unsupportedResult = await runHandoff(unsupported, {}, stateStore().dependencies);
+  assert.deepEqual(unsupportedResult.candidates, []);
+  assert.deepEqual(unsupportedResult.request.choices, ["manual_or_custom", "defer", "cancel"]);
+
+  const allOrNothing = source();
+  allOrNothing.executor_descriptors[0].partial_failure = "all_or_nothing";
+  allOrNothing.executor_descriptors[0].trust.digest = computeExecutorDescriptorDigest(
+    allOrNothing.executor_descriptors[0],
+  );
+  allOrNothing.reviewed_executors[0].digest = allOrNothing.executor_descriptors[0].trust.digest;
+  const store = stateStore();
+  const discovered = await runHandoff(allOrNothing, {}, store.dependencies);
+  const selected = await runHandoff({}, {
+    resume_token: discovered.resume_token,
+    selection: discovered.request.choices[0],
+  }, store.dependencies);
+  assert.equal(
+    selected.handoff_package.authority_batch.coordination.partial_failure,
+    "all_or_nothing",
+  );
+  const confirmed = await runHandoff({}, {
+    resume_token: selected.resume_token,
+    confirmation: "confirm",
+  }, store.dependencies);
+  const rejected = await runHandoff({}, {
+    resume_token: confirmed.resume_token,
+    receipt: receiptFor(confirmed, "partial"),
+  }, store.dependencies);
+  assert.equal(rejected.error, "execution_receipt_partial_failure_mismatch");
+});
+
 test("no compatible managed Executor retains only a no-authority manual/custom path", async () => {
   const handoffSource = source();
   handoffSource.executor_descriptors = [];
@@ -700,6 +762,7 @@ test("the public JSON CLI exposes typed discovery and resumable authority previe
   ]);
 
   const discovered = JSON.parse((await execFileAsync(process.execPath, [
+    ...cliClockArguments,
     engine,
     "handoff",
     "--json",
@@ -716,6 +779,7 @@ test("the public JSON CLI exposes typed discovery and resumable authority previe
   assert.equal(discovered.state, "executor_discovery");
 
   const preview = JSON.parse((await execFileAsync(process.execPath, [
+    ...cliClockArguments,
     engine,
     "handoff",
     "--json",
@@ -728,6 +792,7 @@ test("the public JSON CLI exposes typed discovery and resumable authority previe
   assert.equal(preview.handoff_package.approval.state, "required");
 
   const human = await execFileAsync(process.execPath, [
+    ...cliClockArguments,
     engine,
     "handoff",
     "--task-graph",
@@ -742,4 +807,6 @@ test("the public JSON CLI exposes typed discovery and resumable authority previe
   assert.match(human.stdout, /LaunchRally External Executor Handoff/u);
   assert.match(human.stdout, /does not install, log in, request credentials, or execute/u);
   assert.match(human.stdout, /provider_configuration on identity_authentication/u);
+  assert.match(human.stdout, /cancellation supported_between_effects/u);
+  assert.match(human.stdout, /partial failure reported_per_task/u);
 });

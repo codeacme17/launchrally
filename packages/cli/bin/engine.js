@@ -288,13 +288,15 @@ function renderHumanHandoff(value) {
     lines.push(
       "Compatible authority batches:",
       ...value.candidates.map((candidate) =>
-        `- ${candidate.batch_id}: ${candidate.executor_id}; ${candidate.effect_class} on ${candidate.target}; ${candidate.available ? "available" : "unavailable"}${candidate.recommended ? "; recommended narrowest match" : ""}`),
+        `- ${candidate.batch_id}: ${candidate.executor_id}; ${candidate.effect_class} on ${candidate.target}; cancellation ${candidate.cancellation}; partial failure ${candidate.partial_failure}; ${candidate.available ? "available" : "unavailable"}${candidate.recommended ? "; recommended narrowest match" : ""}`),
     );
   }
   if (value.handoff_package) {
     lines.push(
       `Handoff Package: ${value.handoff_package.handoff_id}`,
       `Approval: ${value.handoff_package.approval.state}`,
+      `Cancellation: ${value.handoff_package.authority_batch.coordination.cancellation}`,
+      `Partial failure: ${value.handoff_package.authority_batch.coordination.partial_failure}`,
       ...value.handoff_package.authority_batch.user_visible_effects.map((effect) =>
         `- ${effect}`),
     );

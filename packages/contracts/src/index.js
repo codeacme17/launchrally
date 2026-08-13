@@ -870,8 +870,17 @@ export function assertValidHandoffPackage(handoffPackage) {
 }
 
 export function assertValidExecutionReceipt(receipt) {
+  const codesByState = {
+    reported_succeeded: new Set(["configuration_submitted", "execution_completed"]),
+    reported_failed: new Set(["execution_failed"]),
+    cancelled: new Set(["execution_cancelled"]),
+    partial: new Set(["execution_partial", "manual_inspection_required"]),
+  };
+  const claimCodesMatchState = receipt?.task_results?.every(({ state, claim_codes: codes }) =>
+    codes.every((code) => codesByState[state]?.has(code)));
   if (
     !validatesSchema(receipt, phase1Schema.$defs.executionReceipt, phase1Schema)
+    || !claimCodesMatchState
     || !referenceUses(receipt?.handoff, [HANDOFF_PACKAGE_SCHEMA])
     || !referenceUses(receipt?.executor, [EXECUTOR_DESCRIPTOR_SCHEMA])
     || hasPersistedSensitivePayload(receipt)
