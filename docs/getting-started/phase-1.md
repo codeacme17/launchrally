@@ -157,9 +157,10 @@ rally verify --json --cwd ./app \
 PowerShell:
 
 ```powershell
+$permissions = '{"public_verification":"denied"}'
 rally verify --json --cwd ./app `
   --resume <verify-token> `
-  --permissions '{"public_verification":"denied"}'
+  --permissions $permissions
 ```
 
 If the typed result instead requests `authenticated_journey_results`, do not author `--journey-results` JSON in the shell. The installed authenticated-journey host adapter must collect, attest, and resume the exact plan; unsupported collection stays a Gap. A successful continuation requires `status: "completed"`, a new immutable Report and Evidence Index, and no invented Passed Check.
