@@ -12,6 +12,8 @@ The Provider-neutral capability APIs create the independently versioned 13-domai
 
 `runArchitectureDecisionEngine` requires a structurally valid current full Report, confirmed Product Intent, Catalog, and Capability Graph. It returns a whole-product Blueprint before any decision confirmation, excludes hard-constraint conflicts, retains existing implementations by default, omits unreviewed currency estimates, and supports independent per-decision confirmation or rejection without repository or Provider writes.
 
+Confirmed decisions can be materialized with `createArchitecturePackageBundle`. The bundle keeps Product Intent, Capability Graph, Architecture Record, optional Task Graph, and a dependency index as separate versioned semantics. `evaluateArchitecturePackageCurrentness` reports current, reassessment, partial invalidation, or superseded state without rewriting history. `persistArchitecturePackage` remains output-only before Init unless an output path is explicitly selected; after Init it shares the local-history writer lock and atomically appends an immutable operational package only after digest-bound confirmation. Shareable Product Intent is stored independently by digest and the package references it. Persistence never edits the Manifest or stages or commits files.
+
 ## Install and use
 
 ```sh

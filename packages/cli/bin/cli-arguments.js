@@ -14,6 +14,7 @@ const OPTIONS_WITH_VALUES = new Set([
   "--intent",
   "--integrations",
   "--output",
+  "--package",
   "--permissions",
   "--report",
   "--recover",

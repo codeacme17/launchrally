@@ -24,6 +24,12 @@ export {
 export { runToolchainLifecycle } from "./toolchain-lifecycle.js";
 export { runArchitectureDecisionEngine } from "./architecture-engine.js";
 export {
+  createArchitecturePackageBundle,
+  evaluateArchitecturePackageCurrentness,
+  persistArchitecturePackage,
+  previewArchitecturePackagePersistence,
+} from "./architecture-package.js";
+export {
   CAPABILITY_CATALOG_DOMAINS,
   buildCapabilityGraph,
   confirmDerivedObligations,

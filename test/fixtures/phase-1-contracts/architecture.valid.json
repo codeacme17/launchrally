@@ -93,7 +93,8 @@
           "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
         }
       ],
-      "provider_knowledge": []
+      "provider_knowledge": [],
+      "constraints_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
     },
     "confirmed_decisions": [
       {

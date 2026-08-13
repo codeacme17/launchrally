@@ -389,7 +389,7 @@
         "blueprint": { "$ref": "#/$defs/recordReference" },
         "bindings": {
           "type": "object",
-          "required": ["source_report", "product_intent", "capability_catalog", "integration_contracts", "provider_knowledge"],
+          "required": ["source_report", "product_intent", "capability_catalog", "integration_contracts", "provider_knowledge", "constraints_digest"],
           "properties": {
             "source_report": { "$ref": "#/$defs/recordReference" },
             "product_intent": { "$ref": "#/$defs/recordReference" },
@@ -401,7 +401,8 @@
             "provider_knowledge": {
               "type": "array",
               "items": { "$ref": "#/$defs/recordReference" }
-            }
+            },
+            "constraints_digest": { "$ref": "#/$defs/digest" }
           },
           "additionalProperties": false
         },
