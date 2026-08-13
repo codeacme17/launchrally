@@ -29,8 +29,10 @@ import { createProviderAdapterPlan, executeProviderAdapters } from "./provider-a
 import { matchesProviderDecisionCard } from "./provider-decision-cards.js";
 import { createPublicVerificationPlan, collectPublicEvidence } from "./public-verification.js";
 import {
+  bindAuthenticatedJourneyPermission,
   createAuthenticatedJourneyPlan,
   createAuthenticatedJourneyResultRequest,
+  collectTrustedAuthenticatedJourneyResults,
   normalizeAuthenticatedJourneyResults,
 } from "./authenticated-journeys.js";
 import { createReportPackage, createVerificationContext } from "./reporting.js";
@@ -761,7 +763,7 @@ function createTargetedResult({
   });
 }
 
-function applyPermissionDecisions(state, decisions) {
+function applyPermissionDecisions(state, decisions, dependencies = {}) {
   if (decisions === undefined) {
     return state.permissions.map((permission) => structuredClone(permission));
   }
@@ -783,7 +785,10 @@ function applyPermissionDecisions(state, decisions) {
       if (
         permission.permission_id === "authenticated_journey_verification"
         && decision === "approved"
-      ) permission.scope.collection_not_before = new Date().toISOString();
+      ) {
+        const now = dependencies.now ?? (() => new Date());
+        permission.scope = bindAuthenticatedJourneyPermission(permission.scope, now());
+      }
     }
   }
   return permissions;
@@ -811,7 +816,11 @@ async function resumeVerify(cwd, options, dependencies) {
       "Manifest intent changed after the Verify permission preview; start Verify again.",
     );
   }
-  const permissions = applyPermissionDecisions(state, options.permission_decisions);
+  const permissions = applyPermissionDecisions(
+    state,
+    options.permission_decisions,
+    dependencies,
+  );
   if (!permissions) {
     return executionError("invalid_permission_decision", "Verify permissions must match the disclosed fresh-read plan.");
   }
@@ -824,6 +833,16 @@ async function resumeVerify(cwd, options, dependencies) {
   const authenticatedPermission = permissions.find(
     ({ permission_id }) => permission_id === "authenticated_journey_verification",
   );
+  if (
+    authenticatedPermission?.decision === "approved"
+    && options.journey_results === undefined
+  ) {
+    const collected = await collectTrustedAuthenticatedJourneyResults(
+      dependencies,
+      authenticatedPermission.scope,
+    );
+    if (collected !== undefined) options = { ...options, journey_results: collected };
+  }
   if (
     authenticatedPermission?.decision === "approved"
     && options.journey_results === undefined
@@ -842,6 +861,7 @@ async function resumeVerify(cwd, options, dependencies) {
       authenticatedResult = normalizeAuthenticatedJourneyResults(
         authenticatedPermission.scope,
         options.journey_results,
+        dependencies,
       );
     } catch (error) {
       return executionError(

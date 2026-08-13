@@ -173,7 +173,7 @@ test("Init preserves protected journey declarations without authenticated result
     schema_version: "launchrally.dev/protected-journey/v1",
     method: "GET",
     path: "/control",
-    purpose: "staff Control Room loads",
+    purpose: "authenticated Core Journey",
     access: {
       authentication_class: "staff",
       anonymous_status_codes: [404],

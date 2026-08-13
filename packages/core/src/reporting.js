@@ -70,7 +70,10 @@ function evidenceMetadata(evidence, createdAt) {
       redaction_state: "normalized",
     };
   }
-  if (evidence.kind === "authenticated_journey_observation") {
+  if ([
+    "authenticated_journey_observation",
+    "authenticated_journey_machine_evidence",
+  ].includes(evidence.kind)) {
     return {
       source: evidence.provenance.collector,
       target: evidence.provenance.exact_target,
@@ -512,6 +515,7 @@ export function createReportPackage({
       checks: reportChecks,
       public_evidence_refs: publicEvidenceRefs,
       authenticated_journey_evidence_refs: authenticatedJourneyEvidenceRefs,
+      authenticated_journey_gaps: structuredClone(authenticated_result.verification_gaps),
       provider_evidence_refs: providerEvidenceRefs,
       provider_tool_recoveries: structuredClone(
         provider_result.provider_tool_recoveries ?? [],

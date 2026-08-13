@@ -12,6 +12,7 @@ import {
   MANIFEST_SCHEMA,
   REPORT_SCHEMA,
   assertValidCliInteraction,
+  assertValidManifest,
   assertValidReportPackage,
 } from "../packages/contracts/src/index.js";
 import {
@@ -327,12 +328,16 @@ test("new Reports bind Check Catalog v2 while historical Report v1 remains reada
   historical.report.provenance.check_catalog_version = "web-baseline-check-catalog/v1";
   historical.report.catalog.versions.check_catalog = "web-baseline-check-catalog/v1";
   delete historical.report.results.authenticated_journey_evidence_refs;
+  delete historical.report.results.authenticated_journey_gaps;
   delete historical.report.results.provider_tool_recoveries;
   for (const declaration of historical.report.catalog.checks) {
     declaration.evidence_requirement = declaration.pass_evidence_requirement;
     declaration.evidence_requirement.accepted_kinds =
       declaration.evidence_requirement.accepted_kinds.filter(
-        (kind) => kind !== "authenticated_journey_observation",
+        (kind) => ![
+          "authenticated_journey_observation",
+          "authenticated_journey_machine_evidence",
+        ].includes(kind),
       );
     delete declaration.pass_evidence_requirement;
     delete declaration.failure_evidence_requirement;
@@ -350,6 +355,61 @@ test("new Reports bind Check Catalog v2 while historical Report v1 remains reada
   historical.report_view.report_schema_version = "launchrally.dev/report/v1";
 
   assert.equal(assertValidReportPackage(historical), true);
+});
+
+test("public v2 records reject PII-bearing protected Journey declarations", async () => {
+  const directory = await fixture();
+  const current = await completeAudit(directory);
+  const validProtected = {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    purpose: "authenticated Core Journey",
+    path: "/control",
+    method: "GET",
+    access: {
+      authentication_class: "staff",
+      authenticated_status_codes: [200],
+    },
+  };
+  const manifest = {
+    schema_version: MANIFEST_SCHEMA,
+    project: {
+      name: { state: "declared", value: "contract-v2-web" },
+      type: { state: "declared", value: "web" },
+      package_manager: { state: "declared", value: "npm" },
+    },
+    release: {
+      intended_environment: { state: "declared", value: "production" },
+      production_targets: { state: "declared", value: ["https://example.com"] },
+      core_journeys: { state: "declared", value: [validProtected] },
+    },
+    execution: {
+      source_report_id: { state: "declared", value: current.report.report_id },
+      assessment: { state: "declared", value: current.report.assessment },
+      public_verification: { state: "declared", value: "denied" },
+    },
+    support: { layers: { state: "declared", value: [] } },
+    providers: { roles: { state: "declared", value: [] } },
+  };
+  assert.equal(assertValidManifest(manifest), true);
+
+  const piiJourney = {
+    ...validProtected,
+    purpose: "John Smith patient profile loads",
+    path: "/patients/john-smith",
+  };
+  const invalidManifest = structuredClone(manifest);
+  invalidManifest.release.core_journeys.value = [piiJourney];
+  assert.throws(
+    () => assertValidManifest(invalidManifest),
+    (error) => error.code === "invalid_manifest",
+  );
+
+  const invalidReport = structuredClone(current);
+  invalidReport.report.scope.release_intent.core_journeys = [piiJourney];
+  assert.throws(
+    () => assertValidReportPackage(invalidReport),
+    (error) => error.code === "invalid_report_package",
+  );
 });
 
 test("CLI help classifies providers as a supporting advisory operation", async () => {

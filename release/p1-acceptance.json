@@ -1,0 +1,39 @@
+{
+  "schema_version": "launchrally.dev/p1-acceptance/v1",
+  "requirements": [
+    {
+      "id": "P1-AUTH-01",
+      "requirement": "Authenticated Core Journey success and failure become normative Machine Evidence only with exact adapter, fresh permission, exact target, declared collection window, and allowlisted normalized results",
+      "contracts": [
+        "packages/contracts/schemas/authenticated-journey-evidence/v1.schema.json",
+        "packages/contracts/schemas/evidence-index/v1.schema.json",
+        "packages/contracts/schemas/report/v2.schema.json"
+      ],
+      "implementation": [
+        "packages/core/src/authenticated-journeys.js",
+        "packages/core/src/check-catalog.js",
+        "packages/core/src/policy-engine.js"
+      ],
+      "tests": [
+        {
+          "path": "test/phase-1-contracts.test.js",
+          "name": "authenticated Journey success and failure are normative Phase 1 Machine Evidence"
+        },
+        {
+          "path": "test/policy-engine.test.js",
+          "name": "a gating authenticated journey failure is normative Machine Evidence and produces No-Go"
+        },
+        {
+          "path": "test/audit-interaction.test.js",
+          "name": "Audit resumes from typed authenticated results without accepting auth material"
+        },
+        {
+          "path": "test/reference-journey.test.js",
+          "name": "canonical and generated Skills route protected journeys through normalized host results"
+        }
+      ],
+      "tracking": "#135",
+      "status": "complete"
+    }
+  ]
+}

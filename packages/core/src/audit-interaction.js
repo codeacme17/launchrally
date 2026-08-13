@@ -8,6 +8,7 @@ import {
 
 import { describeWebBaselineCatalog } from "./check-catalog.js";
 import {
+  bindAuthenticatedJourneyPermission,
   createAuthenticatedJourneyPlan,
   createAuthenticatedJourneyResultRequest,
   normalizeAuthenticatedJourneyResults,
@@ -522,7 +523,7 @@ export function createInitialAuditInteraction(snapshot) {
   return createNeedsInput(snapshot, state);
 }
 
-export function advanceAuditInteraction(snapshot, options) {
+export function advanceAuditInteraction(snapshot, options, dependencies = {}) {
   const state = decodeResumeState(options.resume_token);
   if (!state) {
     return {
@@ -629,7 +630,10 @@ export function advanceAuditInteraction(snapshot, options) {
         && decision === "approved"
         && !permission.scope.collection_not_before
       ) {
-        permission.scope.collection_not_before = new Date().toISOString();
+        permission.scope = bindAuthenticatedJourneyPermission(
+          permission.scope,
+          (dependencies.now ?? (() => new Date()))(),
+        );
       }
     }
 
@@ -675,7 +679,11 @@ export function advanceAuditInteraction(snapshot, options) {
     ).scope;
     let authenticatedResult;
     try {
-      authenticatedResult = normalizeAuthenticatedJourneyResults(plan, options.journey_results);
+      authenticatedResult = normalizeAuthenticatedJourneyResults(
+        plan,
+        options.journey_results,
+        dependencies,
+      );
     } catch (error) {
       return createNeedsAuthenticatedJourneyResults(snapshot, state, [{
         field_id: "journey_results",

@@ -64,7 +64,7 @@ const publishedPackages = [
   {
     name: "@launchrally/codex-plugin",
     packagePath: "adapters/codex/launchrally",
-    packageFiles: [".codex-plugin/", "skills/"],
+    packageFiles: [".codex-plugin/", "host-adapter/", "skills/"],
     keywords: ["launchrally", "codex", "plugin", "agent-skill", "audit", "launch-readiness"],
     requiredContent: [
       "# @launchrally/codex-plugin",
@@ -79,7 +79,7 @@ const publishedPackages = [
   {
     name: "@launchrally/claude-plugin",
     packagePath: "adapters/claude/launchrally",
-    packageFiles: [".claude-plugin/", "skills/"],
+    packageFiles: [".claude-plugin/", "host-adapter/", "skills/"],
     keywords: ["launchrally", "claude-code", "plugin", "agent-skill", "audit", "launch-readiness"],
     requiredContent: [
       "# @launchrally/claude-plugin",

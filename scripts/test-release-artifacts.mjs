@@ -15,8 +15,9 @@ import {
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { createServer } from "node:https";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { hasClaudeInstalledPlugin } from "./native-plugin-state.mjs";
 import { assertNoConsumerInstallScripts } from "./release-artifact-policy.mjs";
@@ -484,6 +485,11 @@ async function runInstallationJourneys({
         plan_schema: "launchrally.dev/authenticated-journey-plan/v1",
         adapter_version: "host-agent-authenticated-journey/v1",
         result_schema: "launchrally.dev/authenticated-journey-results/v1",
+        attestation_schema: "launchrally.dev/authenticated-journey-attestation/v1",
+        attestation_authority: "external_host_adapter",
+        evidence_schema: "launchrally.dev/authenticated-journey-evidence/v1",
+        qualifying_statuses: ["passed", "failed"],
+        unverified_result: "verification_gap_without_evidence",
         resume_argument: "--journey-results",
         retained_fields: ["journey_id", "status", "outcome", "status_code", "collected_at"],
         raw_auth_material: "excluded",
@@ -491,6 +497,144 @@ async function runInstallationJourneys({
       `packaged_${host}_protected_journey_contract_drift`,
       `${host} must ship the complete protected journey host contract`,
     );
+    const { resumeAuthenticatedJourney } = await import(
+      pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        `${host}-plugin`,
+        "host-adapter",
+        "authenticated-journey.js",
+      )).href
+    );
+    const exercisePackagedHostRunner = async (statusCode, expected) => {
+      const expectedOutcome = process.platform === "win32" && expected.authenticated
+        ? "runner_unavailable"
+        : expected.outcome;
+      const expectedEvidence = process.platform === "win32"
+        ? false
+        : expected.evidence;
+      const server = createServer({
+        key: await readFile(path.join(root, "test", "fixtures", "self-signed-key.pem")),
+        cert: await readFile(path.join(root, "test", "fixtures", "self-signed-cert.pem")),
+      }, (request, response) => {
+        response.writeHead(statusCode);
+        response.end();
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const target = `https://localhost:${server.address().port}`;
+      const bridgeRepository = path.join(
+        temporaryRoot,
+        `${host} packaged host ${expected.outcome}`,
+      );
+      await cp(
+        path.join(root, "fixtures", "coverage", "typescript-astro"),
+        bridgeRepository,
+        { recursive: true },
+      );
+      const previousOrigin = process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+      const previousAuthorization = process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+      const previousCa = process.env.LAUNCHRALLY_HOST_CA_FILE;
+      const authorizationRoot = await mkdtemp(
+        path.join(os.tmpdir(), "launchrally-packaged-host-auth-"),
+      );
+      const authorizationFile = path.join(authorizationRoot, "authorization");
+      process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = target;
+      process.env.LAUNCHRALLY_HOST_CA_FILE = path.join(
+        root,
+        "test",
+        "fixtures",
+        "self-signed-cert.pem",
+      );
+      if (expected.authenticated) {
+        await writeFile(authorizationFile, "Bearer packaged-host-secret", { mode: 0o600 });
+        process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = authorizationFile;
+      } else {
+        delete process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+      }
+      try {
+        const invoke = async (...arguments_) => JSON.parse((await invokeLauncher(
+          "rally",
+          [...arguments_, "--json", "--cwd", bridgeRepository],
+          { cwd: temporaryRoot, env: launcherEnvironment },
+        )).stdout);
+        const initial = await invoke("audit");
+        const confirmation = await invoke(
+          "audit", "--resume", initial.interaction.resume_token,
+          "--answers", JSON.stringify({
+            intended_environment: "staging",
+            production_targets: [target],
+            core_journeys: [{
+              schema_version: skillJourney.protected_journeys.declaration_schema,
+              method: "GET",
+              path: "/control",
+              purpose: `${host} packaged protected Control Room loads`,
+              access: {
+                authentication_class: "staff",
+                authenticated_status_codes: [200],
+              },
+            }],
+            provider_roles: [],
+            support_layers: [],
+          }),
+        );
+        const permission = await invoke(
+          "audit", "--resume", confirmation.interaction.resume_token,
+          "--confirm", "confirm",
+        );
+        const input = await invoke(
+          "audit", "--resume", permission.interaction.resume_token,
+          "--permissions", JSON.stringify({
+            public_verification: "denied",
+            authenticated_journey_verification: "approved",
+          }),
+        );
+        const result = await resumeAuthenticatedJourney({
+          cwd: bridgeRepository,
+          operation: "audit",
+          resume_token: input.interaction.resume_token,
+          request: input.request,
+        });
+        if (
+          result.status !== "completed"
+          || result.evidence_index.entries.some(
+            ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
+          ) !== expectedEvidence
+          || (expectedEvidence && expected.assessment
+            && result.report.assessment !== expected.assessment)
+          || (!expectedEvidence && !result.report.results.verification_gaps.some(
+            ({ reason_code: reasonCode }) => reasonCode === expectedOutcome,
+          ))
+          || /packaged-host-secret|bearer\s|"cookie"|"headers"|response_body/iu.test(
+            JSON.stringify(result),
+          )
+        ) throw new Error(`packaged_${host}_${expectedOutcome}_host_runner_failed`);
+      } finally {
+        if (previousOrigin === undefined) delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+        else process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = previousOrigin;
+        if (previousAuthorization === undefined) {
+          delete process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+        } else {
+          process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = previousAuthorization;
+        }
+        if (previousCa === undefined) delete process.env.LAUNCHRALLY_HOST_CA_FILE;
+        else process.env.LAUNCHRALLY_HOST_CA_FILE = previousCa;
+        await rm(authorizationRoot, { recursive: true, force: true });
+        await new Promise((resolve) => server.close(resolve));
+      }
+    };
+    await exercisePackagedHostRunner(200, {
+      outcome: "completed", authenticated: true, evidence: true,
+    });
+    await exercisePackagedHostRunner(403, {
+      outcome: "unexpected_denial", authenticated: true, evidence: true, assessment: "no_go",
+    });
+    await exercisePackagedHostRunner(401, {
+      outcome: "expired_authentication", authenticated: true, evidence: false,
+    });
+    await exercisePackagedHostRunner(200, {
+      outcome: "missing_authentication", authenticated: false, evidence: false,
+    });
     const protectedRepository = path.join(temporaryRoot, `${host} protected journey`);
     await cp(
       path.join(root, "fixtures", "coverage", "typescript-astro"),
@@ -599,7 +743,6 @@ async function runInstallationJourneys({
       || resultInput.request?.plan?.schema_version !== skillJourney.protected_journeys.plan_schema
     ) throw new Error(`packaged_${host}_protected_audit_input_failed`);
     const normalizedResults = executeFixtureAuthenticatedRead(resultInput.request.plan);
-    const auditCollectedAt = JSON.parse(normalizedResults).results[0].collected_at;
     const audit = await run(
       "audit",
       "--resume",
@@ -609,13 +752,13 @@ async function runInstallationJourneys({
     );
     if (
       audit.status !== "completed"
-      || !audit.evidence_index.entries.some(
-        ({ evidence_kind: kind, normalized_artifact: artifact }) =>
-          kind === "authenticated_journey_observation"
-          && artifact.outcome === "completed"
-          && artifact.status === "passed",
+      || audit.evidence_index.entries.some(
+        ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
       )
-    ) throw new Error(`packaged_${host}_protected_audit_failed`);
+      || !audit.report.results.verification_gaps.some(
+        ({ reason_code: reasonCode }) => reasonCode === "unsupported_adapter",
+      )
+    ) throw new Error(`packaged_${host}_unattested_audit_not_gap`);
     const reportPath = path.join(temporaryRoot, `${host}-protected-audit.json`);
     await writeFile(reportPath, JSON.stringify(audit));
     const initPreview = await run("init", "--report", reportPath);
@@ -660,14 +803,13 @@ async function runInstallationJourneys({
     );
     if (
       verify.status !== "completed"
-      || !verify.evidence_index.entries.some(
-        ({ evidence_kind: kind, normalized_artifact: artifact }) =>
-          kind === "authenticated_journey_observation"
-          && artifact.outcome === "completed"
-          && artifact.status === "passed"
-          && artifact.collected_at !== auditCollectedAt,
+      || verify.evidence_index.entries.some(
+        ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
       )
-    ) throw new Error(`packaged_${host}_protected_verify_failed`);
+      || !verify.report.results.verification_gaps.some(
+        ({ reason_code: reasonCode }) => reasonCode === "unsupported_adapter",
+      )
+    ) throw new Error(`packaged_${host}_unattested_verify_not_gap`);
     if (/session=|bearer\s|"cookie"|"headers"/iu.test(JSON.stringify(verify))) {
       throw new Error(`packaged_${host}_protected_auth_material_retained`);
     }

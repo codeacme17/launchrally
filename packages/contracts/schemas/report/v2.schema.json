@@ -111,11 +111,10 @@
             "core_journeys": {
               "type": "array",
               "items": {
-                "anyOf": [
+                "oneOf": [
                   { "type": "string", "minLength": 1 },
                   { "$ref": "#/$defs/publicJourney" },
-                  { "$ref": "#/$defs/protectedJourney" },
-                  { "$ref": "#/$defs/legacyJourney" }
+                  { "$ref": "#/$defs/protectedJourney" }
                 ]
               }
             },
@@ -216,6 +215,19 @@
           "type": "array",
           "items": { "$ref": "#/$defs/evidenceReference" }
         },
+        "authenticated_journey_gaps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["journey_id", "outcome", "collected_at"],
+            "properties": {
+              "journey_id": { "type": "string", "pattern": "^target-[1-9][0-9]*:journey-[1-9][0-9]*:authenticated$" },
+              "outcome": { "enum": ["missing_authentication", "insufficient_capability", "expired_authentication", "runner_unavailable", "unsupported_adapter"] },
+              "collected_at": { "type": "string", "format": "date-time" }
+            },
+            "additionalProperties": false
+          }
+        },
         "provider_evidence_refs": {
           "type": "array",
           "items": { "$ref": "#/$defs/evidenceReference" }
@@ -272,8 +284,8 @@
       "required": ["schema_version", "purpose", "path", "method", "access"],
       "properties": {
         "schema_version": { "const": "launchrally.dev/protected-journey/v1" },
-        "purpose": { "type": "string", "minLength": 1 },
-        "path": { "type": "string", "pattern": "^/(?!/)" },
+        "purpose": { "const": "authenticated Core Journey" },
+        "path": { "type": "string", "pattern": "^/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces)(?:/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces))*$" },
         "method": { "const": "GET" },
         "access": {
           "type": "object",
@@ -454,9 +466,23 @@
     "actionObservation": {
       "oneOf": [
         { "$ref": "#/$defs/publicActionObservation" },
+        { "$ref": "#/$defs/authenticatedJourneyActionObservation" },
         { "$ref": "#/$defs/localActionObservation" },
         { "$ref": "#/$defs/checkResultObservation" }
       ]
+    },
+    "authenticatedJourneyActionObservation": {
+      "type": "object",
+      "required": ["kind", "evidence_digest", "journey_id", "method", "outcome", "status_code"],
+      "properties": {
+        "kind": { "const": "authenticated_journey_machine_evidence" },
+        "evidence_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "journey_id": { "type": "string", "pattern": "^target-[1-9][0-9]*:journey-[1-9][0-9]*:authenticated$" },
+        "method": { "const": "GET" },
+        "outcome": { "enum": ["unexpected_denial", "redirect", "timeout", "execution_failure"] },
+        "status_code": { "type": ["integer", "null"], "minimum": 100, "maximum": 599 }
+      },
+      "additionalProperties": false
     },
     "publicActionObservation": {
       "type": "object",
@@ -519,7 +545,7 @@
         "severity": { "$ref": "#/$defs/severity" },
         "gating": { "type": "boolean" },
         "status": { "const": "unverified" },
-        "reason_code": { "enum": ["permission_denied", "missing_required_input", "insufficient_evidence", "insufficient_machine_evidence", "conflicting_evidence", "applicability_unresolved", "uncovered_scope", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence", "partial_authenticated_evidence", "partial_provider_evidence", "missing_authentication", "insufficient_capability", "expired_authentication", "runner_unavailable", "missing_provider_tool", "missing_provider_login", "unsupported_provider", "adapter_error"] },
+        "reason_code": { "enum": ["permission_denied", "missing_required_input", "insufficient_evidence", "insufficient_machine_evidence", "conflicting_evidence", "applicability_unresolved", "uncovered_scope", "execution_failure", "execution_skipped", "specialist_support_unavailable", "partial_public_evidence", "partial_authenticated_evidence", "partial_provider_evidence", "missing_authentication", "insufficient_capability", "expired_authentication", "runner_unavailable", "unsupported_adapter", "missing_provider_tool", "missing_provider_login", "unsupported_provider", "adapter_error"] },
         "reason": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
@@ -615,7 +641,7 @@
       "type": "object",
       "required": ["accepted_kinds", "minimum_items", "provenance_required"],
       "properties": {
-        "accepted_kinds": { "type": "array", "items": { "enum": ["file", "local_observation", "project_fact", "release_intent", "public_observation", "authenticated_journey_observation", "machine_evidence"] }, "minItems": 1, "uniqueItems": true },
+        "accepted_kinds": { "type": "array", "items": { "enum": ["file", "local_observation", "project_fact", "release_intent", "public_observation", "authenticated_journey_observation", "authenticated_journey_machine_evidence", "machine_evidence"] }, "minItems": 1, "uniqueItems": true },
         "minimum_items": { "type": "integer", "minimum": 1 },
         "provenance_required": { "const": true }
       },

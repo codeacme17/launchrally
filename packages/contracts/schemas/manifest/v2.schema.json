@@ -76,11 +76,10 @@
             "value": {
               "type": "array",
               "items": {
-                "anyOf": [
+                "oneOf": [
                   { "type": "string", "minLength": 1 },
                   { "$ref": "#/$defs/publicJourney" },
-                  { "$ref": "#/$defs/protectedJourney" },
-                  { "$ref": "#/$defs/legacyJourney" }
+                  { "$ref": "#/$defs/protectedJourney" }
                 ]
               }
             }
@@ -111,8 +110,8 @@
       "required": ["schema_version", "purpose", "path", "method", "access"],
       "properties": {
         "schema_version": { "const": "launchrally.dev/protected-journey/v1" },
-        "purpose": { "type": "string", "minLength": 1 },
-        "path": { "type": "string", "pattern": "^/(?!/)" },
+        "purpose": { "const": "authenticated Core Journey" },
+        "path": { "type": "string", "pattern": "^/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces)(?:/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces))*$" },
         "method": { "const": "GET" },
         "access": {
           "type": "object",

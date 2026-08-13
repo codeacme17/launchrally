@@ -279,6 +279,7 @@
         { "$ref": "#/$defs/releaseIntentEvidence" },
         { "$ref": "#/$defs/publicObservationEvidence" },
         { "$ref": "#/$defs/authenticatedJourneyEvidence" },
+        { "$ref": "#/$defs/authenticatedJourneyMachineEvidence" },
         { "$ref": "#/$defs/machineEvidence" }
       ]
     },
@@ -379,9 +380,9 @@
       "properties": {
         "kind": { "const": "authenticated_journey_observation" },
         "journey_id": { "type": "string", "pattern": "^target-[1-9][0-9]*:journey-[1-9][0-9]*:authenticated$" },
-        "target": { "type": "string", "format": "uri" },
+        "target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces)(?:/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces))*$" },
         "method": { "const": "GET" },
-        "purpose": { "type": "string", "minLength": 1 },
+        "purpose": { "const": "authenticated Core Journey" },
         "authentication_class": { "enum": ["user", "staff", "signed_token"] },
         "status": { "enum": ["passed", "failed", "unverified"] },
         "outcome": { "enum": ["completed", "missing_authentication", "insufficient_capability", "expired_authentication", "runner_unavailable", "unexpected_denial", "redirect", "timeout", "execution_failure"] },
@@ -392,13 +393,16 @@
           "required": ["collector", "exact_target", "collected_at"],
           "properties": {
             "collector": { "const": "host-agent-authenticated-journey/v1" },
-            "exact_target": { "type": "string", "format": "uri" },
+            "exact_target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces)(?:/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces))*$" },
             "collected_at": { "type": "string", "format": "date-time" }
           },
           "additionalProperties": false
         }
       },
       "additionalProperties": false
+    },
+    "authenticatedJourneyMachineEvidence": {
+      "$ref": "../phase-1/v1.schema.json#/$defs/authenticatedJourneyEvidence"
     },
     "machineEvidence": {
       "type": "object",

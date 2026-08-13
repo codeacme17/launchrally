@@ -11,6 +11,8 @@ import {
   ARCHITECTURE_STATUS_SCHEMA,
   ACTIVE_VERIFICATION_REQUEST_SCHEMA,
   ACTIVE_VERIFICATION_RESULT_SCHEMA,
+  AUTHENTICATED_JOURNEY_ATTESTATION_SCHEMA,
+  AUTHENTICATED_JOURNEY_EVIDENCE_SCHEMA,
   CAPABILITY_CATALOG_SCHEMA,
   CAPABILITY_GRAPH_SCHEMA,
   COMPOSITE_ASSURANCE_SCHEMA,
@@ -29,6 +31,8 @@ import {
   assertValidArchitectureStatus,
   assertValidActiveVerificationRequest,
   assertValidActiveVerificationResult,
+  assertValidAuthenticatedJourneyAttestation,
+  assertValidAuthenticatedJourneyEvidence,
   assertValidCapabilityCatalog,
   assertValidCapabilityGraph,
   assertValidCompositeAssurance,
@@ -89,7 +93,42 @@ async function allPositiveRecords() {
   delete legacyResult.observation.replay;
   delete legacyResult.evidence;
   delete legacyResult.verification_gap;
+  const authenticatedJourneyEvidence = {
+    schema_version: AUTHENTICATED_JOURNEY_EVIDENCE_SCHEMA,
+    kind: "authenticated_journey_machine_evidence",
+    journey_id: "target-1:journey-1:authenticated",
+    target: "https://example.com/control",
+    method: "GET",
+    purpose: "authenticated Core Journey",
+    authentication_class: "staff",
+    status: "failed",
+    outcome: "unexpected_denial",
+    status_code: 403,
+    collected_at: "2026-08-12T06:00:00.000Z",
+    provenance: {
+      collector: "host-agent-authenticated-journey/v1",
+      exact_target: "https://example.com/control",
+      collected_at: "2026-08-12T06:00:00.000Z",
+      permission_id: "authenticated_journey_verification",
+      collection_not_before: "2026-08-12T05:59:00.000Z",
+      collection_not_after: "2026-08-12T06:14:00.000Z",
+      attestation_id: "attestation_host_observation_01",
+      request_digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      result_digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      verification: "host_adapter_verified",
+    },
+  };
+  const authenticatedJourneyAttestation = {
+    schema_version: AUTHENTICATED_JOURNEY_ATTESTATION_SCHEMA,
+    adapter_version: "host-agent-authenticated-journey/v1",
+    attestation_id: "attestation_host_observation_01",
+    request_digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    result_digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    issued_at: "2026-08-12T06:00:00.000Z",
+  };
   return [
+    authenticatedJourneyAttestation,
+    authenticatedJourneyEvidence,
     intent,
     CORE_PROVIDER_KNOWLEDGE,
     catalog,
@@ -131,8 +170,112 @@ test("Product Intent Profile keeps confirmed intent separate from observations",
   );
 });
 
+test("authenticated Journey success and failure are normative Phase 1 Machine Evidence", async () => {
+  const [, failure] = await allPositiveRecords();
+  const success = {
+    ...structuredClone(failure),
+    status: "passed",
+    outcome: "completed",
+    status_code: 200,
+  };
+
+  assert.equal(AUTHENTICATED_JOURNEY_EVIDENCE_SCHEMA,
+    "launchrally.dev/authenticated-journey-evidence/v1");
+  assert.equal(assertValidAuthenticatedJourneyEvidence(failure), true);
+  assert.equal(assertValidAuthenticatedJourneyEvidence(success), true);
+  assert.throws(
+    () => assertValidAuthenticatedJourneyEvidence({
+      ...failure,
+      agent_statement: "The journey failed.",
+    }),
+    (error) => error.code === "invalid_authenticated_journey_evidence",
+  );
+  for (const invalid of [
+    { ...success, status_code: null },
+    { ...success, status: "failed" },
+    { ...failure, outcome: "redirect", status_code: 200 },
+    { ...failure, status_code: null },
+    {
+      ...failure,
+      target: "https://user:password@example.com/control",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://user:password@example.com/control",
+      },
+    },
+    {
+      ...failure,
+      target: "https://example.com/control?token=private",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://example.com/control?token=private",
+      },
+    },
+    {
+      ...failure,
+      target: "https://example.com/users/alice@example.com",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://example.com/users/alice@example.com",
+      },
+    },
+    { ...failure, purpose: "Alice alice@example.com account loads" },
+    {
+      ...failure,
+      target: "http://example.com/control",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "http://example.com/control",
+      },
+    },
+    {
+      ...failure,
+      target: "https://example.com/orders/12345678",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://example.com/orders/12345678",
+      },
+    },
+    {
+      ...failure,
+      target: "https://example.com/patients/john-smith",
+      purpose: "John Smith patient profile loads",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://example.com/patients/john-smith",
+      },
+    },
+    {
+      ...failure,
+      target: "https://example.com/account%2D12345",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://example.com/account%2D12345",
+      },
+    },
+  ]) {
+    assert.throws(
+      () => assertValidAuthenticatedJourneyEvidence(invalid),
+      (error) => error.code === "invalid_authenticated_journey_evidence",
+    );
+  }
+});
+
+test("authenticated Journey attestation is a strict host integration contract", async () => {
+  const [attestation] = await allPositiveRecords();
+
+  assert.equal(assertValidAuthenticatedJourneyAttestation(attestation), true);
+  assert.throws(
+    () => assertValidAuthenticatedJourneyAttestation({
+      ...attestation,
+      result_digest: attestation.request_digest,
+    }),
+    (error) => error.code === "invalid_authenticated_journey_attestation",
+  );
+});
+
 test("each Phase 1 contract publishes a stable standalone JSON Schema", async () => {
-  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 20);
+  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 22);
   for (const schemaVersion of PHASE_1_SCHEMA_VERSIONS) {
     const [contract, major] = schemaVersion.replace("launchrally.dev/", "").split("/v");
     const schema = JSON.parse(await readFile(
