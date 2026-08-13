@@ -156,6 +156,34 @@ function assertEqual(actual, expected, code, detail) {
   }
 }
 
+function shellCommand(command, replacements) {
+  let rendered = command;
+  for (const [source, target] of replacements) rendered = rendered.replaceAll(source, target);
+  return rendered;
+}
+
+function shellQuote(value) {
+  return process.platform === "win32"
+    ? `'${value.replaceAll("'", "''")}'`
+    : `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+async function runDocumentedShell(command, options) {
+  if (process.platform === "win32") {
+    const windowsPowerShell = path.join(
+      process.env.SystemRoot ?? "C:\\Windows",
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+      "powershell.exe",
+    );
+    return run(windowsPowerShell, [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command,
+    ], options);
+  }
+  return run("/bin/bash", ["--noprofile", "--norc", "-c", command], options);
+}
+
 async function packArtifacts(temporaryRoot, release) {
   const packDirectory = path.join(temporaryRoot, "packs");
   const cacheDirectory = path.join(temporaryRoot, "npm-cache");
@@ -401,11 +429,37 @@ async function runInstallationJourneys({
     "references",
     "reference-journey.json",
   );
-  const [journey, claudeJourney] = await Promise.all([
+  const codexPhase1CommandsPath = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "codex-plugin",
+    "skills",
+    "launchrally",
+    "references",
+    "phase-1-command-examples.json",
+  );
+  const claudePhase1CommandsPath = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "claude-plugin",
+    "skills",
+    "launchrally",
+    "references",
+    "phase-1-command-examples.json",
+  );
+  const [journey, claudeJourney, phase1Commands, claudePhase1Commands] = await Promise.all([
     json(packagedJourneyPath),
     json(claudeJourneyPath),
+    json(codexPhase1CommandsPath),
+    json(claudePhase1CommandsPath),
   ]);
   const {
+    buildCapabilityGraph,
+    createCapabilityCatalog,
+    createArchitecturePackageBundle,
+    createIntegrationContract,
     createReferenceCoverageMatrix,
     referenceExecutorDescriptors,
     referenceIntegrationPacks,
@@ -417,6 +471,17 @@ async function runInstallationJourneys({
     "src",
     "index.js",
   )).href);
+  const hostProductIntentModules = await Promise.all(["codex", "claude"].map(async (host) => ({
+    host,
+    module: await import(pathToFileURL(path.join(
+      cleanProject,
+      "node_modules",
+      "@launchrally",
+      `${host}-plugin`,
+      "host-adapter",
+      "product-intent.js",
+    )).href),
+  })));
   const referenceCoverage = createReferenceCoverageMatrix();
   if (
     referenceIntegrationPacks.length !== 8
@@ -462,6 +527,12 @@ async function runInstallationJourneys({
     journey,
     "packaged_skill_journey_drift",
     "Codex and Claude packaged Skills must ship the same reference journey",
+  );
+  assertEqual(
+    claudePhase1Commands,
+    phase1Commands,
+    "packaged_phase_1_command_examples_drift",
+    "Codex and Claude packaged Skills must ship the same Phase 1 command vectors",
   );
   assertEqual(
     journey.launcher_prerequisite,
@@ -945,6 +1016,149 @@ async function runInstallationJourneys({
   const reportPath = path.join(temporaryRoot, "installation-journey-report.json");
   await writeFile(reportPath, JSON.stringify(auditCompleted));
 
+  let intentCompleted;
+  for (const { host, module } of hostProductIntentModules) {
+    const runProductIntentDiscovery = host === "codex"
+      ? module.runCodexProductIntentDiscovery
+      : module.runClaudeProductIntentDiscovery;
+    const intentInput = await runProductIntentDiscovery(activeRepository);
+    const confirmedBehaviors = intentInput.candidates.behaviors.length > 0
+      ? intentInput.candidates.behaviors.map(({ behavior_id: id }) => id)
+      : ["teams_collaborate_in_realtime"];
+    const intentPreview = await runProductIntentDiscovery(activeRepository, {
+      resume_token: intentInput.resume_token,
+      answers: {
+        intended_environment: "production",
+        confirmed_behaviors: confirmedBehaviors,
+        hard_constraints: [],
+        preferences: [],
+      },
+    });
+    const completed = await runProductIntentDiscovery(activeRepository, {
+      resume_token: intentPreview.resume_token,
+      confirmation: "confirm",
+    });
+    if (completed.status !== "completed") {
+      throw new Error(`packed_${host}_phase_1_intent_discovery_failed`);
+    }
+    intentCompleted ??= completed;
+    assertEqual(
+      { ...completed.profile, created_at: null },
+      { ...intentCompleted.profile, created_at: null },
+      `packed_${host}_phase_1_intent_drift`,
+      "Codex and Claude must expose the same typed no-PRD Product Intent result",
+    );
+  }
+  const catalog = createCapabilityCatalog({ reviewed_at: "2026-08-14T00:00:00.000Z" });
+  const graph = buildCapabilityGraph(intentCompleted.profile, catalog, {
+    graph_id: "graph_packed_phase_1_docs",
+  });
+  const integrationContracts = [createIntegrationContract({
+    contract_id: "integration_packed_identity_data",
+    environment: "production",
+    source_capability_id: "identity_authentication",
+    target_capability_id: "application_data",
+    mode: "asynchronous",
+    provider_binding: { kind: "unknown", provider_id: null },
+    semantics: {
+      authentication: "signed_or_equivalent",
+      ordering: "per_subject",
+      duplication: "possible",
+      retry: "bounded_backoff",
+      replay: "supported",
+      idempotency: "required",
+      eventual_consistency: "expected",
+      failure_visibility: "operator_visible",
+      privacy: "normalized_identifiers_only",
+      success_evidence: ["state_transition_observed"],
+      invalidation_dependencies: ["identity_event_shape", "application_data_projection"],
+    },
+  })];
+  await Promise.all([
+    writeFile(path.join(temporaryRoot, "launchrally-current-report.json"), JSON.stringify(auditCompleted)),
+    writeFile(path.join(temporaryRoot, "product-intent.json"), JSON.stringify(intentCompleted.profile)),
+    writeFile(path.join(temporaryRoot, "capability-catalog.json"), JSON.stringify(catalog)),
+    writeFile(path.join(temporaryRoot, "capability-graph.json"), JSON.stringify(graph)),
+    writeFile(path.join(temporaryRoot, "integration-contracts.json"), JSON.stringify(integrationContracts)),
+  ]);
+  const invokeDocumentedPhase1Command = async (example) => {
+    const rendered = process.platform === "win32" ? example.powershell : example.posix;
+    const substitutions = [["./app", shellQuote(activeRepository)]];
+    for (const argument of example.argv) {
+      if (!argument.startsWith("./") || argument === "./app") continue;
+      substitutions.push([
+        argument,
+        shellQuote(path.join(temporaryRoot, path.basename(argument))),
+      ]);
+    }
+    const execution = await runDocumentedShell(shellCommand(rendered, substitutions), {
+      cwd: temporaryRoot,
+      env: launcherEnvironment,
+    });
+    const result = JSON.parse(execution.stdout);
+    if (
+      result.contract !== example.expected.contract
+      || result.operation !== example.operation
+      || result.status !== example.expected.status
+      || (example.expected.state !== null && result.state !== example.expected.state)
+    ) throw new Error(`packed_phase_1_shell_command_failed:${example.operation}`);
+    return result;
+  };
+  const architectExample = phase1Commands.commands.find(
+    ({ operation }) => operation === "architect",
+  );
+  const architectPreview = await invokeDocumentedPhase1Command(architectExample);
+  const sourceArchitecture = createArchitecturePackageBundle({
+    blueprint: architectPreview.blueprint,
+    product_intent: intentCompleted.profile,
+    catalog,
+    capability_graph: graph,
+    integration_contracts: integrationContracts,
+    provider_knowledge_refs: [],
+    decision_results: architectPreview.blueprint.decisions.map(({ decision_id: id }) => ({
+      decision_id: id,
+      response: "confirm",
+    })),
+    task_graph: null,
+    dependencies: architectPreview.blueprint.decisions.map(({ decision_id: id }) => ({
+      source_id: id,
+      dependent_semantics: ["architecture_record"],
+      evidence_ids: [],
+    })),
+    interaction_id: "interaction_architecture_decision_engine",
+  }, { now: "2026-08-14T00:00:00.000Z" });
+  const architectureCompleted = {
+    status: "completed",
+    architecture_package: sourceArchitecture,
+  };
+  if (architectureCompleted.status !== "completed") {
+    throw new Error("packed_phase_1_architecture_completion_failed");
+  }
+  await writeFile(
+    path.join(temporaryRoot, "architecture-package.json"),
+    JSON.stringify(architectureCompleted.architecture_package),
+  );
+  const planExample = phase1Commands.commands.find(({ operation }) => operation === "plan");
+  const phase1Plan = await invokeDocumentedPhase1Command(planExample);
+  await writeFile(path.join(temporaryRoot, "task-graph.json"), JSON.stringify(phase1Plan.task_graph));
+  const descriptor = referenceExecutorDescriptors[0];
+  await Promise.all([
+    writeFile(path.join(temporaryRoot, "executor-descriptors.json"), JSON.stringify([descriptor])),
+    writeFile(path.join(temporaryRoot, "tool-observations.json"), JSON.stringify([{
+      tool_id: descriptor.tools[0].tool_id,
+      executable: descriptor.tools[0].executable,
+      detected_version: descriptor.tools[0].exact_version,
+      state: "available",
+    }])),
+    writeFile(path.join(temporaryRoot, "reviewed-executors.json"), JSON.stringify([{
+      descriptor_id: descriptor.descriptor_id,
+      descriptor_version: descriptor.descriptor_version,
+      digest: descriptor.trust.digest,
+    }])),
+  ]);
+  const handoffExample = phase1Commands.commands.find(({ operation }) => operation === "handoff");
+  await invokeDocumentedPhase1Command(handoffExample);
+
   const initPreview = await invokeFixture("init_preview", {
     "{manifest_source_report_path}": reportPath,
   });
@@ -957,6 +1171,33 @@ async function runInstallationJourneys({
   if (initialized.status !== "completed") {
     throw new Error("installation_journey_init_failed");
   }
+  await writeFile(
+    path.join(temporaryRoot, "launchrally-manifest-source-report.json"),
+    JSON.stringify(auditCompleted),
+  );
+  const verifyExample = phase1Commands.commands.find(({ operation }) => operation === "verify");
+  const phase1VerifyPermission = await invokeDocumentedPhase1Command(verifyExample);
+  const verifyContinuation = verifyExample.success_continuation;
+  const completedVerifyCommand = shellCommand(
+    process.platform === "win32"
+      ? verifyContinuation.powershell
+      : verifyContinuation.posix,
+    [
+      ["./app", shellQuote(activeRepository)],
+      ["<verify-token>", phase1VerifyPermission.interaction.resume_token],
+    ],
+  );
+  const phase1Verify = JSON.parse((await runDocumentedShell(completedVerifyCommand, {
+    cwd: temporaryRoot,
+    env: launcherEnvironment,
+  })).stdout);
+  if (
+    phase1Verify.contract !== verifyContinuation.expected.contract
+    || phase1Verify.operation !== "verify"
+    || phase1Verify.status !== verifyContinuation.expected.status
+    || !phase1Verify.report
+    || !phase1Verify.evidence_index
+  ) throw new Error(`packed_phase_1_verify_continuation_failed:${phase1Verify.status}`);
   const projectVersion = await invokeFixture("project_version");
   if (
     projectVersion.status !== "completed"

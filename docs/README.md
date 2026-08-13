@@ -9,6 +9,9 @@ preparing and validating a release.
 
 - [Quickstart](getting-started/quickstart.md) — install the exact Launcher,
   complete the first Human or Agent journey, and try representative examples.
+- [Phase 1 Agent and Human journey](getting-started/phase-1.md) — confirm Product
+  Intent, review Provider-neutral Architecture, approve bounded external work,
+  and require fresh independent verification.
 - [Install, lifecycle, and troubleshooting](getting-started/install.md) — own
   npm prefix/PATH setup, structured verification, Plugin separation, toolchain
   lifecycle, safe uninstall, data retention, and recovery guidance.

@@ -145,6 +145,48 @@
       ],
       "tracking": "#137",
       "status": "complete"
+    },
+    {
+      "id": "P1-DOCS-01",
+      "requirement": "Agent and Human users can identify every read, persistence, external effect, receipt, and fresh verification boundary while following shell-portable commands from exact packed Skills",
+      "contracts": [
+        "packages/contracts/schemas/cli/v2.schema.json",
+        "packages/contracts/schemas/architect-interaction/v1.schema.json",
+        "packages/contracts/schemas/handoff-interaction/v1.schema.json",
+        "packages/contracts/schemas/verify-interaction/v2.schema.json"
+      ],
+      "implementation": [
+        "docs/getting-started/phase-1.md",
+        "skills/launchrally/references/phase-1-journey.md",
+        "skills/launchrally/references/phase-1-command-examples.json",
+        "adapters/codex/launchrally/host-adapter/product-intent.js",
+        "adapters/claude/launchrally/host-adapter/product-intent.js",
+        "scripts/test-release-artifacts.mjs"
+      ],
+      "tests": [
+        {
+          "path": "test/phase-1-documentation.test.js",
+          "name": "the public Phase 1 guide explains authority before the complete journey"
+        },
+        {
+          "path": "test/phase-1-documentation.test.js",
+          "name": "documented Phase 1 commands are equivalent across POSIX and PowerShell"
+        },
+        {
+          "path": "test/phase-1-documentation.test.js",
+          "name": "the canonical Skill routes the complete Phase 1 typed journey"
+        },
+        {
+          "path": "test/phase-1-documentation.test.js",
+          "name": "Codex and Claude expose the same typed no-PRD Product Intent entry"
+        },
+        {
+          "path": "test/release.test.js",
+          "name": "packed artifacts complete installation, delegation, lifecycle, and full verification journeys"
+        }
+      ],
+      "tracking": "#138",
+      "status": "complete"
     }
   ]
 }
