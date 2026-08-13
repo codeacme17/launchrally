@@ -179,7 +179,17 @@
         "capability_id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
         "provider": { "type": "string", "pattern": "^[a-z0-9-]+$" },
         "role": { "type": "string", "minLength": 1 },
-        "confirmed": { "const": true }
+        "confirmed": { "const": true },
+        "knowledge_ref": {
+          "type": "object",
+          "required": ["id", "schema_version", "digest"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^knowledge_[a-f0-9]{24}$" },
+            "schema_version": { "const": "launchrally.dev/provider-knowledge/v1" },
+            "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": false
     }

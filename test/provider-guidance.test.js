@@ -4,17 +4,31 @@ import { mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import {
   assertValidProviderDecisionCard,
   assertValidProviderGuidance,
 } from "../packages/contracts/src/index.js";
-import { runAudit, runProviderGuidance, runVerify } from "../packages/core/src/index.js";
+import {
+  CORE_PROVIDER_KNOWLEDGE,
+  createProviderKnowledge,
+  runAudit,
+  runProviderGuidance,
+  runVerify,
+} from "../packages/core/src/index.js";
 import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/engine.js");
+const cliClockArguments = [
+  "--import",
+  pathToFileURL(path.resolve("test/helpers/fixed-provider-knowledge-clock.js")).href,
+];
+const TEST_TIME_DEPENDENCIES = Object.freeze({
+  now: () => new Date("2026-08-13T00:00:00.000Z"),
+});
 const ANSWERS = Object.freeze({
   intended_environment: "production",
   production_targets: ["https://launchrally-provider-guidance.invalid/"],
@@ -63,7 +77,11 @@ async function completeAudit(directory, { providerRoles = [] } = {}) {
 }
 
 async function runCli(arguments_) {
-  const { stdout } = await execFileAsync(process.execPath, [cli, ...arguments_], {
+  const { stdout } = await execFileAsync(process.execPath, [
+    ...cliClockArguments,
+    cli,
+    ...arguments_,
+  ], {
     encoding: "utf8",
   });
   return JSON.parse(stdout);
@@ -151,6 +169,93 @@ async function confirmedShortlist(directory, audit) {
     "--json",
   ]);
 }
+
+test("Provider guidance cannot bypass expired Provider Knowledge", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const initial = await runProviderGuidance(directory, audit, {
+    source_check_id: "web.public.availability",
+  });
+  const constraints = await runProviderGuidance(directory, null, {
+    resume_token: initial.interaction.resume_token,
+    constraints: {
+      budget: "cost_sensitive",
+      scale: "growing",
+      region: "global",
+      existing_stack: ["node.js", "astro"],
+      operational_ability: "minimal",
+      lock_in_preference: "balanced",
+    },
+  });
+  const content = {
+    knowledge_version: "1.0.0",
+    trust_tier: "reviewed_extension",
+    extension: {
+      extension_id: "expired_provider_extension",
+      extension_version: "1.0.0",
+      origin: "reviewed_extension",
+    },
+    review: {
+      status: "reviewed",
+      reviewed_at: "2026-08-07",
+      expires_at: "2026-08-12",
+    },
+    entries: structuredClone(CORE_PROVIDER_KNOWLEDGE.entries),
+    provenance: structuredClone(CORE_PROVIDER_KNOWLEDGE.provenance),
+  };
+  const expired = createProviderKnowledge(content);
+  const result = await runProviderGuidance(directory, null, {
+    resume_token: constraints.interaction.resume_token,
+    confirmation: "confirm",
+  }, {
+    now: () => new Date("2026-08-13T00:00:00.000Z"),
+    provider_knowledge: [expired],
+    reviewed_extensions: [{
+      extension_id: expired.extension.extension_id,
+      extension_version: expired.extension.extension_version,
+      digest: expired.digest,
+    }],
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.outcome, "no_credible_options");
+  assert.ok(result.provider_verification_gaps.some(({ code }) =>
+    code === "provider_knowledge_expired"));
+});
+
+test("Provider guidance revalidates its Knowledge binding before a resumed selection", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const atReview = { now: () => new Date("2026-08-13T00:00:00.000Z") };
+  const initial = await runProviderGuidance(directory, audit, {
+    source_check_id: "web.public.availability",
+  }, atReview);
+  const constraints = await runProviderGuidance(directory, null, {
+    resume_token: initial.interaction.resume_token,
+    constraints: {
+      budget: "cost_sensitive",
+      scale: "growing",
+      region: "global",
+      existing_stack: ["node.js", "astro"],
+      operational_ability: "minimal",
+      lock_in_preference: "balanced",
+    },
+  }, atReview);
+  const shortlist = await runProviderGuidance(directory, null, {
+    resume_token: constraints.interaction.resume_token,
+    confirmation: "confirm",
+  }, atReview);
+  assert.ok(shortlist.shortlist.every(({ knowledge_ref: knowledgeRef }) =>
+    knowledgeRef.id === CORE_PROVIDER_KNOWLEDGE.knowledge_id));
+
+  const expired = await runProviderGuidance(directory, null, {
+    resume_token: shortlist.interaction.resume_token,
+    selection: shortlist.shortlist[0].card.card_id,
+  }, { now: () => new Date("2026-11-06T00:00:00.000Z") });
+  assert.equal(expired.status, "execution_error");
+  assert.equal(expired.error, "provider_knowledge_changed_after_shortlist");
+  assert.ok(expired.provider_verification_gaps.some(({ code }) =>
+    code === "provider_knowledge_expired"));
+});
 
 async function writeInitializedManifest(directory, audit) {
   const intent = audit.report.scope.release_intent;
@@ -345,6 +450,8 @@ test("confirmed constraints produce a small explainable shortlist from versioned
   assert.equal(result.constraints.confirmed, true);
   assert.equal(result.information_boundary.brands_disclosed, true);
   assert.equal(assertValidProviderGuidance(result), true);
+  assert.ok(result.provider_verification_gaps.some(({ code }) =>
+    code === "region_claim_unverified"));
   assert.equal(result.shortlist.length, 2);
   assert.deepEqual(
     result.shortlist.map(({ card }) => card.card_id),
@@ -423,6 +530,11 @@ test("a selected Provider becomes confirmed Manifest intent but not Machine Evid
 
   assert.equal(preview.status, "needs_confirmation");
   assert.deepEqual(preview.selection, {
+    knowledge_ref: {
+      id: CORE_PROVIDER_KNOWLEDGE.knowledge_id,
+      schema_version: CORE_PROVIDER_KNOWLEDGE.schema_version,
+      digest: CORE_PROVIDER_KNOWLEDGE.digest,
+    },
     card_id: "managed-web-delivery.vercel",
     provider_id: "vercel",
     provider_name: "Vercel",
@@ -601,6 +713,7 @@ test("Human Mode keeps capability and constraints ahead of an advisory Provider 
   await writeFile(reportPath, `${JSON.stringify(audit)}\n`);
 
   const initial = await execFileAsync(process.execPath, [
+    ...cliClockArguments,
     cli,
     "providers",
     "--cwd",
@@ -622,6 +735,7 @@ test("Human Mode keeps capability and constraints ahead of an advisory Provider 
     structuredInitial.interaction.resume_token,
   );
   const shortlist = await execFileAsync(process.execPath, [
+    ...cliClockArguments,
     cli,
     "providers",
     "--cwd",
@@ -847,6 +961,7 @@ test("a non-cooperating Manifest write during confirmation is preserved", async 
       confirmation: "confirm",
     },
     {
+      ...TEST_TIME_DEPENDENCIES,
       before_manifest_commit: () => writeFile(manifestPath, externallyChanged),
     },
   );

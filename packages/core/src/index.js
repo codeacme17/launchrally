@@ -208,6 +208,11 @@ export { parsePublicJourneyInput } from "./public-journey.js";
 export { parsePublicTargetInput } from "./public-target.js";
 export { runProviderGuidance } from "./provider-guidance.js";
 export {
+  CORE_PROVIDER_KNOWLEDGE,
+  assessProviderKnowledge,
+  createProviderKnowledge,
+} from "./provider-knowledge.js";
+export {
   PRODUCT_INTENT_ANALYZER_VERSION,
   runProductIntentDiscovery,
 } from "./product-intent.js";

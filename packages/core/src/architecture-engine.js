@@ -27,7 +27,7 @@ const REPLACEMENT_REASONS = Object.freeze({
   confirmed_operational_mismatch: "The existing implementation has a confirmed operational mismatch.",
   confirmed_integration_incompatibility: "The existing implementation has a confirmed Integration Contract incompatibility.",
 });
-const REVIEWED_IMPLEMENTATIONS = Object.freeze({
+const PROVIDER_NEUTRAL_IMPLEMENTATIONS = Object.freeze({
   identity_managed_eu: Object.freeze({
     capability_id: "identity_authentication",
     implementation_path: "managed",
@@ -152,9 +152,10 @@ function decisionForNode(node) {
 }
 
 function alternativeDecision(alternative, hardConstraints, disposition) {
-  const implementation = REVIEWED_IMPLEMENTATIONS[alternative?.implementation_id];
+  const implementation = PROVIDER_NEUTRAL_IMPLEMENTATIONS[alternative?.implementation_id];
   if (
     !implementation
+    || alternative.provider_id !== undefined
     || !DECISION_ACTION.has(alternative?.action)
     || (alternative.action === "replace"
       && !REPLACEMENT_REASONS[alternative.replacement_reason])
@@ -262,7 +263,8 @@ function integrationCompatibility(contracts) {
 function implementationEvaluation(proposals, alternatives, hardConstraints) {
   const accepted = proposals.filter((_proposal, index) =>
     alternatives[index]?.disposition !== "excluded");
-  const implementations = accepted.map(({ implementation_id: id }) => REVIEWED_IMPLEMENTATIONS[id]);
+  const implementations = accepted.map(({ implementation_id: id }) =>
+    PROVIDER_NEUTRAL_IMPLEMENTATIONS[id]);
   const residencyConstraints = hardConstraints.filter((constraint) =>
     constraint.startsWith("data_residency_"));
   const concentration = new Map();
@@ -303,7 +305,7 @@ function implementationEvaluation(proposals, alternatives, hardConstraints) {
         .map(([capabilityId, count]) => `${capabilityId}:${count}_compatible_options`)
         .concat([...byCapability].every(([, count]) => count === 1) ? ["no_capability_duplication"] : []),
     migration_cost: accepted.length > 0
-      ? accepted.map((proposal) => `${proposal.implementation_id}_${proposal.action}:${REVIEWED_IMPLEMENTATIONS[proposal.implementation_id].attributes.migration_effort}`)
+      ? accepted.map((proposal) => `${proposal.implementation_id}_${proposal.action}:${PROVIDER_NEUTRAL_IMPLEMENTATIONS[proposal.implementation_id].attributes.migration_effort}`)
       : ["no_migration_proposal"],
   };
 }
@@ -313,7 +315,7 @@ function blueprint(source, options) {
   const hard = intent.desired_intent.hard_constraints;
   const preferences = intent.desired_intent.preferences;
   const preferenceScore = ({ implementation_id: implementationId }) =>
-    REVIEWED_IMPLEMENTATIONS[implementationId]?.attributes.preference_tags
+    PROVIDER_NEUTRAL_IMPLEMENTATIONS[implementationId]?.attributes.preference_tags
       .filter((tag) => preferences.includes(tag)).length ?? -1;
   const proposals = [...(source.alternatives ?? [])].sort((left, right) =>
     preferenceScore(right) - preferenceScore(left)
@@ -324,12 +326,12 @@ function blueprint(source, options) {
   if (new Set(proposalIds).size !== proposalIds.length) return null;
   const nodeByCapability = new Map(graph.nodes.map((node) => [node.capability_id, node]));
   if (proposals.some(({ implementation_id: implementationId }) => {
-    const implementation = REVIEWED_IMPLEMENTATIONS[implementationId];
+    const implementation = PROVIDER_NEUTRAL_IMPLEMENTATIONS[implementationId];
     return !implementation || !nodeByCapability.has(implementation.capability_id);
   })) return null;
   const compatibleByCapability = new Map();
   const alternatives = proposals.map((alternative) => {
-    const implementation = REVIEWED_IMPLEMENTATIONS[alternative.implementation_id];
+    const implementation = PROVIDER_NEUTRAL_IMPLEMENTATIONS[alternative.implementation_id];
     const priorCompatible = compatibleByCapability.get(implementation.capability_id) ?? 0;
     const node = nodeByCapability.get(implementation.capability_id);
     const disposition = node.implementation_state === "absent" && priorCompatible === 0

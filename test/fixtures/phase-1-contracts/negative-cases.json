@@ -1,5 +1,6 @@
 [
   { "schema_version": "launchrally.dev/product-intent-profile/v1", "path": "desired_intent.confirmation", "value": "agent_confirmed" },
+  { "schema_version": "launchrally.dev/provider-knowledge/v1", "path": "authority.machine_evidence", "value": true },
   { "schema_version": "launchrally.dev/capability-catalog/v1", "path": "provenance.trust_tier", "value": "unreviewed" },
   { "schema_version": "launchrally.dev/capability-graph/v1", "path": "nodes.0.environment", "value": "staging" },
   { "schema_version": "launchrally.dev/integration-contract/v1", "path": "mode", "value": "eventually_async" },
