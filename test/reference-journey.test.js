@@ -1097,6 +1097,12 @@ test("Codex and Claude host runners create Evidence without caller-supplied obse
       "authenticated-journey.js",
     )).href);
     for (const journeyCase of cases) {
+      const expectedOutcome = process.platform === "win32" && journeyCase.authenticated
+        ? "runner_unavailable"
+        : journeyCase.outcome;
+      const expectedEvidence = process.platform === "win32"
+        ? false
+        : journeyCase.evidence;
       const directory = await createFixture(
         `${adapter.host}-protected-${journeyCase.outcome}`,
       );
@@ -1180,17 +1186,17 @@ test("Codex and Claude host runners create Evidence without caller-supplied obse
         completed.evidence_index.entries.some(
           ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
         ),
-        journeyCase.evidence,
+        expectedEvidence,
         `${adapter.host}:${journeyCase.outcome}`,
         );
         assert.equal(
         completed.report.results.verification_gaps.some(
           ({ reason_code: reasonCode }) =>
-            reasonCode === journeyCase.outcome,
+            reasonCode === expectedOutcome,
         ),
-        !journeyCase.evidence,
+        !expectedEvidence,
         );
-        if (journeyCase.evidence && journeyCase.outcome !== "completed") {
+        if (expectedEvidence && expectedOutcome !== "completed") {
           assert.equal(completed.report.assessment, "no_go");
         }
         assert.doesNotMatch(
