@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/active-verification-result/v2",
+  "allOf": [
+    { "$ref": "../phase-1/v1.schema.json#/$defs/activeVerificationResult" },
+    {
+      "required": ["handoff", "executor", "integration_contract", "observation_provenance", "capability_id", "recipe_id", "evidence", "verification_gap"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/active-verification-result/v2" },
+        "observation": { "required": ["replay"] }
+      }
+    }
+  ],
+  "x-launchrally-contract-major": 2
+}

@@ -6,6 +6,8 @@ The Task Graph contract validates a Provider-neutral DAG of environment-bound Ta
 
 The Composite Assurance contract validates deterministic capability-specific derivations across seven orthogonal Check layers. Every Evidence reference and capability is bound to one explicit environment; assurance states cannot skip a missing layer, only current-release Required capabilities gate, and future scope remains explicit. Exact source and Architecture Status digests bind the derivation identity while Architecture Status remains independent from Launch Assessment.
 
+The Active Verification contracts bind reviewed recipes, versioned Integration Contracts, and exact Executor modes to independently approved `active_test` Handoff Packages. Results retain only normalized outcome facts, distinguish asynchronous business outcomes from transport acceptance, and bind qualifying Evidence to the exact Request, Handoff, Executor, Integration Contract, environment, correlation ID, observation time, and cleanup result. Production requires a production-safe recipe plus separate approval.
+
 ## Status
 
 LaunchRally 0.3.2 is a **Stable** release. Its public contracts are versioned, and Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor. Consumers should reject unsupported contract major versions and pin the package version they have tested.

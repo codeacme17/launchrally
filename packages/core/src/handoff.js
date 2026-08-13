@@ -17,6 +17,8 @@ import {
 } from "@launchrally/contracts";
 
 import { sha256 } from "./local-history.js";
+import { createHandoffAuthorityBatch } from "./handoff-authority.js";
+import { recordReferencesEqual } from "./record-reference.js";
 import { mapTaskGraphExecutors } from "./task-graph.js";
 
 const require = createRequire(import.meta.url);
@@ -40,18 +42,8 @@ function reference(id, schemaVersion, value) {
   return { id, schema_version: schemaVersion, digest: sha256(value) };
 }
 
-function referencesEqual(left, right) {
-  return left?.id === right?.id
-    && left?.schema_version === right?.schema_version
-    && left?.digest === right?.digest;
-}
-
 function authorityDescription(task) {
   return `An external Executor could perform ${task.allowed_effects.join(", ")} on ${task.expected_target} only after explicit confirmation.`;
-}
-
-function visibleEffect(task) {
-  return `The external Executor may perform ${task.allowed_effects.join(", ")} on ${task.expected_target}.`;
 }
 
 function cancellationIsCompatible(task, descriptor) {
@@ -201,6 +193,7 @@ function candidatesFor(source, platform) {
   const groups = new Map();
   for (const taskMapping of mapping.tasks.filter(({ task_id: id }) => ready.has(id))) {
     const task = graph.tasks.find(({ task_id: id }) => id === taskMapping.task_id);
+    if (task.effect_class === "active_test") continue;
     for (const executorId of taskMapping.managed_executor_ids) {
       const descriptor = descriptorById.get(executorId);
       if (
@@ -328,28 +321,7 @@ function sourceReferences(state) {
 function authorityBatch(state, candidate) {
   const tasks = state.task_graph.tasks.filter(({ task_id: id }) =>
     candidate.task_ids.includes(id));
-  return {
-    effect_classes: [...new Set(tasks.map(({ effect_class: effect }) => effect))],
-    target: candidate.target,
-    allowed_effects: [...new Set(tasks.flatMap(({ allowed_effects: effects }) => effects))].sort(),
-    prohibited_effects: [...new Set(
-      tasks.flatMap(({ prohibited_effects: effects }) => effects),
-    )].sort(),
-    user_visible_effects: [...new Set(tasks.map(visibleEffect))],
-    coordination: {
-      cancellation: candidate.cancellation,
-      task_cancellation_behaviors: [...new Set(
-        tasks.map(({ cancellation_behavior: behavior }) => behavior),
-      )].sort(),
-      partial_failure: candidate.partial_failure,
-    },
-    executor_requirements: {
-      tools: structuredClone(candidate.tools),
-      auth_assumptions: [...candidate.auth_assumptions],
-      authentication_state: candidate.authentication_state,
-      secret_handling: candidate.secret_handling,
-    },
-  };
+  return createHandoffAuthorityBatch(tasks, candidate);
 }
 
 function receiptIsBoundToPackage(receipt, handoffPackage) {
@@ -360,8 +332,8 @@ function receiptIsBoundToPackage(receipt, handoffPackage) {
   );
   const expectedTasks = [...handoffPackage.task_ids].sort();
   const receiptTasks = receipt.task_results.map(({ task_id: id }) => id).sort();
-  return referencesEqual(receipt.handoff, expectedHandoff)
-    && referencesEqual(receipt.executor, handoffPackage.executor)
+  return recordReferencesEqual(receipt.handoff, expectedHandoff)
+    && recordReferencesEqual(receipt.executor, handoffPackage.executor)
     && new Set(receiptTasks).size === receiptTasks.length
     && JSON.stringify(receiptTasks) === JSON.stringify(expectedTasks)
     && Date.parse(receipt.reported_at) >= Date.parse(handoffPackage.approval.confirmed_at);
@@ -417,11 +389,11 @@ function storedStateIsValid(state) {
     assertValidHandoffPackage(state.handoff_package);
     const packageIsBound = state.handoff_package.environment === candidate.environment
       && JSON.stringify(state.handoff_package.task_ids) === JSON.stringify(candidate.task_ids)
-      && referencesEqual(
+      && recordReferencesEqual(
         state.handoff_package.task_graph,
         reference(state.task_graph.graph_id, TASK_GRAPH_SCHEMA, state.task_graph),
       )
-      && referencesEqual(
+      && recordReferencesEqual(
         state.handoff_package.executor,
         reference(descriptor.descriptor_id, EXECUTOR_DESCRIPTOR_SCHEMA, descriptor),
       )

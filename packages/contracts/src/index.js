@@ -71,10 +71,18 @@ export const TASK_GRAPH_SCHEMA = "launchrally.dev/task-graph/v1";
 export const EXECUTOR_DESCRIPTOR_SCHEMA = "launchrally.dev/executor-descriptor/v1";
 export const HANDOFF_PACKAGE_SCHEMA = "launchrally.dev/handoff-package/v1";
 export const EXECUTION_RECEIPT_SCHEMA = "launchrally.dev/execution-receipt/v1";
-export const ACTIVE_VERIFICATION_REQUEST_SCHEMA =
+export const ACTIVE_VERIFICATION_REQUEST_V1_SCHEMA =
   "launchrally.dev/active-verification-request/v1";
-export const ACTIVE_VERIFICATION_RESULT_SCHEMA =
+export const ACTIVE_VERIFICATION_RESULT_V1_SCHEMA =
   "launchrally.dev/active-verification-result/v1";
+export const ACTIVE_VERIFICATION_REQUEST_SCHEMA =
+  "launchrally.dev/active-verification-request/v2";
+export const ACTIVE_VERIFICATION_RESULT_SCHEMA =
+  "launchrally.dev/active-verification-result/v2";
+const ACTIVE_VERIFICATION_RESULT_SCHEMAS = Object.freeze([
+  ACTIVE_VERIFICATION_RESULT_V1_SCHEMA,
+  ACTIVE_VERIFICATION_RESULT_SCHEMA,
+]);
 export const ARCHITECTURE_STATUS_SCHEMA = "launchrally.dev/architecture-status/v1";
 export const COMPOSITE_ASSURANCE_SCHEMA = "launchrally.dev/composite-assurance/v1";
 export const ARCHITECT_INTERACTION_SCHEMA =
@@ -116,6 +124,8 @@ export const PHASE_1_SCHEMA_VERSIONS = Object.freeze([
   EXECUTOR_DESCRIPTOR_SCHEMA,
   HANDOFF_PACKAGE_SCHEMA,
   EXECUTION_RECEIPT_SCHEMA,
+  ACTIVE_VERIFICATION_REQUEST_V1_SCHEMA,
+  ACTIVE_VERIFICATION_RESULT_V1_SCHEMA,
   ACTIVE_VERIFICATION_REQUEST_SCHEMA,
   ACTIVE_VERIFICATION_RESULT_SCHEMA,
   COMPOSITE_ASSURANCE_SCHEMA,
@@ -795,7 +805,20 @@ export const TASK_EFFECT_BOUNDARIES = Object.freeze({
     prohibited_effects: Object.freeze(["credential_persistence", "deployment_write", "provider_configuration_write", "source_write"]),
   }),
   active_test: Object.freeze({
-    allowed_effects: Object.freeze(["active_test_execution"]),
+    allowed_effects: Object.freeze([
+      "active_test_execution",
+      "synthetic_checkout_create",
+      "synthetic_checkout_void",
+      "synthetic_ci_dispatch",
+      "synthetic_email_send",
+      "synthetic_object_delete",
+      "synthetic_object_upload",
+      "synthetic_recipient_expire",
+      "synthetic_user_create",
+      "synthetic_user_delete",
+      "synthetic_webhook_delete",
+      "synthetic_webhook_send",
+    ]),
     prohibited_effects: Object.freeze(["credential_persistence", "deployment_write", "production_data_write", "provider_configuration_write", "source_write"]),
   }),
 });
@@ -805,8 +828,9 @@ const KNOWN_TASK_EFFECTS = new Set(Object.values(TASK_EFFECT_BOUNDARIES).flatMap
 ]));
 
 function effectsAreDisjoint(value) {
-  const allowed = new Set(value?.allowed_effects ?? []);
-  return (value?.prohibited_effects ?? []).every((effect) => !allowed.has(effect));
+  const allowed = new Set(value?.allowed_effects ?? value?.allowed ?? []);
+  return (value?.prohibited_effects ?? value?.prohibited ?? [])
+    .every((effect) => !allowed.has(effect));
 }
 
 function effectsMatchBoundary(task) {
@@ -879,6 +903,13 @@ export function assertValidExecutorDescriptor(descriptor) {
     || new Set(toolIds).size !== toolIds.length
     || !descriptor?.contract_versions?.includes(HANDOFF_PACKAGE_SCHEMA)
     || !descriptor?.contract_versions?.includes(EXECUTION_RECEIPT_SCHEMA)
+    || (ACTIVE_VERIFICATION_RESULT_SCHEMAS.includes(descriptor?.result_schema)
+      && (
+        !descriptor.contract_versions.includes(descriptor.result_schema)
+        || !Array.isArray(descriptor.active_verification_modes)
+      ))
+    || (!ACTIVE_VERIFICATION_RESULT_SCHEMAS.includes(descriptor?.result_schema)
+      && descriptor?.active_verification_modes !== undefined)
     || hasPersistedSensitivePayload(descriptor)
     || hasPersistedSecretValue(descriptor)
   ) {
@@ -905,6 +936,12 @@ export function assertValidHandoffPackage(handoffPackage) {
       allowed_effects: handoffPackage.authority_batch.allowed_effects,
       prohibited_effects: handoffPackage.authority_batch.prohibited_effects,
     });
+  const activeVerificationBinding = effectClass === "active_test"
+    ? referenceUses(
+      handoffPackage?.active_verification_request,
+      [ACTIVE_VERIFICATION_REQUEST_V1_SCHEMA, ACTIVE_VERIFICATION_REQUEST_SCHEMA],
+    )
+    : handoffPackage?.active_verification_request === undefined;
   if (
     !validatesSchema(handoffPackage, phase1Schema.$defs.handoffPackage, phase1Schema)
     || !effectsAreDisjoint(handoffPackage?.authority_batch)
@@ -912,6 +949,7 @@ export function assertValidHandoffPackage(handoffPackage) {
     || !validApproval
     || !referenceUses(handoffPackage?.task_graph, [TASK_GRAPH_SCHEMA])
     || !referenceUses(handoffPackage?.executor, [EXECUTOR_DESCRIPTOR_SCHEMA])
+    || !activeVerificationBinding
     || hasPersistedSensitivePayload(handoffPackage)
     || hasPersistedSecretValue(handoffPackage)
   ) {
@@ -947,17 +985,43 @@ export function assertValidExecutionReceipt(receipt) {
 }
 
 export function assertValidActiveVerificationRequest(request) {
+  if (request?.schema_version === ACTIVE_VERIFICATION_REQUEST_V1_SCHEMA) {
+    if (
+      !validatesSchema(request, phase1Schema.$defs.activeVerificationRequest, phase1Schema)
+      || request.environment_class !== undefined
+      || request.integration_contract !== undefined
+      || request.expected_conditions !== undefined
+      || !effectsAreDisjoint(request?.effects)
+      || request?.timeout_ms < request?.observation_window_ms
+      || hasPersistedSensitivePayload(request)
+    ) {
+      const error = new Error("The active-verification request is incomplete or invalid.");
+      error.code = "invalid_active_verification_request";
+      throw error;
+    }
+    return true;
+  }
   const approved = request?.approval?.state !== "approved"
     || request.approval.confirmation === "explicit_user_confirmation";
-  const productionAllowed = request?.environment !== "production"
+  const productionAllowed = request?.environment_class !== "production"
     || (
       request?.production_safety?.classification === "production_safe"
-      && request?.approval?.separate_production_approval === true
+      && (
+        request?.approval?.state !== "approved"
+        || request?.approval?.separate_production_approval === true
+      )
     );
   if (
     !validatesSchema(request, phase1Schema.$defs.activeVerificationRequest, phase1Schema)
+    || !["production", "non_production"].includes(request?.environment_class)
     || !effectsAreDisjoint(request?.effects)
+    || !referenceUses(request?.integration_contract, [INTEGRATION_CONTRACT_SCHEMA])
+    || typeof request?.expected_conditions !== "object"
     || request?.timeout_ms < request?.observation_window_ms
+    || (request?.environment_class === "non_production"
+      && /(?:^|[-_.])(?:prod(?:uction)?|live|prd)(?:$|[-_.])/iu.test(
+        request?.environment ?? "",
+      ))
     || !approved
     || !productionAllowed
     || hasPersistedSensitivePayload(request)
@@ -970,9 +1034,64 @@ export function assertValidActiveVerificationRequest(request) {
 }
 
 export function assertValidActiveVerificationResult(result) {
+  if (result?.schema_version === ACTIVE_VERIFICATION_RESULT_V1_SCHEMA) {
+    if (
+      !validatesSchema(result, phase1Schema.$defs.activeVerificationResult, phase1Schema)
+      || !referenceUses(result?.request, [ACTIVE_VERIFICATION_REQUEST_V1_SCHEMA])
+      || result.handoff !== undefined
+      || result.executor !== undefined
+      || result.integration_contract !== undefined
+      || result.observation_provenance !== undefined
+      || result.capability_id !== undefined
+      || result.recipe_id !== undefined
+      || result.observation?.replay !== undefined
+      || result.evidence !== undefined
+      || result.verification_gap !== undefined
+      || hasPersistedSensitivePayload(result)
+    ) {
+      const error = new Error("The active-verification result is incomplete or invalid.");
+      error.code = "invalid_active_verification_result";
+      throw error;
+    }
+    return true;
+  }
+  const qualifies = result?.classification?.evidence_qualification
+    === "qualifying_machine_evidence";
   if (
     !validatesSchema(result, phase1Schema.$defs.activeVerificationResult, phase1Schema)
     || !referenceUses(result?.request, [ACTIVE_VERIFICATION_REQUEST_SCHEMA])
+    || !referenceUses(result?.handoff, [HANDOFF_PACKAGE_SCHEMA])
+    || !referenceUses(result?.executor, [EXECUTOR_DESCRIPTOR_SCHEMA])
+    || !referenceUses(result?.integration_contract, [INTEGRATION_CONTRACT_SCHEMA])
+    || typeof result?.capability_id !== "string"
+    || typeof result?.recipe_id !== "string"
+    || result?.observation_provenance?.verification !== "external_executor_verified"
+    || !referenceUses(result?.observation_provenance?.executor, [EXECUTOR_DESCRIPTOR_SCHEMA])
+    || result?.observation_provenance?.executor?.id !== result?.executor?.id
+    || result?.observation_provenance?.executor?.schema_version
+      !== result?.executor?.schema_version
+    || result?.observation_provenance?.executor?.digest !== result?.executor?.digest
+    || (qualifies
+      && result?.observation_provenance?.collected_at !== result?.evidence?.collected_at)
+    || result?.evidence === undefined
+    || result?.verification_gap === undefined
+    || !["observed", "not_observed", "not_applicable"].includes(
+      result?.observation?.replay,
+    )
+    || (qualifies !== (result?.evidence !== null))
+    || (qualifies !== (result?.verification_gap === null))
+    || (qualifies && (
+      !["observed_success", "retry_succeeded"].includes(result.outcome)
+      || result.observed !== true
+      || !["succeeded", "not_required"].includes(result.cleanup_status)
+      || result.evidence.environment !== result.environment
+      || result.evidence.capability_id !== result.capability_id
+      || result.evidence.recipe_id !== result.recipe_id
+      || result.evidence.correlation_id !== result.correlation_id
+      || result.evidence.expected_effect_class !== result.expected_effect_class
+      || result.evidence.latency_ms !== result.latency_ms
+      || result.evidence.cleanup_status !== result.cleanup_status
+    ))
     || hasPersistedSensitivePayload(result)
   ) {
     const error = new Error("The active-verification result is incomplete or invalid.");
@@ -1323,6 +1442,8 @@ const PHASE_1_VALIDATORS = Object.freeze({
   [EXECUTOR_DESCRIPTOR_SCHEMA]: assertValidExecutorDescriptor,
   [HANDOFF_PACKAGE_SCHEMA]: assertValidHandoffPackage,
   [EXECUTION_RECEIPT_SCHEMA]: assertValidExecutionReceipt,
+  [ACTIVE_VERIFICATION_REQUEST_V1_SCHEMA]: assertValidActiveVerificationRequest,
+  [ACTIVE_VERIFICATION_RESULT_V1_SCHEMA]: assertValidActiveVerificationResult,
   [ACTIVE_VERIFICATION_REQUEST_SCHEMA]: assertValidActiveVerificationRequest,
   [ACTIVE_VERIFICATION_RESULT_SCHEMA]: assertValidActiveVerificationResult,
   [COMPOSITE_ASSURANCE_SCHEMA]: assertValidCompositeAssurance,

@@ -47,6 +47,14 @@ export {
   deriveCompositeAssuranceFromReport,
 } from "./composite-assurance.js";
 export { createRecordReference, createReportReference } from "./record-reference.js";
+export {
+  ACTIVE_VERIFICATION_RECIPES,
+  activeVerificationOutcomeCheck,
+  activeVerificationVerificationEvidence,
+  approveActiveVerification,
+  planActiveVerification,
+  reviewActiveVerificationObservation,
+} from "./active-verification.js";
 
 const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
   "Local Checks use only normalized, secret-safe repository facts.",
