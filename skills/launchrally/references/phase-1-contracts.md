@@ -2,7 +2,7 @@
 
 Phase 1 records use the exact schema version declared in each object. Validate them through `@launchrally/contracts`; do not reconstruct a record from terminal prose or accept an unknown major or enum value.
 
-The contract foundation defines Product Intent Profile, Provider Knowledge, Capability Catalog and Graph, Integration Contract, Architecture Blueprint and Record, Architecture Package, Desktop Shared Backend topology, Task Graph, Executor Descriptor, Handoff Package, Execution Receipt, active-verification request and result, Composite Assurance, Architecture Status, Host Resume Artifact, and typed `architect` and `handoff` interactions.
+The contract foundation defines Product Intent Profile, Provider Knowledge, Capability Catalog and Graph, Integration Contract, Architecture Blueprint and Record, Architecture Package, Desktop Shared Backend topology, Reference Integration Pack, Task Graph, Executor Descriptor, Handoff Package, Execution Receipt, active-verification request and result, Composite Assurance, Architecture Status, Host Resume Artifact, and typed `architect` and `handoff` interactions.
 
 Preserve these distinctions:
 
@@ -14,6 +14,7 @@ Preserve these distinctions:
 - Evidence and active verification are environment-bound. Active Verification uses reviewed, versioned recipes and exact Executor modes through a separately approved `active_test` Handoff Package; ordinary read or write Handoff approval is never reused.
 - Composite Assurance advances only through contiguous qualifying Check layers; Provider configuration alone never proves deployment, operational delivery, or an outcome.
 - Raw source, Provider output, stdout, stderr, response bodies, secrets, credentials, business payloads, and real-user data must not enter persisted Phase 1 records.
+- Reference Integration Packs keep Provider commands, fields, and exact API/tool versions inside reviewed Pack implementations. Their generic Capability and Integration Contracts contain no Provider-specific semantics. Each managed implementation normalizes a distinct deterministic synthetic input into an unverified generic observation; Pack results never create Machine Evidence or change assurance. Retained, custom, self-hosted, Unknown, missing/denied Executor, and partial paths remain explicit; unsupported depth is a typed generic result or Gap.
 - Local Semantic Analysis is a fresh permission above Local Safe Scan and applies only to explicitly selected supported product materials; denial or incomplete coverage remains visible.
 - The Capability Catalog covers all 13 launch domains. Derived obligations remain candidates until explicit confirmation, and Catalog changes invalidate only outputs that declare the changed capability or the whole Catalog as a dependency.
 - Provider Knowledge is versioned independently from the Capability Catalog, remains advisory and non-Evidence, and is bound to exact source provenance, trust tier, review/expiry dates, and digest.

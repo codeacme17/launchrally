@@ -17,6 +17,7 @@ import { createHandoffAuthorityBatch } from "./handoff-authority.js";
 import { recordReferencesEqual } from "./record-reference.js";
 import { mapTaskGraphExecutors } from "./task-graph.js";
 import { loadHostState, saveHostState, storeHostState } from "./host-state.js";
+import { referenceExecutorDescriptors } from "./reference-executors.js";
 
 const require = createRequire(import.meta.url);
 const executorInstallationAuthorities = require("../executor-installation/v1/authority.json");
@@ -25,6 +26,9 @@ const INSTALLATION_AUTHORITY_BY_ID = new Map(executorInstallationAuthorities.map
   Object.freeze(authority),
 ]));
 const CORE_EXECUTOR_DESCRIPTOR_DIGESTS = new Map();
+for (const descriptor of referenceExecutorDescriptors) {
+  CORE_EXECUTOR_DESCRIPTOR_DIGESTS.set(descriptor.descriptor_id, descriptor.trust.digest);
+}
 
 const SAFETY = Object.freeze({
   installation_executed: false,

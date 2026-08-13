@@ -27,6 +27,7 @@ import {
   PHASE_1_ADOPTION_SCHEMA,
   PHASE_1_MIGRATION_PREVIEW_SCHEMA,
   PRODUCT_INTENT_PROFILE_SCHEMA,
+  REFERENCE_INTEGRATION_PACK_SCHEMA,
   TASK_GRAPH_SCHEMA,
   assertValidArchitectureBlueprint,
   assertValidArchitecturePackage,
@@ -53,11 +54,13 @@ import {
   assertValidPhase1Adoption,
   assertValidPhase1MigrationPreview,
   assertValidProductIntentProfile,
+  assertValidReferenceIntegrationPack,
   assertValidTaskGraph,
   computeExecutorDescriptorDigest,
 } from "../packages/contracts/src/index.js";
 import {
   CORE_PROVIDER_KNOWLEDGE,
+  referenceIntegrationPacks,
 } from "../packages/core/src/index.js";
 import { sha256 } from "../packages/core/src/local-history.js";
 
@@ -222,6 +225,7 @@ async function allPositiveRecords() {
     phase1MigrationPreview,
     hostResumeArtifact,
     desktopSharedBackend,
+    referenceIntegrationPacks[0],
     verification.handoff_interaction,
   ];
 }
@@ -349,7 +353,7 @@ test("authenticated Journey attestation is a strict host integration contract", 
 });
 
 test("each Phase 1 contract publishes a stable standalone JSON Schema", async () => {
-  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 26);
+  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 27);
   for (const schemaVersion of PHASE_1_SCHEMA_VERSIONS) {
     const [contract, major] = schemaVersion.replace("launchrally.dev/", "").split("/v");
     const schema = JSON.parse(await readFile(
@@ -359,6 +363,13 @@ test("each Phase 1 contract publishes a stable standalone JSON Schema", async ()
     assert.equal(schema.$id, `https://${schemaVersion}`, contract);
     assert.equal(schema["x-launchrally-contract-major"], Number(major), contract);
   }
+});
+
+test("Reference Integration Packs are registered public Phase 1 records", () => {
+  assert.equal(REFERENCE_INTEGRATION_PACK_SCHEMA,
+    "launchrally.dev/reference-integration-pack/v1");
+  assert.equal(assertValidReferenceIntegrationPack(referenceIntegrationPacks[0]), true);
+  assert.equal(assertValidPhase1Record(referenceIntegrationPacks[0]), true);
 });
 
 test("desktop shared-backend topology excludes desktop distribution readiness", async () => {

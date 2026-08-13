@@ -41,6 +41,17 @@ export {
 export { generateTaskGraph, mapTaskGraphExecutors } from "./task-graph.js";
 export { runHandoff } from "./handoff.js";
 export {
+  REFERENCE_INTEGRATION_FAMILIES,
+  REFERENCE_PRODUCT_SHAPES,
+  applyReferenceJourneyState,
+  createReferenceCoverageMatrix,
+  normalizeReferenceImplementation,
+  referenceIntegrationPacks,
+  runReferenceOutcomeJourney,
+} from "./reference-integration-packs.js";
+export { referenceExecutorDescriptors } from "./reference-executors.js";
+export { runReferenceHostJourney } from "./reference-journey.js";
+export {
   CAPABILITY_CATALOG_DOMAINS,
   buildCapabilityGraph,
   confirmDerivedObligations,

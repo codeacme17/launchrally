@@ -17,6 +17,7 @@
     "executor-installation/",
     "provider-decision-cards/",
     "provider-tool-installation/",
+    "reference-integration-packs/",
     "src/"
   ],
   "dependencies": {

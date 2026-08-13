@@ -48,6 +48,7 @@ const publishedPackages = [
       "executor-installation/",
       "provider-decision-cards/",
       "provider-tool-installation/",
+      "reference-integration-packs/",
       "src/",
     ],
     keywords: ["launchrally", "launch-readiness", "audit", "verification", "local-first", "release"],

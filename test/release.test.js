@@ -1111,7 +1111,7 @@ test("Codex and Claude marketplaces resolve their native Plugin adapters", async
 test("native Plugin validators are exact development dependencies", async () => {
   const packageJson = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
   assert.deepEqual(packageJson.devDependencies, {
-    "@anthropic-ai/claude-code": "2.1.224",
+    "@anthropic-ai/claude-code": "2.1.231",
     "@openai/codex": "0.147.0",
   });
 });

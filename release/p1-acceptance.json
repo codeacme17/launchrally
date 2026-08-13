@@ -102,6 +102,49 @@
       ],
       "tracking": "#136",
       "status": "complete"
+    },
+    {
+      "id": "P1-COVERAGE-01",
+      "requirement": "Five representative product shapes and eight integration families preserve Provider-neutral semantics across reviewed managed implementations and honest generic fallbacks",
+      "contracts": [
+        "packages/contracts/schemas/reference-integration-pack/v1.schema.json",
+        "packages/contracts/schemas/executor-descriptor/v1.schema.json"
+      ],
+      "implementation": [
+        "packages/core/src/reference-integration-packs.js",
+        "packages/core/src/reference-executors.js",
+        "packages/core/src/reference-journey.js",
+        "packages/core/reference-integration-packs/v1/identity-to-application-data.json",
+        "scripts/test-release-artifacts.mjs"
+      ],
+      "tests": [
+        {
+          "path": "test/reference-packs.test.js",
+          "name": "reference packs cover every product shape and integration family without Provider semantics"
+        },
+        {
+          "path": "test/reference-packs.test.js",
+          "name": "reference Executors use exact reviewed tools, effects, and tamper-bound descriptors"
+        },
+        {
+          "path": "test/reference-packs.test.js",
+          "name": "reference journeys preserve complete, partial, denied, unknown, stale, success, and failure"
+        },
+        {
+          "path": "test/reference-packs.test.js",
+          "name": "Codex and Claude reference journeys keep receipts as claims before fresh verification"
+        },
+        {
+          "path": "test/reference-packs.test.js",
+          "name": "every family and managed implementation exercises partial and unavailable Executor paths"
+        },
+        {
+          "path": "test/release.test.js",
+          "name": "packed artifacts complete installation, delegation, lifecycle, and full verification journeys"
+        }
+      ],
+      "tracking": "#137",
+      "status": "complete"
     }
   ]
 }

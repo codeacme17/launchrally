@@ -31,6 +31,9 @@ const phase1MigrationPreviewSchema = require(
 );
 const hostResumeArtifactSchema = require("../schemas/host-resume-artifact/v1.schema.json");
 const desktopSharedBackendSchema = require("../schemas/desktop-shared-backend/v1.schema.json");
+const referenceIntegrationPackSchema = require(
+  "../schemas/reference-integration-pack/v1.schema.json",
+);
 
 export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v2";
 export const EXECUTION_AUTHORITY_CONTRACT = "launchrally.dev/execution-authority/v1";
@@ -99,6 +102,8 @@ export const ARCHITECT_INTERACTION_SCHEMA =
   "launchrally.dev/architect-interaction/v1";
 export const HOST_RESUME_ARTIFACT_SCHEMA = "launchrally.dev/host-resume-artifact/v1";
 export const DESKTOP_SHARED_BACKEND_SCHEMA = "launchrally.dev/desktop-shared-backend/v1";
+export const REFERENCE_INTEGRATION_PACK_SCHEMA =
+  "launchrally.dev/reference-integration-pack/v1";
 export const PHASE_1_ADOPTION_SCHEMA = "launchrally.dev/phase-1-adoption/v1";
 export const PHASE_1_MIGRATION_PREVIEW_SCHEMA =
   "launchrally.dev/phase-1-migration-preview/v1";
@@ -152,6 +157,7 @@ export const PHASE_1_SCHEMA_VERSIONS = Object.freeze([
   PHASE_1_MIGRATION_PREVIEW_SCHEMA,
   HOST_RESUME_ARTIFACT_SCHEMA,
   DESKTOP_SHARED_BACKEND_SCHEMA,
+  REFERENCE_INTEGRATION_PACK_SCHEMA,
   HANDOFF_INTERACTION_SCHEMA,
 ]);
 
@@ -266,6 +272,13 @@ const PROHIBITED_PERSISTED_FIELDS = new Set([
   "credential_value",
   "business_payload",
   "real_user_data",
+  "endpoint_secret_key",
+  "message_body",
+  "queue_message_body",
+  "recipient",
+  "recipients",
+  "subject",
+  "user_email",
 ]);
 
 function hasPersistedSensitivePayload(value) {
@@ -401,6 +414,12 @@ export function computeExecutorDescriptorDigest(descriptor) {
   const value = structuredClone(descriptor ?? {});
   if (value.trust) delete value.trust.digest;
   return computeCanonicalDigest(value);
+}
+
+export function computeReferenceIntegrationPackDigest(pack) {
+  const content = Object.fromEntries(Object.entries(pack ?? {}).filter(([key]) =>
+    key !== "pack_digest"));
+  return computeCanonicalDigest(content);
 }
 
 export function computeProviderKnowledgeId(knowledge) {
@@ -1524,6 +1543,66 @@ export function assertValidDesktopSharedBackend(value) {
   return true;
 }
 
+export function assertValidReferenceIntegrationPack(value) {
+  const kinds = value?.implementations?.map(({ kind }) => kind) ?? [];
+  const outcomes = value?.fixture_outcomes?.map(({ outcome }) => outcome) ?? [];
+  const implementationIds = value?.implementations?.map(
+    ({ implementation_id: implementationId }) => implementationId,
+  ) ?? [];
+  const allowedEffects = new Set(value?.effects?.allowed ?? []);
+  const reviewedAt = value?.review?.reviewed_at?.slice(0, 10);
+  const valid = validatesSchema(
+    value,
+    referenceIntegrationPackSchema,
+    referenceIntegrationPackSchema,
+  )
+    && kinds.filter((kind) => kind === "managed").length >= 2
+    && ["retained", "custom", "self_hosted", "unknown"].every((kind) => kinds.includes(kind))
+    && new Set(implementationIds).size === implementationIds.length
+    && JSON.stringify([...value.effects.allowed].sort())
+      === JSON.stringify(["provider_configuration_read", "source_write"])
+    && value.effects.prohibited.every((effect) => !allowedEffects.has(effect))
+    && value.implementations.every(({ kind, normalization_fixture: normalizationFixture }) =>
+      kind === "managed" ? normalizationFixture !== null : normalizationFixture === null)
+    && value.implementations.every(({
+      kind,
+      normalization_shape: normalizationShape,
+      normalization_fixture: normalizationFixture,
+    }) => kind === "managed"
+      ? normalizationShape === normalizationFixture?.synthetic_input?.shape
+      : normalizationShape === null)
+    && value.implementations.every(({ kind, executor_descriptors: executorDescriptors }) =>
+      kind === "managed" ? executorDescriptors.length > 0 : executorDescriptors.length === 0)
+    && value.implementations.every(({ normalization_fixture: fixture }) => fixture === null || (
+      typeof fixture.synthetic_input?.shape === "string"
+      && Array.isArray(fixture.synthetic_input?.signals)
+      && fixture.synthetic_input.signals.length > 0
+      && fixture.synthetic_input.signals.every((signal) => typeof signal === "string")
+      && Object.keys(fixture.synthetic_input).length === 2
+      && Array.isArray(fixture.required_signals)
+      && fixture.required_signals.length > 0
+    ))
+    && value.implementations.every(({ official_sources: officialSources }) =>
+      officialSources.every(({ reviewed_at: sourceReviewedAt }) =>
+        sourceReviewedAt === reviewedAt))
+    && [
+      "complete", "partial", "denied", "unknown", "stale", "successful", "failed",
+      "cleanup_failed",
+    ]
+      .every((outcome) => outcomes.includes(outcome))
+    && new Set(outcomes).size === outcomes.length
+    && value.pack_digest === computeReferenceIntegrationPackDigest(value)
+    && Date.parse(value?.review?.reviewed_at) <= Date.parse(value?.review?.expires_at)
+    && !hasPersistedSensitivePayload(value)
+    && !hasPersistedSecretValue(value);
+  if (!valid) {
+    const error = new Error("The Reference Integration Pack is incomplete or invalid.");
+    error.code = "invalid_reference_integration_pack";
+    throw error;
+  }
+  return true;
+}
+
 export function assertValidPhase1Adoption(adoption) {
   const valid = validatesSchema(adoption, phase1AdoptionSchema, phase1AdoptionSchema)
     && JSON.stringify(adoption?.preserved_contracts) === JSON.stringify([
@@ -1634,6 +1713,7 @@ const PHASE_1_VALIDATORS = Object.freeze({
   [PHASE_1_MIGRATION_PREVIEW_SCHEMA]: assertValidPhase1MigrationPreview,
   [HOST_RESUME_ARTIFACT_SCHEMA]: assertValidHostResumeArtifact,
   [DESKTOP_SHARED_BACKEND_SCHEMA]: assertValidDesktopSharedBackend,
+  [REFERENCE_INTEGRATION_PACK_SCHEMA]: assertValidReferenceIntegrationPack,
   [HANDOFF_INTERACTION_SCHEMA]: assertValidHandoffInteraction,
 });
 

@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/reference-integration-pack/v1",
+  "title": "LaunchRally Reference Integration Pack v1",
+  "type": "object",
+  "required": ["schema_version", "pack_id", "pack_version", "family", "product_shapes", "capability_contract", "integration_contract", "effects", "test_recipe_ids", "implementations", "fixture_outcomes", "review", "pack_digest"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/reference-integration-pack/v1" },
+    "pack_id": { "type": "string", "pattern": "^pack_[a-z0-9_]+$" },
+    "pack_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "family": {
+      "enum": [
+        "identity_to_application_data",
+        "payment_to_entitlement",
+        "source_to_ci_cd_to_deployment",
+        "storage_to_metadata_access",
+        "email_to_domain_delivery",
+        "release_to_observability",
+        "backup_to_restore",
+        "queue_background_work"
+      ]
+    },
+    "product_shapes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "content_marketing_web",
+          "subscription_saas",
+          "media_productivity_async",
+          "custom_self_hosted_web",
+          "desktop_shared_backend"
+        ]
+      }
+    },
+    "capability_contract": { "$ref": "#/$defs/providerNeutralContract" },
+    "integration_contract": { "$ref": "#/$defs/providerNeutralContract" },
+    "effects": {
+      "type": "object",
+      "required": ["allowed", "prohibited"],
+      "properties": {
+        "allowed": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "enum": ["provider_configuration_read", "source_write"] }
+        },
+        "prohibited": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "credential_persistence",
+              "deployment_write",
+              "production_data_write",
+              "provider_configuration_write"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "test_recipe_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^recipe_[a-z0-9_]+$" }
+    },
+    "implementations": {
+      "type": "array",
+      "minItems": 6,
+      "allOf": [
+        { "contains": { "properties": { "kind": { "const": "managed" } }, "required": ["kind"] }, "minContains": 2 },
+        { "contains": { "properties": { "kind": { "const": "retained" } }, "required": ["kind"] }, "minContains": 1 },
+        { "contains": { "properties": { "kind": { "const": "custom" } }, "required": ["kind"] }, "minContains": 1 },
+        { "contains": { "properties": { "kind": { "const": "self_hosted" } }, "required": ["kind"] }, "minContains": 1 },
+        { "contains": { "properties": { "kind": { "const": "unknown" } }, "required": ["kind"] }, "minContains": 1 }
+      ],
+      "items": {
+        "type": "object",
+        "required": ["implementation_id", "name", "kind", "interface_version", "support_depth", "read_adapter", "executor_descriptors", "normalization_shape", "normalization_fixture", "official_sources"],
+        "properties": {
+          "implementation_id": { "type": "string", "pattern": "^[a-z0-9_-]+$" },
+          "name": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["managed", "retained", "custom", "self_hosted", "unknown"] },
+          "interface_version": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._+/-]{1,127}$" },
+          "support_depth": { "enum": ["read_and_active", "read_only", "generic_contract", "transparent_gap"] },
+          "read_adapter": { "type": ["string", "null"] },
+          "executor_descriptors": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/recordReference" }
+          },
+          "normalization_shape": {
+            "oneOf": [
+              { "$ref": "#/$defs/syntheticShape" },
+              { "type": "null" }
+            ]
+          },
+          "normalization_fixture": {
+            "oneOf": [
+              { "$ref": "#/$defs/normalizationFixture" },
+              { "type": "null" }
+            ]
+          },
+          "official_sources": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/officialSource" }
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [{
+          "if": { "properties": { "kind": { "const": "managed" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "normalization_shape": { "$ref": "#/$defs/syntheticShape" },
+              "normalization_fixture": { "$ref": "#/$defs/normalizationFixture" },
+              "executor_descriptors": { "minItems": 1 }
+            }
+          },
+          "else": {
+            "properties": {
+              "normalization_shape": { "type": "null" },
+              "normalization_fixture": { "type": "null" },
+              "executor_descriptors": { "maxItems": 0 }
+            }
+          }
+        }]
+      }
+    },
+    "fixture_outcomes": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "allOf": [
+        { "contains": { "properties": { "outcome": { "const": "complete" } }, "required": ["outcome"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "outcome": { "const": "partial" } }, "required": ["outcome"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "outcome": { "const": "denied" } }, "required": ["outcome"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "outcome": { "const": "unknown" } }, "required": ["outcome"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "outcome": { "const": "stale" } }, "required": ["outcome"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "outcome": { "const": "successful" } }, "required": ["outcome"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "outcome": { "const": "failed" } }, "required": ["outcome"] }, "minContains": 1, "maxContains": 1 },
+        { "contains": { "properties": { "outcome": { "const": "cleanup_failed" } }, "required": ["outcome"] }, "minContains": 1, "maxContains": 1 }
+      ],
+      "items": {
+        "type": "object",
+        "required": ["fixture_id", "outcome"],
+        "properties": {
+          "fixture_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,127}$" },
+          "outcome": { "enum": ["complete", "partial", "denied", "unknown", "stale", "successful", "failed", "cleanup_failed"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["reviewed_at", "expires_at", "tamper_validation"],
+      "properties": {
+        "reviewed_at": { "type": "string", "format": "date-time" },
+        "expires_at": { "type": "string", "format": "date-time" },
+        "tamper_validation": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "pack_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "providerNeutralContract": {
+      "type": "object",
+      "required": ["contract_version", "provider_fields"],
+      "properties": {
+        "contract_version": { "type": "string", "pattern": "^launchrally\\.dev/[a-z0-9-]+/v[0-9]+$" },
+        "provider_fields": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "officialSource": {
+      "type": "object",
+      "required": ["title", "url", "reviewed_at"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "format": "uri", "pattern": "^https://" },
+        "reviewed_at": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }
+      },
+      "additionalProperties": false
+    },
+    "recordReference": {
+      "type": "object",
+      "required": ["id", "schema_version", "digest"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,127}$" },
+        "schema_version": { "const": "launchrally.dev/executor-descriptor/v1" },
+        "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      },
+      "additionalProperties": false
+    },
+    "normalizationFixture": {
+      "type": "object",
+      "required": ["fixture_id", "synthetic_input", "required_signals", "expected_observation"],
+      "properties": {
+        "fixture_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,127}$" },
+        "synthetic_input": {
+          "type": "object",
+          "required": ["shape", "signals"],
+          "properties": {
+            "shape": { "$ref": "#/$defs/syntheticShape" },
+            "signals": { "$ref": "#/$defs/syntheticSignals" }
+          },
+          "additionalProperties": false
+        },
+        "required_signals": { "$ref": "#/$defs/syntheticSignals" },
+        "expected_observation": {
+          "type": "object",
+          "required": ["configuration_state", "verification_state"],
+          "properties": {
+            "configuration_state": { "enum": ["configured", "not_configured", "unknown"] },
+            "verification_state": { "const": "unverified" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "syntheticShape": {
+      "enum": [
+        "application_instance", "managed_auth_schema", "entitlement_feature_mapping",
+        "subscription_webhook_sequence", "project_deployment", "worker_version_deployment",
+        "bucket_policy", "row_level_storage_policy", "sending_domain", "authenticated_domain",
+        "release_record", "deployment_marker", "snapshot_branch", "managed_backup_window",
+        "batched_queue_consumer", "regional_dead_letter_queue"
+      ]
+    },
+    "syntheticSignals": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "configured", "linked", "enabled", "verified", "routed", "recoverable",
+          "observable", "retry_configured", "dead_letter_configured", "policy_present"
+        ]
+      }
+    }
+  },
+  "x-launchrally-contract-major": 1
+}

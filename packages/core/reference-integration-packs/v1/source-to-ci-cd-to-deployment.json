@@ -1,0 +1,252 @@
+{
+  "schema_version": "launchrally.dev/reference-integration-pack/v1",
+  "pack_id": "pack_source_to_ci_cd_to_deployment",
+  "pack_version": "1.0.0",
+  "family": "source_to_ci_cd_to_deployment",
+  "product_shapes": [
+    "content_marketing_web",
+    "subscription_saas",
+    "media_productivity_async",
+    "custom_self_hosted_web",
+    "desktop_shared_backend"
+  ],
+  "capability_contract": {
+    "contract_version": "launchrally.dev/capability-catalog/v1",
+    "provider_fields": false
+  },
+  "integration_contract": {
+    "contract_version": "launchrally.dev/integration-contract/v1",
+    "provider_fields": false
+  },
+  "effects": {
+    "allowed": [
+      "provider_configuration_read",
+      "source_write"
+    ],
+    "prohibited": [
+      "credential_persistence",
+      "deployment_write",
+      "production_data_write",
+      "provider_configuration_write"
+    ]
+  },
+  "test_recipe_ids": [
+    "recipe_test_ci_dispatch"
+  ],
+  "implementations": [
+    {
+      "implementation_id": "github_actions_vercel",
+      "name": "GitHub Actions + Vercel",
+      "kind": "managed",
+      "interface_version": "github-rest/2026-03-10+vercel-cli/58.11.0",
+      "support_depth": "read_only",
+      "read_adapter": "vercel-read/v1",
+      "executor_descriptors": [
+        {
+          "id": "executor_codex_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:c00001281025da4c49431633c52a68f7043a3a6eb9c3f546a241ee53ba6beb04"
+        },
+        {
+          "id": "executor_claude_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:7abb7b7649be159b9dde8258dcb540c0a3ad3f581d8cda327abfb02adc8e58f0"
+        }
+      ],
+      "normalization_shape": "project_deployment",
+      "normalization_fixture": {
+        "fixture_id": "normalize_github_actions_vercel",
+        "synthetic_input": {
+          "shape": "project_deployment",
+          "signals": [
+            "configured",
+            "linked"
+          ]
+        },
+        "required_signals": [
+          "configured",
+          "linked"
+        ],
+        "expected_observation": {
+          "configuration_state": "configured",
+          "verification_state": "unverified"
+        }
+      },
+      "official_sources": [
+        {
+          "title": "GitHub deployment control",
+          "url": "https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments",
+          "reviewed_at": "2026-08-14"
+        },
+        {
+          "title": "Vercel CLI",
+          "url": "https://vercel.com/docs/cli",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "github_actions_cloudflare",
+      "name": "GitHub Actions + Cloudflare Workers",
+      "kind": "managed",
+      "interface_version": "github-rest/2026-03-10+wrangler/4.122.0",
+      "support_depth": "read_only",
+      "read_adapter": "cloudflare-read/v1",
+      "executor_descriptors": [
+        {
+          "id": "executor_codex_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:c00001281025da4c49431633c52a68f7043a3a6eb9c3f546a241ee53ba6beb04"
+        },
+        {
+          "id": "executor_claude_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:7abb7b7649be159b9dde8258dcb540c0a3ad3f581d8cda327abfb02adc8e58f0"
+        }
+      ],
+      "normalization_shape": "worker_version_deployment",
+      "normalization_fixture": {
+        "fixture_id": "normalize_github_actions_cloudflare",
+        "synthetic_input": {
+          "shape": "worker_version_deployment",
+          "signals": [
+            "configured",
+            "routed"
+          ]
+        },
+        "required_signals": [
+          "configured",
+          "routed"
+        ],
+        "expected_observation": {
+          "configuration_state": "configured",
+          "verification_state": "unverified"
+        }
+      },
+      "official_sources": [
+        {
+          "title": "GitHub deployment control",
+          "url": "https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments",
+          "reviewed_at": "2026-08-14"
+        },
+        {
+          "title": "Wrangler deployments",
+          "url": "https://developers.cloudflare.com/workers/wrangler/commands/workers/",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "source_to_ci_cd_to_deployment_retained",
+      "name": "Retain existing implementation",
+      "kind": "retained",
+      "interface_version": "existing-contract/v1",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "source_to_ci_cd_to_deployment_custom",
+      "name": "Custom implementation",
+      "kind": "custom",
+      "interface_version": "generic-contract/v1",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "source_to_ci_cd_to_deployment_self_hosted",
+      "name": "Self-hosted implementation",
+      "kind": "self_hosted",
+      "interface_version": "generic-contract/v1",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "source_to_ci_cd_to_deployment_unknown",
+      "name": "Unknown implementation",
+      "kind": "unknown",
+      "interface_version": "unknown/v1",
+      "support_depth": "transparent_gap",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    }
+  ],
+  "fixture_outcomes": [
+    {
+      "fixture_id": "fixture_source_to_ci_cd_to_deployment_complete",
+      "outcome": "complete"
+    },
+    {
+      "fixture_id": "fixture_source_to_ci_cd_to_deployment_partial",
+      "outcome": "partial"
+    },
+    {
+      "fixture_id": "fixture_source_to_ci_cd_to_deployment_denied",
+      "outcome": "denied"
+    },
+    {
+      "fixture_id": "fixture_source_to_ci_cd_to_deployment_unknown",
+      "outcome": "unknown"
+    },
+    {
+      "fixture_id": "fixture_source_to_ci_cd_to_deployment_stale",
+      "outcome": "stale"
+    },
+    {
+      "fixture_id": "fixture_source_to_ci_cd_to_deployment_successful",
+      "outcome": "successful"
+    },
+    {
+      "fixture_id": "fixture_source_to_ci_cd_to_deployment_failed",
+      "outcome": "failed"
+    },
+    {
+      "fixture_id": "fixture_source_to_ci_cd_to_deployment_cleanup_failed",
+      "outcome": "cleanup_failed"
+    }
+  ],
+  "review": {
+    "reviewed_at": "2026-08-14T00:00:00.000Z",
+    "expires_at": "2026-11-12T00:00:00.000Z",
+    "tamper_validation": true
+  },
+  "pack_digest": "sha256:9d303259e9e0c62ffeb99765f1ff578d7a7e3b48d1825f29481ecb3d49f536ce"
+}
