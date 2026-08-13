@@ -2,20 +2,22 @@
 
 Phase 1 extends LaunchRally's Stable Phase 0 readiness audit with Product Intent, Provider-neutral Architecture, a Task Graph, bounded external Executor coordination, and independent verification. Phase 1 is a separate experimental product layer: its presence does not relabel the Phase 0 release state or make Phase 1 Validated or Stable.
 
-This guide assumes the exact Launcher is already installed and `rally --version --json --cwd .` returns a supported `launchrally.dev/execution-authority/v1`. Save structured outputs at explicit local paths outside version control. The example filenames are placeholders for validated records produced by the preceding typed state; they are not templates to author by hand.
+This guide assumes the exact Launcher is already installed and `rally --version --json --cwd ./app` returns a supported `launchrally.dev/execution-authority/v1`. Run the examples from a private working directory whose `./app` child is the repository; save structured records beside `./app`, outside the scanned repository and version control. The filenames are placeholders for validated records produced by the preceding typed state, not templates to author by hand.
 
 ## Before granting authority
 
 LaunchRally separates four boundaries so a builder can decide before anything happens:
 
 - **Read:** Audit, Architect, and Verify disclose local, network, Provider, protected-journey, or active-test reads separately. A previous approval is not permission for a fresh read.
-- **Persist:** pre-Init Audit and Architecture are output-only unless the builder selects a path. Confirmed Init, full Verify, Phase 1 adoption, and Architecture Package persistence preview exact LaunchRally-owned local paths. LaunchRally does not stage or commit them.
+- **Persist:** pre-Init Audit creates no project record, and a pre-Init Architecture Package is output-only unless the builder selects a path. Starting Architect or Handoff does automatically persist encrypted resumable interaction state in the owner-only host registry outside the repository; it does not persist a Package, Report, or project history. Confirmed Init, full Verify, Phase 1 adoption, and Architecture Package persistence preview exact LaunchRally-owned project paths. LaunchRally does not stage or commit them.
 - **Ask an external Executor to write:** a Handoff Package names the exact environment, Tasks, target, allowed and prohibited effects, Executor digest, authentication assumptions, cancellation behavior, and retention boundary. It needs independent confirmation. LaunchRally coordinates the request; Core performs no Provider or deployment write.
 - **Fresh Verify:** an external receipt remains a claim. Agent confidence and Provider configuration are also non-Evidence: configuration does not prove operational delivery or a business outcome. Only fresh qualifying Evidence for the exact environment can change verification or assurance.
 
 ## 1. Confirm Product Intent
 
-Product Intent discovery works with a PRD, with incomplete product materials, or without a PRD. Without product material, LaunchRally uses normalized repository facts and a typed adaptive interview. When the builder selects a PRD, README, or brief, the CLI first requests `local_semantic_analysis` for the exact paths and discloses coverage, exclusions, and retention.
+Product Intent discovery works with a PRD, with incomplete product materials, or without a PRD. It is currently a typed installed-host API, not a standalone public CLI subcommand. Codex imports `runCodexProductIntentDiscovery` from `@launchrally/codex-plugin/product-intent`; Claude imports `runClaudeProductIntentDiscovery` from `@launchrally/claude-plugin/product-intent`. Each accepts `(repositoryRoot, options)` and delegates to Core's versioned `runProductIntentDiscovery` interaction. Without product material, omit `selected_materials`; Core uses normalized Local Safe Scan facts and returns `needs_input`. With selected material, pass only explicit repository-relative text paths; Core returns `needs_permission` for `local_semantic_analysis` before reading them and discloses coverage, exclusions, and retention.
+
+The host resumes with the exact opaque token and `permission_decision: "approved"` or `"denied"`, answers only the returned fields (`intended_environment`, `confirmed_behaviors`, `hard_constraints`, and `preferences`), presents the complete unconfirmed preview, and resumes with `confirmation: "confirm"`, `"revise"`, or `"cancel"`. Only the completed confirmed Product Intent Profile may become Architect input. Denied or incomplete material stays explicit in coverage and cannot prove absence.
 
 Observed implementation, inferred behaviors, and confirmed intent stay separate. Incomplete or denied semantic coverage cannot prove a feature is absent. Review the complete Product Intent preview, resolve conflicts, and distinguish hard constraints from preferences. A hard constraint excludes incompatible options; a preference influences trade-offs but is not silently promoted to a constraint.
 
@@ -34,7 +36,7 @@ If the builder does not know whether a Provider is operated through a CLI, Skill
 POSIX shell:
 
 ```bash
-rally architect --json --cwd . \
+rally architect --json --cwd ./app --review-date 2026-08-14 \
   --report ./launchrally-current-report.json \
   --intent ./product-intent.json \
   --catalog ./capability-catalog.json \
@@ -45,7 +47,7 @@ rally architect --json --cwd . \
 PowerShell:
 
 ```powershell
-rally architect --json --cwd . `
+rally architect --json --cwd ./app --review-date 2026-08-14 `
   --report ./launchrally-current-report.json `
   --intent ./product-intent.json `
   --catalog ./capability-catalog.json `
@@ -53,7 +55,9 @@ rally architect --json --cwd . `
   --integrations ./integration-contracts.json
 ```
 
-Handle every returned `needs_input`, `needs_permission`, `needs_confirmation`, or `partial_completion` state through its typed request. Never invent a resume token or decision response. An initialized Phase 0 project first receives an additive Phase 1 migration preview; denial or interruption preserves Phase 0 bytes.
+Replace the example `2026-08-14` with the actual `YYYY-MM-DD` date on which the Architecture inputs and sources were reviewed. It is provenance, not a floating current date or a value to copy without review. Handle every returned `needs_confirmation` or `partial_completion` state through its typed request. Never invent a resume token or decision response. An initialized Phase 0 project first receives an additive Phase 1 migration preview; denial or interruption preserves Phase 0 bytes.
+
+Success continues with `rally architect --json --cwd ./app --resume <token> --confirm confirm`, then submits only returned pending decision IDs through `--decisions <json>`. Use `--confirm reject` or `--confirm cancel` at Blueprint review. A stale source returns `stale_input`; refresh the changed source rather than resuming it.
 
 ## 3. Build the Task Graph
 
@@ -64,7 +68,7 @@ Plan combines the current Report with the confirmed Architecture Package. Each T
 POSIX shell:
 
 ```bash
-rally plan --json --cwd . \
+rally plan --json --cwd ./app \
   --report ./launchrally-current-report.json \
   --architecture-package ./architecture-package.json
 ```
@@ -72,7 +76,7 @@ rally plan --json --cwd . \
 PowerShell:
 
 ```powershell
-rally plan --json --cwd . `
+rally plan --json --cwd ./app `
   --report ./launchrally-current-report.json `
   --architecture-package ./architecture-package.json
 ```
@@ -111,6 +115,7 @@ The same resume commands work in POSIX shells and PowerShell because these value
 
 ```text
 rally handoff --json --resume <token> --select <batch-id>
+rally handoff --json --resume <token> --confirm confirm
 rally handoff --json --resume <token> --confirm deny
 rally handoff --json --resume <token> --confirm cancel
 rally handoff --json --resume <token> --receipt ./execution-receipt.json
@@ -126,7 +131,7 @@ After receipt review, choose the typed `verify` continuation. Full Verify starts
 POSIX shell:
 
 ```bash
-rally verify --json --cwd . \
+rally verify --json --cwd ./app \
   --report ./launchrally-manifest-source-report.json \
   --scope full
 ```
@@ -134,12 +139,32 @@ rally verify --json --cwd . \
 PowerShell:
 
 ```powershell
-rally verify --json --cwd . `
+rally verify --json --cwd ./app `
   --report ./launchrally-manifest-source-report.json `
   --scope full
 ```
 
-Ordinary verification is read-only collection. Active verification is a distinct boundary: each reviewed recipe discloses its real user-visible and cleanup effects and requires exact approval. Production active verification is default-denied unless the production-safe recipe, environment classification, and separate approval rules all qualify. Timeout, late success, duplicate delivery, retries, cleanup failure, and inconclusive observation remain distinct results rather than synthetic success.
+The first result is `needs_permission`. Present every pending permission separately, preserve the opaque token, and resume with an explicit decision for each returned permission ID. The following denies public collection and still reaches an honest completed Verify with corresponding Gaps; approve only boundaries the builder actually accepts.
+
+POSIX shell:
+
+```bash
+rally verify --json --cwd ./app \
+  --resume <verify-token> \
+  --permissions '{"public_verification":"denied"}'
+```
+
+PowerShell:
+
+```powershell
+rally verify --json --cwd ./app `
+  --resume <verify-token> `
+  --permissions '{"public_verification":"denied"}'
+```
+
+If the typed result instead requests `authenticated_journey_results`, do not author `--journey-results` JSON in the shell. The installed authenticated-journey host adapter must collect, attest, and resume the exact plan; unsupported collection stays a Gap. A successful continuation requires `status: "completed"`, a new immutable Report and Evidence Index, and no invented Passed Check.
+
+Ordinary verification collection permissions authorize reads only. A completed full Verify separately atomically persists the disclosed local Report, View, Evidence Index, and allowlisted Evidence under `.launchrally/`; targeted Verify does not create a whole-release Report. Active verification is a distinct boundary: each reviewed recipe discloses its real user-visible and cleanup effects and requires exact approval. Production active verification is default-denied unless the production-safe recipe, environment classification, and separate approval rules all qualify. Timeout, late success, duplicate delivery, retries, cleanup failure, and inconclusive observation remain distinct results rather than synthetic success.
 
 Composite Assurance preserves Requirement, Local Implementation, Provider Configuration, Integration Consistency, Deployment, Operational Delivery, and Downstream Outcome as independent facets. Launch Assessment and Architecture Status are separate records.
 
@@ -154,6 +179,33 @@ Composite Assurance preserves Requirement, Local Implementation, Provider Config
 | Stale architecture | Empty safe frontier or reassessment state | Refresh the changed dependencies and make new decisions without rewriting history. |
 | Unknown Provider | Honest generic/custom/self-hosted support depth and Verification Gaps | Supply reviewed knowledge or keep the implementation unknown. |
 | Denied or unsupported active verification | Unverified Check plus a transparent Gap | Use ordinary safe Evidence when available; never fabricate an outcome. |
+
+Operation-specific continuations keep these cases typed:
+
+```text
+# Plan succeeds with a current package; a stale package returns an empty safe frontier.
+rally plan --json --cwd ./app --report ./launchrally-current-report.json --architecture-package ./architecture-package.json
+
+# Missing Executor discovery retains recovery/manual/defer/cancel choices.
+rally handoff --json --task-graph ./task-graph.json --executors ./empty-executors.json --tools ./tool-observations.json --reviewed-executors ./empty-reviewed-executors.json
+
+# Authority denial, cancellation, partial receipt review, and fresh Verify are separate resumes.
+rally handoff --json --resume <token> --confirm deny
+rally handoff --json --resume <token> --confirm cancel
+rally handoff --json --resume <token> --receipt ./partial-execution-receipt.json
+rally handoff --json --resume <token> --choice verify
+
+# Targeted Verify cannot claim a whole-release assessment.
+rally verify --json --cwd ./app --report ./launchrally-manifest-source-report.json --scope targeted --checks '["check.id"]'
+
+# An Integration Contract with provider_binding.kind "unknown" stays unknown through Architect.
+rally architect --json --cwd ./app --review-date <actual-reviewed-date> --report ./launchrally-current-report.json --intent ./product-intent.json --catalog ./capability-catalog.json --graph ./capability-graph.json --integrations ./unknown-provider-integration-contracts.json
+
+# An active-verification Check first remains an ordinary unverified targeted Verify result.
+rally verify --json --cwd ./app --report ./launchrally-manifest-source-report.json --scope targeted --checks '["<active-check-id>"]'
+```
+
+The last `rally verify` command can disclose the Gap but cannot approve an active effect. Active verification is a typed installed-host Core interface rather than another public `rally` flag in this release. The host passes the exact current Task, reviewed recipe, Executor Descriptor, and versioned Integration Contract to `planActiveVerification`; `approveActiveVerification(..., { confirmation: "confirm" })` grants only the previewed active and cleanup effects, while `confirmation: "deny"` returns `active_verification_denied`. The normalized externally attested observation is reviewed separately before it can produce Evidence. This split is the public command boundary: never turn the ordinary `rally verify` permission into active-test authority.
 
 ## Agent Mode and Human Mode
 

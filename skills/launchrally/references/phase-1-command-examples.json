@@ -4,27 +4,36 @@
   "commands": [
     {
       "operation": "architect",
-      "argv": ["architect", "--json", "--cwd", ".", "--report", "./launchrally-current-report.json", "--intent", "./product-intent.json", "--catalog", "./capability-catalog.json", "--graph", "./capability-graph.json", "--integrations", "./integration-contracts.json"],
-      "posix": "rally architect --json --cwd . \\\n  --report ./launchrally-current-report.json \\\n  --intent ./product-intent.json \\\n  --catalog ./capability-catalog.json \\\n  --graph ./capability-graph.json \\\n  --integrations ./integration-contracts.json",
-      "powershell": "rally architect --json --cwd . `\n  --report ./launchrally-current-report.json `\n  --intent ./product-intent.json `\n  --catalog ./capability-catalog.json `\n  --graph ./capability-graph.json `\n  --integrations ./integration-contracts.json"
+      "argv": ["architect", "--json", "--cwd", "./app", "--review-date", "2026-08-14", "--report", "./launchrally-current-report.json", "--intent", "./product-intent.json", "--catalog", "./capability-catalog.json", "--graph", "./capability-graph.json", "--integrations", "./integration-contracts.json"],
+      "posix": "rally architect --json --cwd ./app --review-date 2026-08-14 \\\n  --report ./launchrally-current-report.json \\\n  --intent ./product-intent.json \\\n  --catalog ./capability-catalog.json \\\n  --graph ./capability-graph.json \\\n  --integrations ./integration-contracts.json",
+      "powershell": "rally architect --json --cwd ./app --review-date 2026-08-14 `\n  --report ./launchrally-current-report.json `\n  --intent ./product-intent.json `\n  --catalog ./capability-catalog.json `\n  --graph ./capability-graph.json `\n  --integrations ./integration-contracts.json",
+      "expected": { "contract": "launchrally.dev/architect-interaction/v1", "status": "needs_confirmation", "state": "blueprint_review" }
     },
     {
       "operation": "plan",
-      "argv": ["plan", "--json", "--cwd", ".", "--report", "./launchrally-current-report.json", "--architecture-package", "./architecture-package.json"],
-      "posix": "rally plan --json --cwd . \\\n  --report ./launchrally-current-report.json \\\n  --architecture-package ./architecture-package.json",
-      "powershell": "rally plan --json --cwd . `\n  --report ./launchrally-current-report.json `\n  --architecture-package ./architecture-package.json"
+      "argv": ["plan", "--json", "--cwd", "./app", "--report", "./launchrally-current-report.json", "--architecture-package", "./architecture-package.json"],
+      "posix": "rally plan --json --cwd ./app \\\n  --report ./launchrally-current-report.json \\\n  --architecture-package ./architecture-package.json",
+      "powershell": "rally plan --json --cwd ./app `\n  --report ./launchrally-current-report.json `\n  --architecture-package ./architecture-package.json",
+      "expected": { "contract": "launchrally.dev/cli/v2", "status": "completed", "state": null }
     },
     {
       "operation": "handoff",
       "argv": ["handoff", "--json", "--task-graph", "./task-graph.json", "--executors", "./executor-descriptors.json", "--tools", "./tool-observations.json", "--reviewed-executors", "./reviewed-executors.json"],
       "posix": "rally handoff --json \\\n  --task-graph ./task-graph.json \\\n  --executors ./executor-descriptors.json \\\n  --tools ./tool-observations.json \\\n  --reviewed-executors ./reviewed-executors.json",
-      "powershell": "rally handoff --json `\n  --task-graph ./task-graph.json `\n  --executors ./executor-descriptors.json `\n  --tools ./tool-observations.json `\n  --reviewed-executors ./reviewed-executors.json"
+      "powershell": "rally handoff --json `\n  --task-graph ./task-graph.json `\n  --executors ./executor-descriptors.json `\n  --tools ./tool-observations.json `\n  --reviewed-executors ./reviewed-executors.json",
+      "expected": { "contract": "launchrally.dev/handoff-interaction/v1", "status": "needs_input", "state": "executor_discovery" }
     },
     {
       "operation": "verify",
-      "argv": ["verify", "--json", "--cwd", ".", "--report", "./launchrally-manifest-source-report.json", "--scope", "full"],
-      "posix": "rally verify --json --cwd . \\\n  --report ./launchrally-manifest-source-report.json \\\n  --scope full",
-      "powershell": "rally verify --json --cwd . `\n  --report ./launchrally-manifest-source-report.json `\n  --scope full"
+      "argv": ["verify", "--json", "--cwd", "./app", "--report", "./launchrally-manifest-source-report.json", "--scope", "full"],
+      "posix": "rally verify --json --cwd ./app \\\n  --report ./launchrally-manifest-source-report.json \\\n  --scope full",
+      "powershell": "rally verify --json --cwd ./app `\n  --report ./launchrally-manifest-source-report.json `\n  --scope full",
+      "expected": { "contract": "launchrally.dev/cli/v2", "status": "needs_permission", "state": null },
+      "success_continuation": {
+        "posix": "rally verify --json --cwd ./app \\\n  --resume <verify-token> \\\n  --permissions '{\"public_verification\":\"denied\"}'",
+        "powershell": "rally verify --json --cwd ./app `\n  --resume <verify-token> `\n  --permissions '{\"public_verification\":\"denied\"}'",
+        "expected": { "contract": "launchrally.dev/cli/v2", "status": "completed" }
+      }
     }
   ]
 }

@@ -4,6 +4,8 @@ This package installs Codex Plugin metadata plus a generated copy of the LaunchR
 
 The optional `@launchrally/codex-plugin/authenticated-journey` host runner uses only absolute references to host-owned, owner-restricted authentication files and submits normalized results directly to Core. On supported POSIX hosts, it rejects plaintext HTTP, invalid TLS peers, symbolic links, files owned by another user, group/world-readable files, and oversized values. Other hosts return a typed `runner_unavailable` Gap. It never accepts credentials as arguments or returns credentials or raw authenticated responses to the Agent.
 
+The `@launchrally/codex-plugin/product-intent` export provides the typed Product Intent discovery bridge, including the no-PRD path and fresh permission before selected product-material reads.
+
 The optional `@launchrally/codex-plugin/resume` host adapter atomically saves validated local Architecture or Handoff resume artifacts and can resume artifacts created by the Claude adapter. It uses the durable owner-restricted `~/.launchrally/host-resume-v1/` registry for its key and encrypted resumable state, without writing project state or a key beside the selected artifact. Resume files bind the exact opaque interaction state and are never reconstructed from prose. The registry persists after Plugin/Launcher removal so retained artifacts remain usable; deleting it removes pending state and invalidates all retained resume artifacts.
 
 ## Status

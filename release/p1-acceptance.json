@@ -159,6 +159,8 @@
         "docs/getting-started/phase-1.md",
         "skills/launchrally/references/phase-1-journey.md",
         "skills/launchrally/references/phase-1-command-examples.json",
+        "adapters/codex/launchrally/host-adapter/product-intent.js",
+        "adapters/claude/launchrally/host-adapter/product-intent.js",
         "scripts/test-release-artifacts.mjs"
       ],
       "tests": [
@@ -173,6 +175,10 @@
         {
           "path": "test/phase-1-documentation.test.js",
           "name": "the canonical Skill routes the complete Phase 1 typed journey"
+        },
+        {
+          "path": "test/phase-1-documentation.test.js",
+          "name": "Codex and Claude expose the same typed no-PRD Product Intent entry"
         },
         {
           "path": "test/release.test.js",
