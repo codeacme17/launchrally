@@ -3,6 +3,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { createInterface } from "node:readline/promises";
 
 import {
   CLI_INTERACTION_CONTRACT,
@@ -14,6 +15,7 @@ import {
   reviewedEnvironmentLabel,
   resolveExecutionAuthority,
   runAudit,
+  runArchitectureDecisionEngine,
   runInit,
   runPlan,
   runProviderGuidance,
@@ -31,6 +33,7 @@ import {
   optionValue as argumentValue,
 } from "./cli-arguments.js";
 import { inspectReportDestination } from "./report-destination.js";
+import { normalizeArchitectAnswer, runHumanArchitect } from "./human-architect.js";
 import { createSystemFilePicker } from "./system-file-picker.js";
 import { consumeInvocationContext, renderCommand } from "./invocation-context.js";
 import { VERSION } from "./version.js";
@@ -516,7 +519,7 @@ function help() {
     status: "completed",
     operation: "help",
     commands: {
-      core: ["audit", "init", "plan", "verify"],
+      core: ["audit", "architect", "init", "plan", "verify"],
       bootstrap: [
         "toolchain status",
         "toolchain restore",
@@ -530,6 +533,7 @@ function help() {
       "",
       "Core commands:",
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
+      "  architect Build and independently confirm a whole-product Architecture Blueprint",
       "  init     Preview and confirm local adoption after a complete Audit Report",
       "  plan     Build a deterministic read-only Launch Plan from a current Report",
       "  verify   Recollect fresh Evidence for full or targeted verification",
@@ -713,6 +717,94 @@ async function main() {
     });
     print(result);
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+  }
+
+  if (command === "architect") {
+    const cwd = optionValue("--cwd") ?? process.cwd();
+    const fileOptions = [
+      ["report_package", "--report"],
+      ["product_intent", "--intent"],
+      ["catalog", "--catalog"],
+      ["capability_graph", "--graph"],
+      ["integration_contracts", "--integrations"],
+    ];
+    const source = {};
+    try {
+      for (const [field, option] of fileOptions) {
+        const file = optionValue(option);
+        if (file) source[field] = JSON.parse(await readFile(file, "utf8"));
+      }
+    } catch {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "architect",
+        error: "invalid_architecture_input_file",
+        message: "An Architecture source file could not be read and parsed.",
+      });
+      return 2;
+    }
+    const alternatives = jsonOption("--alternatives");
+    const decisionResponses = jsonOption("--decisions");
+    if (alternatives.error || decisionResponses.error) {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "architect",
+        error: "invalid_option_json",
+        message: "Architecture alternatives and decision responses must use valid JSON.",
+      });
+      return 2;
+    }
+    if (alternatives.value !== undefined) source.alternatives = alternatives.value;
+    if (!json) {
+      if (process.stdin.isTTY !== true) {
+        process.stderr.write([
+          "Non-TTY Human Mode cannot confirm Architecture decisions safely.",
+          "Use rally architect --json for the resumable Agent/CI protocol.",
+        ].join("\n") + "\n");
+        return 2;
+      }
+      const readline = createInterface({ input: process.stdin, output: process.stderr });
+      const choose = async (message) => {
+        while (true) {
+          const answer = normalizeArchitectAnswer(
+            await readline.question(`${message} [y/n/cancel] `),
+          );
+          if (answer) return answer;
+        }
+      };
+      try {
+        const result = await runHumanArchitect({
+          cwd,
+          source,
+          reviewDate: optionValue("--review-date"),
+          runArchitect: runArchitectureDecisionEngine,
+          prompt: {
+            async confirmBlueprint(blueprint) {
+              process.stdout.write(`${JSON.stringify(blueprint, null, 2)}\n`);
+              return choose("Confirm this whole-product Blueprint?");
+            },
+            async reviewDecision(decision) {
+              process.stdout.write(`${JSON.stringify(decision, null, 2)}\n`);
+              return choose(`Confirm decision ${decision.decision_id}?`);
+            },
+          },
+        });
+        print(result);
+        return ["unavailable", "execution_error", "stale_input"].includes(result.status) ? 2 : 0;
+      } finally {
+        readline.close();
+      }
+    }
+    const result = runArchitectureDecisionEngine(cwd, source, {
+      review_date: optionValue("--review-date"),
+      resume_token: optionValue("--resume"),
+      blueprint_confirmation: optionValue("--confirm"),
+      decision_responses: decisionResponses.value,
+    });
+    print(result);
+    return ["unavailable", "execution_error", "stale_input"].includes(result.status) ? 2 : 0;
   }
 
   if (command === "toolchain") {

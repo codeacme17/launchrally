@@ -22,6 +22,7 @@ export {
   resolveExecutionAuthority,
 } from "./execution-authority.js";
 export { runToolchainLifecycle } from "./toolchain-lifecycle.js";
+export { runArchitectureDecisionEngine } from "./architecture-engine.js";
 export {
   CAPABILITY_CATALOG_DOMAINS,
   buildCapabilityGraph,

@@ -489,11 +489,11 @@ test("a terminating signal preserves the delegated Engine signal exit status", {
 
 test("every repository operation resolves to the project Engine", async () => {
   const repository = await projectWithEngine([
-    "const operations = new Set([\"audit\", \"init\", \"plan\", \"providers\", \"verify\"]);",
+    "const operations = new Set([\"audit\", \"architect\", \"init\", \"plan\", \"providers\", \"verify\"]);",
     "process.stdout.write(process.argv.slice(2).find((value) => operations.has(value)));",
     "",
   ].join("\n"));
-  const operations = ["audit", "init", "plan", "providers", "verify"];
+  const operations = ["audit", "architect", "init", "plan", "providers", "verify"];
   const selected = [];
 
   for (const operation of operations) {
