@@ -128,18 +128,27 @@ function executionError(error) {
 
 function decisionForNode(node) {
   const existing = node.implementation_state === "present";
+  const desktopSharedBackend = node.implementation_path === "desktop_with_shared_backend";
   return {
     decision_id: `decision_${node.capability_id}`,
     capability_id: node.capability_id,
     action: existing ? "retain" : "investigate",
     implementation_path: node.implementation_path,
     disposition: "recommended",
-    rationale: [existing
+    rationale: [desktopSharedBackend
+      ? "Assess the shared backend independently from desktop distribution readiness."
+      : existing
       ? "Retain the existing implementation unless a constraint conflict or positive replacement rationale is established."
       : "Investigate the unknown implementation before adopting or replacing it."],
-    tradeoffs: [existing ? "Existing operational knowledge is preserved." : "Selection remains pending."],
-    assumptions: ["The current Report and confirmed constraints remain current."],
-    reevaluation_triggers: ["Implementation Evidence or a confirmed constraint changes."],
+    tradeoffs: [desktopSharedBackend
+      ? "Signing, notarization, store review, distribution, and updater readiness remain excluded and Unknown."
+      : existing ? "Existing operational knowledge is preserved." : "Selection remains pending."],
+    assumptions: [desktopSharedBackend
+      ? "Only the shared backend scope is assessed; no desktop release artifact or store Evidence was supplied."
+      : "The current Report and confirmed constraints remain current."],
+    reevaluation_triggers: [desktopSharedBackend
+      ? "Desktop signing, notarization, store review, distribution, or updater Evidence becomes available."
+      : "Implementation Evidence or a confirmed constraint changes."],
     knowledge_refs: [],
   };
 }
@@ -353,6 +362,16 @@ function blueprint(source, options) {
     ...intent.unknowns,
     ...graph.nodes.filter(({ implementation_state: state }) => state === "unknown")
       .map(({ capability_id: id }) => `${id}_implementation`),
+    ...graph.nodes.some(({ implementation_path: implementationPath }) =>
+      implementationPath === "desktop_with_shared_backend")
+      ? [
+          "desktop_signing_not_assessed",
+          "desktop_notarization_not_assessed",
+          "desktop_store_review_not_assessed",
+          "desktop_distribution_not_assessed",
+          "desktop_updater_readiness_not_assessed",
+        ]
+      : [],
   ])].sort();
   const report = reportPackage.report;
   const integrations = source.integration_contracts;

@@ -825,6 +825,26 @@ test("opaque handoff state resumes across independent Core calls", async () => {
   assert.equal(resumed.state, "authority_preview");
 });
 
+test("Claude Handoff state resumes in Codex from one validated local artifact", async () => {
+  const claude = await import("../adapters/claude/launchrally/host-adapter/resume.js");
+  const codex = await import("../adapters/codex/launchrally/host-adapter/resume.js");
+  const discovered = await runHandoff(source(), {}, {
+    platform: "linux-x64",
+    now: "2026-08-13T00:00:00.000Z",
+  });
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-handoff-resume-"));
+  const artifactPath = path.join(directory, "handoff-resume.json");
+  await claude.saveResumeArtifact(artifactPath, discovered.interaction);
+  const resumed = await codex.resumeArtifactFile({
+    cwd: process.cwd(),
+    artifact_path: artifactPath,
+    options: { selection: discovered.request.choices[0] },
+  });
+  assert.equal(resumed.status, "needs_confirmation", JSON.stringify(resumed));
+  assert.equal(resumed.state, "authority_preview");
+  assert.equal(resumed.handoff_package.approval.state, "required");
+});
+
 test("the public JSON CLI exposes typed discovery and resumable authority preview", async () => {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-handoff-cli-"));
   const handoffSource = source();

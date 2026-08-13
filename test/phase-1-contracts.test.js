@@ -21,7 +21,9 @@ import {
   EXECUTOR_DESCRIPTOR_SCHEMA,
   HANDOFF_PACKAGE_SCHEMA,
   HANDOFF_INTERACTION_SCHEMA,
+  HOST_RESUME_ARTIFACT_SCHEMA,
   PHASE_1_SCHEMA_VERSIONS,
+  PHASE_1_ADOPTION_SCHEMA,
   PRODUCT_INTENT_PROFILE_SCHEMA,
   TASK_GRAPH_SCHEMA,
   assertValidArchitectureBlueprint,
@@ -41,14 +43,19 @@ import {
   assertValidExecutorDescriptor,
   assertValidHandoffPackage,
   assertValidHandoffInteraction,
+  assertValidHostResumeArtifact,
   assertSupportedPhase1Version,
   assertValidPhase1References,
   assertValidPhase1Record,
+  assertValidPhase1Adoption,
   assertValidProductIntentProfile,
   assertValidTaskGraph,
   computeExecutorDescriptorDigest,
 } from "../packages/contracts/src/index.js";
-import { CORE_PROVIDER_KNOWLEDGE } from "../packages/core/src/index.js";
+import {
+  CORE_PROVIDER_KNOWLEDGE,
+  createHostResumeArtifact,
+} from "../packages/core/src/index.js";
 
 const fixtures = path.resolve("test/fixtures/phase-1-contracts");
 
@@ -126,6 +133,22 @@ async function allPositiveRecords() {
     result_digest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     issued_at: "2026-08-12T06:00:00.000Z",
   };
+  const hostResumeArtifact = createHostResumeArtifact(
+    "codex",
+    verification.architect_interaction,
+  );
+  const phase1Adoption = {
+    schema_version: PHASE_1_ADOPTION_SCHEMA,
+    adopted: true,
+    launcher_version: "0.3.2",
+    migration: "additive",
+    preserved_contracts: [
+      "launchrally.dev/manifest/v2",
+      "launchrally.dev/report/v2",
+      "launchrally.dev/evidence-index/v1",
+    ],
+    historical_reports_relabelled: false,
+  };
   return [
     authenticatedJourneyAttestation,
     authenticatedJourneyEvidence,
@@ -148,6 +171,8 @@ async function allPositiveRecords() {
     compositeAssurance,
     verification.architecture_status,
     verification.architect_interaction,
+    phase1Adoption,
+    hostResumeArtifact,
     verification.handoff_interaction,
   ];
 }
@@ -275,7 +300,7 @@ test("authenticated Journey attestation is a strict host integration contract", 
 });
 
 test("each Phase 1 contract publishes a stable standalone JSON Schema", async () => {
-  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 22);
+  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 24);
   for (const schemaVersion of PHASE_1_SCHEMA_VERSIONS) {
     const [contract, major] = schemaVersion.replace("launchrally.dev/", "").split("/v");
     const schema = JSON.parse(await readFile(
@@ -285,6 +310,28 @@ test("each Phase 1 contract publishes a stable standalone JSON Schema", async ()
     assert.equal(schema.$id, `https://${schemaVersion}`, contract);
     assert.equal(schema["x-launchrally-contract-major"], Number(major), contract);
   }
+});
+
+test("Host Resume Artifacts bind the exact resumable interaction state", async () => {
+  const artifact = (await allPositiveRecords()).find(({ schema_version: schemaVersion }) =>
+    schemaVersion === HOST_RESUME_ARTIFACT_SCHEMA);
+
+  assert.equal(assertValidHostResumeArtifact(artifact), true);
+  assert.throws(
+    () => assertValidHostResumeArtifact({ ...artifact, state: "completed" }),
+    (error) => error.code === "invalid_host_resume_artifact",
+  );
+});
+
+test("Phase 1 adoption remains additive and cannot relabel historical records", async () => {
+  const adoption = (await allPositiveRecords()).find(({ schema_version: schemaVersion }) =>
+    schemaVersion === PHASE_1_ADOPTION_SCHEMA);
+
+  assert.equal(assertValidPhase1Adoption(adoption), true);
+  assert.throws(
+    () => assertValidPhase1Adoption({ ...adoption, historical_reports_relabelled: true }),
+    (error) => error.code === "invalid_phase_1_adoption",
+  );
 });
 
 test("the Phase 1 registry validates known records and fails closed on versions and enums", async () => {

@@ -1,6 +1,6 @@
 # @launchrally/contracts
 
-`@launchrally/contracts` is the public contract package for LaunchRally integrators and tool authors. It exports versioned contract identifiers, validators, and the versioned JSON Schemas used by CLI interactions, manifests, reports, plans, evidence indexes, Provider guidance, Provider tool recovery, verification results, and the additive Phase 1 architecture contract foundation.
+`@launchrally/contracts` is the public contract package for LaunchRally integrators and tool authors. It exports versioned contract identifiers, validators, and the versioned JSON Schemas used by CLI interactions, manifests, reports, plans, evidence indexes, Provider guidance, Provider tool recovery, verification results, Host Resume Artifacts, and the additive Phase 1 architecture contract foundation.
 
 The Task Graph contract validates a Provider-neutral DAG of environment-bound Tasks, exact source and Architecture bindings, explicit effect boundaries, cancellation behavior, currentness, verification Evidence, and a complete safe ready frontier. Completion is bound to Evidence from the current, revalidated Report rather than inline result claims. Missing or cyclic dependencies, cross-environment Tasks, hidden effects, secret values, and a `verified` state without current typed Evidence fail closed.
 

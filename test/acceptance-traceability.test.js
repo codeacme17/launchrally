@@ -42,30 +42,34 @@ test("the committed P0 matrix maps every normative requirement to executable evi
   });
 });
 
-test("P1-AUTH-01 maps the authenticated Evidence contract to executable Core and Skill journeys", async () => {
+test("Phase 1 requirements map public contracts to executable Core and host journeys", async () => {
   const matrix = JSON.parse(await readFile(path.join(root, "release/p1-acceptance.json"), "utf8"));
   const docs = await readFile(path.join(root, "docs/maintainers/p1-acceptance.md"), "utf8");
 
   assert.equal(matrix.schema_version, "launchrally.dev/p1-acceptance/v1");
-  assert.deepEqual(matrix.requirements.map(({ id }) => id), ["P1-AUTH-01"]);
-  const [requirement] = matrix.requirements;
-  assert.equal(requirement.status, "complete");
-  assert.equal(requirement.tracking, "#135");
-  assert.ok(requirement.contracts.includes(
+  assert.deepEqual(matrix.requirements.map(({ id }) => id), [
+    "P1-AUTH-01",
+    "P1-COMPAT-01",
+    "P1-HOST-01",
+  ]);
+  assert.ok(matrix.requirements[0].contracts.includes(
     "packages/contracts/schemas/authenticated-journey-evidence/v1.schema.json",
   ));
-  for (const relativePath of [
-    ...requirement.contracts,
-    ...requirement.implementation,
-    ...requirement.tests.map(({ path: testPath }) => testPath),
-  ]) {
-    await readFile(path.join(root, relativePath), "utf8");
+  for (const requirement of matrix.requirements) {
+    assert.equal(requirement.status, "complete");
+    for (const relativePath of [
+      ...requirement.contracts,
+      ...requirement.implementation,
+      ...requirement.tests.map(({ path: testPath }) => testPath),
+    ]) {
+      await readFile(path.join(root, relativePath), "utf8");
+    }
+    for (const { path: testPath, name } of requirement.tests) {
+      const source = await readFile(path.join(root, testPath), "utf8");
+      assert.ok(source.includes(`test("${name}"`), `${testPath}: ${name}`);
+    }
+    assert.ok(docs.includes(`| ${requirement.id} |`));
   }
-  for (const { path: testPath, name } of requirement.tests) {
-    const source = await readFile(path.join(root, testPath), "utf8");
-    assert.ok(source.includes(`test("${name}"`), `${testPath}: ${name}`);
-  }
-  assert.match(docs, /\| P1-AUTH-01 \|/u);
 });
 
 test("acceptance validation rejects a missing mandatory release gate", async () => {

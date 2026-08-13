@@ -25,6 +25,8 @@ const providerToolRecoverySchema = require(
   "../schemas/provider-tool-recovery/v1.schema.json",
 );
 const phase1Schema = require("../schemas/phase-1/v1.schema.json");
+const phase1AdoptionSchema = require("../schemas/phase-1-adoption/v1.schema.json");
+const hostResumeArtifactSchema = require("../schemas/host-resume-artifact/v1.schema.json");
 
 export const CLI_INTERACTION_CONTRACT = "launchrally.dev/cli/v2";
 export const EXECUTION_AUTHORITY_CONTRACT = "launchrally.dev/execution-authority/v1";
@@ -91,6 +93,8 @@ export const ARCHITECTURE_STATUS_SCHEMA = "launchrally.dev/architecture-status/v
 export const COMPOSITE_ASSURANCE_SCHEMA = "launchrally.dev/composite-assurance/v1";
 export const ARCHITECT_INTERACTION_SCHEMA =
   "launchrally.dev/architect-interaction/v1";
+export const HOST_RESUME_ARTIFACT_SCHEMA = "launchrally.dev/host-resume-artifact/v1";
+export const PHASE_1_ADOPTION_SCHEMA = "launchrally.dev/phase-1-adoption/v1";
 export const HANDOFF_INTERACTION_SCHEMA = "launchrally.dev/handoff-interaction/v1";
 export const COMPOSITE_ASSURANCE_STATES = Object.freeze([
   "unverified",
@@ -137,6 +141,8 @@ export const PHASE_1_SCHEMA_VERSIONS = Object.freeze([
   COMPOSITE_ASSURANCE_SCHEMA,
   ARCHITECTURE_STATUS_SCHEMA,
   ARCHITECT_INTERACTION_SCHEMA,
+  PHASE_1_ADOPTION_SCHEMA,
+  HOST_RESUME_ARTIFACT_SCHEMA,
   HANDOFF_INTERACTION_SCHEMA,
 ]);
 
@@ -1409,6 +1415,7 @@ function assertValidPhase1Interaction(interaction, operation, schemaVersion, err
   const operationStates = {
     architect: new Set([
       "intent_discovery",
+      "p1_migration_preview",
       "blueprint_review",
       "decision_confirmation",
       "completed",
@@ -1426,6 +1433,7 @@ function assertValidPhase1Interaction(interaction, operation, schemaVersion, err
     needs_permission: new Set(["intent_discovery", "authority_preview"]),
     needs_confirmation: new Set([
       "intent_discovery",
+      "p1_migration_preview",
       "blueprint_review",
       "decision_confirmation",
       "authority_preview",
@@ -1466,6 +1474,42 @@ export function assertValidArchitectInteraction(interaction) {
     ARCHITECT_INTERACTION_SCHEMA,
     "invalid_architect_interaction",
   );
+}
+
+export function assertValidHostResumeArtifact(artifact) {
+  const content = artifact && typeof artifact === "object" && !Array.isArray(artifact)
+    ? Object.fromEntries(Object.entries(artifact).filter(([key]) =>
+      !["artifact_id", "artifact_digest"].includes(key)))
+    : null;
+  const expectedDigest = content ? computeCanonicalDigest(content) : null;
+  const valid = validatesSchema(artifact, hostResumeArtifactSchema, hostResumeArtifactSchema)
+    && artifact?.artifact_digest === expectedDigest
+    && artifact?.artifact_id === `host_resume_${expectedDigest.slice(7, 27)}`
+    && !hasPersistedSensitivePayload(artifact)
+    && !hasPersistedSecretValue(artifact);
+  if (!valid) {
+    const error = new Error("The Host Resume Artifact is incomplete or invalid.");
+    error.code = "invalid_host_resume_artifact";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidPhase1Adoption(adoption) {
+  const valid = validatesSchema(adoption, phase1AdoptionSchema, phase1AdoptionSchema)
+    && JSON.stringify(adoption?.preserved_contracts) === JSON.stringify([
+      "launchrally.dev/manifest/v2",
+      "launchrally.dev/report/v2",
+      "launchrally.dev/evidence-index/v1",
+    ])
+    && !hasPersistedSensitivePayload(adoption)
+    && !hasPersistedSecretValue(adoption);
+  if (!valid) {
+    const error = new Error("The Phase 1 Adoption record is incomplete or invalid.");
+    error.code = "invalid_phase_1_adoption";
+    throw error;
+  }
+  return true;
 }
 
 export function assertValidHandoffInteraction(interaction) {
@@ -1537,6 +1581,8 @@ const PHASE_1_VALIDATORS = Object.freeze({
   [COMPOSITE_ASSURANCE_SCHEMA]: assertValidCompositeAssurance,
   [ARCHITECTURE_STATUS_SCHEMA]: assertValidArchitectureStatus,
   [ARCHITECT_INTERACTION_SCHEMA]: assertValidArchitectInteraction,
+  [PHASE_1_ADOPTION_SCHEMA]: assertValidPhase1Adoption,
+  [HOST_RESUME_ARTIFACT_SCHEMA]: assertValidHostResumeArtifact,
   [HANDOFF_INTERACTION_SCHEMA]: assertValidHandoffInteraction,
 });
 

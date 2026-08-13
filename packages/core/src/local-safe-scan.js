@@ -29,7 +29,12 @@ const BUILD_DIRECTORIES = new Set([
   "target",
 ]);
 const ALWAYS_IGNORED_DIRECTORIES = new Set([".git", ".hg", ".svn"]);
-const TOOLING_METADATA_DIRECTORIES = new Set([".agents", ".claude", ".codex"]);
+const TOOLING_METADATA_DIRECTORIES = new Set([
+  ".agents",
+  ".claude",
+  ".codex",
+  ".launchrally/phase-1",
+]);
 export const SUPPORTED_LOCKFILES = Object.freeze([
   ["pnpm-lock.yaml", "pnpm"],
   ["package-lock.json", "npm"],
@@ -56,7 +61,8 @@ function emptyExclusions() {
 }
 
 export function isToolingMetadataDirectory(relativePath) {
-  return TOOLING_METADATA_DIRECTORIES.has(relativePath);
+  return TOOLING_METADATA_DIRECTORIES.has(relativePath)
+    || relativePath.startsWith(".launchrally/.phase-1-staging-");
 }
 
 function isInside(root, candidate) {

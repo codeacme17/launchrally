@@ -409,7 +409,7 @@
               "decision_state": { "enum": ["retain", "adopt", "replace", "defer", "investigate", "undecided"] },
               "implementation_state": { "enum": ["present", "absent", "partial", "unknown"] },
               "evidence_state": { "enum": ["verified", "failed", "unverified", "not_applicable"] },
-              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "deferred", "not_applicable", "unknown"] }
+              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "desktop_with_shared_backend", "deferred", "not_applicable", "unknown"] }
             },
             "additionalProperties": false
           }
@@ -517,7 +517,7 @@
               "decision_id": { "$ref": "#/$defs/identifier" },
               "capability_id": { "$ref": "#/$defs/identifier" },
               "action": { "enum": ["retain", "adopt", "replace", "defer", "investigate", "undecided"] },
-              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "deferred", "not_applicable", "unknown"] },
+              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "desktop_with_shared_backend", "deferred", "not_applicable", "unknown"] },
               "disposition": { "enum": ["recommended", "alternative", "excluded"] },
               "rationale": { "$ref": "#/$defs/nonEmptyStrings" },
               "tradeoffs": { "$ref": "#/$defs/nonEmptyStrings" },
@@ -616,7 +616,7 @@
               "decision_id": { "$ref": "#/$defs/identifier" },
               "decision_revision": { "type": "integer", "minimum": 1 },
               "capability_id": { "$ref": "#/$defs/identifier" },
-              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "deferred", "not_applicable", "unknown"] },
+              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "desktop_with_shared_backend", "deferred", "not_applicable", "unknown"] },
               "confirmation": { "const": "explicit_user_confirmation" },
               "status": { "enum": ["retain", "adopt", "replace", "defer", "investigate", "undecided"] }
             },
@@ -1203,7 +1203,7 @@
                 },
                 "additionalProperties": false
               },
-              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "deferred", "not_applicable", "unknown"] },
+              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "desktop_with_shared_backend", "deferred", "not_applicable", "unknown"] },
               "integration_contract_ids": { "$ref": "#/$defs/stringSet" },
               "minimum_assurance": { "type": ["string", "null"], "enum": ["unverified", "locally_evidenced", "configured_not_deployed", "deployed_not_operationally_verified", "operationally_verified", "outcome_verified", null] },
               "facets": {
@@ -1336,7 +1336,7 @@
         "interaction_id": { "$ref": "#/$defs/identifier" },
         "operation": { "enum": ["architect", "handoff"] },
         "status": { "enum": ["needs_input", "needs_confirmation", "needs_permission", "denied", "cancelled", "partial_completion", "stale_input", "resumable", "completed"] },
-        "state": { "enum": ["intent_discovery", "blueprint_review", "decision_confirmation", "executor_discovery", "authority_preview", "receipt_review", "verification_pending", "completed"] },
+        "state": { "enum": ["intent_discovery", "p1_migration_preview", "blueprint_review", "decision_confirmation", "executor_discovery", "authority_preview", "receipt_review", "verification_pending", "completed"] },
         "resume_token": { "type": ["string", "null"] },
         "source_refs": {
           "type": "array",
@@ -1361,7 +1361,17 @@
               "minItems": 1,
               "uniqueItems": true
             },
-            "user_visible_effects": { "$ref": "#/$defs/nonEmptyStrings" }
+            "user_visible_effects": { "$ref": "#/$defs/nonEmptyStrings" },
+            "files": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            },
+            "preserved_paths": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true
+            }
           },
           "additionalProperties": false
         }

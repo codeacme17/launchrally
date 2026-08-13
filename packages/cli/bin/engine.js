@@ -16,7 +16,7 @@ import {
   resolveExecutionAuthority,
   persistArchitecturePackage,
   runAudit,
-  runArchitectureDecisionEngine,
+  runArchitectureJourney,
   runHandoff,
   runInit,
   runPlan,
@@ -838,8 +838,12 @@ async function main() {
           cwd,
           source,
           reviewDate: optionValue("--review-date"),
-          runArchitect: runArchitectureDecisionEngine,
+          runArchitect: runArchitectureJourney,
           prompt: {
+            async confirmMigration(preview) {
+              process.stdout.write(`${JSON.stringify(preview, null, 2)}\n`);
+              return choose("Adopt additive Phase 1 local records while preserving Phase 0 history?");
+            },
             async confirmBlueprint(blueprint) {
               process.stdout.write(`${JSON.stringify(blueprint, null, 2)}\n`);
               return choose("Confirm this whole-product Blueprint?");
@@ -856,9 +860,11 @@ async function main() {
         readline.close();
       }
     }
-    const result = runArchitectureDecisionEngine(cwd, source, {
+    const result = await runArchitectureJourney(cwd, source, {
       review_date: optionValue("--review-date"),
+      launcher_version: VERSION,
       resume_token: optionValue("--resume"),
+      migration_confirmation: optionValue("--confirm"),
       blueprint_confirmation: optionValue("--confirm"),
       decision_responses: decisionResponses.value,
     });

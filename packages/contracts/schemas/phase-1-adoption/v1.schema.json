@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/phase-1-adoption/v1",
+  "title": "LaunchRally Phase 1 Adoption v1",
+  "type": "object",
+  "required": ["schema_version", "adopted", "launcher_version", "migration", "preserved_contracts", "historical_reports_relabelled"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/phase-1-adoption/v1" },
+    "adopted": { "const": true },
+    "launcher_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "migration": { "const": "additive" },
+    "preserved_contracts": {
+      "type": "array",
+      "prefixItems": [
+        { "const": "launchrally.dev/manifest/v2" },
+        { "const": "launchrally.dev/report/v2" },
+        { "const": "launchrally.dev/evidence-index/v1" }
+      ],
+      "items": false,
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "historical_reports_relabelled": { "const": false }
+  },
+  "additionalProperties": false,
+  "x-launchrally-contract-major": 1
+}
