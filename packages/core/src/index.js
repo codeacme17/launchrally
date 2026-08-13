@@ -30,6 +30,7 @@ export {
   previewArchitecturePackagePersistence,
 } from "./architecture-package.js";
 export { generateTaskGraph, mapTaskGraphExecutors } from "./task-graph.js";
+export { runHandoff } from "./handoff.js";
 export {
   CAPABILITY_CATALOG_DOMAINS,
   buildCapabilityGraph,

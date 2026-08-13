@@ -40,6 +40,7 @@ import {
   assertValidPhase1Record,
   assertValidProductIntentProfile,
   assertValidTaskGraph,
+  computeExecutorDescriptorDigest,
 } from "../packages/contracts/src/index.js";
 import { CORE_PROVIDER_KNOWLEDGE } from "../packages/core/src/index.js";
 
@@ -358,6 +359,35 @@ test("Task and handoff contracts expose bounded effects while receipts remain cl
   assert.throws(
     () => assertValidTaskGraph(unsafeEffectFrontier),
     (error) => error.code === "invalid_task_graph",
+  );
+});
+
+test("Executor and Handoff validators reject ambiguous tools and under-bounded approval", async () => {
+  const { executor, handoff } = await readFixture("handoff.valid.json");
+  const duplicateTool = structuredClone(executor);
+  duplicateTool.tools.push(structuredClone(duplicateTool.tools[0]));
+  duplicateTool.trust.digest = computeExecutorDescriptorDigest(duplicateTool);
+  assert.throws(
+    () => assertValidExecutorDescriptor(duplicateTool),
+    (error) => error.code === "invalid_executor_descriptor",
+  );
+
+  const implicitRequired = structuredClone(handoff);
+  implicitRequired.approval = {
+    state: "required",
+    confirmation: "implicit",
+    confirmed_at: null,
+  };
+  assert.throws(
+    () => assertValidHandoffPackage(implicitRequired),
+    (error) => error.code === "invalid_handoff_package",
+  );
+
+  const underBounded = structuredClone(handoff);
+  underBounded.authority_batch.prohibited_effects = ["credential_persistence"];
+  assert.throws(
+    () => assertValidHandoffPackage(underBounded),
+    (error) => error.code === "invalid_handoff_package",
   );
 });
 

@@ -22,7 +22,7 @@ console.log(REPORT_SCHEMA); // launchrally.dev/report/v2
 
 The package also exports validators such as `assertValidReportPackage` and bundles its JSON Schema files in the published payload.
 
-The Phase 1 foundation exports one validator per record, including digest-bound Provider Knowledge, plus `assertValidPhase1Record`, `assertValidPhase1References`, `assertSupportedPhase1Version`, and `PHASE_1_SCHEMA_VERSIONS`. Use `assertValidPhase1References` with an external trusted ID/version/digest index to validate cross-record bindings without embedding the referenced records. These contracts define data semantics only. Their presence does not mean that `rally architect`, external Executor handoff, or active verification is implemented or authorized.
+The Phase 1 foundation exports one validator per record, including digest-bound Provider Knowledge and Executor Descriptors, plus `assertValidPhase1Record`, `assertValidPhase1References`, `assertSupportedPhase1Version`, and `PHASE_1_SCHEMA_VERSIONS`. Use `assertValidPhase1References` with an external trusted ID/version/digest index to validate cross-record bindings without embedding the referenced records. Executor tools declare an exact executable and version, and Descriptor trust declares a self-binding digest plus review and expiry timestamps. These contracts define data semantics only: validating a Descriptor, Handoff Package, or Receipt never installs software, grants authority, executes work, or creates Evidence.
 
 ## Compatibility and versioning
 

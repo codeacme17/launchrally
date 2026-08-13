@@ -63,6 +63,7 @@
       "name": "@launchrally/core",
       "path": "packages/core",
       "package_files": [
+        "executor-installation/",
         "provider-decision-cards/",
         "provider-tool-installation/",
         "src/"
@@ -71,6 +72,7 @@
         "LICENSE",
         "README.md",
         "package.json",
+        "executor-installation/v1/authority.json",
         "provider-decision-cards/v1/cloudflare-workers.json",
         "provider-decision-cards/v1/vercel.json",
         "provider-tool-installation/v1/authority.json",
@@ -87,6 +89,7 @@
         "src/exclusive-lock.js",
         "src/fact-extractors.js",
         "src/gitignore.js",
+        "src/handoff.js",
         "src/index.js",
         "src/initialization.js",
         "src/interaction-result.js",

@@ -1,0 +1,52 @@
+[
+  {
+    "authority_id": "authority_codex_cli_v1",
+    "tool_id": "codex_cli",
+    "executable": "codex",
+    "exact_version": "0.147.0",
+    "official_source": {
+      "title": "OpenAI Codex CLI documentation",
+      "url": "https://developers.openai.com/codex/cli"
+    },
+    "package": {
+      "manager": "npm",
+      "name": "@openai/codex",
+      "exact_version": "0.147.0"
+    },
+    "supported_platforms": [
+      "darwin-arm64",
+      "darwin-x64",
+      "linux-arm64",
+      "linux-x64",
+      "win32-arm64",
+      "win32-x64"
+    ],
+    "supported_shells": ["posix", "powershell"],
+    "verification_command": {
+      "executable": "codex",
+      "arguments": ["--version"],
+      "shell": false
+    },
+    "reviewed_at": "2026-08-13",
+    "expires_at": "2026-11-11",
+    "installation_routes": [
+      {
+        "route_id": "npm_global_exact",
+        "platforms": [
+          "darwin-arm64",
+          "darwin-x64",
+          "linux-arm64",
+          "linux-x64",
+          "win32-arm64",
+          "win32-x64"
+        ],
+        "shells": ["posix", "powershell"],
+        "command": {
+          "executable": "npm",
+          "arguments": ["install", "--global", "@openai/codex@0.147.0"],
+          "shell": false
+        }
+      }
+    ]
+  }
+]

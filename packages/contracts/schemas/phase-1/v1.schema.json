@@ -700,7 +700,21 @@
         "contract_versions": { "$ref": "#/$defs/nonEmptyStrings" },
         "platforms": { "$ref": "#/$defs/nonEmptyStrings" },
         "environments": { "$ref": "#/$defs/nonEmptyStrings" },
-        "tools": { "$ref": "#/$defs/nonEmptyStrings" },
+        "tools": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["tool_id", "executable", "exact_version", "installation_authority_id"],
+            "properties": {
+              "tool_id": { "$ref": "#/$defs/identifier" },
+              "executable": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" },
+              "exact_version": { "type": "string", "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$" },
+              "installation_authority_id": { "$ref": "#/$defs/identifier" }
+            },
+            "additionalProperties": false
+          }
+        },
         "auth_assumptions": { "$ref": "#/$defs/nonEmptyStrings" },
         "allowed_effects": { "$ref": "#/$defs/nonEmptyStrings" },
         "prohibited_effects": { "$ref": "#/$defs/nonEmptyStrings" },
@@ -710,11 +724,12 @@
         "partial_failure": { "enum": ["all_or_nothing", "reported_per_task", "manual_inspection_required"] },
         "trust": {
           "type": "object",
-          "required": ["tier", "digest", "reviewed_at"],
+          "required": ["tier", "digest", "reviewed_at", "expires_at"],
           "properties": {
             "tier": { "enum": ["core_catalog", "reviewed_extension", "local_experimental"] },
             "digest": { "$ref": "#/$defs/digest" },
-            "reviewed_at": { "type": "string", "format": "date-time" }
+            "reviewed_at": { "type": "string", "format": "date-time" },
+            "expires_at": { "type": "string", "format": "date-time" }
           },
           "additionalProperties": false
         }

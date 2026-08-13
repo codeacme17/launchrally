@@ -6,6 +6,7 @@ const OPTIONS_WITH_VALUES = new Set([
   "--confirm",
   "--constraints",
   "--decisions",
+  "--executors",
   "--checks",
   "--choice",
   "--cwd",
@@ -18,8 +19,10 @@ const OPTIONS_WITH_VALUES = new Set([
   "--package",
   "--permissions",
   "--report",
+  "--receipt",
   "--recover",
   "--review-date",
+  "--reviewed-executors",
   "--role",
   "--resume",
   "--scope",
@@ -27,6 +30,7 @@ const OPTIONS_WITH_VALUES = new Set([
   "--task-graph",
   "--task-updates",
   "--to",
+  "--tools",
 ]);
 
 export function commandName(arguments_) {

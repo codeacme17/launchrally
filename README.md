@@ -94,6 +94,7 @@ Read the complete [privacy and permission model](docs/concepts/privacy.md) and [
 | `rally init` | Preview and confirm isolated `.launchrally` project adoption. | [Initialization](skills/launchrally/references/init.md) |
 | `rally toolchain` | Inspect, restore, migrate, or clean the project-owned toolchain explicitly. | [Install guide](docs/getting-started/install.md) |
 | `rally plan` | Turn current Findings into ordered, read-only remediation guidance. | [Planning](skills/launchrally/references/plan.md) |
+| `rally handoff` | Discover and explicitly approve one bounded external Executor authority package. | [External Executor handoff](skills/launchrally/references/handoff.md) |
 | `rally providers` | Compare advisory Provider Decision Cards after confirming constraints. | [Provider guidance](skills/launchrally/references/plan.md) |
 | `rally verify` | Recollect evidence and record a fresh full or targeted result. | [Verification](skills/launchrally/references/verify.md) |
 | Codex and Claude | Install, update, remove, and validate the Agent adapters separately from the CLI. | [Install guide](docs/getting-started/install.md) |

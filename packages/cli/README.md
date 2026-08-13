@@ -27,6 +27,8 @@ Audit performs no repository write and does not create `.launchrally`. Public an
 
 `rally architect` is the read-only Phase 1 whole-product decision flow. It consumes a current full Report plus confirmed Product Intent, Capability Catalog, and Capability Graph files, returns a typed Blueprint before confirmation, and then accepts independent decision responses. A completed confirmed set includes an immutable Architecture Package bundle. Use `rally architecture-package --package <bundle.json> --output <path>` to write only an explicitly selected pre-Init output. After Init, omit `--output` to inspect the exact local-history preview, then repeat with its exact `--resume <token> --confirm confirm` to append the digest-bound package transactionally. Neither command performs Provider writes, stages files, commits files, or turns the Manifest into reasoning history.
 
+`rally handoff` is the typed external Executor coordination flow for the current Task Graph frontier. It accepts exact reviewed Executor Descriptors and observed tool versions, groups compatible Tasks by their real authority boundary, and creates an unapproved Handoff Package for one selected batch. Only `--confirm confirm` approves that exact package; the CLI still performs no installation, login, credential collection, Provider write, deployment, or external execution. A supplied normalized Execution Receipt remains an unverified claim and routes to fresh Verify.
+
 Exact-version npm-exec remains a no-install trial and CI fallback. Keep its full prefix on every follow-up; see the [Quickstart](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/quickstart.md) for the directly executable sequence.
 
 ## Compatibility and boundaries

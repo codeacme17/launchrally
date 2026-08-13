@@ -17,6 +17,7 @@ import {
   persistArchitecturePackage,
   runAudit,
   runArchitectureDecisionEngine,
+  runHandoff,
   runInit,
   runPlan,
   runProviderGuidance,
@@ -277,6 +278,40 @@ function renderHumanPlan(value) {
   return lines.join("\n");
 }
 
+function renderHumanHandoff(value) {
+  const lines = [
+    "LaunchRally External Executor Handoff",
+    `State: ${value.state}`,
+    "LaunchRally does not install, log in, request credentials, or execute the external Task.",
+  ];
+  if (value.candidates?.length > 0) {
+    lines.push(
+      "Compatible authority batches:",
+      ...value.candidates.map((candidate) =>
+        `- ${candidate.batch_id}: ${candidate.executor_id}; ${candidate.effect_class} on ${candidate.target}; ${candidate.available ? "available" : "unavailable"}${candidate.recommended ? "; recommended narrowest match" : ""}`),
+    );
+  }
+  if (value.handoff_package) {
+    lines.push(
+      `Handoff Package: ${value.handoff_package.handoff_id}`,
+      `Approval: ${value.handoff_package.approval.state}`,
+      ...value.handoff_package.authority_batch.user_visible_effects.map((effect) =>
+        `- ${effect}`),
+    );
+  }
+  if (value.recovery) {
+    lines.push(
+      `Missing tool: ${value.recovery.tool.executable}@${value.recovery.tool.exact_version}`,
+      `Official manual: ${value.recovery.official_manual.url}`,
+      ...value.recovery.installation_instructions.map(({ command }) =>
+        `User-managed command (not executed): ${[command.executable, ...command.arguments].join(" ")}`),
+    );
+  }
+  if (value.request?.choices) lines.push(`Choices: ${value.request.choices.join(", ")}`);
+  if (value.resume_token) lines.push(`Resume token: ${value.resume_token}`);
+  return lines.join("\n");
+}
+
 function renderHumanProviders(value) {
   if (value.recovery) {
     const recovery = value.recovery;
@@ -483,6 +518,11 @@ function print(value) {
     return;
   }
 
+  if (value.operation === "handoff" && value.status !== "execution_error") {
+    process.stdout.write(`${renderHumanHandoff(value)}\n`);
+    return;
+  }
+
   if (
     value.operation === "providers"
     && ["needs_input", "needs_confirmation", "completed"].includes(value.status)
@@ -532,7 +572,7 @@ function help() {
     status: "completed",
     operation: "help",
     commands: {
-      core: ["audit", "architect", "architecture-package", "init", "plan", "verify"],
+      core: ["audit", "architect", "architecture-package", "handoff", "init", "plan", "verify"],
       bootstrap: [
         "toolchain status",
         "toolchain restore",
@@ -548,6 +588,7 @@ function help() {
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
       "  architect Build and independently confirm a whole-product Architecture Blueprint",
       "  architecture-package Preview or persist a confirmed immutable Architecture Package",
+      "  handoff  Discover, preview, and confirm bounded external Executor authority",
       "  init     Preview and confirm local adoption after a complete Audit Report",
       "  plan     Build a deterministic read-only Launch Plan and optional Task Graph",
       "  verify   Recollect fresh Evidence for full or targeted verification",
@@ -965,6 +1006,60 @@ async function main() {
     }
     print(result);
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+  }
+
+  if (command === "handoff") {
+    const resumeToken = optionValue("--resume");
+    const source = {};
+    const files = [
+      ["task_graph", "--task-graph"],
+      ["executor_descriptors", "--executors"],
+      ["tool_observations", "--tools"],
+      ["reviewed_executors", "--reviewed-executors"],
+    ];
+    try {
+      if (!resumeToken) {
+        for (const [field, option] of files) {
+          const file = optionValue(option);
+          if (!file) throw new Error("missing_handoff_input");
+          source[field] = JSON.parse(await readFile(file, "utf8"));
+        }
+      }
+    } catch {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "handoff",
+        error: "invalid_handoff_input_file",
+        message: "Handoff requires readable Task Graph, Executor, tool, and review JSON files.",
+      });
+      return 2;
+    }
+    let receipt;
+    const receiptPath = optionValue("--receipt");
+    if (receiptPath) {
+      try {
+        receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+      } catch {
+        print({
+          contract: CLI_INTERACTION_CONTRACT,
+          status: "execution_error",
+          operation: "handoff",
+          error: "invalid_execution_receipt_file",
+          message: "The execution receipt JSON could not be read and parsed.",
+        });
+        return 2;
+      }
+    }
+    const result = await runHandoff(source, {
+      resume_token: resumeToken,
+      selection: optionValue("--select"),
+      confirmation: optionValue("--confirm"),
+      choice: optionValue("--choice"),
+      receipt,
+    });
+    print(result);
+    return ["unavailable", "execution_error", "stale_input"].includes(result.status) ? 2 : 0;
   }
 
   if (command === "providers") {
