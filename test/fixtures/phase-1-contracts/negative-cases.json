@@ -1,4 +1,5 @@
 [
+  { "schema_version": "launchrally.dev/reference-integration-pack/v1", "path": "integration_contract.provider_fields", "value": true },
   { "schema_version": "launchrally.dev/authenticated-journey-attestation/v1", "path": "adapter_version", "value": "agent-authored/v1" },
   { "schema_version": "launchrally.dev/authenticated-journey-evidence/v1", "path": "provenance.permission_id", "value": "agent_assertion" },
   { "schema_version": "launchrally.dev/product-intent-profile/v1", "path": "desired_intent.confirmation", "value": "agent_confirmed" },

@@ -10,7 +10,7 @@
     "package": {
       "manager": "npm",
       "name": "clerk",
-      "exact_version": "3.0.1"
+      "exact_version": "3.1.0"
     },
     "supported_platforms": ["darwin", "linux", "win32"],
     "supported_shells": ["posix", "powershell"],
@@ -26,12 +26,12 @@
         "shells": ["posix", "powershell"],
         "command": {
           "executable": "npm",
-          "arguments": ["install", "--global", "clerk@3.0.1"],
+          "arguments": ["install", "--global", "clerk@3.1.0"],
           "shell": false
         }
       }
     ],
-    "reviewed_at": "2026-08-12"
+    "reviewed_at": "2026-08-14"
   },
   {
     "provider": "cloudflare",
@@ -44,7 +44,7 @@
     "package": {
       "manager": "npm",
       "name": "wrangler",
-      "exact_version": "4.121.0"
+      "exact_version": "4.122.0"
     },
     "supported_platforms": [],
     "supported_shells": [],
@@ -54,7 +54,7 @@
       "shell": false
     },
     "installation_routes": [],
-    "reviewed_at": "2026-08-12"
+    "reviewed_at": "2026-08-14"
   },
   {
     "provider": "neon",
@@ -67,7 +67,7 @@
     "package": {
       "manager": "npm",
       "name": "neonctl",
-      "exact_version": "3.1.1"
+      "exact_version": "3.2.0"
     },
     "supported_platforms": ["darwin", "linux", "win32"],
     "supported_shells": ["posix", "powershell"],
@@ -83,12 +83,12 @@
         "shells": ["posix", "powershell"],
         "command": {
           "executable": "npm",
-          "arguments": ["install", "--global", "neonctl@3.1.1"],
+          "arguments": ["install", "--global", "neonctl@3.2.0"],
           "shell": false
         }
       }
     ],
-    "reviewed_at": "2026-08-12"
+    "reviewed_at": "2026-08-14"
   },
   {
     "provider": "resend",
@@ -122,7 +122,7 @@
         }
       }
     ],
-    "reviewed_at": "2026-08-12"
+    "reviewed_at": "2026-08-14"
   },
   {
     "provider": "sentry",
@@ -156,7 +156,7 @@
         }
       }
     ],
-    "reviewed_at": "2026-08-12"
+    "reviewed_at": "2026-08-14"
   },
   {
     "provider": "vercel",
@@ -169,7 +169,7 @@
     "package": {
       "manager": "npm",
       "name": "vercel",
-      "exact_version": "58.9.4"
+      "exact_version": "58.11.0"
     },
     "supported_platforms": ["darwin", "linux", "win32"],
     "supported_shells": ["posix", "powershell"],
@@ -185,11 +185,11 @@
         "shells": ["posix", "powershell"],
         "command": {
           "executable": "npm",
-          "arguments": ["install", "--global", "vercel@58.9.4"],
+          "arguments": ["install", "--global", "vercel@58.11.0"],
           "shell": false
         }
       }
     ],
-    "reviewed_at": "2026-08-12"
+    "reviewed_at": "2026-08-14"
   }
 ]

@@ -41,7 +41,7 @@
   },
   "homepage": "https://github.com/codeacme17/launchrally#readme",
   "devDependencies": {
-    "@anthropic-ai/claude-code": "2.1.224",
+    "@anthropic-ai/claude-code": "2.1.231",
     "@openai/codex": "0.147.0"
   }
 }

@@ -19,6 +19,7 @@
   ],
   "exports": {
     "./authenticated-journey": "./host-adapter/authenticated-journey.js",
+    "./reference-journey": "./host-adapter/reference-journey.js",
     "./resume": "./host-adapter/resume.js"
   },
   "dependencies": {

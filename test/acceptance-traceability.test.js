@@ -52,6 +52,7 @@ test("Phase 1 requirements map public contracts to executable Core and host jour
     "P1-COMPAT-01",
     "P1-ARCH-DESKTOP-01",
     "P1-HOST-01",
+    "P1-COVERAGE-01",
   ]);
   assert.ok(matrix.requirements[0].contracts.includes(
     "packages/contracts/schemas/authenticated-journey-evidence/v1.schema.json",

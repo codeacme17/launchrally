@@ -1,0 +1,243 @@
+{
+  "schema_version": "launchrally.dev/reference-integration-pack/v1",
+  "pack_id": "pack_storage_to_metadata_access",
+  "pack_version": "1.0.0",
+  "family": "storage_to_metadata_access",
+  "product_shapes": [
+    "subscription_saas",
+    "media_productivity_async",
+    "custom_self_hosted_web",
+    "desktop_shared_backend"
+  ],
+  "capability_contract": {
+    "contract_version": "launchrally.dev/capability-catalog/v1",
+    "provider_fields": false
+  },
+  "integration_contract": {
+    "contract_version": "launchrally.dev/integration-contract/v1",
+    "provider_fields": false
+  },
+  "effects": {
+    "allowed": [
+      "provider_configuration_read",
+      "source_write"
+    ],
+    "prohibited": [
+      "credential_persistence",
+      "deployment_write",
+      "production_data_write",
+      "provider_configuration_write"
+    ]
+  },
+  "test_recipe_ids": [
+    "recipe_test_object_upload"
+  ],
+  "implementations": [
+    {
+      "implementation_id": "cloudflare_r2",
+      "name": "Cloudflare R2",
+      "kind": "managed",
+      "interface_version": "s3-api/2006-03-01",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [
+        {
+          "id": "executor_codex_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:c00001281025da4c49431633c52a68f7043a3a6eb9c3f546a241ee53ba6beb04"
+        },
+        {
+          "id": "executor_claude_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:7abb7b7649be159b9dde8258dcb540c0a3ad3f581d8cda327abfb02adc8e58f0"
+        }
+      ],
+      "normalization_shape": "bucket_policy",
+      "normalization_fixture": {
+        "fixture_id": "normalize_cloudflare_r2",
+        "synthetic_input": {
+          "shape": "bucket_policy",
+          "signals": [
+            "configured",
+            "policy_present"
+          ]
+        },
+        "required_signals": [
+          "configured",
+          "policy_present"
+        ],
+        "expected_observation": {
+          "configuration_state": "configured",
+          "verification_state": "unverified"
+        }
+      },
+      "official_sources": [
+        {
+          "title": "Cloudflare R2 S3 API",
+          "url": "https://developers.cloudflare.com/r2/api/s3/api/",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "supabase_storage",
+      "name": "Supabase Storage",
+      "kind": "managed",
+      "interface_version": "supabase-cli/2.114.0",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [
+        {
+          "id": "executor_codex_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:c00001281025da4c49431633c52a68f7043a3a6eb9c3f546a241ee53ba6beb04"
+        },
+        {
+          "id": "executor_claude_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:7abb7b7649be159b9dde8258dcb540c0a3ad3f581d8cda327abfb02adc8e58f0"
+        }
+      ],
+      "normalization_shape": "row_level_storage_policy",
+      "normalization_fixture": {
+        "fixture_id": "normalize_supabase_storage",
+        "synthetic_input": {
+          "shape": "row_level_storage_policy",
+          "signals": [
+            "configured",
+            "policy_present",
+            "linked"
+          ]
+        },
+        "required_signals": [
+          "configured",
+          "policy_present",
+          "linked"
+        ],
+        "expected_observation": {
+          "configuration_state": "configured",
+          "verification_state": "unverified"
+        }
+      },
+      "official_sources": [
+        {
+          "title": "Supabase Storage access control",
+          "url": "https://supabase.com/docs/guides/storage/security/access-control",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "storage_to_metadata_access_retained",
+      "name": "Retain existing implementation",
+      "kind": "retained",
+      "interface_version": "existing-contract/v1",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "storage_to_metadata_access_custom",
+      "name": "Custom implementation",
+      "kind": "custom",
+      "interface_version": "generic-contract/v1",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "storage_to_metadata_access_self_hosted",
+      "name": "Self-hosted implementation",
+      "kind": "self_hosted",
+      "interface_version": "generic-contract/v1",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "storage_to_metadata_access_unknown",
+      "name": "Unknown implementation",
+      "kind": "unknown",
+      "interface_version": "unknown/v1",
+      "support_depth": "transparent_gap",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    }
+  ],
+  "fixture_outcomes": [
+    {
+      "fixture_id": "fixture_storage_to_metadata_access_complete",
+      "outcome": "complete"
+    },
+    {
+      "fixture_id": "fixture_storage_to_metadata_access_partial",
+      "outcome": "partial"
+    },
+    {
+      "fixture_id": "fixture_storage_to_metadata_access_denied",
+      "outcome": "denied"
+    },
+    {
+      "fixture_id": "fixture_storage_to_metadata_access_unknown",
+      "outcome": "unknown"
+    },
+    {
+      "fixture_id": "fixture_storage_to_metadata_access_stale",
+      "outcome": "stale"
+    },
+    {
+      "fixture_id": "fixture_storage_to_metadata_access_successful",
+      "outcome": "successful"
+    },
+    {
+      "fixture_id": "fixture_storage_to_metadata_access_failed",
+      "outcome": "failed"
+    },
+    {
+      "fixture_id": "fixture_storage_to_metadata_access_cleanup_failed",
+      "outcome": "cleanup_failed"
+    }
+  ],
+  "review": {
+    "reviewed_at": "2026-08-14T00:00:00.000Z",
+    "expires_at": "2026-11-12T00:00:00.000Z",
+    "tamper_validation": true
+  },
+  "pack_digest": "sha256:4df94e23ee3b433fe7aeba0065b24b0d081375c8626d6a3741805fe0e9ed1ce9"
+}

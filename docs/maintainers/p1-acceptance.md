@@ -10,3 +10,4 @@ does not change P0 release status.
 | P1-COMPAT-01 | Initialized Phase 0 projects stay usable until an additive transactional Phase 1 migration is explicitly confirmed | Architect interaction, Core migration, CLI, denial, and interruption tests | #136 | Complete |
 | P1-ARCH-DESKTOP-01 | Desktop shared-backend architecture is typed while desktop distribution readiness remains explicitly excluded | Desktop Shared Backend contract, Core, CLI, and Architecture tests | #136 | Complete |
 | P1-HOST-01 | Codex and Claude resume Architecture and Handoff state from exact validated local artifacts | Host Resume Artifact contract, both adapters, and cross-host tests | #136 | Complete |
+| P1-COVERAGE-01 | Five product shapes and eight integration families retain Provider-neutral semantics across reviewed managed and generic fallback fixtures | Reference Integration Pack contract, coverage matrix, exact Executor descriptors, fixture and tamper tests | #137 | Complete |

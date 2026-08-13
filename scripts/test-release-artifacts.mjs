@@ -405,6 +405,58 @@ async function runInstallationJourneys({
     json(packagedJourneyPath),
     json(claudeJourneyPath),
   ]);
+  const {
+    createReferenceCoverageMatrix,
+    referenceExecutorDescriptors,
+    referenceIntegrationPacks,
+  } = await import(pathToFileURL(path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "core",
+    "src",
+    "index.js",
+  )).href);
+  const referenceCoverage = createReferenceCoverageMatrix();
+  if (
+    referenceIntegrationPacks.length !== 8
+    || referenceCoverage.cells.length !== 40
+    || referenceExecutorDescriptors.length !== 2
+    || referenceExecutorDescriptors[0].tools[0].exact_version !== "0.147.0"
+    || referenceExecutorDescriptors[1].tools[0].exact_version !== "2.1.231"
+  ) throw new Error("packed_reference_integration_roster_drift");
+  for (const host of ["codex", "claude"]) {
+    const module = await import(pathToFileURL(path.join(
+      cleanProject,
+      "node_modules",
+      "@launchrally",
+      `${host}-plugin`,
+      "host-adapter",
+      "reference-journey.js",
+    )).href);
+    const runReferenceJourney = host === "codex"
+      ? module.runCodexReferenceJourney
+      : module.runClaudeReferenceJourney;
+    for (const outcome of [
+      "complete", "partial", "denied", "unknown", "stale", "successful", "failed",
+      "cleanup_failed",
+    ]) {
+      const referenceResult = await runReferenceJourney({
+        pack_id: "pack_identity_to_application_data",
+        implementation_id: "clerk",
+        outcome,
+        assessment_time: "2026-08-14T12:00:00.000Z",
+      });
+      if (
+        referenceResult.outcome !== outcome
+        || referenceResult.machine_evidence !== false
+        || referenceResult.assurance_change !== false
+        || (["complete", "partial", "successful", "failed", "cleanup_failed"].includes(outcome)
+          && (referenceResult.fresh_verification_request?.operation !== "verify"
+            || referenceResult.fresh_verification_request?.fresh_evidence_required !== true))
+      ) throw new Error(`packed_${host}_reference_journey_drift:${outcome}`);
+    }
+  }
   assertEqual(
     claudeJourney,
     journey,
@@ -1600,7 +1652,7 @@ async function smokeCli(
     instructions.recovery?.installation_instructions?.[0]?.command,
     {
       executable: "npm",
-      arguments: ["install", "--global", "clerk@3.0.1"],
+      arguments: ["install", "--global", "clerk@3.1.0"],
       shell: false,
     },
     "packed_provider_recovery_instruction_drift",
@@ -1646,7 +1698,7 @@ async function smokeCli(
   await writeFile(providerScript, [
     'const fs = require("node:fs");',
     "fs.appendFileSync(process.env.PROVIDER_RECOVERY_CALLS, JSON.stringify(process.argv.slice(2)) + \"\\n\");",
-    'process.stdout.write("3.0.1\\n");',
+    'process.stdout.write("3.1.0\\n");',
   ].join("\n"));
   if (process.platform === "win32") {
     await writeFile(
