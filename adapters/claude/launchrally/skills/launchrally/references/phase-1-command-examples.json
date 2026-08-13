@@ -31,7 +31,7 @@
       "expected": { "contract": "launchrally.dev/cli/v2", "status": "needs_permission", "state": null },
       "success_continuation": {
         "posix": "rally verify --json --cwd ./app \\\n  --resume <verify-token> \\\n  --permissions '{\"public_verification\":\"denied\"}'",
-        "powershell": "$permissions = '{\"public_verification\":\"denied\"}'\nrally verify --json --cwd ./app `\n  --resume <verify-token> `\n  --permissions $permissions",
+        "powershell": "$permissions = '{\\\"public_verification\\\":\\\"denied\\\"}'\nrally verify --json --cwd ./app `\n  --resume <verify-token> `\n  --permissions $permissions",
         "expected": { "contract": "launchrally.dev/cli/v2", "status": "completed" }
       }
     }

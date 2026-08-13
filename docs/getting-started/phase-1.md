@@ -157,7 +157,7 @@ rally verify --json --cwd ./app \
 PowerShell:
 
 ```powershell
-$permissions = '{"public_verification":"denied"}'
+$permissions = '{\"public_verification\":\"denied\"}'
 rally verify --json --cwd ./app `
   --resume <verify-token> `
   --permissions $permissions
