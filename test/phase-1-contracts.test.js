@@ -41,6 +41,7 @@ import {
   assertValidProductIntentProfile,
   assertValidTaskGraph,
 } from "../packages/contracts/src/index.js";
+import { CORE_PROVIDER_KNOWLEDGE } from "../packages/core/src/index.js";
 
 const fixtures = path.resolve("test/fixtures/phase-1-contracts");
 
@@ -69,6 +70,7 @@ async function allPositiveRecords() {
   const verification = await readFixture("verification-and-interactions.valid.json");
   return [
     intent,
+    CORE_PROVIDER_KNOWLEDGE,
     catalog,
     graph,
     integration,
@@ -106,7 +108,7 @@ test("Product Intent Profile keeps confirmed intent separate from observations",
 });
 
 test("each Phase 1 contract publishes a stable standalone JSON Schema", async () => {
-  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 16);
+  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 17);
   for (const schemaVersion of PHASE_1_SCHEMA_VERSIONS) {
     const contract = schemaVersion.replace("launchrally.dev/", "").replace("/v1", "");
     const schema = JSON.parse(await readFile(

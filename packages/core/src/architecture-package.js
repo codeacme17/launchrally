@@ -20,6 +20,7 @@ import {
   CAPABILITY_GRAPH_SCHEMA,
   INTEGRATION_CONTRACT_SCHEMA,
   PRODUCT_INTENT_PROFILE_SCHEMA,
+  PROVIDER_KNOWLEDGE_SCHEMA,
   TASK_GRAPH_SCHEMA,
   assertValidArchitectureBlueprint,
   assertValidArchitecturePackage,
@@ -42,7 +43,6 @@ const PROVIDER_KNOWLEDGE_ID = /^knowledge_[a-f0-9]{16,64}$/u;
 const REFERENCE_SCHEMA = /^launchrally\.dev\/[a-z0-9-]+\/v[1-9][0-9]*$/u;
 const DIGEST = /^sha256:[a-f0-9]{64}$/u;
 const PERSISTENCE_STATE_VERSION = "architecture-package-persistence/v1";
-const PROVIDER_KNOWLEDGE_SCHEMA = "launchrally.dev/provider-knowledge/v1";
 const SENSITIVE_STRING = /(?:\b(?:api[_-]?key|authorization|bearer|credential|password|passphrase|private[_-]?key|secret|session[_-]?token)\b|\bsk_(?:live|test)_[A-Za-z0-9]+|https?:\/\/[^\s]+@|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/iu;
 const RETENTION = Object.freeze({
   raw_provider_output_retained: false,

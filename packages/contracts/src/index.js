@@ -59,6 +59,7 @@ export const AUTHENTICATED_JOURNEY_ADAPTER_VERSION =
   "host-agent-authenticated-journey/v1";
 export const PRODUCT_INTENT_PROFILE_SCHEMA =
   "launchrally.dev/product-intent-profile/v1";
+export const PROVIDER_KNOWLEDGE_SCHEMA = "launchrally.dev/provider-knowledge/v1";
 export const CAPABILITY_CATALOG_SCHEMA = "launchrally.dev/capability-catalog/v1";
 export const CAPABILITY_GRAPH_SCHEMA = "launchrally.dev/capability-graph/v1";
 export const INTEGRATION_CONTRACT_SCHEMA = "launchrally.dev/integration-contract/v1";
@@ -80,6 +81,7 @@ export const ARCHITECT_INTERACTION_SCHEMA =
 export const HANDOFF_INTERACTION_SCHEMA = "launchrally.dev/handoff-interaction/v1";
 export const PHASE_1_SCHEMA_VERSIONS = Object.freeze([
   PRODUCT_INTENT_PROFILE_SCHEMA,
+  PROVIDER_KNOWLEDGE_SCHEMA,
   CAPABILITY_CATALOG_SCHEMA,
   CAPABILITY_GRAPH_SCHEMA,
   INTEGRATION_CONTRACT_SCHEMA,
@@ -114,8 +116,14 @@ function schemaNodeAt(root, reference) {
 
 function validatesSchema(value, schema, root = schema) {
   if (schema.$ref) {
-    const referenced = schemaNodeAt(root, schema.$ref);
-    return referenced ? validatesSchema(value, referenced, root) : false;
+    if (schema.$ref.startsWith("#/")) {
+      const referenced = schemaNodeAt(root, schema.$ref);
+      return referenced ? validatesSchema(value, referenced, root) : false;
+    }
+    if (schema.$ref === providerDecisionCardSchema.$id) {
+      return validatesSchema(value, providerDecisionCardSchema, providerDecisionCardSchema);
+    }
+    return false;
   }
   if (schema.oneOf) {
     const matches = schema.oneOf.filter((candidate) => validatesSchema(value, candidate, root));
@@ -223,6 +231,18 @@ export function computeCapabilityCatalogDigest(catalog) {
   return `sha256:${createHash("sha256")
     .update(JSON.stringify(canonicalValue(content)))
     .digest("hex")}`;
+}
+
+export function computeProviderKnowledgeDigest(knowledge) {
+  const content = Object.fromEntries(Object.entries(knowledge ?? {})
+    .filter(([key]) => !["knowledge_id", "digest"].includes(key)));
+  return `sha256:${createHash("sha256")
+    .update(JSON.stringify(canonicalValue(content)))
+    .digest("hex")}`;
+}
+
+export function computeProviderKnowledgeId(knowledge) {
+  return `knowledge_${computeProviderKnowledgeDigest(knowledge).slice(7, 31)}`;
 }
 
 export function assertValidReportPackage(source) {
@@ -405,6 +425,73 @@ export function assertValidProviderDecisionCard(card) {
   if (!validatesSchema(card, providerDecisionCardSchema)) {
     const error = new Error("The Provider Decision Card is incomplete or invalid.");
     error.code = "invalid_provider_decision_card";
+    throw error;
+  }
+  return true;
+}
+
+export function assertValidProviderKnowledge(knowledge) {
+  const entryIds = knowledge?.entries?.map(({ entry_id: entryId }) => entryId) ?? [];
+  const cardIds = knowledge?.entries?.map(({ card }) => card?.card_id) ?? [];
+  const sourceIds = knowledge?.provenance?.map(({ source_id: sourceId }) => sourceId) ?? [];
+  const cardIdSet = new Set(cardIds);
+  const provenanceForCard = (cardId) => knowledge.provenance.filter(({ card_ids: ids }) =>
+    ids.includes(cardId));
+  const tierIsConsistent = knowledge?.trust_tier === "core_catalog"
+    ? knowledge?.extension?.origin === "launchrally_core"
+      && knowledge?.review?.status === "reviewed"
+    : knowledge?.trust_tier === "reviewed_extension"
+      ? knowledge?.extension?.origin === "reviewed_extension"
+        && knowledge?.review?.status === "reviewed"
+      : knowledge?.extension?.origin === "local"
+        && knowledge?.review?.status === "experimental";
+  const valid = validatesSchema(knowledge, phase1Schema.$defs.providerKnowledge, phase1Schema)
+    && !hasPersistedSensitivePayload(knowledge)
+    && new Set(entryIds).size === entryIds.length
+    && new Set(cardIds).size === cardIds.length
+    && new Set(sourceIds).size === sourceIds.length
+    && tierIsConsistent
+    && knowledge.review.expires_at >= knowledge.review.reviewed_at
+    && knowledge.provenance.every(({ card_ids: ids }) => ids.every((id) => cardIdSet.has(id)))
+    && knowledge.entries.every((entry) => {
+      const { card } = entry;
+      const cardProvenance = provenanceForCard(card.card_id);
+      const provenanceUrls = new Set(cardProvenance.map(({ source_url: url }) => url));
+      const claims = [...entry.environment_claims, ...entry.region_claims];
+      const officialPricingUrls = new Set(card.official_sources
+        .filter(({ kind }) => kind === "pricing")
+        .map(({ url }) => url));
+      return card.review_date <= knowledge.review.reviewed_at
+        && card.official_sources.every(({ url }) => provenanceUrls.has(url))
+        && claims.every((claim) => claim.state === "unknown"
+          ? claim.source_urls.length === 0
+          : claim.source_urls.length > 0
+            && claim.source_urls.every((url) => provenanceUrls.has(url)))
+        && entry.pricing_scenarios.every((scenario) => {
+          if (scenario.official_pricing_reviewed_at === null) {
+            return scenario.currency_estimate === undefined
+              && scenario.pricing_source_urls.length === 0;
+          }
+          return scenario.official_pricing_reviewed_at >= card.review_date
+            && scenario.official_pricing_reviewed_at <= knowledge.review.reviewed_at
+            && scenario.pricing_source_urls.length > 0
+            && scenario.pricing_source_urls.every((url) => {
+              const source = cardProvenance.find(({ source_url: sourceUrl }) =>
+                sourceUrl === url);
+              return officialPricingUrls.has(url)
+                && source?.reviewed_at === scenario.official_pricing_reviewed_at
+                && (
+                  scenario.currency_estimate === undefined
+                  || source.source_class === "official_provider_documentation"
+                );
+            });
+        });
+    })
+    && knowledge.digest === computeProviderKnowledgeDigest(knowledge)
+    && knowledge.knowledge_id === computeProviderKnowledgeId(knowledge);
+  if (!valid) {
+    const error = new Error("Provider Knowledge is incomplete, untrusted, or invalid.");
+    error.code = "invalid_provider_knowledge";
     throw error;
   }
   return true;
@@ -835,6 +922,7 @@ export function assertValidPhase1References(record, referenceIndex) {
 
 const PHASE_1_VALIDATORS = Object.freeze({
   [PRODUCT_INTENT_PROFILE_SCHEMA]: assertValidProductIntentProfile,
+  [PROVIDER_KNOWLEDGE_SCHEMA]: assertValidProviderKnowledge,
   [CAPABILITY_CATALOG_SCHEMA]: assertValidCapabilityCatalog,
   [CAPABILITY_GRAPH_SCHEMA]: assertValidCapabilityGraph,
   [INTEGRATION_CONTRACT_SCHEMA]: assertValidIntegrationContract,

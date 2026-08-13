@@ -4,6 +4,8 @@ Use `rally architect` only with a structurally valid current full Report, a conf
 
 Present the complete whole-product Blueprint before requesting any decision confirmation. Keep hard constraints separate from preferences. A hard-constraint conflict is excluded and can never be recommended. Describe recommendations as fit under the confirmed constraints, never as a universal best Provider or as the output of an opaque score.
 
+Use only the Provider Knowledge assessment's eligible records for normative Provider recommendations. Keep stale, unregistered, non-normative-source, and Local Experimental Cards advisory and present their Provider Verification Gaps. A Knowledge reference records recommendation provenance; it is never Machine Evidence.
+
 Preserve the Blueprint's integration compatibility, operational burden, cost drivers and assumptions, data flow and residency, failure domains, Provider concentration, lock-in and exit, duplication, migration cost, Unknowns, trade-offs, assumptions, and reevaluation triggers. A null currency estimate means no current official pricing was reviewed; never invent an exact bill.
 
 Existing implementations default to retain. Replacement requires a positive rationale. After Blueprint confirmation, present each decision independently and submit only the builder's exact `confirm` or `reject` response. Partial completion is resumable and does not imply acceptance of pending or rejected decisions.

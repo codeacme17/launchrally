@@ -193,6 +193,21 @@ test("hard-constraint violations are excluded and never recommended", async () =
     id === "decision_identity_managed_eu_adopt").disposition, "excluded");
 });
 
+test("Architecture alternatives cannot bypass Provider Knowledge with a Provider claim", async () => {
+  const directory = await fixture();
+  const source = await inputs(directory);
+  const result = runArchitectureDecisionEngine(directory, {
+    ...source,
+    alternatives: [{
+      implementation_id: "identity_managed_eu",
+      provider_id: "unreviewed_identity_provider",
+      action: "adopt",
+    }],
+  }, { review_date: "2026-08-13" });
+  assert.equal(result.status, "execution_error");
+  assert.equal(result.error, "invalid_architecture_alternatives");
+});
+
 test("Architecture alternatives cover every decision action with replacement rationale", async () => {
   const directory = await fixture();
   const source = await inputs(directory);

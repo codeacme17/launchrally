@@ -72,6 +72,10 @@ _Avoid_: Confirmed Product Intent, Agent conclusion
 The Provider-neutral, independently versioned vocabulary of launch capabilities and their requirement, decision, implementation, and Evidence facets.
 _Avoid_: Provider catalog, feature checklist
 
+**Provider Knowledge**:
+The independently versioned, source-provenance-bearing advisory record used to assess Provider fit under explicit trust, review, and expiry rules. It never constitutes Machine Evidence or grants release-gating or write authority.
+_Avoid_: Capability Catalog, live Provider state, verified implementation
+
 **Capability Graph**:
 The environment-bound applicability and dependency graph derived from a confirmed Product Intent Profile and a Capability Catalog.
 _Avoid_: Completion score, Provider architecture
