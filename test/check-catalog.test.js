@@ -89,6 +89,13 @@ test("the versioned Web Baseline catalog declares every required policy", () => 
   assert.deepEqual(catalog.versions.active_adapters, []);
 
   for (const check of catalog.checks) {
+    assert.ok([
+      "local_implementation",
+      "provider_configuration",
+      "operational_delivery",
+      "downstream_outcome",
+    ].includes(check.check_layer));
+    assert.ok(check.capability_ids.length > 0);
     assert.ok(check.applicability.rule);
     assert.ok(check.applicability.required_evidence.length > 0);
     assert.ok(check.required_inputs.length > 0);

@@ -1,0 +1,46 @@
+{
+  "schema_version": "launchrally.dev/composite-assurance/v1",
+  "assurance_id": "assurance_architecture_record_01_1",
+  "policy_version": "composite-assurance-policy/v1",
+  "environment": "production",
+  "source": {
+    "capability_graph_id": "graph_product_01",
+    "architecture_record_id": "architecture_record_01",
+    "integration_contract_ids": []
+  },
+  "capabilities": [
+    {
+      "capability_id": "identity_authentication",
+      "environment": "production",
+      "requirement_state": "required",
+      "decision_ref": {
+        "decision_id": "decision_identity",
+        "decision_revision": 1
+      },
+      "implementation_path": "managed",
+      "integration_contract_ids": [],
+      "minimum_assurance": "operationally_verified",
+      "facets": {
+        "requirement": { "layer": "requirement", "status": "passed", "check_refs": [{ "check_id": "requirement.identity_authentication", "check_version": 1, "status": "passed" }], "evidence_refs": [] },
+        "local_implementation": { "layer": "local_implementation", "status": "passed", "check_refs": [{ "check_id": "identity_local", "check_version": 1, "status": "passed" }], "evidence_refs": [{ "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "source": "test-collector/v1", "target": "identity:local", "environment": "production" }] },
+        "provider_configuration": { "layer": "provider_configuration", "status": "unverified", "check_refs": [], "evidence_refs": [] },
+        "integration_consistency": { "layer": "integration_consistency", "status": "not_applicable", "check_refs": [], "evidence_refs": [] },
+        "deployment": { "layer": "deployment", "status": "unverified", "check_refs": [], "evidence_refs": [] },
+        "operational_delivery": { "layer": "operational_delivery", "status": "unverified", "check_refs": [], "evidence_refs": [] },
+        "downstream_outcome": { "layer": "downstream_outcome", "status": "unverified", "check_refs": [], "evidence_refs": [] }
+      },
+      "assurance_state": "locally_evidenced",
+      "launch_gate": { "gating": true, "satisfied": false }
+    }
+  ],
+  "launch_assessment": {
+    "assessment": "inconclusive",
+    "gating_capability_ids": ["identity_authentication"],
+    "failed_check_ids": [],
+    "verification_gap_check_ids": []
+  },
+  "architecture_status": {
+    "independent": true,
+    "architecture_record_id": "architecture_record_01"
+  }
+}

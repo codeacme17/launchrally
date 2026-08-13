@@ -28,6 +28,12 @@ The separately versioned Evidence Index stores normalized, content-addressed Evi
 
 Raw repository contents, environment values, credentials, and raw package-script commands are not Evidence payloads. See the [privacy guide](privacy.md) for the collection boundary.
 
+## Composite Assurance
+
+Phase 1 Composite Assurance is a separate versioned derivation bound to a current full Report and Evidence Index, Capability Graph, immutable Architecture Record, and Integration Contracts for one explicit environment. Each capability retains Requirement, Local Implementation, Provider Configuration, Integration Consistency, Deployment, Operational Delivery, and Downstream Outcome facets. Passing one facet cannot pass a higher facet, and Provider configuration alone cannot prove an end-to-end outcome.
+
+The deterministic states are Unverified, Locally Evidenced, Configured but Not Deployed, Deployed but Not Operationally Verified, Operationally Verified, and Outcome Verified. Required current-release capabilities gate against capability-specific minimum assurance. Optional, deferred, future, and not-applicable capabilities do not silently gate. Incomplete or unsupported negative coverage remains Unverified, and Evidence is never generalized across environments without a future explicit versioned rule. Composite Launch Assessment and Architecture Status remain independent records.
+
 ## Immutable local history
 
 Before Init, Audit remains output-only. Confirmed Init persists that source Audit, and every completed full Verify persists its new Report package, beneath the explicit current repository's `.launchrally/` directory. Reports use time-sortable IDs and are committed as complete bundle directories containing canonical `record.json`, its `record.sha256`, the derived `view.md`, and `evidence-index.json`. Normalized safe artifacts are independently stored at `.launchrally/evidence/sha256/<digest>.json`; identical addresses are reused and differing content is treated as tampering or a collision.

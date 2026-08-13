@@ -13,6 +13,7 @@ import {
   ACTIVE_VERIFICATION_RESULT_SCHEMA,
   CAPABILITY_CATALOG_SCHEMA,
   CAPABILITY_GRAPH_SCHEMA,
+  COMPOSITE_ASSURANCE_SCHEMA,
   INTEGRATION_CONTRACT_SCHEMA,
   EXECUTION_RECEIPT_SCHEMA,
   EXECUTOR_DESCRIPTOR_SCHEMA,
@@ -30,6 +31,7 @@ import {
   assertValidActiveVerificationResult,
   assertValidCapabilityCatalog,
   assertValidCapabilityGraph,
+  assertValidCompositeAssurance,
   assertValidIntegrationContract,
   assertValidExecutionReceipt,
   assertValidExecutorDescriptor,
@@ -69,6 +71,7 @@ async function allPositiveRecords() {
     "handoff.valid.json",
   );
   const verification = await readFixture("verification-and-interactions.valid.json");
+  const compositeAssurance = await readFixture("composite-assurance.valid.json");
   return [
     intent,
     CORE_PROVIDER_KNOWLEDGE,
@@ -84,6 +87,7 @@ async function allPositiveRecords() {
     receipt,
     verification.request,
     verification.result,
+    compositeAssurance,
     verification.architecture_status,
     verification.architect_interaction,
     verification.handoff_interaction,
@@ -109,7 +113,7 @@ test("Product Intent Profile keeps confirmed intent separate from observations",
 });
 
 test("each Phase 1 contract publishes a stable standalone JSON Schema", async () => {
-  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 17);
+  assert.equal(PHASE_1_SCHEMA_VERSIONS.length, 18);
   for (const schemaVersion of PHASE_1_SCHEMA_VERSIONS) {
     const contract = schemaVersion.replace("launchrally.dev/", "").replace("/v1", "");
     const schema = JSON.parse(await readFile(
@@ -269,6 +273,13 @@ test("Active verification and interaction contracts keep outcomes typed and envi
     }),
     (error) => error.code === "invalid_handoff_interaction",
   );
+});
+
+test("Composite Assurance is independently versioned and environment-bound", async () => {
+  const assurance = await readFixture("composite-assurance.valid.json");
+  assert.equal(COMPOSITE_ASSURANCE_SCHEMA, "launchrally.dev/composite-assurance/v1");
+  assert.equal(assertValidCompositeAssurance(assurance), true);
+  assert.equal(assurance.architecture_status.independent, true);
 });
 
 test("Task and handoff contracts expose bounded effects while receipts remain claims", async () => {

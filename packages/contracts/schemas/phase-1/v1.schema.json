@@ -988,6 +988,133 @@
       },
       "additionalProperties": false
     },
+    "compositeAssurance": {
+      "type": "object",
+      "required": ["schema_version", "assurance_id", "policy_version", "environment", "source", "capabilities", "launch_assessment", "architecture_status"],
+      "properties": {
+        "schema_version": { "const": "launchrally.dev/composite-assurance/v1" },
+        "assurance_id": { "$ref": "#/$defs/identifier" },
+        "policy_version": { "const": "composite-assurance-policy/v1" },
+        "environment": { "type": "string", "minLength": 1 },
+        "source": {
+          "type": "object",
+          "required": ["capability_graph_id", "architecture_record_id", "integration_contract_ids"],
+          "properties": {
+            "capability_graph_id": { "$ref": "#/$defs/identifier" },
+            "architecture_record_id": { "$ref": "#/$defs/identifier" },
+            "integration_contract_ids": { "$ref": "#/$defs/stringSet" }
+          },
+          "additionalProperties": false
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["capability_id", "environment", "requirement_state", "decision_ref", "implementation_path", "integration_contract_ids", "minimum_assurance", "facets", "assurance_state", "launch_gate"],
+            "properties": {
+              "capability_id": { "$ref": "#/$defs/identifier" },
+              "environment": { "type": "string", "minLength": 1 },
+              "requirement_state": { "enum": ["required", "optional", "deferred", "not_applicable", "unknown"] },
+              "decision_ref": {
+                "type": ["object", "null"],
+                "required": ["decision_id", "decision_revision"],
+                "properties": {
+                  "decision_id": { "$ref": "#/$defs/identifier" },
+                  "decision_revision": { "type": "integer", "minimum": 1 }
+                },
+                "additionalProperties": false
+              },
+              "implementation_path": { "enum": ["application_native", "managed", "existing_platform", "custom", "self_hosted", "deferred", "not_applicable", "unknown"] },
+              "integration_contract_ids": { "$ref": "#/$defs/stringSet" },
+              "minimum_assurance": { "type": ["string", "null"], "enum": ["unverified", "locally_evidenced", "configured_not_deployed", "deployed_not_operationally_verified", "operationally_verified", "outcome_verified", null] },
+              "facets": {
+                "type": "object",
+                "required": ["requirement", "local_implementation", "provider_configuration", "integration_consistency", "deployment", "operational_delivery", "downstream_outcome"],
+                "properties": {
+                  "requirement": { "$ref": "#/$defs/assuranceFacet" },
+                  "local_implementation": { "$ref": "#/$defs/assuranceFacet" },
+                  "provider_configuration": { "$ref": "#/$defs/assuranceFacet" },
+                  "integration_consistency": { "$ref": "#/$defs/assuranceFacet" },
+                  "deployment": { "$ref": "#/$defs/assuranceFacet" },
+                  "operational_delivery": { "$ref": "#/$defs/assuranceFacet" },
+                  "downstream_outcome": { "$ref": "#/$defs/assuranceFacet" }
+                },
+                "additionalProperties": false
+              },
+              "assurance_state": { "enum": ["unverified", "locally_evidenced", "configured_not_deployed", "deployed_not_operationally_verified", "operationally_verified", "outcome_verified"] },
+              "launch_gate": {
+                "type": "object",
+                "required": ["gating", "satisfied"],
+                "properties": {
+                  "gating": { "type": "boolean" },
+                  "satisfied": { "type": "boolean" }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "launch_assessment": {
+          "type": "object",
+          "required": ["assessment", "gating_capability_ids", "failed_check_ids", "verification_gap_check_ids"],
+          "properties": {
+            "assessment": { "enum": ["launch_ready", "ready_with_warnings", "no_go", "inconclusive"] },
+            "gating_capability_ids": { "$ref": "#/$defs/stringSet" },
+            "failed_check_ids": { "$ref": "#/$defs/stringSet" },
+            "verification_gap_check_ids": { "$ref": "#/$defs/stringSet" }
+          },
+          "additionalProperties": false
+        },
+        "architecture_status": {
+          "type": "object",
+          "required": ["independent", "architecture_record_id"],
+          "properties": {
+            "independent": { "const": true },
+            "architecture_record_id": { "$ref": "#/$defs/identifier" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "assuranceFacet": {
+      "type": "object",
+      "required": ["layer", "status", "check_refs", "evidence_refs"],
+      "properties": {
+        "layer": { "enum": ["requirement", "local_implementation", "provider_configuration", "integration_consistency", "deployment", "operational_delivery", "downstream_outcome"] },
+        "status": { "enum": ["passed", "failed", "unverified", "not_applicable"] },
+        "check_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["check_id", "check_version", "status"],
+            "properties": {
+              "check_id": { "type": "string", "minLength": 1 },
+              "check_version": { "type": "integer", "minimum": 1 },
+              "status": { "enum": ["passed", "failed", "unverified", "not_applicable"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "evidence_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["digest", "source", "target", "environment"],
+            "properties": {
+              "digest": { "$ref": "#/$defs/digest" },
+              "source": { "type": "string", "minLength": 1 },
+              "target": { "type": "string", "minLength": 1 },
+              "environment": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "architectureStatus": {
       "type": "object",
       "required": ["schema_version", "status_id", "architecture_record", "environment", "currentness", "summary", "decision_states", "unknowns", "launch_assessment"],

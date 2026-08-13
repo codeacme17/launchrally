@@ -76,6 +76,7 @@ export const ACTIVE_VERIFICATION_REQUEST_SCHEMA =
 export const ACTIVE_VERIFICATION_RESULT_SCHEMA =
   "launchrally.dev/active-verification-result/v1";
 export const ARCHITECTURE_STATUS_SCHEMA = "launchrally.dev/architecture-status/v1";
+export const COMPOSITE_ASSURANCE_SCHEMA = "launchrally.dev/composite-assurance/v1";
 export const ARCHITECT_INTERACTION_SCHEMA =
   "launchrally.dev/architect-interaction/v1";
 export const HANDOFF_INTERACTION_SCHEMA = "launchrally.dev/handoff-interaction/v1";
@@ -94,6 +95,7 @@ export const PHASE_1_SCHEMA_VERSIONS = Object.freeze([
   EXECUTION_RECEIPT_SCHEMA,
   ACTIVE_VERIFICATION_REQUEST_SCHEMA,
   ACTIVE_VERIFICATION_RESULT_SCHEMA,
+  COMPOSITE_ASSURANCE_SCHEMA,
   ARCHITECTURE_STATUS_SCHEMA,
   ARCHITECT_INTERACTION_SCHEMA,
   HANDOFF_INTERACTION_SCHEMA,
@@ -942,6 +944,111 @@ export function assertValidArchitectureStatus(status) {
   return true;
 }
 
+export function assertValidCompositeAssurance(assurance) {
+  const capabilityIds = assurance?.capabilities?.map(
+    ({ capability_id: capabilityId }) => capabilityId,
+  ) ?? [];
+  const assuranceStates = [
+    "unverified",
+    "locally_evidenced",
+    "configured_not_deployed",
+    "deployed_not_operationally_verified",
+    "operationally_verified",
+    "outcome_verified",
+  ];
+  const facetPassed = (facets, layer) =>
+    ["passed", "not_applicable"].includes(facets[layer].status);
+  const expectedAssurance = (capability) => {
+    if (["deferred", "not_applicable"].includes(capability.requirement_state)) {
+      return "unverified";
+    }
+    const { facets } = capability;
+    if (!facetPassed(facets, "requirement") || !facetPassed(facets, "local_implementation")) {
+      return "unverified";
+    }
+    let state = "locally_evidenced";
+    if (
+      !facetPassed(facets, "provider_configuration")
+      || !facetPassed(facets, "integration_consistency")
+    ) return state;
+    if (["managed", "existing_platform"].includes(capability.implementation_path)) {
+      state = "configured_not_deployed";
+    }
+    if (!facetPassed(facets, "deployment")) return state;
+    state = "deployed_not_operationally_verified";
+    if (!facetPassed(facets, "operational_delivery")) return state;
+    state = "operationally_verified";
+    return facetPassed(facets, "downstream_outcome") ? "outcome_verified" : state;
+  };
+  const expectedGatingIds = assurance?.capabilities?.filter(
+    ({ requirement_state: requirementState }) => requirementState === "required",
+  ).map(({ capability_id: capabilityId }) => capabilityId) ?? [];
+  const expectedCheckIds = (status) => [...new Set(assurance?.capabilities?.flatMap(
+    ({ facets }) => Object.values(facets).flatMap(({ check_refs: references }) => references),
+  ).filter((reference) => reference.status === status)
+    .map(({ check_id: checkId }) => checkId) ?? [])];
+  const gatingCapabilities = assurance?.capabilities?.filter(
+    ({ launch_gate: launchGate }) => launchGate.gating,
+  ) ?? [];
+  const gatingFailed = gatingCapabilities.some(({ facets }) =>
+    Object.values(facets).some(({ status }) => status === "failed"));
+  const gatingUnsatisfied = gatingCapabilities.some(
+    ({ launch_gate: launchGate }) => !launchGate.satisfied,
+  );
+  const nonGatingWarning = assurance?.capabilities?.filter(
+    ({ launch_gate: launchGate }) => !launchGate.gating,
+  ).some(({ facets }) => Object.values(facets)
+    .some(({ status }) => ["failed", "unverified"].includes(status)));
+  const expectedAssessment = gatingFailed
+    ? "no_go"
+    : gatingUnsatisfied
+      ? "inconclusive"
+      : nonGatingWarning
+        ? "ready_with_warnings"
+        : "launch_ready";
+  const validCapabilities = assurance?.capabilities?.every((capability) => {
+    const facetEntries = Object.entries(capability.facets);
+    const expectedState = expectedAssurance(capability);
+    const expectedGating = capability.requirement_state === "required";
+    const expectedSatisfied = capability.minimum_assurance === null
+      || assuranceStates.indexOf(expectedState)
+        >= assuranceStates.indexOf(capability.minimum_assurance);
+    return capability.environment === assurance.environment
+      && facetEntries.every(([layer, facet]) => facet.layer === layer)
+      && facetEntries.flatMap(([, facet]) => facet.evidence_refs)
+        .every((evidence) => evidence.environment === assurance.environment)
+      && capability.assurance_state === expectedState
+      && capability.launch_gate.gating === expectedGating
+      && capability.launch_gate.satisfied === expectedSatisfied
+      && (expectedGating
+        ? capability.minimum_assurance !== null
+        : capability.minimum_assurance === null);
+  });
+  const valid = validatesSchema(
+    assurance,
+    phase1Schema.$defs.compositeAssurance,
+    phase1Schema,
+  )
+    && capabilityIds.length === new Set(capabilityIds).size
+    && validCapabilities
+    && assurance.architecture_status.architecture_record_id
+      === assurance.source.architecture_record_id
+    && JSON.stringify(assurance.launch_assessment.gating_capability_ids)
+      === JSON.stringify(expectedGatingIds)
+    && JSON.stringify(assurance.launch_assessment.failed_check_ids)
+      === JSON.stringify(expectedCheckIds("failed"))
+    && JSON.stringify(assurance.launch_assessment.verification_gap_check_ids)
+      === JSON.stringify(expectedCheckIds("unverified"))
+    && assurance.launch_assessment.assessment === expectedAssessment
+    && !hasPersistedSensitivePayload(assurance);
+  if (!valid) {
+    const error = new Error("The Composite Assurance is incomplete or invalid.");
+    error.code = "invalid_composite_assurance";
+    throw error;
+  }
+  return true;
+}
+
 function assertValidPhase1Interaction(interaction, operation, schemaVersion, errorCode) {
   const operationStates = {
     architect: new Set([
@@ -1067,6 +1174,7 @@ const PHASE_1_VALIDATORS = Object.freeze({
   [EXECUTION_RECEIPT_SCHEMA]: assertValidExecutionReceipt,
   [ACTIVE_VERIFICATION_REQUEST_SCHEMA]: assertValidActiveVerificationRequest,
   [ACTIVE_VERIFICATION_RESULT_SCHEMA]: assertValidActiveVerificationResult,
+  [COMPOSITE_ASSURANCE_SCHEMA]: assertValidCompositeAssurance,
   [ARCHITECTURE_STATUS_SCHEMA]: assertValidArchitectureStatus,
   [ARCHITECT_INTERACTION_SCHEMA]: assertValidArchitectInteraction,
   [HANDOFF_INTERACTION_SCHEMA]: assertValidHandoffInteraction,
