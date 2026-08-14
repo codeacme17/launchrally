@@ -1,13 +1,18 @@
+import { execFile } from "node:child_process";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootOption = process.argv.indexOf("--root");
 const root = rootOption === -1
   ? scriptRoot
   : path.resolve(process.argv[rootOption + 1] ?? "");
+const baselineRefOption = process.argv.indexOf("--baseline-ref");
+const baselineRef = baselineRefOption === -1 ? null : process.argv[baselineRefOption + 1];
+const execFileAsync = promisify(execFile);
 const AUTHORITY_SCOPES = new Set([
   "active_verification",
   "architecture_recommendation",
@@ -18,6 +23,13 @@ const AUTHORITY_SCOPES = new Set([
   "p1_persistence",
   "provider_recommendation",
   "reference_coverage",
+]);
+const MANDATORY_P1_GATES = Object.freeze([
+  "p1_traceability",
+  "p1_quality_floor",
+  "p1_supply_chain",
+  "p1_exact_artifacts",
+  "p1_external_verification",
 ]);
 
 function fail(code, detail) {
@@ -76,14 +88,85 @@ function expandedScript(scripts, name, visiting = new Set()) {
   return [command, ...nested].join("\n");
 }
 
+function isMidnightIsoTimestamp(value) {
+  const timestamp = Date.parse(value);
+  return typeof value === "string"
+    && /^\d{4}-\d{2}-\d{2}T00:00:00\.000Z$/u.test(value)
+    && Number.isFinite(timestamp)
+    && new Date(timestamp).toISOString() === value;
+}
+
+function isNonEmptyRecord(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function assertRegressionRegistry(registry) {
+  if (
+    registry?.schema_version !== "launchrally.dev/p1-regression-registry/v1"
+    || !Array.isArray(registry.assignments)
+  ) fail("p1_invalid_regression_registry", "release/p1-regression-registry.json");
+  const ids = new Set();
+  for (const assignment of registry.assignments) {
+    if (
+      !/^P1-REG-[0-9]{4}$/u.test(assignment?.regression_id ?? "")
+      || ids.has(assignment.regression_id)
+      || !/^P1-QF-(?:0[1-9]|1[0-4])$/u.test(assignment.condition_id ?? "")
+      || !Array.isArray(assignment.authority_scopes)
+      || assignment.authority_scopes.length === 0
+      || assignment.authority_scopes.some((scope) => !AUTHORITY_SCOPES.has(scope))
+    ) fail("p1_invalid_regression_registry", assignment?.regression_id ?? "missing");
+    ids.add(assignment.regression_id);
+  }
+}
+
+async function baselineRegressionRegistry() {
+  if (baselineRef === null) return null;
+  if (!isNonEmptyRecord(baselineRef)) fail("p1_invalid_baseline_ref", "missing ref");
+  try {
+    await execFileAsync("git", ["rev-parse", "--verify", `${baselineRef}^{commit}`], { cwd: root });
+  } catch {
+    fail("p1_invalid_baseline_ref", baselineRef);
+  }
+  try {
+    const { stdout } = await execFileAsync(
+      "git",
+      ["show", `${baselineRef}:release/p1-regression-registry.json`],
+      { cwd: root },
+    );
+    return JSON.parse(stdout);
+  } catch (error) {
+    if (/does not exist|exists on disk, but not in/iu.test(error.stderr ?? "")) {
+      return {
+        schema_version: "launchrally.dev/p1-regression-registry/v1",
+        assignments: [],
+      };
+    }
+    fail("p1_invalid_regression_registry", `baseline ${baselineRef}`);
+  }
+}
+
 export async function validateP1() {
-  const [contract, matrix, p0, packageJson, markdown] = await Promise.all([
+  const [contract, matrix, regressionRegistry, p0, packageJson, markdown, baselineRegistry] = await Promise.all([
     json("release/p1.json"),
     json("release/p1-acceptance.json"),
+    json("release/p1-regression-registry.json"),
     json("release/p0.json"),
     json("package.json"),
     readFile(path.join(root, "docs/maintainers/p1-acceptance.md"), "utf8"),
+    baselineRegressionRegistry(),
   ]);
+  assertRegressionRegistry(regressionRegistry);
+  if (baselineRegistry !== null) {
+    assertRegressionRegistry(baselineRegistry);
+    if (regressionRegistry.assignments.length < baselineRegistry.assignments.length) {
+      fail("p1_regression_history_changed", "reviewed assignments were deleted");
+    }
+    for (const [index, assignment] of baselineRegistry.assignments.entries()) {
+      if (JSON.stringify(regressionRegistry.assignments[index]) !== JSON.stringify(assignment)) {
+        fail("p1_regression_history_changed", `assignment ${index} changed`);
+      }
+    }
+  }
   if (
     contract.schema_version !== "launchrally.dev/p1-release/v1"
     || contract.phase !== "p1"
@@ -92,6 +175,7 @@ export async function validateP1() {
     || !["experimental", "stable"].includes(contract.release_status)
     || !["published", "not_published"].includes(contract.publication_status)
     || !["not_validated", "validated"].includes(contract.validation_status)
+    || !isMidnightIsoTimestamp(contract.supply_chain_assessment_at)
   ) fail("p1_invalid_identity", "release/p1.json");
   if (
     p0.schema_version !== "launchrally.dev/p0-release/v1"
@@ -101,21 +185,13 @@ export async function validateP1() {
     || contract.p0_stable_ref?.release_status !== p0.release_status
   ) fail("p1_p0_independence_violation", "P0 Stable is not an independently bound input");
   if (
+    JSON.stringify(contract.mandatory_release_gate_ids)
+      !== JSON.stringify(MANDATORY_P1_GATES)
+  ) fail("p1_invalid_canonical_gates", "release/p1.json");
+  if (
     matrix.product_status !== contract.product_status
     || matrix.release_status !== contract.release_status
   ) fail("p1_status_drift", "release/p1.json and release/p1-acceptance.json");
-  if (
-    contract.release_status === "stable"
-    && (
-      contract.product_status !== "complete"
-      || contract.publication_status !== "published"
-      || contract.validation_status !== "validated"
-      || contract.quality_floor_status !== "satisfied"
-      || contract.stable_promotion?.status !== "approved"
-      || typeof contract.stable_promotion.approved_tag !== "string"
-    )
-  ) fail("p1_stable_promotion_blocked", "P1 has no separate approved Stable promotion");
-
   const canonical = contract.acceptance_requirement_ids;
   if (!Array.isArray(canonical) || new Set(canonical).size !== canonical.length) {
     fail("p1_invalid_canonical_ids", "release/p1.json");
@@ -179,7 +255,7 @@ export async function validateP1() {
     } else fail("p1_invalid_gate", gate.id);
     gates.set(gate.id, gate);
   }
-  for (const id of contract.mandatory_release_gate_ids ?? []) {
+  for (const id of contract.mandatory_release_gate_ids) {
     if (!gates.has(id)) fail("p1_missing_gate", id);
   }
   for (const requirement of requirements.values()) {
@@ -189,6 +265,11 @@ export async function validateP1() {
   }
 
   const suspended = new Set();
+  const regressionIds = new Set();
+  const registryAssignments = new Map(regressionRegistry.assignments.map((assignment) => [
+    assignment.regression_id,
+    assignment,
+  ]));
   const conditions = matrix.quality_floor ?? [];
   if (
     conditions.length !== 14
@@ -203,6 +284,16 @@ export async function validateP1() {
     ) fail("p1_invalid_quality_floor", condition.id);
     let active = false;
     for (const regression of condition.regressions) {
+      if (regressionIds.has(regression.regression_id)) {
+        fail("p1_duplicate_regression", regression.regression_id);
+      }
+      regressionIds.add(regression.regression_id);
+      const assignment = registryAssignments.get(regression.regression_id);
+      if (
+        assignment?.condition_id !== condition.id
+        || JSON.stringify(assignment.authority_scopes)
+          !== JSON.stringify(regression.affected_authority_scopes)
+      ) fail("p1_unregistered_regression", regression.regression_id);
       if (
         !/^P1-REG-[0-9]{4}$/u.test(regression.regression_id ?? "")
         || !["open", "fixed", "restored"].includes(regression.status)
@@ -218,13 +309,13 @@ export async function validateP1() {
         }
         active = true;
       } else if (regression.status === "fixed") {
-        if (typeof regression.reviewed_fix !== "string" || regression.restoration !== null) {
+        if (!isNonEmptyRecord(regression.reviewed_fix) || regression.restoration !== null) {
           fail("p1_invalid_regression", regression.regression_id);
         }
         active = true;
       } else if (
-        typeof regression.reviewed_fix !== "string"
-        || typeof regression.restoration !== "string"
+        !isNonEmptyRecord(regression.reviewed_fix)
+        || !isNonEmptyRecord(regression.restoration)
       ) fail("p1_invalid_regression", regression.regression_id);
       if (regression.status !== "restored") {
         for (const scope of regression.affected_authority_scopes) suspended.add(scope);
@@ -234,14 +325,61 @@ export async function validateP1() {
       fail("p1_quality_floor_status_drift", condition.id);
     }
   }
+  for (const regressionId of registryAssignments.keys()) {
+    if (!regressionIds.has(regressionId)) {
+      fail("p1_regression_history_changed", `${regressionId} is missing from the Quality Floor`);
+    }
+  }
   const qualityFloorStatus = suspended.size === 0 ? "satisfied" : "suspended";
-  if (
-    suspended.size === 0
-    && contract.quality_floor_status !== "satisfied"
-  ) fail("p1_quality_floor_status_drift", "release/p1.json");
+  if (contract.quality_floor_status !== qualityFloorStatus) {
+    fail(
+      "p1_quality_floor_status_drift",
+      `release/p1.json declares ${contract.quality_floor_status}; derived ${qualityFloorStatus}`,
+    );
+  }
 
   const statuses = { complete: 0, open: 0, total: requirements.size };
   for (const requirement of requirements.values()) statuses[requirement.status] += 1;
+  const openRequirements = [...requirements.values()]
+    .filter(({ status }) => status !== "complete")
+    .map(({ id }) => id);
+  const pendingGates = [...gates.values()]
+    .filter(({ status }) => status !== "complete")
+    .map(({ id }) => id);
+  const completionBlockers = [
+    openRequirements.length > 0 ? `open requirements: ${openRequirements.join(", ")}` : null,
+    pendingGates.length > 0 ? `pending gates: ${pendingGates.join(", ")}` : null,
+    qualityFloorStatus !== "satisfied" ? "Quality Floor is suspended" : null,
+  ].filter(Boolean);
+  if (
+    contract.product_status === "complete"
+    && contract.release_status !== "stable"
+    && completionBlockers.length > 0
+  ) {
+    fail("p1_product_completion_blocked", completionBlockers.join("; "));
+  }
+  if (contract.release_status === "stable") {
+    const expectedTag = `v${packageJson.version}`;
+    const tagGatePassed = contract.stable_promotion?.approved_tag === expectedTag;
+    const scalarGatePassed = contract.product_status === "complete"
+      && contract.publication_status === "published"
+      && contract.validation_status === "validated"
+      && qualityFloorStatus === "satisfied"
+      && contract.stable_promotion?.status === "approved"
+      && tagGatePassed;
+    if (!scalarGatePassed || completionBlockers.length > 0) {
+      fail(
+        "p1_stable_promotion_blocked",
+        [
+          "P1 has no separate approved Stable promotion",
+          !tagGatePassed
+            ? `approved tag ${contract.stable_promotion?.approved_tag ?? "missing"}; expected ${expectedTag}`
+            : null,
+          ...completionBlockers,
+        ].filter(Boolean).join("; "),
+      );
+    }
+  }
   return {
     status: "completed",
     schema_version: contract.schema_version,

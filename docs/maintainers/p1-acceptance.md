@@ -66,7 +66,10 @@ conditions (`P1-QF-01` through `P1-QF-14`). A regression uses a stable
 `P1-REG-NNNN` ID and names only the affected authority scopes. An open or
 fixed-but-not-restored regression suspends those scopes without changing P0
 or unrelated P1 authorities. Restoration requires both a reviewed fix record
-and a restoration record before the condition returns to `satisfied`.
+and a restoration record before the condition returns to `satisfied`. Every
+ID-to-condition/scope assignment is reserved in the append-only
+`release/p1-regression-registry.json`; CI compares that registry with the
+reviewed Git base so restored IDs cannot be deleted and reused.
 
 ## Mandatory gates
 
@@ -76,4 +79,7 @@ addressable. Cards, Packs, Executor Descriptors, public commands, generated
 copies, effects, exact versions, provenance, platform claims, and any
 authority expansion remain fail-closed under the supply-chain gate. Pending
 exact-artifact and external-verification gates keep P1 incomplete even while
-completed P0 behavior stays available.
+completed P0 behavior stays available. Supply-chain freshness is evaluated at
+the explicit `supply_chain_assessment_at` timestamp in `release/p1.json`, and
+release validation requires that timestamp to match its current UTC date. A
+historical assessment cannot authorize a later publication.

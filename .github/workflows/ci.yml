@@ -73,10 +73,16 @@ jobs:
         run: git fetch origin "$GITHUB_BASE_REF" --depth=1
       - if: github.event_name == 'pull_request'
         run: npm run validate:p0 -- --baseline-ref "origin/$GITHUB_BASE_REF"
+      - if: github.event_name == 'pull_request'
+        run: npm run validate:p1 -- --baseline-ref "origin/$GITHUB_BASE_REF"
       - if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
         run: git fetch origin "${{ github.event.before }}" --depth=1
       - if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
         run: npm run validate:p0 -- --baseline-ref "${{ github.event.before }}"
+      - if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        run: npm run validate:p1 -- --baseline-ref "${{ github.event.before }}"
       - if: github.event_name == 'push' && github.event.before == '0000000000000000000000000000000000000000'
         run: npm run validate:p0
+      - if: github.event_name == 'push' && github.event.before == '0000000000000000000000000000000000000000'
+        run: npm run validate:p1
       - run: npm run validate:release

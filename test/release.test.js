@@ -292,7 +292,7 @@ test("release validation rejects a stale generated Provider recovery route", asy
   );
 });
 
-test("release validation rejects untrusted Pack Executor bindings and Phase 1 command drift", async () => {
+test("release validation rejects untrusted Pack Executor bindings and authority expansion", async () => {
   const packFixture = await createReleaseFixture();
   const packPath = path.join(
     packFixture,
@@ -317,6 +317,116 @@ test("release validation rejects untrusted Pack Executor bindings and Phase 1 co
   await writeFile(cardPath, `${JSON.stringify(card, null, 2)}\n`);
   await assertReleaseValidationFailure(cardFixture, /p1_provider_card_provenance_invalid/u);
 
+  const sameHostCardFixture = await createReleaseFixture();
+  const sameHostCardPath = path.join(
+    sameHostCardFixture,
+    "packages/core/provider-decision-cards/v1/vercel.json",
+  );
+  const sameHostCard = JSON.parse(await readFile(sameHostCardPath, "utf8"));
+  sameHostCard.official_sources[0].url = "https://vercel.com/unreviewed";
+  await writeFile(sameHostCardPath, `${JSON.stringify(sameHostCard, null, 2)}\n`);
+  await assertReleaseValidationFailure(
+    sameHostCardFixture,
+    /p1_provider_card_provenance_invalid/u,
+  );
+
+  const extraCardFixture = await createReleaseFixture();
+  const extraCardSourcePath = path.join(
+    extraCardFixture,
+    "packages/core/provider-decision-cards/v1/vercel.json",
+  );
+  const extraCard = JSON.parse(await readFile(extraCardSourcePath, "utf8"));
+  extraCard.card_id = "managed-web-delivery.unreviewed";
+  extraCard.provider.id = "unreviewed";
+  extraCard.provider.display_name = "Unreviewed";
+  await writeFile(
+    path.join(extraCardFixture, "packages/core/provider-decision-cards/v1/unreviewed.json"),
+    `${JSON.stringify(extraCard, null, 2)}\n`,
+  );
+  await assertReleaseValidationFailure(
+    extraCardFixture,
+    /p1_provider_card_registry_invalid/u,
+  );
+
+  const descriptorFixture = await createReleaseFixture();
+  const descriptorPath = path.join(
+    descriptorFixture,
+    "packages/core/src/reference-executors.js",
+  );
+  const descriptorSource = await readFile(descriptorPath, "utf8");
+  await writeFile(
+    descriptorPath,
+    descriptorSource.replace('      "credential_persistence",\n', ""),
+  );
+  await assertReleaseValidationFailure(
+    descriptorFixture,
+    /p1_executor_descriptor_authority_invalid/u,
+  );
+
+  const staleAuthorityFixture = await createReleaseFixture();
+  const staleAuthorityPath = path.join(
+    staleAuthorityFixture,
+    "packages/core/executor-installation/v1/authority.json",
+  );
+  const staleAuthority = JSON.parse(await readFile(staleAuthorityPath, "utf8"));
+  staleAuthority[0].expires_at = "2026-08-14";
+  await writeFile(staleAuthorityPath, `${JSON.stringify(staleAuthority, null, 2)}\n`);
+  await assertReleaseValidationFailure(staleAuthorityFixture, /p1_supply_chain_stale/u);
+
+  const authoritySourceFixture = await createReleaseFixture();
+  const authoritySourcePath = path.join(
+    authoritySourceFixture,
+    "packages/core/executor-installation/v1/authority.json",
+  );
+  const authoritySource = JSON.parse(await readFile(authoritySourcePath, "utf8"));
+  authoritySource[0].official_source.title = "Unreviewed source title";
+  await writeFile(authoritySourcePath, `${JSON.stringify(authoritySource, null, 2)}\n`);
+  await assertReleaseValidationFailure(
+    authoritySourceFixture,
+    /p1_executor_installation_authority_invalid/u,
+  );
+
+  const semanticPackFixture = await createReleaseFixture();
+  const semanticPackPath = path.join(
+    semanticPackFixture,
+    "packages/core/reference-integration-packs/v1/identity-to-application-data.json",
+  );
+  const semanticPack = JSON.parse(await readFile(semanticPackPath, "utf8"));
+  semanticPack.implementations[0].official_sources[0].title = "Unreviewed semantic change";
+  semanticPack.pack_digest = computeReferenceIntegrationPackDigest(semanticPack);
+  await writeFile(semanticPackPath, `${JSON.stringify(semanticPack, null, 2)}\n`);
+  await assertReleaseValidationFailure(semanticPackFixture, /p1_pack_authority_invalid/u);
+
+  const extraPackFixture = await createReleaseFixture();
+  const reviewedPackPath = path.join(
+    extraPackFixture,
+    "packages/core/reference-integration-packs/v1/identity-to-application-data.json",
+  );
+  await writeFile(
+    path.join(
+      extraPackFixture,
+      "packages/core/reference-integration-packs/v1/unreviewed-extra-pack.json",
+    ),
+    await readFile(reviewedPackPath, "utf8"),
+  );
+  await assertReleaseValidationFailure(extraPackFixture, /p1_pack_registry_invalid/u);
+
+  const historicalAssessmentFixture = await createReleaseFixture();
+  const historicalAssessmentPath = path.join(
+    historicalAssessmentFixture,
+    "release/p1.json",
+  );
+  const historicalAssessment = JSON.parse(await readFile(historicalAssessmentPath, "utf8"));
+  historicalAssessment.supply_chain_assessment_at = "2026-08-13T00:00:00.000Z";
+  await writeFile(
+    historicalAssessmentPath,
+    `${JSON.stringify(historicalAssessment, null, 2)}\n`,
+  );
+  await assertReleaseValidationFailure(
+    historicalAssessmentFixture,
+    /p1_supply_chain_assessment_stale/u,
+  );
+
   const executorFixture = await createReleaseFixture();
   const executorPath = path.join(
     executorFixture,
@@ -327,6 +437,37 @@ test("release validation rejects untrusted Pack Executor bindings and Phase 1 co
   await writeFile(executorPath, `${JSON.stringify(executorAuthority, null, 2)}\n`);
   await assertReleaseValidationFailure(executorFixture, /p1_executor_authority_invalid/u);
 
+  const missingRouteFixture = await createReleaseFixture();
+  const missingRoutePath = path.join(
+    missingRouteFixture,
+    "packages/core/executor-installation/v1/authority.json",
+  );
+  const missingRouteAuthority = JSON.parse(await readFile(missingRoutePath, "utf8"));
+  missingRouteAuthority[0].installation_routes = [];
+  await writeFile(
+    missingRoutePath,
+    `${JSON.stringify(missingRouteAuthority, null, 2)}\n`,
+  );
+  await assertReleaseValidationFailure(missingRouteFixture, /p1_executor_authority_invalid/u);
+
+  const expandedRouteFixture = await createReleaseFixture();
+  const expandedRoutePath = path.join(
+    expandedRouteFixture,
+    "packages/core/executor-installation/v1/authority.json",
+  );
+  const expandedRouteAuthority = JSON.parse(await readFile(expandedRoutePath, "utf8"));
+  expandedRouteAuthority[0].installation_routes[0].command.arguments = [
+    "install",
+    "--global",
+    "--ignore-scripts=false",
+    "@openai/codex@0.147.0",
+  ];
+  await writeFile(
+    expandedRoutePath,
+    `${JSON.stringify(expandedRouteAuthority, null, 2)}\n`,
+  );
+  await assertReleaseValidationFailure(expandedRouteFixture, /p1_executor_authority_invalid/u);
+
   const commandFixture = await createReleaseFixture();
   const commandPath = path.join(
     commandFixture,
@@ -336,6 +477,27 @@ test("release validation rejects untrusted Pack Executor bindings and Phase 1 co
   commands.commands[0].argv.push("--hidden-authority");
   await writeFile(commandPath, `${JSON.stringify(commands, null, 2)}\n`);
   await assertReleaseValidationFailure(commandFixture, /p1_command_matrix_drift/u);
+
+  const expandedCommandFixture = await createReleaseFixture();
+  for (const relativePath of [
+    "skills/launchrally/references/phase-1-command-examples.json",
+    "adapters/claude/launchrally/skills/launchrally/references/phase-1-command-examples.json",
+    "adapters/codex/launchrally/skills/launchrally/references/phase-1-command-examples.json",
+  ]) {
+    const expandedCommandPath = path.join(expandedCommandFixture, relativePath);
+    const expandedCommands = JSON.parse(await readFile(expandedCommandPath, "utf8"));
+    expandedCommands.commands[0].argv.push("--hidden-authority");
+    expandedCommands.commands[0].posix += " --hidden-authority";
+    expandedCommands.commands[0].powershell += " --hidden-authority";
+    await writeFile(
+      expandedCommandPath,
+      `${JSON.stringify(expandedCommands, null, 2)}\n`,
+    );
+  }
+  await assertReleaseValidationFailure(
+    expandedCommandFixture,
+    /p1_command_matrix_invalid/u,
+  );
 });
 
 test("release validation synchronizes CRLF Skill checkouts", async () => {
