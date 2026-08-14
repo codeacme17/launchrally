@@ -6,6 +6,7 @@ import {
   invalidStablePromotionEvidence,
   stablePromotionBlockers,
 } from "./stable-promotion-policy.mjs";
+import { validateP1 } from "./validate-p1.mjs";
 
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootOption = process.argv.indexOf("--root");
@@ -269,6 +270,12 @@ async function validate() {
     }
     if (blockers.length > 0) fail("acceptance_publish_blocked", blockers.join(", "));
   }
+  const validatesP0Lifecycle = [
+    "--require-publish-ready",
+    "--require-release-ready",
+    "--require-stable-ready",
+  ].some((option) => process.argv.includes(option));
+  const p1 = validatesP0Lifecycle ? null : await validateP1();
   return {
     status: "completed",
     schema_version: matrix.schema_version,
@@ -276,6 +283,7 @@ async function validate() {
     release_status: matrix.release_status,
     requirements: statuses,
     release_gates: gateIds.size,
+    ...(p1 ? { p1 } : {}),
   };
 }
 
@@ -284,7 +292,9 @@ try {
   process.stdout.write(
     process.argv.includes("--json")
       ? `${JSON.stringify(result)}\n`
-      : `Validated ${result.requirements.total} P0 requirements and ${result.release_gates} release gates.\n`,
+      : result.p1
+        ? `Validated ${result.requirements.total} P0 requirements, ${result.p1.requirements.total} P1 requirements, and ${result.release_gates + result.p1.release_gates} release gates.\n`
+        : `Validated ${result.requirements.total} P0 requirements and ${result.release_gates} release gates.\n`,
   );
 } catch (error) {
   process.stderr.write(`${error.message}\n`);

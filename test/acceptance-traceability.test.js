@@ -39,6 +39,17 @@ test("the committed P0 matrix maps every normative requirement to executable evi
     release_status: "stable",
     requirements: { complete: 25, open: 0, total: 25 },
     release_gates: 12,
+    p1: {
+      status: "completed",
+      schema_version: "launchrally.dev/p1-release/v1",
+      product_status: "incomplete",
+      release_status: "experimental",
+      quality_floor_status: "satisfied",
+      requirements: { complete: 37, open: 1, total: 38 },
+      release_gates: 5,
+      suspended_authorities: [],
+      p0_release_status: "stable",
+    },
   });
 });
 
@@ -47,19 +58,20 @@ test("Phase 1 requirements map public contracts to executable Core and host jour
   const docs = await readFile(path.join(root, "docs/maintainers/p1-acceptance.md"), "utf8");
 
   assert.equal(matrix.schema_version, "launchrally.dev/p1-acceptance/v1");
-  assert.deepEqual(matrix.requirements.map(({ id }) => id), [
-    "P1-AUTH-01",
-    "P1-COMPAT-01",
-    "P1-ARCH-DESKTOP-01",
-    "P1-HOST-01",
-    "P1-COVERAGE-01",
-    "P1-DOCS-01",
-  ]);
-  assert.ok(matrix.requirements[0].contracts.includes(
+  const contract = JSON.parse(await readFile(path.join(root, "release/p1.json"), "utf8"));
+  assert.deepEqual(
+    matrix.requirements.map(({ id }) => id),
+    contract.acceptance_requirement_ids,
+  );
+  assert.equal(matrix.requirements.length, 38);
+  assert.ok(matrix.requirements.find(({ id }) => id === "P1-AUTH-01").contracts.includes(
     "packages/contracts/schemas/authenticated-journey-evidence/v1.schema.json",
   ));
   for (const requirement of matrix.requirements) {
-    assert.equal(requirement.status, "complete");
+    assert.equal(
+      requirement.status,
+      requirement.id === "P1-RELEASE-01" ? "open" : "complete",
+    );
     for (const relativePath of [
       ...requirement.contracts,
       ...requirement.implementation,
