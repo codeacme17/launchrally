@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { computeReferenceIntegrationPackDigest } from "@launchrally/contracts";
 import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
 import { hasClaudeInstalledPlugin } from "../scripts/native-plugin-state.mjs";
 import { assertNoConsumerInstallScripts } from "../scripts/release-artifact-policy.mjs";
@@ -289,6 +290,32 @@ test("release validation rejects a stale generated Provider recovery route", asy
     fixture,
     /provider_tool_recovery_skill_drift/u,
   );
+});
+
+test("release validation rejects untrusted Pack Executor bindings and Phase 1 command drift", async () => {
+  const packFixture = await createReleaseFixture();
+  const packPath = path.join(
+    packFixture,
+    "packages/core/reference-integration-packs/v1/identity-to-application-data.json",
+  );
+  const pack = JSON.parse(await readFile(packPath, "utf8"));
+  pack.implementations[0].executor_descriptors[0].digest = `sha256:${"0".repeat(64)}`;
+  pack.pack_digest = computeReferenceIntegrationPackDigest(pack);
+  await writeFile(packPath, `${JSON.stringify(pack, null, 2)}\n`);
+  await assertReleaseValidationFailure(
+    packFixture,
+    /p1_pack_executor_binding_invalid/u,
+  );
+
+  const commandFixture = await createReleaseFixture();
+  const commandPath = path.join(
+    commandFixture,
+    "adapters/codex/launchrally/skills/launchrally/references/phase-1-command-examples.json",
+  );
+  const commands = JSON.parse(await readFile(commandPath, "utf8"));
+  commands.commands[0].argv.push("--hidden-authority");
+  await writeFile(commandPath, `${JSON.stringify(commands, null, 2)}\n`);
+  await assertReleaseValidationFailure(commandFixture, /p1_command_matrix_drift/u);
 });
 
 test("release validation synchronizes CRLF Skill checkouts", async () => {

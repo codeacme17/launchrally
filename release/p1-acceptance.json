@@ -1,192 +1,144 @@
 {
   "schema_version": "launchrally.dev/p1-acceptance/v1",
+  "product_status": "incomplete",
+  "release_status": "experimental",
   "requirements": [
     {
-      "id": "P1-AUTH-01",
-      "requirement": "Authenticated Core Journey success and failure become normative Machine Evidence only with exact adapter, fresh permission, exact target, declared collection window, and allowlisted normalized results",
-      "contracts": [
-        "packages/contracts/schemas/authenticated-journey-evidence/v1.schema.json",
-        "packages/contracts/schemas/evidence-index/v1.schema.json",
-        "packages/contracts/schemas/report/v2.schema.json"
-      ],
-      "implementation": [
-        "packages/core/src/authenticated-journeys.js",
-        "packages/core/src/check-catalog.js",
-        "packages/core/src/policy-engine.js"
-      ],
-      "tests": [
-        {
-          "path": "test/phase-1-contracts.test.js",
-          "name": "authenticated Journey success and failure are normative Phase 1 Machine Evidence"
-        },
-        {
-          "path": "test/policy-engine.test.js",
-          "name": "a gating authenticated journey failure is normative Machine Evidence and produces No-Go"
-        },
-        {
-          "path": "test/audit-interaction.test.js",
-          "name": "Audit resumes from typed authenticated results without accepting auth material"
-        },
-        {
-          "path": "test/reference-journey.test.js",
-          "name": "canonical and generated Skills route protected journeys through normalized host results"
-        }
-      ],
-      "tracking": "#135",
-      "status": "complete"
+      "id": "P1-INTENT-01", "requirement": "Product Intent discovery keeps inferred candidates separate from confirmed declarations", "contracts": ["packages/contracts/schemas/product-intent-profile/v1.schema.json"], "implementation": ["packages/core/src/product-intent.js"], "tests": [{"path": "test/product-intent.test.js", "name": "approved semantic analysis produces normalized candidates and a confirmed profile"}], "tracking": "#126", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
     },
     {
-      "id": "P1-COMPAT-01",
-      "requirement": "Initialized Phase 0 projects remain usable until an explicitly confirmed additive, transactional Phase 1 migration preserves every existing Manifest, Report, Evidence, and history record",
-      "contracts": [
-        "packages/contracts/schemas/architect-interaction/v1.schema.json",
-        "packages/contracts/schemas/phase-1-adoption/v1.schema.json",
-        "packages/contracts/schemas/phase-1-migration-preview/v1.schema.json"
-      ],
-      "implementation": [
-        "packages/core/src/architecture-journey.js",
-        "packages/cli/bin/human-architect.js"
-      ],
-      "tests": [
-        {
-          "path": "test/architecture-engine.test.js",
-          "name": "first Architect use previews additive P1 adoption and denial preserves P0 bytes"
-        },
-        {
-          "path": "test/architecture-engine.test.js",
-          "name": "confirmed P1 adoption commits atomically and interruption preserves the P0 project"
-        }
-      ],
-      "tracking": "#136",
-      "status": "complete"
+      "id": "P1-INTENT-02", "requirement": "Product Intent discovery completes with or without selected product materials", "contracts": ["packages/contracts/schemas/product-intent-profile/v1.schema.json"], "implementation": ["packages/core/src/product-intent.js"], "tests": [{"path": "test/product-intent.test.js", "name": "discovery completes without a PRD and after semantic permission denial"}], "tracking": "#126", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
     },
     {
-      "id": "P1-ARCH-DESKTOP-01",
-      "requirement": "Desktop shared-backend architecture is typed while distribution readiness remains explicitly excluded",
-      "contracts": [
-        "packages/contracts/schemas/desktop-shared-backend/v1.schema.json"
-      ],
-      "implementation": [
-        "packages/core/src/architecture-engine.js",
-        "packages/cli/bin/engine.js"
-      ],
-      "tests": [
-        {
-          "path": "test/architecture-engine.test.js",
-          "name": "desktop shared-backend assessment keeps distribution readiness explicitly Unknown"
-        }
-      ],
-      "tracking": "#136",
-      "status": "complete"
+      "id": "P1-INTENT-03", "requirement": "Confirmed hard constraints and preferences remain independently queryable", "contracts": ["packages/contracts/schemas/product-intent-profile/v1.schema.json"], "implementation": ["packages/core/src/product-intent.js"], "tests": [{"path": "test/product-intent.test.js", "name": "conflicting materials and user-declared no-PRD behavior remain separately queryable"}], "tracking": "#126", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
     },
     {
-      "id": "P1-HOST-01",
-      "requirement": "Codex and Claude resume Architecture and Handoff state from exact digest-bound local artifacts without prose reconstruction",
-      "contracts": [
-        "packages/contracts/schemas/host-resume-artifact/v1.schema.json"
-      ],
-      "implementation": [
-        "packages/core/src/host-resume.js",
-        "adapters/codex/launchrally/host-adapter/resume.js",
-        "adapters/claude/launchrally/host-adapter/resume.js"
-      ],
-      "tests": [
-        {
-          "path": "test/architecture-engine.test.js",
-          "name": "Codex Architecture state resumes in Claude from one validated local artifact"
-        },
-        {
-          "path": "test/handoff.test.js",
-          "name": "Claude Handoff state resumes in Codex from one validated local artifact"
-        }
-      ],
-      "tracking": "#136",
-      "status": "complete"
+      "id": "P1-SCAN-01", "requirement": "Semantic material reads require an explicit fresh permission", "contracts": ["packages/contracts/schemas/product-intent-profile/v1.schema.json"], "implementation": ["packages/core/src/product-intent.js"], "tests": [{"path": "test/product-intent.test.js", "name": "Product Intent discovery requests semantic permission before reading selected material"}], "tracking": "#126", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
     },
     {
-      "id": "P1-COVERAGE-01",
-      "requirement": "Five representative product shapes and eight integration families preserve Provider-neutral semantics across reviewed managed implementations and honest generic fallbacks",
-      "contracts": [
-        "packages/contracts/schemas/reference-integration-pack/v1.schema.json",
-        "packages/contracts/schemas/executor-descriptor/v1.schema.json"
-      ],
-      "implementation": [
-        "packages/core/src/reference-integration-packs.js",
-        "packages/core/src/reference-executors.js",
-        "packages/core/src/reference-journey.js",
-        "packages/core/reference-integration-packs/v1/identity-to-application-data.json",
-        "scripts/test-release-artifacts.mjs"
-      ],
-      "tests": [
-        {
-          "path": "test/reference-packs.test.js",
-          "name": "reference packs cover every product shape and integration family without Provider semantics"
-        },
-        {
-          "path": "test/reference-packs.test.js",
-          "name": "reference Executors use exact reviewed tools, effects, and tamper-bound descriptors"
-        },
-        {
-          "path": "test/reference-packs.test.js",
-          "name": "reference journeys preserve complete, partial, denied, unknown, stale, success, and failure"
-        },
-        {
-          "path": "test/reference-packs.test.js",
-          "name": "Codex and Claude reference journeys keep receipts as claims before fresh verification"
-        },
-        {
-          "path": "test/reference-packs.test.js",
-          "name": "every family and managed implementation exercises partial and unavailable Executor paths"
-        },
-        {
-          "path": "test/release.test.js",
-          "name": "packed artifacts complete installation, delegation, lifecycle, and full verification journeys"
-        }
-      ],
-      "tracking": "#137",
-      "status": "complete"
+      "id": "P1-SCAN-02", "requirement": "Unsupported semantic material remains explicit partial coverage", "contracts": ["packages/contracts/schemas/product-intent-profile/v1.schema.json"], "implementation": ["packages/core/src/product-intent.js"], "tests": [{"path": "test/product-intent.test.js", "name": "unsupported selected material preserves partial coverage and cannot prove absence"}], "tracking": "#126", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
     },
     {
-      "id": "P1-DOCS-01",
-      "requirement": "Agent and Human users can identify every read, persistence, external effect, receipt, and fresh verification boundary while following shell-portable commands from exact packed Skills",
-      "contracts": [
-        "packages/contracts/schemas/cli/v2.schema.json",
-        "packages/contracts/schemas/architect-interaction/v1.schema.json",
-        "packages/contracts/schemas/handoff-interaction/v1.schema.json",
-        "packages/contracts/schemas/verify-interaction/v2.schema.json"
-      ],
-      "implementation": [
-        "docs/getting-started/phase-1.md",
-        "skills/launchrally/references/phase-1-journey.md",
-        "skills/launchrally/references/phase-1-command-examples.json",
-        "adapters/codex/launchrally/host-adapter/product-intent.js",
-        "adapters/claude/launchrally/host-adapter/product-intent.js",
-        "scripts/test-release-artifacts.mjs"
-      ],
-      "tests": [
-        {
-          "path": "test/phase-1-documentation.test.js",
-          "name": "the public Phase 1 guide explains authority before the complete journey"
-        },
-        {
-          "path": "test/phase-1-documentation.test.js",
-          "name": "documented Phase 1 commands are equivalent across POSIX and PowerShell"
-        },
-        {
-          "path": "test/phase-1-documentation.test.js",
-          "name": "the canonical Skill routes the complete Phase 1 typed journey"
-        },
-        {
-          "path": "test/phase-1-documentation.test.js",
-          "name": "Codex and Claude expose the same typed no-PRD Product Intent entry"
-        },
-        {
-          "path": "test/release.test.js",
-          "name": "packed artifacts complete installation, delegation, lifecycle, and full verification journeys"
-        }
-      ],
-      "tracking": "#138",
-      "status": "complete"
+      "id": "P1-SCAN-03", "requirement": "Scan observations never silently become declared intent or composite assurance", "contracts": ["packages/contracts/schemas/composite-assurance/v1.schema.json"], "implementation": ["packages/core/src/composite-assurance.js"], "tests": [{"path": "test/composite-assurance.test.js", "name": "cross-environment or incomplete negative observations remain Unverified"}], "tracking": "#133", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-CAPABILITY-01", "requirement": "The Provider-neutral Capability Catalog independently versions all launch domains", "contracts": ["packages/contracts/schemas/capability-catalog/v1.schema.json"], "implementation": ["packages/core/src/capability-model.js"], "tests": [{"path": "test/capability-model.test.js", "name": "the core Capability Catalog independently versions all 13 launch domains"}], "tracking": "#127", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-CAPABILITY-02", "requirement": "Capability requirements, configuration, operation, and outcomes remain orthogonal", "contracts": ["packages/contracts/schemas/capability-graph/v1.schema.json"], "implementation": ["packages/core/src/capability-model.js"], "tests": [{"path": "test/capability-model.test.js", "name": "the graph keeps four state facets orthogonal and obligations inspectable"}], "tracking": "#127", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-INTEGRATION-01", "requirement": "Integration Contracts remain Provider-neutral and versioned", "contracts": ["packages/contracts/schemas/integration-contract/v1.schema.json"], "implementation": ["packages/core/src/capability-model.js"], "tests": [{"path": "test/capability-model.test.js", "name": "Provider-neutral Integration Contracts cover sync and async semantics"}], "tracking": "#127", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-INTEGRATION-02", "requirement": "Synchronous and asynchronous success conditions require truthful downstream observations", "contracts": ["packages/contracts/schemas/active-verification-result/v2.schema.json"], "implementation": ["packages/core/src/active-verification.js"], "tests": [{"path": "test/active-verification.test.js", "name": "an accepted transport response cannot prove an asynchronous business outcome"}], "tracking": "#134", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-ARCH-01", "requirement": "Architect requires current whole-product inputs before recommendation", "contracts": ["packages/contracts/schemas/architecture-blueprint/v1.schema.json"], "implementation": ["packages/core/src/architecture-engine.js"], "tests": [{"path": "test/architecture-engine.test.js", "name": "Architect requires a current full Report and produces the whole Blueprint first"}], "tracking": "#128", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-ARCH-02", "requirement": "Architecture recommendations never violate confirmed hard constraints", "contracts": ["packages/contracts/schemas/architecture-blueprint/v1.schema.json"], "implementation": ["packages/core/src/architecture-engine.js"], "tests": [{"path": "test/architecture-engine.test.js", "name": "hard-constraint violations are excluded and never recommended"}], "tracking": "#128", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-ARCH-03", "requirement": "Architecture alternatives preserve explainable replacement rationale", "contracts": ["packages/contracts/schemas/architecture-blueprint/v1.schema.json"], "implementation": ["packages/core/src/architecture-engine.js"], "tests": [{"path": "test/architecture-engine.test.js", "name": "Architecture alternatives cover every decision action with replacement rationale"}], "tracking": "#128", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-ARCH-04", "requirement": "Each Architecture decision is independently confirmable", "contracts": ["packages/contracts/schemas/architect-interaction/v1.schema.json"], "implementation": ["packages/core/src/architecture-engine.js"], "tests": [{"path": "test/architecture-engine.test.js", "name": "each Blueprint decision can be accepted or rejected independently"}], "tracking": "#128", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-ARCH-05", "requirement": "Confirmed decisions produce immutable versioned Architecture Packages", "contracts": ["packages/contracts/schemas/architecture-package/v1.schema.json"], "implementation": ["packages/core/src/architecture-package.js"], "tests": [{"path": "test/architecture-package.test.js", "name": "confirmed decisions create separate immutable versioned Architecture Package semantics"}], "tracking": "#129", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-ARCH-06", "requirement": "Architecture currentness invalidates only declared dependencies", "contracts": ["packages/contracts/schemas/architecture-package/v1.schema.json"], "implementation": ["packages/core/src/architecture-package.js"], "tests": [{"path": "test/architecture-package.test.js", "name": "currentness invalidates only declared decision dependencies and reassesses stale inputs"}], "tracking": "#129", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-ARCH-DESKTOP-01", "requirement": "Desktop shared-backend topology excludes distribution readiness", "contracts": ["packages/contracts/schemas/desktop-shared-backend/v1.schema.json"], "implementation": ["packages/core/src/architecture-engine.js"], "tests": [{"path": "test/architecture-engine.test.js", "name": "desktop shared-backend assessment keeps distribution readiness explicitly Unknown"}], "tracking": "#136", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_exact_artifacts"]
+    },
+    {
+      "id": "P1-KNOWLEDGE-01", "requirement": "Normative Provider Knowledge is reviewed, source-backed, current, and digest-bound", "contracts": ["packages/contracts/schemas/provider-knowledge/v1.schema.json"], "implementation": ["packages/core/src/provider-knowledge.js"], "tests": [{"path": "test/provider-knowledge.test.js", "name": "Core Provider Knowledge is independently versioned, source-backed, and digest-bound"}], "tracking": "#130", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_supply_chain"]
+    },
+    {
+      "id": "P1-KNOWLEDGE-02", "requirement": "Expired or unproven Provider claims never participate in recommendations", "contracts": ["packages/contracts/schemas/provider-knowledge/v1.schema.json"], "implementation": ["packages/core/src/provider-knowledge.js"], "tests": [{"path": "test/provider-knowledge.test.js", "name": "only fresh reviewed source-backed supply-chain artifacts participate in normative recommendations"}], "tracking": "#130", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_supply_chain"]
+    },
+    {
+      "id": "P1-EXTENSION-01", "requirement": "Provider extensions require reviewed trust without making generic implementations unsupported", "contracts": ["packages/contracts/schemas/provider-knowledge/v1.schema.json"], "implementation": ["packages/core/src/provider-knowledge.js"], "tests": [{"path": "test/provider-knowledge.test.js", "name": "unknown, custom, and self-hosted Providers retain generic manual guidance with honest depth"}], "tracking": "#130", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_supply_chain"]
+    },
+    {
+      "id": "P1-PLAN-01", "requirement": "Task Graphs preserve exact source meaning, dependencies, authority, and safe recomputation", "contracts": ["packages/contracts/schemas/task-graph/v1.schema.json"], "implementation": ["packages/core/src/task-graph.js"], "tests": [{"path": "test/task-graph.test.js", "name": "current Findings and Architecture Decisions produce one deterministic source-preserving Task Graph"}], "tracking": "#131", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-HANDOFF-01", "requirement": "Executor discovery exposes compatible choices without granting authority", "contracts": ["packages/contracts/schemas/executor-descriptor/v1.schema.json"], "implementation": ["packages/core/src/handoff.js"], "tests": [{"path": "test/handoff.test.js", "name": "Executor discovery exposes compatible authority batches without granting authority"}], "tracking": "#132", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_supply_chain"]
+    },
+    {
+      "id": "P1-HANDOFF-02", "requirement": "Every external effect is previewed and independently approved", "contracts": ["packages/contracts/schemas/handoff-package/v1.schema.json"], "implementation": ["packages/core/src/handoff.js"], "tests": [{"path": "test/handoff.test.js", "name": "every ordinary write effect class is disclosed in a separately approvable batch"}], "tracking": "#132", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_supply_chain"]
+    },
+    {
+      "id": "P1-HANDOFF-03", "requirement": "Handoff denial and cancellation stop before external authority", "contracts": ["packages/contracts/schemas/handoff-interaction/v1.schema.json"], "implementation": ["packages/core/src/handoff.js"], "tests": [{"path": "test/handoff.test.js", "name": "denial and cancellation terminate before any external authority is granted"}], "tracking": "#132", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-HANDOFF-04", "requirement": "Partial execution and remaining work stay explicitly typed", "contracts": ["packages/contracts/schemas/execution-receipt/v1.schema.json"], "implementation": ["packages/core/src/handoff.js"], "tests": [{"path": "test/handoff.test.js", "name": "partial failure stays typed and cannot be promoted to Evidence"}], "tracking": "#132", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-HANDOFF-05", "requirement": "Receipts remain claims and route completion through fresh Verify", "contracts": ["packages/contracts/schemas/execution-receipt/v1.schema.json"], "implementation": ["packages/core/src/handoff.js"], "tests": [{"path": "test/handoff.test.js", "name": "a normalized receipt remains a claim and produces only unverified Task updates"}], "tracking": "#132", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-VERIFY-01", "requirement": "Composite assurance advances only through contiguous qualifying layers", "contracts": ["packages/contracts/schemas/composite-assurance/v1.schema.json"], "implementation": ["packages/core/src/composite-assurance.js"], "tests": [{"path": "test/composite-assurance.test.js", "name": "assurance advances only through contiguous environment-bound Check layers"}], "tracking": "#133", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-VERIFY-02", "requirement": "Assurance Evidence remains explicitly environment-bound", "contracts": ["packages/contracts/schemas/composite-assurance/v1.schema.json"], "implementation": ["packages/core/src/composite-assurance.js"], "tests": [{"path": "test/composite-assurance.test.js", "name": "cross-environment or incomplete negative observations remain Unverified"}], "tracking": "#133", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-VERIFY-03", "requirement": "Capability-specific minimum assurance gates only the current release", "contracts": ["packages/contracts/schemas/composite-assurance/v1.schema.json"], "implementation": ["packages/core/src/composite-assurance.js"], "tests": [{"path": "test/composite-assurance.test.js", "name": "future Required capabilities remain explicit without gating the current release"}], "tracking": "#133", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-VERIFY-04", "requirement": "Active verification is separately approved, privacy-safe, and production default-denied", "contracts": ["packages/contracts/schemas/active-verification-request/v2.schema.json"], "implementation": ["packages/core/src/active-verification.js"], "tests": [{"path": "test/active-verification.test.js", "name": "production active verification is default-denied without a production-safe recipe and separate approval"}], "tracking": "#134", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_supply_chain"]
+    },
+    {
+      "id": "P1-VERIFY-05", "requirement": "Architecture Status and Launch Assessment remain independent and deterministic", "contracts": ["packages/contracts/schemas/architecture-status/v1.schema.json"], "implementation": ["packages/core/src/composite-assurance.js"], "tests": [{"path": "test/composite-assurance.test.js", "name": "assurance identity binds exact derivation inputs and Architecture Status stays independent"}], "tracking": "#133", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor"]
+    },
+    {
+      "id": "P1-AUTH-01", "requirement": "Authenticated success and failure become Machine Evidence only through exact host provenance", "contracts": ["packages/contracts/schemas/authenticated-journey-evidence/v1.schema.json"], "implementation": ["packages/core/src/authenticated-journeys.js"], "tests": [{"path": "test/phase-1-contracts.test.js", "name": "authenticated Journey success and failure are normative Phase 1 Machine Evidence"}], "tracking": "#135", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_exact_artifacts"]
+    },
+    {
+      "id": "P1-PRIVACY-01", "requirement": "Persisted Phase 1 records reject credentials, business payloads, raw Provider output, and personal data", "contracts": ["packages/contracts/schemas/phase-1/v1.schema.json"], "implementation": ["packages/core/src/evidence-artifact.js"], "tests": [{"path": "test/phase-1-contracts.test.js", "name": "focused negative fixtures reject sensitive persistence and receipt-as-Evidence"}], "tracking": "#134", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_supply_chain"]
+    },
+    {
+      "id": "P1-COMPAT-01", "requirement": "P0-to-P1 adoption is additive, transactional, explicit, and byte-preserving on denial", "contracts": ["packages/contracts/schemas/phase-1-adoption/v1.schema.json"], "implementation": ["packages/core/src/architecture-journey.js"], "tests": [{"path": "test/architecture-engine.test.js", "name": "confirmed P1 adoption commits atomically and interruption preserves the P0 project"}], "tracking": "#136", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_exact_artifacts"]
+    },
+    {
+      "id": "P1-HOST-01", "requirement": "Codex and Claude resume exact Architecture and Handoff state without prose reconstruction", "contracts": ["packages/contracts/schemas/host-resume-artifact/v1.schema.json"], "implementation": ["packages/core/src/host-resume.js"], "tests": [{"path": "test/handoff.test.js", "name": "Claude Handoff state resumes in Codex from one validated local artifact"}], "tracking": "#136", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_exact_artifacts"]
+    },
+    {
+      "id": "P1-COVERAGE-01", "requirement": "Representative Provider-neutral Packs preserve honest depth for managed and generic implementations", "contracts": ["packages/contracts/schemas/reference-integration-pack/v1.schema.json"], "implementation": ["packages/core/src/reference-integration-packs.js"], "tests": [{"path": "test/reference-packs.test.js", "name": "reference packs cover every product shape and integration family without Provider semantics"}], "tracking": "#137", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_supply_chain", "p1_exact_artifacts"]
+    },
+    {
+      "id": "P1-DOCS-01", "requirement": "Agent and Human users can follow the complete authority-aware Phase 1 journey", "contracts": ["skills/launchrally/references/phase-1-command-examples.json"], "implementation": ["docs/getting-started/phase-1.md"], "tests": [{"path": "test/phase-1-documentation.test.js", "name": "documented Phase 1 commands are equivalent across POSIX and PowerShell"}], "tracking": "#138", "status": "complete", "gates": ["p1_traceability", "p1_quality_floor", "p1_exact_artifacts"]
+    },
+    {
+      "id": "P1-RELEASE-01", "requirement": "Exact P1 artifacts publish only as Experimental before separate external verification and Stable promotion", "contracts": ["release/p1.json"], "implementation": ["scripts/validate-p1.mjs"], "tests": [{"path": "test/p1-governance.test.js", "name": "P0 Stable never promotes P1 beyond Experimental without separate approval"}], "tracking": "#139", "status": "open", "gates": ["p1_traceability", "p1_quality_floor", "p1_supply_chain", "p1_exact_artifacts", "p1_external_verification"]
     }
+  ],
+  "release_gates": [
+    {"id": "p1_traceability", "command": "validate:p1", "mandatory": true, "status": "complete", "evidence": {"type": "script", "path": "scripts/validate-p1.mjs"}},
+    {"id": "p1_quality_floor", "command": "test:p1-governance", "mandatory": true, "status": "complete", "evidence": {"type": "test", "path": "test/p1-governance.test.js", "name": "a P1 regression suspends only its declared authority and never changes P0 Stable"}},
+    {"id": "p1_supply_chain", "command": "test:p1-supply-chain", "mandatory": true, "status": "complete", "evidence": {"type": "test", "path": "test/provider-knowledge.test.js", "name": "Provider Knowledge rejects tampering, unsupported authority, and unproven claims"}},
+    {"id": "p1_exact_artifacts", "command": "test:artifacts", "mandatory": true, "status": "pending", "evidence": {"type": "script", "path": "scripts/test-release-artifacts.mjs"}},
+    {"id": "p1_external_verification", "command": "test:public-release", "mandatory": true, "status": "pending", "evidence": {"type": "script", "path": "scripts/test-release-artifacts.mjs"}}
+  ],
+  "quality_floor": [
+    {"id": "P1-QF-01", "condition": "Phase 0 secret, permission, Evidence-integrity, journey-reliability, and false-confidence guarantees remain satisfied", "authority_scopes": ["machine_evidence", "p1_persistence"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-02", "condition": "Agent inference is never silently promoted to declared Product Intent", "authority_scopes": ["intent_declaration"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-03", "condition": "Provider Knowledge and external receipts are never treated as live Evidence", "authority_scopes": ["machine_evidence", "provider_recommendation"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-04", "condition": "Incomplete semantic coverage never becomes a false absence Finding", "authority_scopes": ["intent_declaration", "composite_assurance"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-05", "condition": "Evidence never crosses environments without an explicit valid rule", "authority_scopes": ["machine_evidence", "composite_assurance"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-06", "condition": "Provider configuration never implies operational or outcome success", "authority_scopes": ["composite_assurance"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-07", "condition": "Recommendations never violate confirmed hard constraints", "authority_scopes": ["provider_recommendation", "architecture_recommendation"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-08", "condition": "LaunchRally never automatically installs, logs in, or grants Executor authority", "authority_scopes": ["external_handoff"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-09", "condition": "Every coordinated external write discloses the real user-visible effect", "authority_scopes": ["external_handoff", "active_verification"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-10", "condition": "Secrets, business payloads, real-user data, and raw Provider output never enter persisted records", "authority_scopes": ["p1_persistence", "machine_evidence"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-11", "condition": "Unknown or self-hosted implementations never make the whole product unsupported", "authority_scopes": ["provider_recommendation", "reference_coverage"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-12", "condition": "Unrelated Architecture decisions and Evidence are not invalidated without declared dependencies", "authority_scopes": ["architecture_recommendation", "composite_assurance"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-13", "condition": "External execution success never becomes Verified without fresh qualifying Evidence", "authority_scopes": ["external_handoff", "machine_evidence", "composite_assurance"], "status": "satisfied", "regressions": []},
+    {"id": "P1-QF-14", "condition": "Production active verification remains default-denied and bounded", "authority_scopes": ["active_verification"], "status": "satisfied", "regressions": []}
   ]
 }

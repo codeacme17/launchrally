@@ -4,6 +4,12 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+  assertValidProviderKnowledge,
+  assertValidReferenceIntegrationPack,
+} from "@launchrally/contracts";
+import { CORE_PROVIDER_KNOWLEDGE } from "../packages/core/src/provider-knowledge.js";
+import { referenceExecutorDescriptors } from "../packages/core/src/reference-executors.js";
 
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootOption = process.argv.indexOf("--root");
@@ -66,6 +72,21 @@ const providerIdentities = Object.freeze({
   sentry: { source_host: "www.npmjs.com", package_name: "@sentry/cli", executable: "sentry-cli", adapter_version: "sentry-read/v1" },
   vercel: { source_host: "vercel.com", package_name: "vercel", executable: "vercel", adapter_version: "vercel-read/v1" },
 });
+const referencePackPaths = [
+  "identity-to-application-data.json",
+  "payment-to-entitlement.json",
+  "source-to-ci-cd-to-deployment.json",
+  "storage-to-metadata-access.json",
+  "email-to-domain-delivery.json",
+  "release-to-observability.json",
+  "backup-to-restore.json",
+  "queue-background-work.json",
+].map((file) => `packages/core/reference-integration-packs/v1/${file}`);
+const phase1CommandPaths = [
+  "skills/launchrally/references/phase-1-command-examples.json",
+  "adapters/claude/launchrally/skills/launchrally/references/phase-1-command-examples.json",
+  "adapters/codex/launchrally/skills/launchrally/references/phase-1-command-examples.json",
+];
 
 async function json(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
@@ -171,11 +192,53 @@ async function validateProviderToolAuthority() {
   }
 }
 
+async function validateP1SupplyChain() {
+  assertValidProviderKnowledge(CORE_PROVIDER_KNOWLEDGE);
+  const descriptorDigests = new Map(referenceExecutorDescriptors.map((descriptor) => [
+    descriptor.descriptor_id,
+    descriptor.trust.digest,
+  ]));
+  for (const packPath of referencePackPaths) {
+    const pack = await json(packPath);
+    try {
+      assertValidReferenceIntegrationPack(pack);
+    } catch {
+      throw new Error(`p1_pack_invalid: ${packPath}`);
+    }
+    for (const implementation of pack.implementations) {
+      for (const reference of implementation.executor_descriptors) {
+        if (descriptorDigests.get(reference.id) !== reference.digest) {
+          throw new Error(
+            `p1_pack_executor_binding_invalid: ${pack.pack_id}:${implementation.implementation_id}`,
+          );
+        }
+      }
+    }
+  }
+  const commandMatrices = await Promise.all(phase1CommandPaths.map((file) => json(file)));
+  if (commandMatrices.some((matrix) =>
+    JSON.stringify(matrix) !== JSON.stringify(commandMatrices[0]))) {
+    throw new Error("p1_command_matrix_drift: canonical, Codex, and Claude commands differ");
+  }
+  const allowedOperations = ["architect", "plan", "handoff", "verify"];
+  if (
+    commandMatrices[0].format !== "launchrally-phase-1-command-examples"
+    || commandMatrices[0].version !== 1
+    || JSON.stringify(commandMatrices[0].commands.map(({ operation }) => operation))
+      !== JSON.stringify(allowedOperations)
+    || commandMatrices[0].commands.some(({ operation, argv, expected }) =>
+      argv?.[0] !== operation
+      || !argv.includes("--json")
+      || expected?.status === "execution_error")
+  ) throw new Error("p1_command_matrix_invalid: public commands expand unreviewed authority");
+}
+
 async function validateRelease() {
   const rootPackage = await json("package.json");
   const release = await json("release/artifacts.json");
   const version = rootPackage.version;
   await validateProviderToolAuthority();
+  await validateP1SupplyChain();
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
     throw new Error(`invalid_release_version: ${version}`);
   }

@@ -1,0 +1,36 @@
+{
+  "schema_version": "launchrally.dev/p1-release/v1",
+  "phase": "p1",
+  "product_status": "incomplete",
+  "release_status": "experimental",
+  "publication_status": "not_published",
+  "validation_status": "not_validated",
+  "quality_floor_status": "satisfied",
+  "p0_stable_ref": {
+    "schema_version": "launchrally.dev/p0-release/v1",
+    "release_status": "stable"
+  },
+  "stable_promotion": {
+    "status": "not_approved",
+    "approved_tag": null
+  },
+  "acceptance_requirement_ids": [
+    "P1-INTENT-01", "P1-INTENT-02", "P1-INTENT-03",
+    "P1-SCAN-01", "P1-SCAN-02", "P1-SCAN-03",
+    "P1-CAPABILITY-01", "P1-CAPABILITY-02",
+    "P1-INTEGRATION-01", "P1-INTEGRATION-02",
+    "P1-ARCH-01", "P1-ARCH-02", "P1-ARCH-03", "P1-ARCH-04", "P1-ARCH-05", "P1-ARCH-06", "P1-ARCH-DESKTOP-01",
+    "P1-KNOWLEDGE-01", "P1-KNOWLEDGE-02", "P1-EXTENSION-01",
+    "P1-PLAN-01",
+    "P1-HANDOFF-01", "P1-HANDOFF-02", "P1-HANDOFF-03", "P1-HANDOFF-04", "P1-HANDOFF-05",
+    "P1-VERIFY-01", "P1-VERIFY-02", "P1-VERIFY-03", "P1-VERIFY-04", "P1-VERIFY-05",
+    "P1-AUTH-01", "P1-PRIVACY-01", "P1-COMPAT-01", "P1-HOST-01", "P1-COVERAGE-01", "P1-DOCS-01", "P1-RELEASE-01"
+  ],
+  "mandatory_release_gate_ids": [
+    "p1_traceability",
+    "p1_quality_floor",
+    "p1_supply_chain",
+    "p1_exact_artifacts",
+    "p1_external_verification"
+  ]
+}
