@@ -198,7 +198,7 @@ test("P1 Stable requires every requirement and mandatory gate to be complete", a
   await assert.rejects(validateP1(directory), (error) => {
     assert.match(error.stderr, /p1_stable_promotion_blocked/u);
     assert.match(error.stderr, /P1-RELEASE-01/u);
-    assert.match(error.stderr, /p1_exact_artifacts/u);
+    assert.doesNotMatch(error.stderr, /p1_exact_artifacts/u);
     assert.match(error.stderr, /p1_external_verification/u);
     return true;
   });
@@ -248,7 +248,7 @@ test("P1 Product Complete requires every requirement and mandatory gate to be co
   await assert.rejects(validateP1(directory), (error) => {
     assert.match(error.stderr, /p1_product_completion_blocked/u);
     assert.match(error.stderr, /P1-RELEASE-01/u);
-    assert.match(error.stderr, /p1_exact_artifacts/u);
+    assert.doesNotMatch(error.stderr, /p1_exact_artifacts/u);
     assert.match(error.stderr, /p1_external_verification/u);
     return true;
   });

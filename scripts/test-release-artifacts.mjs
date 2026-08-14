@@ -37,6 +37,60 @@ const consumerRuntimePackages = Object.freeze({
   "fast-wrap-ansi": "0.2.2",
   sisteransi: "1.0.5",
 });
+const P1_PRODUCT_JOURNEYS = Object.freeze([
+  "astro-hosted-web",
+  "custom-self-hosted",
+  "fastapi-container",
+  "pnpm-edge-monorepo",
+  "react-go-split",
+]);
+const P1_INTEGRATION_FAMILIES = Object.freeze([
+  "backup_to_restore",
+  "email_to_domain_delivery",
+  "identity_to_application_data",
+  "payment_to_entitlement",
+  "queue_background_work",
+  "release_to_observability",
+  "source_to_ci_cd_to_deployment",
+  "storage_to_metadata_access",
+]);
+const P1_SCENARIOS = Object.freeze([
+  "cancellation",
+  "cross_host_resume",
+  "denied_write",
+  "environment_isolation",
+  "incomplete_semantic_coverage",
+  "missing_executor",
+  "no_prd",
+  "p0_to_p1_migration",
+  "partial_receipt",
+  "stale_architecture",
+  "unknown_provider",
+]);
+const P1_MATRIX_TARGETS = Object.freeze({
+  "linux-node20-posix": { platform: "linux", node_major: 20, shell: "posix" },
+  "linux-node22-posix": { platform: "linux", node_major: 22, shell: "posix" },
+  "linux-node24-posix": { platform: "linux", node_major: 24, shell: "posix" },
+  "macos-node22-posix": { platform: "darwin", node_major: 22, shell: "posix" },
+  "windows-node22-powershell": { platform: "win32", node_major: 22, shell: "powershell" },
+});
+
+function assertP1MatrixTarget() {
+  const option = process.argv.indexOf("--matrix-target");
+  if (option === -1) return;
+  const id = process.argv[option + 1];
+  const expected = P1_MATRIX_TARGETS[id];
+  const actual = {
+    platform: process.platform,
+    node_major: Number(process.versions.node.split(".")[0]),
+    shell: process.platform === "win32" ? "powershell" : "posix",
+  };
+  if (!expected || JSON.stringify(expected) !== JSON.stringify(actual)) {
+    throw new Error(
+      `p1_artifact_matrix_target_mismatch: ${id ?? "missing"} does not match ${JSON.stringify(actual)}`,
+    );
+  }
+}
 
 async function json(filePath) {
   return JSON.parse(await readFile(filePath, "utf8"));
@@ -153,6 +207,22 @@ async function createArtifactNpmStub(
 function assertEqual(actual, expected, code, detail) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${code}: ${detail}`);
+  }
+}
+
+function assertEnvironmentBoundEvidence(result, environment, expectedCheckStatus) {
+  const entries = result.evidence_index?.entries ?? [];
+  const qualifying = entries.filter(({ current, environment: observed }) =>
+    current === true && observed === environment);
+  const evidenceDigests = new Set(qualifying.map(({ digest }) => digest));
+  const check = result.report?.results?.checks?.find((candidate) =>
+    candidate.environment === environment
+    && candidate.status === expectedCheckStatus
+    && candidate.evidence.some(({ digest }) => evidenceDigests.has(digest)));
+  if (qualifying.length === 0 || !check) {
+    throw new Error(
+      `p1_environment_bound_evidence_missing:${environment}:${expectedCheckStatus}`,
+    );
   }
 }
 
@@ -456,6 +526,7 @@ async function runInstallationJourneys({
     json(claudePhase1CommandsPath),
   ]);
   const {
+    applyReferenceJourneyState,
     buildCapabilityGraph,
     createCapabilityCatalog,
     createArchitecturePackageBundle,
@@ -463,6 +534,8 @@ async function runInstallationJourneys({
     createReferenceCoverageMatrix,
     referenceExecutorDescriptors,
     referenceIntegrationPacks,
+    runHandoff,
+    runReferenceOutcomeJourney,
   } = await import(pathToFileURL(path.join(
     cleanProject,
     "node_modules",
@@ -471,6 +544,12 @@ async function runInstallationJourneys({
     "src",
     "index.js",
   )).href);
+  const p1IntegrationFamilies = new Set();
+  const p1HostJourneys = new Set();
+  const p1Scenarios = new Set();
+  let successfulDownstreamEvidence = false;
+  let unsuccessfulDownstreamEvidence = false;
+  let receiptClaimsRequireVerification = false;
   const hostProductIntentModules = await Promise.all(["codex", "claude"].map(async (host) => ({
     host,
     module: await import(pathToFileURL(path.join(
@@ -502,26 +581,78 @@ async function runInstallationJourneys({
     const runReferenceJourney = host === "codex"
       ? module.runCodexReferenceJourney
       : module.runClaudeReferenceJourney;
-    for (const outcome of [
-      "complete", "partial", "denied", "unknown", "stale", "successful", "failed",
-      "cleanup_failed",
-    ]) {
-      const referenceResult = await runReferenceJourney({
-        pack_id: "pack_identity_to_application_data",
-        implementation_id: "clerk",
-        outcome,
+    for (const pack of referenceIntegrationPacks) {
+      p1IntegrationFamilies.add(pack.family);
+      const managed = pack.implementations.filter(({ kind }) => kind === "managed");
+      for (const implementation of managed) {
+        for (const outcome of [
+          "complete", "partial", "denied", "unknown", "stale", "successful", "failed",
+          "cleanup_failed",
+        ]) {
+          const referenceResult = await runReferenceJourney({
+            pack_id: pack.pack_id,
+            implementation_id: implementation.implementation_id,
+            outcome,
+            assessment_time: "2026-08-14T12:00:00.000Z",
+          });
+          const requiresFreshVerification = [
+            "complete", "partial", "successful", "failed", "cleanup_failed",
+          ].includes(outcome);
+          const evidenceTarget = referenceResult.fresh_verification_request
+            ?.task_requests?.[0]?.evidence_targets?.[0] ?? "";
+          if (
+            referenceResult.outcome !== outcome
+            || referenceResult.machine_evidence !== false
+            || referenceResult.assurance_change !== false
+            || (requiresFreshVerification
+              && (referenceResult.receipt_claim_only !== true
+                || referenceResult.fresh_verification_request?.operation !== "verify"
+                || referenceResult.fresh_verification_request?.fresh_evidence_required !== true
+                || !evidenceTarget.includes(pack.pack_digest.slice(7))
+                || !evidenceTarget.includes(implementation.implementation_id)))
+          ) {
+            throw new Error(
+              `packed_${host}_reference_journey_drift:${pack.family}:${implementation.implementation_id}:${outcome}`,
+            );
+          }
+          if (requiresFreshVerification) receiptClaimsRequireVerification = true;
+          if (outcome === "partial") p1Scenarios.add("partial_receipt");
+          if (outcome === "denied") p1Scenarios.add("denied_write");
+          if (outcome === "unknown") p1Scenarios.add("missing_executor");
+        }
+      }
+      const unknown = pack.implementations.find(({ kind }) => kind === "unknown");
+      const unknownProvider = await runReferenceJourney({
+        pack_id: pack.pack_id,
+        implementation_id: unknown.implementation_id,
+        outcome: "unknown",
         assessment_time: "2026-08-14T12:00:00.000Z",
       });
       if (
-        referenceResult.outcome !== outcome
-        || referenceResult.machine_evidence !== false
-        || referenceResult.assurance_change !== false
-        || (["complete", "partial", "successful", "failed", "cleanup_failed"].includes(outcome)
-          && (referenceResult.fresh_verification_request?.operation !== "verify"
-            || referenceResult.fresh_verification_request?.fresh_evidence_required !== true))
-      ) throw new Error(`packed_${host}_reference_journey_drift:${outcome}`);
+        unknownProvider.status !== "verification_gap"
+        || unknownProvider.reason_code !== "unsupported_reference_executor"
+        || unknownProvider.machine_evidence !== false
+      ) throw new Error(`packed_${host}_unknown_provider_not_transparent:${pack.family}`);
+      p1Scenarios.add("unknown_provider");
     }
+    p1HostJourneys.add(host);
   }
+  const cancellationPack = referenceIntegrationPacks[0];
+  const cancellationImplementation = cancellationPack.implementations.find(
+    ({ kind }) => kind === "managed",
+  );
+  const cancelled = applyReferenceJourneyState(runReferenceOutcomeJourney(
+    cancellationPack,
+    cancellationImplementation.implementation_id,
+    "complete",
+    "2026-08-14T12:00:00.000Z",
+  ), "cancel");
+  if (
+    cancelled.status !== "cancelled"
+    || cancelled.machine_evidence !== false
+    || cancelled.assurance_change !== false
+  ) throw new Error("packed_reference_cancellation_drift");
+  p1Scenarios.add("cancellation");
   assertEqual(
     claudeJourney,
     journey,
@@ -732,6 +863,16 @@ async function runInstallationJourneys({
             JSON.stringify(result),
           )
         ) throw new Error(`packaged_${host}_${expectedOutcome}_host_runner_failed`);
+        if (expectedEvidence) {
+          assertEnvironmentBoundEvidence(
+            result,
+            "staging",
+            expected.outcome === "completed" ? "passed" : "failed",
+          );
+          if (expected.outcome === "completed") successfulDownstreamEvidence = true;
+          else unsuccessfulDownstreamEvidence = true;
+          p1Scenarios.add("environment_isolation");
+        }
       } finally {
         if (previousOrigin === undefined) delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
         else process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = previousOrigin;
@@ -1049,6 +1190,27 @@ async function runInstallationJourneys({
       "Codex and Claude must expose the same typed no-PRD Product Intent result",
     );
   }
+  p1Scenarios.add("no_prd");
+  const unsupportedMaterial = path.join(activeRepository, "unsupported-product-material.pdf");
+  await writeFile(unsupportedMaterial, "synthetic unsupported product material\n");
+  const semanticInput = await hostProductIntentModules[0].module.runCodexProductIntentDiscovery(
+    activeRepository,
+    { selected_materials: [path.basename(unsupportedMaterial)] },
+  );
+  const semanticPartial = await hostProductIntentModules[0].module.runCodexProductIntentDiscovery(
+    activeRepository,
+    {
+      resume_token: semanticInput.resume_token,
+      permission_decision: "approved",
+    },
+  );
+  await rm(unsupportedMaterial);
+  if (
+    semanticPartial.status !== "needs_input"
+    || semanticPartial.coverage.state !== "partial"
+    || semanticPartial.coverage.negative_findings_allowed !== false
+  ) throw new Error("packed_incomplete_semantic_coverage_drift");
+  p1Scenarios.add("incomplete_semantic_coverage");
   const catalog = createCapabilityCatalog({ reviewed_at: "2026-08-14T00:00:00.000Z" });
   const graph = buildCapabilityGraph(intentCompleted.profile, catalog, {
     graph_id: "graph_packed_phase_1_docs",
@@ -1141,6 +1303,27 @@ async function runInstallationJourneys({
   const planExample = phase1Commands.commands.find(({ operation }) => operation === "plan");
   const phase1Plan = await invokeDocumentedPhase1Command(planExample);
   await writeFile(path.join(temporaryRoot, "task-graph.json"), JSON.stringify(phase1Plan.task_graph));
+  const staleArchitecture = structuredClone(sourceArchitecture);
+  staleArchitecture.package.currentness = {
+    state: "needs_reassessment",
+    invalidated_record_ids: [staleArchitecture.architecture_record.record_id],
+    reasons: ["source_report_changed"],
+  };
+  await writeFile(
+    path.join(temporaryRoot, "architecture-package.json"),
+    JSON.stringify(staleArchitecture),
+  );
+  const staleArchitecturePlan = await invokeDocumentedPhase1Command(planExample);
+  if (
+    staleArchitecturePlan.status !== "completed"
+    || staleArchitecturePlan.task_graph?.currentness?.state !== "stale"
+    || staleArchitecturePlan.task_graph?.ready_frontier?.length !== 0
+  ) throw new Error("packed_stale_architecture_not_blocked");
+  p1Scenarios.add("stale_architecture");
+  await writeFile(
+    path.join(temporaryRoot, "architecture-package.json"),
+    JSON.stringify(sourceArchitecture),
+  );
   const descriptor = referenceExecutorDescriptors[0];
   await Promise.all([
     writeFile(path.join(temporaryRoot, "executor-descriptors.json"), JSON.stringify([descriptor])),
@@ -1157,7 +1340,123 @@ async function runInstallationJourneys({
     }])),
   ]);
   const handoffExample = phase1Commands.commands.find(({ operation }) => operation === "handoff");
-  await invokeDocumentedPhase1Command(handoffExample);
+  const handoffDiscovery = await invokeDocumentedPhase1Command(handoffExample);
+  const portableTaskTarget = "repository:packed-cross-host-handoff";
+  const portableTaskGraph = {
+    schema_version: "launchrally.dev/task-graph/v1",
+    graph_id: "task_graph_packed_cross_host_handoff",
+    revision: 1,
+    environment: "development",
+    source_report: {
+      id: "report_packed_cross_host_handoff",
+      schema_version: "launchrally.dev/report/v2",
+      digest: `sha256:${"1".repeat(64)}`,
+    },
+    architecture_record: {
+      id: "architecture_packed_cross_host_handoff",
+      schema_version: "launchrally.dev/architecture-record/v1",
+      digest: `sha256:${"2".repeat(64)}`,
+    },
+    currentness: { state: "current", reasons: [] },
+    tasks: [{
+      task_id: "task_packed_cross_host_handoff",
+      task_type: "implement_architecture_decision",
+      source: "implementation_work",
+      source_id: "work_packed_cross_host_handoff",
+      environment: "development",
+      prerequisites: [],
+      effect_class: "local_source",
+      expected_target: portableTaskTarget,
+      allowed_effects: ["source_write"],
+      prohibited_effects: [
+        "credential_persistence",
+        "deployment_write",
+        "production_data_write",
+        "provider_configuration_write",
+      ],
+      recovery_notes: ["Preserve typed state and retry only after explicit approval."],
+      minimum_executor_capability: "local_source_write_v1",
+      structured_result_schema: "launchrally.dev/execution-receipt/v1",
+      evidence_targets: [portableTaskTarget],
+      follow_up_verify: {
+        operation: "verify",
+        scope: "local_source",
+        fresh_evidence_required: true,
+      },
+      cancellation_behavior: "stop_before_next_effect",
+      status: "not_started",
+    }],
+    ready_frontier: ["task_packed_cross_host_handoff"],
+  };
+  const portableHandoff = await runHandoff({
+    task_graph: portableTaskGraph,
+    executor_descriptors: [descriptor],
+    tool_observations: [{
+      tool_id: descriptor.tools[0].tool_id,
+      executable: descriptor.tools[0].executable,
+      detected_version: descriptor.tools[0].exact_version,
+      state: "available",
+    }],
+    reviewed_executors: [{
+      descriptor_id: descriptor.descriptor_id,
+      descriptor_version: descriptor.descriptor_version,
+      digest: descriptor.trust.digest,
+    }],
+  }, {}, {
+    platform: `${process.platform}-${process.arch}`,
+    now: "2026-08-14T12:00:00.000Z",
+  });
+  if (
+    handoffDiscovery.status !== "needs_input"
+    || portableHandoff.status !== "needs_input"
+    || portableHandoff.state !== "executor_discovery"
+    || portableHandoff.request?.kind !== "executor_selection"
+  ) throw new Error("packed_handoff_cli_core_drift");
+  const [codexResume, claudeResume] = await Promise.all(["codex", "claude"].map((host) =>
+    import(pathToFileURL(path.join(
+      cleanProject,
+      "node_modules",
+      "@launchrally",
+      `${host}-plugin`,
+      "host-adapter",
+      "resume.js",
+    )).href)));
+  if (process.platform === "win32") {
+    await claudeResume.saveResumeArtifact(
+      path.join(temporaryRoot, "handoff-cross-host-resume.json"),
+      portableHandoff.interaction,
+      activeRepository,
+    ).then(
+      () => { throw new Error("packed_windows_handoff_cross_host_resume_not_denied"); },
+      (error) => {
+        if (error?.code !== "host_resume_unavailable") throw error;
+      },
+    );
+  } else {
+    const handoffArtifact = path.join(temporaryRoot, "handoff-cross-host-resume.json");
+    try {
+      await claudeResume.saveResumeArtifact(
+        handoffArtifact,
+        portableHandoff.interaction,
+        activeRepository,
+      );
+    } catch (error) {
+      throw new Error(`packed_handoff_artifact_save_failed:${error?.code}:${error?.message}`);
+    }
+    const handoffResumed = await codexResume.resumeArtifactFile({
+      cwd: activeRepository,
+      artifact_path: handoffArtifact,
+      options: {
+        selection: portableHandoff.request.choices[0],
+        now: "2026-08-14T12:00:00.000Z",
+      },
+    });
+    if (
+      handoffResumed.status !== "needs_confirmation"
+      || handoffResumed.state !== "authority_preview"
+      || handoffResumed.handoff_package?.approval?.state !== "required"
+    ) throw new Error("packed_handoff_cross_host_resume_failed");
+  }
 
   const initPreview = await invokeFixture("init_preview", {
     "{manifest_source_report_path}": reportPath,
@@ -1198,6 +1497,60 @@ async function runInstallationJourneys({
     || !phase1Verify.report
     || !phase1Verify.evidence_index
   ) throw new Error(`packed_phase_1_verify_continuation_failed:${phase1Verify.status}`);
+  const migrationBefore = await snapshotTree(path.join(activeRepository, ".launchrally"));
+  const migrationPreview = await invokeDocumentedPhase1Command(architectExample);
+  if (
+    migrationPreview.status !== "needs_confirmation"
+    || migrationPreview.request?.kind !== "p1_migration_confirmation"
+    || migrationPreview.migration_preview?.schema_version
+      !== "launchrally.dev/phase-1-migration-preview/v1"
+  ) throw new Error("packed_p0_to_p1_migration_preview_failed");
+  const migrationArtifact = path.join(temporaryRoot, "p0-to-p1-cross-host-resume.json");
+  let migrationDenied;
+  if (process.platform === "win32") {
+    await codexResume.saveResumeArtifact(
+      migrationArtifact,
+      migrationPreview.interaction,
+      activeRepository,
+    ).then(
+      () => { throw new Error("packed_windows_cross_host_resume_not_denied"); },
+      (error) => {
+        if (error?.code !== "host_resume_unavailable") throw error;
+      },
+    );
+    migrationDenied = JSON.parse((await invokeLauncher("rally", [
+      "architect", "--json", "--cwd", activeRepository,
+      "--resume", migrationPreview.interaction.resume_token,
+      "--confirm", "deny",
+    ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+  } else {
+    try {
+      await codexResume.saveResumeArtifact(
+        migrationArtifact,
+        migrationPreview.interaction,
+        activeRepository,
+      );
+    } catch (error) {
+      throw new Error(`packed_architecture_artifact_save_failed:${error?.code}:${error?.message}`);
+    }
+    migrationDenied = await claudeResume.resumeArtifactFile({
+      cwd: activeRepository,
+      artifact_path: migrationArtifact,
+      options: { migration_confirmation: "deny", launcher_version: version },
+    });
+  }
+  if (
+    migrationDenied.status !== "denied"
+    || migrationDenied.outcome !== "p1_migration_denied"
+  ) throw new Error("packed_p0_to_p1_migration_denial_failed");
+  assertEqual(
+    await snapshotTree(path.join(activeRepository, ".launchrally")),
+    migrationBefore,
+    "packed_p0_to_p1_migration_changed_p0",
+    "Denied P1 migration must preserve every P0 project byte",
+  );
+  p1Scenarios.add("p0_to_p1_migration");
+  p1Scenarios.add("cross_host_resume");
   const projectVersion = await invokeFixture("project_version");
   if (
     projectVersion.status !== "completed"
@@ -1695,8 +2048,40 @@ async function runInstallationJourneys({
   await access(path.join(projectData, "manifest.yaml"));
   await access(path.join(projectData, "toolchain", "authority.json"));
 
+  assertEqual(
+    [...p1IntegrationFamilies].sort(),
+    [...P1_INTEGRATION_FAMILIES],
+    "p1_integration_matrix_incomplete",
+    "Every reviewed Integration family must execute through both packed Host adapters",
+  );
+  assertEqual(
+    [...p1HostJourneys].sort(),
+    ["claude", "codex"],
+    "p1_host_matrix_incomplete",
+    "Both packed Host adapters must execute typed journeys",
+  );
+  assertEqual(
+    [...p1Scenarios].sort(),
+    [...P1_SCENARIOS],
+    "p1_scenario_matrix_incomplete",
+    "Every P1 exact-artifact boundary must be observed",
+  );
+  if (
+    !receiptClaimsRequireVerification
+    || (process.platform !== "win32"
+      && (!successfulDownstreamEvidence || !unsuccessfulDownstreamEvidence))
+  ) throw new Error("p1_fresh_verify_matrix_incomplete");
+
   return {
     projectData,
+    p1Evidence: {
+      integrationFamilies: [...p1IntegrationFamilies].sort(),
+      hostJourneys: [...p1HostJourneys].sort(),
+      scenarios: [...p1Scenarios].sort(),
+      receiptClaimsRequireVerification,
+      successfulDownstreamEvidence,
+      unsuccessfulDownstreamEvidence,
+    },
     result: {
       no_launcher: "confirmed",
       npm_exec: publicRelease
@@ -2174,17 +2559,29 @@ async function smokeCli(
     ) {
       throw new Error(`coverage_artifact_verification_failed: ${representative.id}`);
     }
+    assertEnvironmentBoundEvidence(verified, "production", "passed");
+    if (
+      verified.report.results.checks.some(({ environment }) => environment !== "production")
+      || verified.evidence_index.entries.some(({ environment }) => environment !== "production")
+    ) throw new Error(`coverage_artifact_environment_drift:${representative.id}`);
     coverageJourneys.push(representative.id);
   }
 
+  assertEqual(
+    coverageJourneys.sort(),
+    [...P1_PRODUCT_JOURNEYS],
+    "p1_product_matrix_incomplete",
+    "Every representative Product journey must complete fresh Verify",
+  );
   return {
     cleanProject,
+    p1ProductJourneys: coverageJourneys,
     result: {
       operation: versionResult.operation,
       cli_version: versionResult.cli_version,
       audit_status: audit.status,
       provider_tool_recovery: "exact_instruction_and_fresh_permission",
-      coverage_journeys: coverageJourneys.sort(),
+      coverage_journeys: coverageJourneys,
     },
   };
 }
@@ -2479,6 +2876,7 @@ function publicDistTag() {
 }
 
 async function main() {
+  assertP1MatrixTarget();
   const release = await json(path.join(root, "release", "artifacts.json"));
   const rootPackage = await json(path.join(root, "package.json"));
   const publicRelease = process.argv.includes("--public");
@@ -2550,11 +2948,45 @@ async function main() {
       ));
       installationJourneys.result.plugin_removal = "project_data_preserved";
     }
+    const p1ExactArtifacts = {
+      result_version: 1,
+      matrix_target: {
+        platform: process.platform,
+        node_major: Number(process.versions.node.split(".")[0]),
+        shell: process.platform === "win32" ? "powershell" : "posix",
+      },
+      public_surfaces: ["claude", "cli", "codex", "contracts", "core", "skill"],
+      product_journeys: cliSmoke.p1ProductJourneys,
+      integration_families: installationJourneys.p1Evidence.integrationFamilies,
+      host_journeys: installationJourneys.p1Evidence.hostJourneys,
+      cross_host_resume: process.platform === "win32"
+        ? "typed_unavailable"
+        : "architecture_and_handoff",
+      scenarios: installationJourneys.p1Evidence.scenarios,
+      fresh_verify: {
+        receipt_claims: "verification_required",
+        successful_downstream: process.platform === "win32"
+          ? "typed_runner_unavailable"
+          : "environment_bound_machine_evidence",
+        unsuccessful_downstream: process.platform === "win32"
+          ? "typed_runner_unavailable"
+          : "environment_bound_no_go",
+      },
+      clean_host: {
+        unauthorized_install: false,
+        unauthorized_login: false,
+        unauthorized_upload: false,
+        unauthorized_write: false,
+        manual_secret_transfer: false,
+        sensitive_persistence: false,
+      },
+    };
     const result = {
       status: "completed",
       version: rootPackage.version,
       cli_smoke: cliSmoke.result,
       installation_journeys: installationJourneys.result,
+      p1_exact_artifacts: p1ExactArtifacts,
       native_plugins: nativePlugins,
     };
     return publicRelease

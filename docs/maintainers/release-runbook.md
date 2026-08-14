@@ -47,8 +47,17 @@ git diff --exit-code
 npm test
 npm run validate:acceptance -- --require-release-ready
 npm run validate:p0
+npm run validate:p1
 npm run validate:release
+npm run test:p1-exact-artifacts
 ```
+
+The P1 exact-artifact result must name all five Product journeys, all eight
+Integration families, both installed Host adapters, the authority/interruption
+scenario roster, and the environment-bound fresh-Verify outcomes. CI and the
+release workflow pass an exact matrix target to the artifact runner; a target
+that does not match the actual OS, Node major, and shell fails before packing.
+This gate does not satisfy the separate public external-verification gate.
 
 Create a protected annotated tag on that exact `main` commit and push only the
 tag:

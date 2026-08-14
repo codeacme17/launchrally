@@ -1187,6 +1187,63 @@ test("Stable promotion reconciles an existing GitHub release on retry", async ()
   ]);
 });
 
+test("the P1 artifact matrix rejects a CI target that does not match the runtime", async () => {
+  const mismatchedTarget = process.platform === "win32"
+    ? "linux-node20-posix"
+    : "windows-node22-powershell";
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "scripts/test-release-artifacts.mjs",
+      "--json",
+      "--skip-native",
+      "--matrix-target",
+      mismatchedTarget,
+    ], { cwd: root }),
+    (error) => /p1_artifact_matrix_target_mismatch/u.test(error.stderr ?? ""),
+  );
+});
+
+test("release CI runs every exact P1 platform and shell target", async () => {
+  const workflows = await Promise.all([
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+  ].map((relativePath) => readFile(path.join(root, relativePath), "utf8")));
+  for (const workflow of workflows) {
+    for (const target of [
+      "linux-node20-posix",
+      "linux-node22-posix",
+      "linux-node24-posix",
+      "macos-node22-posix",
+      "windows-node22-powershell",
+    ]) assert.match(workflow, new RegExp(`target: ${target}`, "u"));
+    assert.match(
+      workflow,
+      /npm run test:artifacts -- --matrix-target "\$\{\{ matrix\.target \}\}"/u,
+    );
+  }
+});
+
+test("P1 governance binds the completed exact-artifact gate to runtime evidence", async () => {
+  const matrix = JSON.parse(await readFile(
+    path.join(root, "release/p1-acceptance.json"),
+    "utf8",
+  ));
+  const exact = matrix.release_gates.find(({ id }) => id === "p1_exact_artifacts");
+  const external = matrix.release_gates.find(({ id }) => id === "p1_external_verification");
+  assert.deepEqual(exact, {
+    id: "p1_exact_artifacts",
+    command: "test:p1-exact-artifacts",
+    mandatory: true,
+    status: "complete",
+    evidence: {
+      type: "test",
+      path: "test/release.test.js",
+      name: "packed artifacts complete installation, delegation, lifecycle, and full verification journeys",
+    },
+  });
+  assert.equal(external.status, "pending");
+});
+
 test("packed artifacts complete installation, delegation, lifecycle, and full verification journeys", async () => {
   const { stdout } = await execFileAsync(
     "npm",
@@ -1206,6 +1263,66 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       "@launchrally/core",
     ],
     artifact_files_verified: true,
+    p1_exact_artifacts: {
+      result_version: 1,
+      matrix_target: {
+        platform: process.platform,
+        node_major: Number(process.versions.node.split(".")[0]),
+        shell: process.platform === "win32" ? "powershell" : "posix",
+      },
+      public_surfaces: ["claude", "cli", "codex", "contracts", "core", "skill"],
+      product_journeys: [
+        "astro-hosted-web",
+        "custom-self-hosted",
+        "fastapi-container",
+        "pnpm-edge-monorepo",
+        "react-go-split",
+      ],
+      integration_families: [
+        "backup_to_restore",
+        "email_to_domain_delivery",
+        "identity_to_application_data",
+        "payment_to_entitlement",
+        "queue_background_work",
+        "release_to_observability",
+        "source_to_ci_cd_to_deployment",
+        "storage_to_metadata_access",
+      ],
+      host_journeys: ["claude", "codex"],
+      cross_host_resume: process.platform === "win32"
+        ? "typed_unavailable"
+        : "architecture_and_handoff",
+      scenarios: [
+        "cancellation",
+        "cross_host_resume",
+        "denied_write",
+        "environment_isolation",
+        "incomplete_semantic_coverage",
+        "missing_executor",
+        "no_prd",
+        "p0_to_p1_migration",
+        "partial_receipt",
+        "stale_architecture",
+        "unknown_provider",
+      ],
+      fresh_verify: {
+        receipt_claims: "verification_required",
+        successful_downstream: process.platform === "win32"
+          ? "typed_runner_unavailable"
+          : "environment_bound_machine_evidence",
+        unsuccessful_downstream: process.platform === "win32"
+          ? "typed_runner_unavailable"
+          : "environment_bound_no_go",
+      },
+      clean_host: {
+        unauthorized_install: false,
+        unauthorized_login: false,
+        unauthorized_upload: false,
+        unauthorized_write: false,
+        manual_secret_transfer: false,
+        sensitive_persistence: false,
+      },
+    },
     cli_smoke: {
       operation: "version",
       cli_version: "0.3.2",

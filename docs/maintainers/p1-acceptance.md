@@ -49,7 +49,7 @@ open requirement or pending mandatory gate.
 | P1-HOST-01 | Codex and Claude resume exact Architecture and Handoff state without prose reconstruction | Claude Handoff state resumes in Codex from one validated local artifact | #136 | Complete |
 | P1-COVERAGE-01 | Representative Provider-neutral Packs preserve honest depth for managed and generic implementations | reference packs cover every product shape and integration family without Provider semantics | #137 | Complete |
 | P1-DOCS-01 | Agent and Human users can follow the complete authority-aware Phase 1 journey | documented Phase 1 commands are equivalent across POSIX and PowerShell | #138 | Complete |
-| P1-RELEASE-01 | Exact P1 artifacts publish only as Experimental before separate external verification and Stable promotion | P0 Stable never promotes P1 beyond Experimental without separate approval | #139 | Open |
+| P1-RELEASE-01 | Exact P1 artifacts publish only as Experimental before separate external verification and Stable promotion | packed artifacts complete installation, delegation, lifecycle, and full verification journeys | #139 | Open |
 
 ## Independent lifecycle
 
@@ -77,9 +77,39 @@ Traceability, the P1 Quality Floor, supply-chain integrity, exact packed
 artifacts, and external verification are mandatory and independently
 addressable. Cards, Packs, Executor Descriptors, public commands, generated
 copies, effects, exact versions, provenance, platform claims, and any
-authority expansion remain fail-closed under the supply-chain gate. Pending
-exact-artifact and external-verification gates keep P1 incomplete even while
-completed P0 behavior stays available. Supply-chain freshness is evaluated at
-the explicit `supply_chain_assessment_at` timestamp in `release/p1.json`, and
-release validation requires that timestamp to match its current UTC date. A
-historical assessment cannot authorize a later publication.
+authority expansion remain fail-closed under the supply-chain gate. The exact
+artifact gate is Complete; external verification remains Pending, so P1 stays
+Incomplete and Experimental while completed P0 behavior remains available.
+Supply-chain freshness is evaluated at the explicit
+`supply_chain_assessment_at` timestamp in `release/p1.json`, and release
+validation requires that timestamp to match its current UTC date. A historical
+assessment cannot authorize a later publication.
+
+## Exact-artifact matrix
+
+`npm run test:p1-exact-artifacts` packs and installs the declared CLI, Core,
+Contracts, canonical Skill, Codex, and Claude artifacts before observing any
+P1 result. It runs the five representative Product journeys through fresh full
+Verify, and runs every managed implementation in all eight Integration
+families through both installed Host adapters. Receipts stay claim-only and
+produce an exact fresh-Verify request; independently collected authenticated
+success and failure produce environment-bound Machine Evidence and truthful
+Assessment.
+
+The CI journey matrix binds each invocation to its actual runtime rather than
+trusting a label:
+
+| Runner | Node | Published shell form |
+| --- | --- | --- |
+| Ubuntu | 20.12, 22, 24 | POSIX |
+| macOS | 22 | POSIX |
+| Windows | 22 | PowerShell |
+
+The same installed-artifact gate exercises no-PRD and incomplete semantic
+coverage, denied write authority, missing Executor, cancellation, partial
+receipt, stale Architecture, Unknown Provider, environment isolation,
+cross-host resume (or the explicit unsupported Windows boundary), additive
+P0-to-P1 migration denial, project-pinned execution, uninstall, and retained
+local project data. Network, package-manager, credential-read, application
+tree, and sensitive-output guards fail the gate on an undisclosed upload,
+install, login, write, secret transfer, or persisted sensitive value.
