@@ -5,6 +5,8 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
+  assertValidExecutorDescriptor,
+  assertValidProviderDecisionCard,
   assertValidProviderKnowledge,
   assertValidReferenceIntegrationPack,
 } from "@launchrally/contracts";
@@ -87,6 +89,10 @@ const phase1CommandPaths = [
   "adapters/claude/launchrally/skills/launchrally/references/phase-1-command-examples.json",
   "adapters/codex/launchrally/skills/launchrally/references/phase-1-command-examples.json",
 ];
+const providerCardSources = new Map([
+  ["packages/core/provider-decision-cards/v1/cloudflare-workers.json", "developers.cloudflare.com"],
+  ["packages/core/provider-decision-cards/v1/vercel.json", "vercel.com"],
+]);
 
 async function json(relativePath) {
   return JSON.parse(await readFile(path.join(root, relativePath), "utf8"));
@@ -192,12 +198,53 @@ async function validateProviderToolAuthority() {
   }
 }
 
-async function validateP1SupplyChain() {
+async function validateP1SupplyChain(rootPackage) {
   assertValidProviderKnowledge(CORE_PROVIDER_KNOWLEDGE);
+  for (const [cardPath, officialHost] of providerCardSources) {
+    const card = await json(cardPath);
+    try {
+      assertValidProviderDecisionCard(card);
+    } catch {
+      throw new Error(`p1_provider_card_invalid: ${cardPath}`);
+    }
+    if (card.official_sources.some(({ url }) => new URL(url).hostname !== officialHost)) {
+      throw new Error(`p1_provider_card_provenance_invalid: ${cardPath}`);
+    }
+  }
   const descriptorDigests = new Map(referenceExecutorDescriptors.map((descriptor) => [
     descriptor.descriptor_id,
     descriptor.trust.digest,
   ]));
+  const executorAuthority = await json("packages/core/executor-installation/v1/authority.json");
+  if (executorAuthority.length !== referenceExecutorDescriptors.length) {
+    throw new Error("p1_executor_authority_invalid: unexpected authority count");
+  }
+  for (const descriptor of referenceExecutorDescriptors) {
+    assertValidExecutorDescriptor(descriptor);
+    const tool = descriptor.tools[0];
+    const authority = executorAuthority.find(
+      ({ authority_id: authorityId }) => authorityId === tool.installation_authority_id,
+    );
+    if (
+      descriptor.allowed_effects.length !== 1
+      || descriptor.allowed_effects[0] !== "source_write"
+      || !descriptor.prohibited_effects.includes("deployment_write")
+      || !descriptor.prohibited_effects.includes("provider_configuration_write")
+      || authority?.tool_id !== tool.tool_id
+      || authority?.executable !== tool.executable
+      || authority?.exact_version !== tool.exact_version
+      || authority?.package?.exact_version !== tool.exact_version
+      || rootPackage.devDependencies?.[authority?.package?.name] !== tool.exact_version
+      || JSON.stringify(authority?.supported_platforms) !== JSON.stringify(descriptor.platforms)
+      || authority?.verification_command?.executable !== tool.executable
+      || JSON.stringify(authority?.verification_command?.arguments) !== JSON.stringify(["--version"])
+      || authority?.verification_command?.shell !== false
+      || authority?.installation_routes?.some(({ command }) =>
+        command?.executable !== "npm"
+        || command?.arguments?.[2] !== `${authority.package.name}@${tool.exact_version}`
+        || command?.shell !== false)
+    ) throw new Error(`p1_executor_authority_invalid: ${descriptor.descriptor_id}`);
+  }
   for (const packPath of referencePackPaths) {
     const pack = await json(packPath);
     try {
@@ -238,7 +285,7 @@ async function validateRelease() {
   const release = await json("release/artifacts.json");
   const version = rootPackage.version;
   await validateProviderToolAuthority();
-  await validateP1SupplyChain();
+  await validateP1SupplyChain(rootPackage);
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
     throw new Error(`invalid_release_version: ${version}`);
   }

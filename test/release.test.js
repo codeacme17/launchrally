@@ -307,6 +307,26 @@ test("release validation rejects untrusted Pack Executor bindings and Phase 1 co
     /p1_pack_executor_binding_invalid/u,
   );
 
+  const cardFixture = await createReleaseFixture();
+  const cardPath = path.join(
+    cardFixture,
+    "packages/core/provider-decision-cards/v1/vercel.json",
+  );
+  const card = JSON.parse(await readFile(cardPath, "utf8"));
+  card.official_sources[0].url = "https://example.com/unreviewed";
+  await writeFile(cardPath, `${JSON.stringify(card, null, 2)}\n`);
+  await assertReleaseValidationFailure(cardFixture, /p1_provider_card_provenance_invalid/u);
+
+  const executorFixture = await createReleaseFixture();
+  const executorPath = path.join(
+    executorFixture,
+    "packages/core/executor-installation/v1/authority.json",
+  );
+  const executorAuthority = JSON.parse(await readFile(executorPath, "utf8"));
+  executorAuthority[0].exact_version = "0.148.0";
+  await writeFile(executorPath, `${JSON.stringify(executorAuthority, null, 2)}\n`);
+  await assertReleaseValidationFailure(executorFixture, /p1_executor_authority_invalid/u);
+
   const commandFixture = await createReleaseFixture();
   const commandPath = path.join(
     commandFixture,
