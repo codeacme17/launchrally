@@ -1247,7 +1247,7 @@ test("P1 governance binds the completed exact-artifact gate to runtime evidence"
 test("packed artifacts complete installation, delegation, lifecycle, and full verification journeys", async () => {
   const { stdout } = await execFileAsync(
     "npm",
-    ["--silent", "run", "test:artifacts", "--", "--json", "--skip-native"],
+    ["--silent", "run", "test:artifacts", "--", "--json"],
     { cwd: root, maxBuffer: 1024 * 1024 * 4 },
   );
   const result = JSON.parse(stdout);
@@ -1288,10 +1288,28 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
         "source_to_ci_cd_to_deployment",
         "storage_to_metadata_access",
       ],
+      integration_fresh_verify: {
+        backup_to_restore: "environment_bound_fresh_evidence",
+        email_to_domain_delivery: "environment_bound_fresh_evidence",
+        identity_to_application_data: "environment_bound_fresh_evidence",
+        payment_to_entitlement: "environment_bound_fresh_evidence",
+        queue_background_work: "environment_bound_fresh_evidence",
+        release_to_observability: "environment_bound_fresh_evidence",
+        source_to_ci_cd_to_deployment: "environment_bound_fresh_evidence",
+        storage_to_metadata_access: "environment_bound_fresh_evidence",
+      },
       host_journeys: ["claude", "codex"],
+      native_host_journeys: {
+        claude: "strict_validation_and_typed_journey",
+        codex: "native_installation_and_typed_journey",
+      },
       cross_host_resume: process.platform === "win32"
         ? "typed_unavailable"
         : "architecture_and_handoff",
+      p0_to_p1_migration: {
+        adoption: "completed",
+        interruption: "rolled_back_and_recovered",
+      },
       scenarios: [
         "cancellation",
         "cross_host_resume",
@@ -1360,7 +1378,7 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       packaged_skill_fixtures: "codex_and_claude_executed",
       protected_journeys: "codex_and_claude_audit_verify_normalized",
       launcher_removal: "project_data_preserved",
-      plugin_removal: "skipped",
+      plugin_removal: "project_data_preserved",
       fixture_invocations: [
         "version",
         "audit_input",
@@ -1386,7 +1404,10 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
         "verify_completed",
       ],
     },
-    native_plugins: "skipped",
+    native_plugins: {
+      claude: "strictly_validated",
+      codex: "installed_and_removed",
+    },
   });
 });
 

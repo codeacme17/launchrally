@@ -92,9 +92,11 @@ Contracts, canonical Skill, Codex, and Claude artifacts before observing any
 P1 result. It runs the five representative Product journeys through fresh full
 Verify, and runs every managed implementation in all eight Integration
 families through both installed Host adapters. Receipts stay claim-only and
-produce an exact fresh-Verify request; independently collected authenticated
-success and failure produce environment-bound Machine Evidence and truthful
-Assessment.
+produce an exact fresh-Verify request. For every family, the packed CLI then
+executes that request's local Evidence target and binds the resulting content
+digest to fresh environment-bound Evidence. Independently collected
+authenticated success and failure bind the exact host-adapter Evidence digest
+and provenance to truthful Assessment.
 
 The CI journey matrix binds each invocation to its actual runtime rather than
 trusting a label:
@@ -105,11 +107,15 @@ trusting a label:
 | macOS | 22 | POSIX |
 | Windows | 22 | PowerShell |
 
-The same installed-artifact gate exercises no-PRD and incomplete semantic
+The gate invokes the exact native Codex installation and Claude strict
+validation commands in the same run as their typed packaged journeys. The same
+installed-artifact gate exercises no-PRD and incomplete semantic
 coverage, denied write authority, missing Executor, cancellation, partial
 receipt, stale Architecture, Unknown Provider, environment isolation,
 cross-host resume (or the explicit unsupported Windows boundary), additive
-P0-to-P1 migration denial, project-pinned execution, uninstall, and retained
-local project data. Network, package-manager, credential-read, application
-tree, and sensitive-output guards fail the gate on an undisclosed upload,
+P0-to-P1 migration denial, successful adoption, injected interruption rollback
+and retry, project-pinned execution, uninstall, and retained local project
+data. The reported clean-host result is derived from observed package-manager,
+authenticated-network, application-tree, installed-prefix, and normalized
+output boundaries; those guards fail the gate on an undisclosed upload,
 install, login, write, secret transfer, or persisted sensitive value.

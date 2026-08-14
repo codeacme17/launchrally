@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   access,
   chmod,
@@ -210,20 +211,55 @@ function assertEqual(actual, expected, code, detail) {
   }
 }
 
-function assertEnvironmentBoundEvidence(result, environment, expectedCheckStatus) {
+function sha256Text(value) {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function assertEnvironmentBoundEvidence(
+  result,
+  environment,
+  expectedCheckStatus,
+  { evidenceKind = null, target = null } = {},
+) {
   const entries = result.evidence_index?.entries ?? [];
-  const qualifying = entries.filter(({ current, environment: observed }) =>
-    current === true && observed === environment);
-  const evidenceDigests = new Set(qualifying.map(({ digest }) => digest));
-  const check = result.report?.results?.checks?.find((candidate) =>
-    candidate.environment === environment
-    && candidate.status === expectedCheckStatus
-    && candidate.evidence.some(({ digest }) => evidenceDigests.has(digest)));
-  if (qualifying.length === 0 || !check) {
+  const qualifying = entries.filter((entry) =>
+    entry.current === true
+    && entry.environment === environment
+    && (evidenceKind === null || entry.evidence_kind === evidenceKind)
+    && (target === null || entry.target === target));
+  const binding = qualifying.find((entry) => result.report?.results?.checks?.some((check) =>
+    check.environment === environment
+    && check.status === expectedCheckStatus
+    && check.evidence.some(({ digest }) => digest === entry.digest)));
+  if (!binding) {
     throw new Error(
-      `p1_environment_bound_evidence_missing:${environment}:${expectedCheckStatus}`,
+      `p1_environment_bound_evidence_missing:${environment}:${expectedCheckStatus}:${JSON.stringify({
+        qualifying: qualifying.map(({ digest, evidence_kind: kind, target: observedTarget }) => ({
+          digest,
+          kind,
+          target: observedTarget,
+        })),
+        checks: (result.report?.results?.checks ?? []).filter(
+          ({ environment: observed, status }) =>
+            observed === environment && status === expectedCheckStatus,
+        ).map(({ check_id: id, evidence }) => ({
+          id,
+          evidence: evidence.map(({ digest }) => digest),
+        })),
+      })}`,
     );
   }
+  if (evidenceKind === "authenticated_journey_machine_evidence") {
+    const artifact = binding.normalized_artifact;
+    if (
+      artifact?.kind !== evidenceKind
+      || artifact.provenance?.collector !== "host-agent-authenticated-journey/v1"
+      || artifact.provenance?.exact_target !== binding.target
+      || artifact.provenance?.permission_id !== "authenticated_journey_verification"
+      || artifact.provenance?.collected_at !== binding.collected_at
+    ) throw new Error("p1_authenticated_evidence_provenance_drift");
+  }
+  return binding;
 }
 
 function shellCommand(command, replacements) {
@@ -407,13 +443,14 @@ async function assertMissing(filePath, code) {
   throw new Error(`${code}: ${filePath} exists unexpectedly`);
 }
 
-async function snapshotTree(directory, relative = "") {
+async function snapshotTree(directory, relative = "", excludedRoots = new Set()) {
   const entries = await readdir(path.join(directory, relative), { withFileTypes: true });
   const snapshot = [];
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (relative === "" && excludedRoots.has(entry.name)) continue;
     const entryRelative = path.join(relative, entry.name);
     if (entry.isDirectory()) {
-      snapshot.push(...await snapshotTree(directory, entryRelative));
+      snapshot.push(...await snapshotTree(directory, entryRelative, excludedRoots));
     } else {
       snapshot.push([
         entryRelative.split(path.sep).join("/"),
@@ -433,6 +470,21 @@ async function runInstallationJourneys({
   publicLegacy,
   publicRelease,
 }) {
+  const effectObservations = {
+    package_manager: [],
+    authenticated_network: [],
+    file_boundaries: [],
+    normalized_outputs: [],
+  };
+  const runAuthorizedNpm = (arguments_, options, authority) => {
+    effectObservations.package_manager.push({
+      executable: "npm",
+      arguments: [...arguments_],
+      authority,
+      authorized: true,
+    });
+    return runNpm(arguments_, options);
+  };
   const prefix = path.join(temporaryRoot, "user-npm-prefix");
   const launcher = prefixExecutable(prefix);
   await assertMissing(launcher, "isolated_prefix_not_clean");
@@ -454,9 +506,10 @@ async function runInstallationJourneys({
       "--",
       "rally",
     ];
-  const npmExecVersion = JSON.parse((await runNpm(
+  const npmExecVersion = JSON.parse((await runAuthorizedNpm(
     [...npmExecArguments, "--version", "--json"],
     { cwd: temporaryRoot },
+    "exact_public_or_packed_execution",
   )).stdout);
   if (npmExecVersion.cli_version !== version) {
     throw new Error("npm_exec_artifact_version_drift");
@@ -476,8 +529,13 @@ async function runInstallationJourneys({
     ...(publicRelease ? [] : ["--offline", "--cache", cacheDirectory]),
     ...globalPackageSpecs,
   ];
-  await runNpm(globalInstallArguments, { cwd: temporaryRoot });
+  await runAuthorizedNpm(
+    globalInstallArguments,
+    { cwd: temporaryRoot },
+    "explicit_user_prefix_install",
+  );
   await access(launcher);
+  const installedPrefixSnapshot = await snapshotTree(prefix);
 
   const packagedJourneyPath = path.join(
     cleanProject,
@@ -525,6 +583,11 @@ async function runInstallationJourneys({
     json(codexPhase1CommandsPath),
     json(claudePhase1CommandsPath),
   ]);
+  const installedAdapterProjectSnapshot = await snapshotTree(
+    cleanProject,
+    "",
+    new Set(["node_modules"]),
+  );
   const {
     applyReferenceJourneyState,
     buildCapabilityGraph,
@@ -534,6 +597,7 @@ async function runInstallationJourneys({
     createReferenceCoverageMatrix,
     referenceExecutorDescriptors,
     referenceIntegrationPacks,
+    runArchitectureJourney,
     runHandoff,
     runReferenceOutcomeJourney,
   } = await import(pathToFileURL(path.join(
@@ -545,6 +609,8 @@ async function runInstallationJourneys({
     "index.js",
   )).href);
   const p1IntegrationFamilies = new Set();
+  const integrationVerificationRequests = new Map();
+  const integrationFreshVerify = {};
   const p1HostJourneys = new Set();
   const p1Scenarios = new Set();
   let successfulDownstreamEvidence = false;
@@ -595,6 +661,7 @@ async function runInstallationJourneys({
             outcome,
             assessment_time: "2026-08-14T12:00:00.000Z",
           });
+          effectObservations.normalized_outputs.push(JSON.stringify(referenceResult));
           const requiresFreshVerification = [
             "complete", "partial", "successful", "failed", "cleanup_failed",
           ].includes(outcome);
@@ -616,6 +683,13 @@ async function runInstallationJourneys({
             );
           }
           if (requiresFreshVerification) receiptClaimsRequireVerification = true;
+          if (outcome === "complete" && !integrationVerificationRequests.has(pack.family)) {
+            integrationVerificationRequests.set(pack.family, {
+              pack_digest: pack.pack_digest,
+              implementation_id: implementation.implementation_id,
+              request: structuredClone(referenceResult.fresh_verification_request),
+            });
+          }
           if (outcome === "partial") p1Scenarios.add("partial_receipt");
           if (outcome === "denied") p1Scenarios.add("denied_write");
           if (outcome === "unknown") p1Scenarios.add("missing_executor");
@@ -628,6 +702,7 @@ async function runInstallationJourneys({
         outcome: "unknown",
         assessment_time: "2026-08-14T12:00:00.000Z",
       });
+      effectObservations.normalized_outputs.push(JSON.stringify(unknownProvider));
       if (
         unknownProvider.status !== "verification_gap"
         || unknownProvider.reason_code !== "unsupported_reference_executor"
@@ -691,10 +766,10 @@ async function runInstallationJourneys({
   );
   const invokeNpmExecFixture = async (id, replacements = {}) => {
     const invocation = findFixtureInvocation(journey, id);
-    const execution = await runNpm([
+    const execution = await runAuthorizedNpm([
       ...npmExecArguments,
       ...fixtureArguments(journey, id, replacements),
-    ], { cwd: temporaryRoot });
+    ], { cwd: temporaryRoot }, "exact_npm_exec_journey");
     const result = JSON.parse(execution.stdout);
     assertFixtureResult(journey, invocation, result, 0);
     return result;
@@ -772,6 +847,12 @@ async function runInstallationJourneys({
         key: await readFile(path.join(root, "test", "fixtures", "self-signed-key.pem")),
         cert: await readFile(path.join(root, "test", "fixtures", "self-signed-cert.pem")),
       }, (request, response) => {
+        effectObservations.authenticated_network.push({
+          effect: "authenticated_network_read",
+          method: request.method,
+          destination: "loopback_fixture",
+          authentication_source: "owner_private_reference",
+        });
         response.writeHead(statusCode);
         response.end();
       });
@@ -863,11 +944,16 @@ async function runInstallationJourneys({
             JSON.stringify(result),
           )
         ) throw new Error(`packaged_${host}_${expectedOutcome}_host_runner_failed`);
+        effectObservations.normalized_outputs.push(JSON.stringify(result));
         if (expectedEvidence) {
           assertEnvironmentBoundEvidence(
             result,
             "staging",
             expected.outcome === "completed" ? "passed" : "failed",
+            {
+              evidenceKind: "authenticated_journey_machine_evidence",
+              target: `${target}/control`,
+            },
           );
           if (expected.outcome === "completed") successfulDownstreamEvidence = true;
           else unsuccessfulDownstreamEvidence = true;
@@ -1089,6 +1175,10 @@ async function runInstallationJourneys({
       `packaged_${host}_protected_journey_mutated_application`,
       `${host} must not perform login, capability grants, deployment, or application writes`,
     );
+    effectObservations.file_boundaries.push({
+      boundary: `${host}_protected_application`,
+      preserved: true,
+    });
   };
   await runProtectedSkillJourney(journey, "codex");
   await runProtectedSkillJourney(claudeJourney, "claude");
@@ -1470,6 +1560,32 @@ async function runInstallationJourneys({
   if (initialized.status !== "completed") {
     throw new Error("installation_journey_init_failed");
   }
+  const invokePackedAudit = async (...arguments_) => JSON.parse((await invokeLauncher(
+    "rally",
+    [...arguments_, "--json", "--cwd", activeRepository],
+    { cwd: temporaryRoot, env: launcherEnvironment },
+  )).stdout);
+  const currentAuditInput = await invokePackedAudit("audit");
+  const currentAuditConfirmation = await invokePackedAudit(
+    "audit", "--resume", currentAuditInput.interaction.resume_token,
+    "--answers", answers,
+  );
+  const currentAuditPermission = await invokePackedAudit(
+    "audit", "--resume", currentAuditConfirmation.interaction.resume_token,
+    "--confirm", "confirm",
+  );
+  const currentArchitectureReport = await invokePackedAudit(
+    "audit", "--resume", currentAuditPermission.interaction.resume_token,
+    "--permissions", JSON.stringify({ public_verification: "denied" }),
+  );
+  if (
+    currentArchitectureReport.status !== "completed"
+    || !currentArchitectureReport.report
+  ) throw new Error("packed_p0_to_p1_current_report_failed");
+  await writeFile(
+    path.join(temporaryRoot, "launchrally-current-report.json"),
+    JSON.stringify(currentArchitectureReport),
+  );
   await writeFile(
     path.join(temporaryRoot, "launchrally-manifest-source-report.json"),
     JSON.stringify(auditCompleted),
@@ -1497,7 +1613,96 @@ async function runInstallationJourneys({
     || !phase1Verify.report
     || !phase1Verify.evidence_index
   ) throw new Error(`packed_phase_1_verify_continuation_failed:${phase1Verify.status}`);
+  const executeIntegrationFreshVerify = async () => {
+    let integrationSource = phase1Verify;
+    const integrationReportPath = path.join(
+      temporaryRoot,
+      "integration-fresh-verify-source.json",
+    );
+    for (const family of P1_INTEGRATION_FAMILIES) {
+      const binding = integrationVerificationRequests.get(family);
+      const evidenceTargets = binding?.request?.task_requests?.[0]?.evidence_targets ?? [];
+      if (
+        !binding
+        || !evidenceTargets.some((target) => target.includes(binding.pack_digest.slice(7)))
+        || !evidenceTargets.some((target) => target.includes(binding.implementation_id))
+        || !evidenceTargets.includes("repository:.env.example")
+      ) throw new Error(`packed_integration_verify_request_unbound:${family}`);
+      await writeFile(integrationReportPath, JSON.stringify(integrationSource));
+      const marker = [
+        `LAUNCHRALLY_REFERENCE_FAMILY=${family}`,
+        `LAUNCHRALLY_REFERENCE_PACK_DIGEST=${binding.pack_digest}`,
+        `LAUNCHRALLY_REFERENCE_IMPLEMENTATION=${binding.implementation_id}`,
+        "",
+      ].join("\n");
+      await writeFile(path.join(activeRepository, ".env.example"), marker);
+      const permission = JSON.parse((await invokeLauncher("rally", [
+        "verify", "--json", "--cwd", activeRepository,
+        "--report", integrationReportPath,
+        "--scope", "full",
+      ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+      const verified = JSON.parse((await invokeLauncher("rally", [
+        "verify", "--json", "--cwd", activeRepository,
+        "--resume", permission.interaction.resume_token,
+        "--permissions", JSON.stringify({ public_verification: "denied" }),
+      ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+      const entry = assertEnvironmentBoundEvidence(
+        verified,
+        "production",
+        "passed",
+        { target: "repository:.env.example" },
+      );
+      if (
+        verified.status !== "completed"
+        || entry.evidence_kind !== "file"
+        || entry.normalized_artifact?.path !== ".env.example"
+        || entry.normalized_artifact?.content_digest !== sha256Text(marker)
+        || !verified.comparison?.invalidated_evidence?.some(
+          ({ target }) => target === "repository:.env.example",
+        )
+      ) throw new Error(`packed_integration_fresh_verify_failed:${family}`);
+      integrationFreshVerify[family] = "environment_bound_fresh_evidence";
+      integrationSource = verified;
+    }
+    return integrationSource;
+  };
   const migrationBefore = await snapshotTree(path.join(activeRepository, ".launchrally"));
+  const migrationSource = {
+    report_package: currentArchitectureReport,
+    product_intent: intentCompleted.profile,
+    catalog,
+    capability_graph: graph,
+    integration_contracts: integrationContracts,
+  };
+  const interruptedPreview = await runArchitectureJourney(
+    activeRepository,
+    migrationSource,
+    { review_date: "2026-08-14", launcher_version: version },
+  );
+  const interrupted = await runArchitectureJourney(activeRepository, {}, {
+    resume_token: interruptedPreview.interaction.resume_token,
+    migration_confirmation: "confirm",
+    launcher_version: version,
+    file_operations: {
+      async before_migration_commit() {
+        const error = new Error("simulated packed P0 to P1 interruption");
+        error.code = "simulated_p0_p1_migration_interruption";
+        throw error;
+      },
+    },
+  });
+  if (
+    interrupted.status !== "execution_error"
+    || interrupted.error !== "simulated_p0_p1_migration_interruption"
+  ) throw new Error(
+    `packed_p0_to_p1_migration_interruption_failed:${JSON.stringify(interrupted)}`,
+  );
+  assertEqual(
+    await snapshotTree(path.join(activeRepository, ".launchrally")),
+    migrationBefore,
+    "packed_p0_to_p1_interruption_changed_p0",
+    "Interrupted P1 adoption must roll back every P0 project byte",
+  );
   const migrationPreview = await invokeDocumentedPhase1Command(architectExample);
   if (
     migrationPreview.status !== "needs_confirmation"
@@ -1549,6 +1754,39 @@ async function runInstallationJourneys({
     "packed_p0_to_p1_migration_changed_p0",
     "Denied P1 migration must preserve every P0 project byte",
   );
+  const invokeMigrationArchitect = async (repository) => {
+    const arguments_ = architectExample.argv.map((argument) => {
+      if (argument === "./app") return repository;
+      if (argument.startsWith("./")) {
+        return path.join(temporaryRoot, path.basename(argument));
+      }
+      return argument;
+    });
+    return JSON.parse((await invokeLauncher("rally", arguments_, {
+      cwd: temporaryRoot,
+      env: launcherEnvironment,
+    })).stdout);
+  };
+  const adoptionPreview = await invokeMigrationArchitect(activeRepository);
+  const adopted = JSON.parse((await invokeLauncher("rally", [
+    "architect", "--json", "--cwd", activeRepository,
+    "--resume", adoptionPreview.interaction.resume_token,
+    "--confirm", "confirm",
+  ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+  if (adopted.status !== "needs_confirmation" || adopted.state !== "blueprint_review") {
+    throw new Error("packed_p0_to_p1_migration_adoption_failed");
+  }
+  const adoption = JSON.parse(await readFile(path.join(
+    activeRepository,
+    ".launchrally",
+    "phase-1",
+    "adoption.json",
+  ), "utf8"));
+  if (
+    adoption.schema_version !== "launchrally.dev/phase-1-adoption/v1"
+    || adoption.historical_reports_relabelled !== false
+  ) throw new Error("packed_p0_to_p1_migration_record_drift");
+  await executeIntegrationFreshVerify();
   p1Scenarios.add("p0_to_p1_migration");
   p1Scenarios.add("cross_host_resume");
   const projectVersion = await invokeFixture("project_version");
@@ -2036,14 +2274,34 @@ async function runInstallationJourneys({
 
   const projectData = path.join(activeRepository, ".launchrally");
   await access(path.join(projectData, "manifest.yaml"));
-  await runNpm([
+  assertEqual(
+    await snapshotTree(prefix),
+    installedPrefixSnapshot,
+    "packed_adapter_unauthorized_install",
+    "Installed Host journeys must not change the explicit user prefix",
+  );
+  effectObservations.file_boundaries.push({
+    boundary: "installed_user_prefix",
+    preserved: true,
+  });
+  assertEqual(
+    await snapshotTree(cleanProject, "", new Set(["node_modules"])),
+    installedAdapterProjectSnapshot,
+    "packed_adapter_unauthorized_write",
+    "Installed Host journeys must not mutate their installation project",
+  );
+  effectObservations.file_boundaries.push({
+    boundary: "installed_adapter_project",
+    preserved: true,
+  });
+  await runAuthorizedNpm([
     "uninstall",
     "--global",
     "--prefix",
     prefix,
     "--ignore-scripts",
     "@launchrally/cli",
-  ], { cwd: temporaryRoot });
+  ], { cwd: temporaryRoot }, "explicit_user_prefix_uninstall");
   await assertMissing(launcher, "launcher_removal_failed");
   await access(path.join(projectData, "manifest.yaml"));
   await access(path.join(projectData, "toolchain", "authority.json"));
@@ -2053,6 +2311,15 @@ async function runInstallationJourneys({
     [...P1_INTEGRATION_FAMILIES],
     "p1_integration_matrix_incomplete",
     "Every reviewed Integration family must execute through both packed Host adapters",
+  );
+  assertEqual(
+    integrationFreshVerify,
+    Object.fromEntries(P1_INTEGRATION_FAMILIES.map((family) => [
+      family,
+      "environment_bound_fresh_evidence",
+    ])),
+    "p1_integration_fresh_verify_incomplete",
+    "Every reviewed Integration family must complete its exact fresh Verify request",
   );
   assertEqual(
     [...p1HostJourneys].sort(),
@@ -2072,11 +2339,48 @@ async function runInstallationJourneys({
       && (!successfulDownstreamEvidence || !unsuccessfulDownstreamEvidence))
   ) throw new Error("p1_fresh_verify_matrix_incomplete");
 
+  const persistedSensitiveValue = effectObservations.normalized_outputs.some((output) =>
+    /packaged-host-secret|bearer\s|"cookie"|"headers"|response_body/iu.test(output));
+  if (
+    effectObservations.package_manager.length < 4
+    || effectObservations.file_boundaries.length < 4
+    || effectObservations.normalized_outputs.length === 0
+    || (process.platform !== "win32"
+      && effectObservations.authenticated_network.length !== 6)
+  ) throw new Error("p1_clean_host_observation_incomplete");
+  const cleanHost = {
+    unauthorized_install: effectObservations.package_manager.some(
+      ({ authorized }) => authorized !== true,
+    ),
+    unauthorized_login: effectObservations.authenticated_network.some(
+      ({ effect }) => effect !== "authenticated_network_read",
+    ),
+    unauthorized_upload: effectObservations.authenticated_network.some(
+      ({ method, destination }) => method !== "GET" || destination !== "loopback_fixture",
+    ),
+    unauthorized_write: effectObservations.file_boundaries.some(
+      ({ preserved }) => preserved !== true,
+    ),
+    manual_secret_transfer: effectObservations.authenticated_network.some(
+      ({ authentication_source: source }) => source !== "owner_private_reference",
+    ),
+    sensitive_persistence: persistedSensitiveValue,
+  };
+  if (Object.values(cleanHost).some(Boolean)) {
+    throw new Error("p1_clean_host_effect_boundary_failed");
+  }
+
   return {
     projectData,
     p1Evidence: {
       integrationFamilies: [...p1IntegrationFamilies].sort(),
+      integrationFreshVerify,
       hostJourneys: [...p1HostJourneys].sort(),
+      p0ToP1Migration: {
+        adoption: "completed",
+        interruption: "rolled_back_and_recovered",
+      },
+      cleanHost,
       scenarios: [...p1Scenarios].sort(),
       receiptClaimsRequireVerification,
       successfulDownstreamEvidence,
@@ -2958,10 +3262,16 @@ async function main() {
       public_surfaces: ["claude", "cli", "codex", "contracts", "core", "skill"],
       product_journeys: cliSmoke.p1ProductJourneys,
       integration_families: installationJourneys.p1Evidence.integrationFamilies,
+      integration_fresh_verify: installationJourneys.p1Evidence.integrationFreshVerify,
       host_journeys: installationJourneys.p1Evidence.hostJourneys,
+      native_host_journeys: nativePlugins === "skipped" ? "skipped" : {
+        claude: "strict_validation_and_typed_journey",
+        codex: "native_installation_and_typed_journey",
+      },
       cross_host_resume: process.platform === "win32"
         ? "typed_unavailable"
         : "architecture_and_handoff",
+      p0_to_p1_migration: installationJourneys.p1Evidence.p0ToP1Migration,
       scenarios: installationJourneys.p1Evidence.scenarios,
       fresh_verify: {
         receipt_claims: "verification_required",
@@ -2972,14 +3282,7 @@ async function main() {
           ? "typed_runner_unavailable"
           : "environment_bound_no_go",
       },
-      clean_host: {
-        unauthorized_install: false,
-        unauthorized_login: false,
-        unauthorized_upload: false,
-        unauthorized_write: false,
-        manual_secret_transfer: false,
-        sensitive_persistence: false,
-      },
+      clean_host: installationJourneys.p1Evidence.cleanHost,
     };
     const result = {
       status: "completed",

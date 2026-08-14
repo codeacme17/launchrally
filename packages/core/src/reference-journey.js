@@ -57,7 +57,7 @@ function taskGraph(pack, implementation) {
       recovery_notes: ["Preserve the typed gap and inspect the synthetic fixture before retrying."],
       minimum_executor_capability: "local_source_write_v1",
       structured_result_schema: EXECUTION_RECEIPT_SCHEMA,
-      evidence_targets: [target],
+      evidence_targets: [target, "repository:.env.example"],
       follow_up_verify: {
         operation: "verify",
         scope: pack.family,

@@ -53,8 +53,10 @@ npm run test:p1-exact-artifacts
 ```
 
 The P1 exact-artifact result must name all five Product journeys, all eight
-Integration families, both installed Host adapters, the authority/interruption
-scenario roster, and the environment-bound fresh-Verify outcomes. CI and the
+Integration families and their digest-bound fresh-Verify outcomes, both typed
+Host journeys and their native validation/installation commands, successful
+plus interrupted P0-to-P1 adoption, the authority/interruption scenario roster,
+and the environment-bound downstream outcomes. CI and the
 release workflow pass an exact matrix target to the artifact runner; a target
 that does not match the actual OS, Node major, and shell fails before packing.
 This gate does not satisfy the separate public external-verification gate.

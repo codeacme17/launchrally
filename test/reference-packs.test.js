@@ -294,6 +294,11 @@ test("Codex and Claude reference journeys keep receipts as claims before fresh v
           result.fresh_verification_request.task_requests[0].evidence_targets[0],
           new RegExp(`${pack.pack_digest.slice(7)}.*${implementation.implementation_id}`, "u"),
         );
+        assert.ok(
+          result.fresh_verification_request.task_requests[0].evidence_targets.includes(
+            "repository:.env.example",
+          ),
+        );
       } else {
         assert.equal(result.status, "verification_gap");
       }
