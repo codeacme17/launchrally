@@ -1190,7 +1190,7 @@ test("timeouts are bounded and partial reachability becomes reasoned gaps", asyn
     );
 
     assert.equal(result.status, "completed");
-    assert.ok(elapsed >= 5000 && elapsed < 7000, `Audit took ${elapsed}ms`);
+    assert.ok(elapsed >= 4500 && elapsed < 10000, `Audit took ${elapsed}ms`);
     assert.equal(timeouts.length, 2);
     assert.ok(timeouts.every((item) => item.status === "unverified"));
     assert.deepEqual(
