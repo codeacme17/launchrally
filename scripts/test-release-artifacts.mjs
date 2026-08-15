@@ -1057,6 +1057,7 @@ async function runInstallationJourneys({
           else unsuccessfulDownstreamEvidence = true;
           p1Scenarios.add("environment_isolation");
         }
+        return result;
       } finally {
         if (previousOrigin === undefined) delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
         else process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = previousOrigin;
@@ -1071,10 +1072,10 @@ async function runInstallationJourneys({
         await new Promise((resolve) => server.close(resolve));
       }
     };
-    await exercisePackagedHostRunner(200, {
+    const supportedSuccess = await exercisePackagedHostRunner(200, {
       outcome: "completed", authenticated: true, evidence: true,
     });
-    await exercisePackagedHostRunner(403, {
+    const supportedFailure = await exercisePackagedHostRunner(403, {
       outcome: "unexpected_denial", authenticated: true, evidence: true, assessment: "no_go",
     });
     await exercisePackagedHostRunner(401, {
@@ -1083,6 +1084,20 @@ async function runInstallationJourneys({
     await exercisePackagedHostRunner(200, {
       outcome: "missing_authentication", authenticated: false, evidence: false,
     });
+    if (process.platform === "win32") {
+      const environmentGapObserved = [supportedSuccess, supportedFailure].every((result) =>
+        result.report?.scope?.release_intent?.intended_environment?.value === "staging"
+        && !result.evidence_index.entries.some(
+          ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
+        )
+        && result.report.results.verification_gaps.some(
+          ({ reason_code: reasonCode }) => reasonCode === "runner_unavailable",
+        ));
+      if (!environmentGapObserved) {
+        throw new Error(`packaged_${host}_windows_environment_isolation_gap_missing`);
+      }
+      p1Scenarios.add("environment_isolation");
+    }
     const protectedRepository = path.join(temporaryRoot, `${host} protected journey`);
     await cp(
       path.join(root, "fixtures", "coverage", "typescript-astro"),
