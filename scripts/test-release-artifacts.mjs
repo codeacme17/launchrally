@@ -1086,7 +1086,7 @@ async function runInstallationJourneys({
     });
     if (process.platform === "win32") {
       const environmentGapObserved = [supportedSuccess, supportedFailure].every((result) =>
-        result.report?.scope?.release_intent?.intended_environment?.value === "staging"
+        result.report?.scope?.release_intent?.intended_environment === "staging"
         && !result.evidence_index.entries.some(
           ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
         )
