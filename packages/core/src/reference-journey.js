@@ -8,25 +8,20 @@ import { runHandoff } from "./handoff.js";
 import { sha256 } from "./local-history.js";
 import { referenceExecutorDescriptors } from "./reference-executors.js";
 import {
+  normalizeReferenceImplementation,
+  referenceVerificationPayload,
+  referenceVerificationTarget,
   referenceIntegrationPacks,
   runReferenceOutcomeJourney,
 } from "./reference-integration-packs.js";
 
-function taskGraph(pack, implementation) {
-  const fixture = implementation.normalization_fixture;
-  const target = [
-    "reference",
-    pack.pack_id,
-    pack.pack_digest.slice(7),
-    implementation.implementation_id,
-    implementation.interface_version.replaceAll(/[^A-Za-z0-9]+/gu, "_"),
-    fixture.fixture_id,
-  ].join("_").toLowerCase();
+function taskGraph(pack, implementation, environment) {
+  const target = referenceVerificationTarget(pack, implementation.implementation_id);
   return {
     schema_version: TASK_GRAPH_SCHEMA,
     graph_id: `task_graph_reference_${pack.family}`,
     revision: 1,
-    environment: "development",
+    environment,
     source_report: {
       id: `report_reference_${pack.family}`,
       schema_version: "launchrally.dev/report/v2",
@@ -43,7 +38,7 @@ function taskGraph(pack, implementation) {
       task_type: "implement_architecture_decision",
       source: "implementation_work",
       source_id: `work_${pack.pack_id}_${pack.pack_digest.slice(7)}`,
-      environment: "development",
+      environment,
       prerequisites: [],
       effect_class: "local_source",
       expected_target: target,
@@ -127,6 +122,7 @@ export async function runReferenceHostJourney({
   pack_id: packId,
   implementation_id: implementationId,
   outcome,
+  environment = "development",
   assessment_time: assessmentTime,
 }) {
   const pack = referenceIntegrationPacks.find(({ pack_id: id }) => id === packId);
@@ -197,7 +193,7 @@ export async function runReferenceHostJourney({
     now: () => assessmentTime,
   };
   const source = {
-    task_graph: taskGraph(pack, implementation),
+    task_graph: taskGraph(pack, implementation, environment),
     executor_descriptors: descriptors,
     reviewed_executors: descriptors.map((candidate) => ({
       descriptor_id: candidate.descriptor_id,
@@ -260,6 +256,8 @@ export async function runReferenceHostJourney({
     choice: "verify",
   }, dependencies);
   const verified = runReferenceOutcomeJourney(pack, implementationId, outcome, assessmentTime);
+  const normalized = normalizeReferenceImplementation(pack, implementationId, assessmentTime);
+  const verificationTarget = source.task_graph.tasks[0].evidence_targets[0];
   return {
     host,
     pack_id: packId,
@@ -269,6 +267,13 @@ export async function runReferenceHostJourney({
     handoff_status: reviewed.status,
     verify_handoff_status: verifyRequest.status,
     fresh_verification_request: structuredClone(verifyRequest.next),
+    verification_subject: {
+      target: verificationTarget,
+      environment,
+      normalization_shape: implementation.normalization_shape,
+      expected_observation: structuredClone(normalized.observation),
+      payload: referenceVerificationPayload(pack, implementationId),
+    },
     executor_state: verified.executor_state,
     receipt_claim_only: reviewed.execution_receipt?.classification.claim_only ?? false,
     machine_evidence: verified.machine_evidence,

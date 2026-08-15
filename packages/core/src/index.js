@@ -46,7 +46,10 @@ export {
   applyReferenceJourneyState,
   createReferenceCoverageMatrix,
   normalizeReferenceImplementation,
+  qualifyReferenceVerificationEvidence,
   referenceIntegrationPacks,
+  referenceVerificationPayload,
+  referenceVerificationTarget,
   runReferenceOutcomeJourney,
 } from "./reference-integration-packs.js";
 export { referenceExecutorDescriptors } from "./reference-executors.js";

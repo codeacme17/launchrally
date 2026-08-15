@@ -25,6 +25,7 @@
     "test:authority-contracts": "node --test test/execution-authority.test.js test/invocation-context.test.js test/launcher.test.js test/toolchain-lifecycle.test.js",
     "test:release-contracts": "node --test --test-name-pattern=\"^(?:release validation|release artifact policy|npm release packages|the default first Audit|Codex and Claude marketplaces|native Plugin validators|release docs|release CI|Stable)\" test/release.test.js",
     "test:p1-governance": "node --test test/p1-governance.test.js",
+    "test:p1-exact-artifacts": "node --test --test-name-pattern=\"^packed artifacts complete installation, delegation, lifecycle, and full verification journeys$\" test/release.test.js",
     "test:p1-supply-chain": "node --test test/phase-1-contracts.test.js test/provider-knowledge.test.js test/reference-packs.test.js test/handoff.test.js test/active-verification.test.js test/phase-1-documentation.test.js",
     "test:contracts": "npm run test:contract-core && npm run test:authority-contracts && npm run test:release-contracts",
     "test:journeys": "npm run test:authority-contracts && node --test test/coverage-acceptance.test.js test/human-audit.test.js test/prompt-adapters.test.js test/reference-journey.test.js test/report-destination.test.js test/system-file-picker.test.js",

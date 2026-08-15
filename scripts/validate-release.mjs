@@ -97,7 +97,7 @@ const referencePackDigests = new Map([
 ]);
 const referencePackRegistrySource = Object.freeze({
   path: "packages/core/src/reference-integration-packs.js",
-  digest: "sha256:7d5561da002957a4c86b7682024daf6bfd4848a6057138f2052de7bdeb801906",
+  digest: "sha256:75b0bc14f314175743bae07955da0b544db3fa66cde6f02ace864efc1f227617",
 });
 const phase1CommandPaths = [
   "skills/launchrally/references/phase-1-command-examples.json",

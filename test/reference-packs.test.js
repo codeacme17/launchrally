@@ -14,10 +14,14 @@ import {
   referenceExecutorDescriptors,
   createReferenceCoverageMatrix,
   normalizeReferenceImplementation,
+  qualifyReferenceVerificationEvidence,
   referenceIntegrationPacks,
+  referenceVerificationPayload,
+  referenceVerificationTarget,
   runReferenceHostJourney,
   runReferenceOutcomeJourney,
 } from "../packages/core/src/index.js";
+import { sha256 } from "../packages/core/src/local-history.js";
 import {
   assertValidExecutorDescriptor,
   computeExecutorDescriptorDigest,
@@ -294,10 +298,127 @@ test("Codex and Claude reference journeys keep receipts as claims before fresh v
           result.fresh_verification_request.task_requests[0].evidence_targets[0],
           new RegExp(`${pack.pack_digest.slice(7)}.*${implementation.implementation_id}`, "u"),
         );
+        assert.equal(
+          result.fresh_verification_request.task_requests[0].evidence_targets.length,
+          1,
+        );
+        assert.match(
+          result.fresh_verification_request.task_requests[0].evidence_targets[0],
+          /^repository:\.env\.reference_.*\.example$/u,
+        );
+        assert.equal(
+          result.verification_subject.target,
+          result.fresh_verification_request.task_requests[0].evidence_targets[0],
+        );
+        assert.equal(
+          result.verification_subject.normalization_shape,
+          implementation.normalization_shape,
+        );
+        assert.equal(result.verification_subject.environment, "development");
+        assert.deepEqual(
+          result.verification_subject.expected_observation,
+          implementation.normalization_fixture.expected_observation,
+        );
+        assert.deepEqual(
+          result.verification_subject.payload,
+          referenceVerificationPayload(pack, implementation.implementation_id),
+        );
       } else {
         assert.equal(result.status, "verification_gap");
       }
     }
+  }
+});
+
+test("fresh file Evidence qualifies only after Pack-specific observation normalization", () => {
+  const pack = referenceIntegrationPacks.find(
+    ({ family }) => family === "payment_to_entitlement",
+  );
+  const implementation = pack.implementations.find(({ kind }) => kind === "managed");
+  const target = referenceVerificationTarget(pack, implementation.implementation_id);
+  const content = `${JSON.stringify(
+    referenceVerificationPayload(pack, implementation.implementation_id),
+  )}\n`;
+  const normalizedArtifact = {
+    kind: "file",
+    path: target.slice("repository:".length),
+    content_digest: sha256(content),
+  };
+  const entry = {
+    current: true,
+    digest: sha256(normalizedArtifact),
+    environment: "development",
+    evidence_kind: "file",
+    source: "local-repository/v1",
+    target,
+    collected_at: "2026-08-14T12:00:01.000Z",
+    freshness_class: "repository_snapshot",
+    redaction_state: "allowlisted",
+    currentness: {
+      status: "current",
+      evaluated_at: "2026-08-14T12:00:02.000Z",
+      reasons: [],
+    },
+    normalized_artifact: normalizedArtifact,
+  };
+  const qualified = qualifyReferenceVerificationEvidence(
+    pack,
+    implementation.implementation_id,
+    entry,
+    content,
+    "2026-08-14T12:00:00.000Z",
+  );
+  assert.equal(qualified.status, "verified");
+  assert.deepEqual(
+    qualified.observation,
+    implementation.normalization_fixture.expected_observation,
+  );
+  assert.deepEqual(qualified.evidence_ref, {
+    digest: entry.digest,
+    environment: "development",
+    target,
+  });
+
+  const changed = JSON.parse(content);
+  changed.fixture.synthetic_input.signals = ["configured"];
+  const tampered = `${JSON.stringify(changed)}\n`;
+  const tamperedArtifact = {
+    ...entry.normalized_artifact,
+    content_digest: sha256(tampered),
+  };
+  assert.deepEqual(
+    qualifyReferenceVerificationEvidence(
+      pack,
+      implementation.implementation_id,
+      {
+        ...entry,
+        digest: sha256(tamperedArtifact),
+        normalized_artifact: tamperedArtifact,
+      },
+      tampered,
+      "2026-08-14T12:00:00.000Z",
+    ),
+    {
+      status: "verification_gap",
+      reason_code: "reference_verification_evidence_mismatch",
+      observation: null,
+      evidence_ref: null,
+    },
+  );
+  for (const untrustedEntry of [
+    { ...entry, digest: `sha256:${"a".repeat(64)}` },
+    { ...entry, environment: "staging" },
+  ]) {
+    assert.equal(
+      qualifyReferenceVerificationEvidence(
+        pack,
+        implementation.implementation_id,
+        untrustedEntry,
+        content,
+        "2026-08-14T12:00:00.000Z",
+      ).status,
+      "verification_gap",
+    );
   }
 });
 

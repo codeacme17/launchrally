@@ -3,6 +3,8 @@ import { createRequire } from "node:module";
 import { assertValidReferenceIntegrationPack } from "@launchrally/contracts";
 
 import { ACTIVE_VERIFICATION_RECIPES } from "./active-verification.js";
+import { isSafeEvidenceArtifact } from "./evidence-artifact.js";
+import { sha256 } from "./local-history.js";
 import { referenceExecutorDescriptors } from "./reference-executors.js";
 
 const require = createRequire(import.meta.url);
@@ -123,6 +125,112 @@ export function normalizeReferenceImplementation(pack, implementationId, assessm
     status: "normalized",
     reason_code: null,
     observation: structuredClone(fixture.expected_observation),
+  };
+}
+
+export function referenceVerificationTarget(pack, implementationId) {
+  assertSupportedReferenceIntegrationPack(pack);
+  const implementation = pack.implementations.find(
+    ({ implementation_id: id }) => id === implementationId,
+  );
+  const fixture = implementation?.normalization_fixture;
+  if (!fixture) return null;
+  const identity = [
+    "reference",
+    pack.pack_id,
+    pack.pack_digest.slice(7),
+    implementation.implementation_id,
+    implementation.interface_version.replaceAll(/[^A-Za-z0-9]+/gu, "_"),
+    fixture.fixture_id,
+  ].join("_").toLowerCase();
+  return `repository:.env.${identity}.example`;
+}
+
+export function referenceVerificationPayload(pack, implementationId) {
+  assertSupportedReferenceIntegrationPack(pack);
+  const implementation = pack.implementations.find(
+    ({ implementation_id: id }) => id === implementationId,
+  );
+  const fixture = implementation?.normalization_fixture;
+  if (!fixture) return null;
+  return {
+    pack_ref: {
+      id: pack.pack_id,
+      version: pack.pack_version,
+      digest: pack.pack_digest,
+    },
+    implementation: {
+      id: implementation.implementation_id,
+      interface_version: implementation.interface_version,
+      normalization_shape: implementation.normalization_shape,
+    },
+    fixture: {
+      id: fixture.fixture_id,
+      synthetic_input: structuredClone(fixture.synthetic_input),
+    },
+  };
+}
+
+export function qualifyReferenceVerificationEvidence(
+  pack,
+  implementationId,
+  evidenceEntry,
+  content,
+  assessmentTime = null,
+  expectedEnvironment = "development",
+) {
+  const normalized = normalizeReferenceImplementation(pack, implementationId, assessmentTime);
+  const expectedPayload = referenceVerificationPayload(pack, implementationId);
+  const expectedTarget = referenceVerificationTarget(pack, implementationId);
+  let observedPayload = null;
+  try {
+    observedPayload = JSON.parse(content);
+  } catch {
+    // The typed Gap below intentionally carries no caller-authored content.
+  }
+  const qualifies = normalized.status === "normalized"
+    && expectedPayload !== null
+    && expectedTarget !== null
+    && JSON.stringify(observedPayload) === JSON.stringify(expectedPayload)
+    && evidenceEntry?.current === true
+    && evidenceEntry.environment === expectedEnvironment
+    && evidenceEntry.evidence_kind === "file"
+    && typeof evidenceEntry.source === "string"
+    && evidenceEntry.source.length > 0
+    && evidenceEntry.target === expectedTarget
+    && Number.isFinite(Date.parse(evidenceEntry.collected_at))
+    && ["audit_time", "repository_snapshot", "confirmed_scope"].includes(
+      evidenceEntry.freshness_class,
+    )
+    && ["normalized", "allowlisted", "metadata_only"].includes(
+      evidenceEntry.redaction_state,
+    )
+    && evidenceEntry.currentness?.status === "current"
+    && Number.isFinite(Date.parse(evidenceEntry.currentness.evaluated_at))
+    && Array.isArray(evidenceEntry.currentness.reasons)
+    && evidenceEntry.currentness.reasons.length === 0
+    && isSafeEvidenceArtifact(evidenceEntry.normalized_artifact)
+    && evidenceEntry.normalized_artifact?.path === expectedTarget.slice("repository:".length)
+    && evidenceEntry.normalized_artifact?.content_digest === sha256(content)
+    && evidenceEntry.digest === sha256(evidenceEntry.normalized_artifact);
+  if (!qualifies) {
+    return {
+      status: "verification_gap",
+      reason_code: "reference_verification_evidence_mismatch",
+      observation: null,
+      evidence_ref: null,
+    };
+  }
+  return {
+    status: "verified",
+    reason_code: null,
+    observation: structuredClone(normalized.observation),
+    observation_digest: sha256(normalized.observation),
+    evidence_ref: {
+      digest: evidenceEntry.digest,
+      environment: evidenceEntry.environment,
+      target: evidenceEntry.target,
+    },
   };
 }
 

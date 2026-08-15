@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { computeReferenceIntegrationPackDigest } from "@launchrally/contracts";
 import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
+import { createIsolatedNativeEnvironment } from "../scripts/native-environment.mjs";
 import { hasClaudeInstalledPlugin } from "../scripts/native-plugin-state.mjs";
 import { assertNoConsumerInstallScripts } from "../scripts/release-artifact-policy.mjs";
 
@@ -39,6 +40,36 @@ test("Claude public smoke recognizes the installed-list schema", () => {
   assert.equal(hasClaudeInstalledPlugin({
     installed: [{ pluginId: "launchrally@launchrally", version: "0.3.2" }],
   }, "launchrally@launchrally", "0.3.2"), false);
+});
+
+test("native Plugin validation forwards only an isolated non-secret environment", () => {
+  const environment = createIsolatedNativeEnvironment({
+    PATH: "/synthetic/bin",
+    GH_PAT: "sentinel-gh-secret",
+    DATABASE_URL: "postgres://person:secret@example.com/database",
+    NPM_CONFIG_USERCONFIG: "/real/user/npmrc",
+    NODE_OPTIONS: "--require=/untrusted/preload.cjs",
+    HTTPS_PROXY: "https://person:secret@proxy.example.com",
+    NO_PROXY: "127.0.0.1",
+  }, {
+    home: "/isolated/home",
+    codex_home: "/isolated/codex",
+    claude_config_dir: "/isolated/claude",
+  });
+
+  assert.deepEqual(environment, {
+    PATH: "/synthetic/bin",
+    NO_PROXY: "127.0.0.1",
+    APPDATA: "/isolated/home",
+    CLAUDE_CONFIG_DIR: "/isolated/claude",
+    CODEX_HOME: "/isolated/codex",
+    HOME: "/isolated/home",
+    LOCALAPPDATA: "/isolated/home",
+    NODE_OPTIONS: "",
+    USERPROFILE: "/isolated/home",
+    XDG_CACHE_HOME: "/isolated/home",
+    XDG_CONFIG_HOME: "/isolated/home",
+  });
 });
 
 async function createReleaseFixture() {
@@ -1187,10 +1218,67 @@ test("Stable promotion reconciles an existing GitHub release on retry", async ()
   ]);
 });
 
+test("the P1 artifact matrix rejects a CI target that does not match the runtime", async () => {
+  const mismatchedTarget = process.platform === "win32"
+    ? "linux-node20-posix"
+    : "windows-node22-powershell";
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "scripts/test-release-artifacts.mjs",
+      "--json",
+      "--skip-native",
+      "--matrix-target",
+      mismatchedTarget,
+    ], { cwd: root }),
+    (error) => /p1_artifact_matrix_target_mismatch/u.test(error.stderr ?? ""),
+  );
+});
+
+test("release CI runs every exact P1 platform and shell target", async () => {
+  const workflows = await Promise.all([
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+  ].map((relativePath) => readFile(path.join(root, relativePath), "utf8")));
+  for (const workflow of workflows) {
+    for (const target of [
+      "linux-node20-posix",
+      "linux-node22-posix",
+      "linux-node24-posix",
+      "macos-node22-posix",
+      "windows-node22-powershell",
+    ]) assert.match(workflow, new RegExp(`target: ${target}`, "u"));
+    assert.match(
+      workflow,
+      /npm run test:artifacts -- --matrix-target "\$\{\{ matrix\.target \}\}"/u,
+    );
+  }
+});
+
+test("P1 governance binds the completed exact-artifact gate to runtime evidence", async () => {
+  const matrix = JSON.parse(await readFile(
+    path.join(root, "release/p1-acceptance.json"),
+    "utf8",
+  ));
+  const exact = matrix.release_gates.find(({ id }) => id === "p1_exact_artifacts");
+  const external = matrix.release_gates.find(({ id }) => id === "p1_external_verification");
+  assert.deepEqual(exact, {
+    id: "p1_exact_artifacts",
+    command: "test:p1-exact-artifacts",
+    mandatory: true,
+    status: "complete",
+    evidence: {
+      type: "test",
+      path: "test/release.test.js",
+      name: "packed artifacts complete installation, delegation, lifecycle, and full verification journeys",
+    },
+  });
+  assert.equal(external.status, "pending");
+});
+
 test("packed artifacts complete installation, delegation, lifecycle, and full verification journeys", async () => {
   const { stdout } = await execFileAsync(
     "npm",
-    ["--silent", "run", "test:artifacts", "--", "--json", "--skip-native"],
+    ["--silent", "run", "test:artifacts", "--", "--json"],
     { cwd: root, maxBuffer: 1024 * 1024 * 4 },
   );
   const result = JSON.parse(stdout);
@@ -1206,6 +1294,90 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       "@launchrally/core",
     ],
     artifact_files_verified: true,
+    p1_exact_artifacts: {
+      result_version: 1,
+      matrix_target: {
+        platform: process.platform,
+        node_major: Number(process.versions.node.split(".")[0]),
+        shell: process.platform === "win32" ? "powershell" : "posix",
+      },
+      public_surfaces: ["claude", "cli", "codex", "contracts", "core", "skill"],
+      product_journeys: [
+        "astro-hosted-web",
+        "custom-self-hosted",
+        "fastapi-container",
+        "pnpm-edge-monorepo",
+        "react-go-split",
+      ],
+      integration_families: [
+        "backup_to_restore",
+        "email_to_domain_delivery",
+        "identity_to_application_data",
+        "payment_to_entitlement",
+        "queue_background_work",
+        "release_to_observability",
+        "source_to_ci_cd_to_deployment",
+        "storage_to_metadata_access",
+      ],
+      integration_fresh_verify: {
+        backup_to_restore: "environment_bound_fresh_evidence",
+        email_to_domain_delivery: "environment_bound_fresh_evidence",
+        identity_to_application_data: "environment_bound_fresh_evidence",
+        payment_to_entitlement: "environment_bound_fresh_evidence",
+        queue_background_work: "environment_bound_fresh_evidence",
+        release_to_observability: "environment_bound_fresh_evidence",
+        source_to_ci_cd_to_deployment: "environment_bound_fresh_evidence",
+        storage_to_metadata_access: "environment_bound_fresh_evidence",
+      },
+      host_journeys: ["claude", "codex"],
+      native_host_journeys: {
+        claude: {
+          discovery: "native_plugin_installed_listed_and_removed",
+          agent_execution: "p1_external_verification_required",
+        },
+        codex: {
+          discovery: "native_plugin_installed_listed_and_removed",
+          agent_execution: "p1_external_verification_required",
+        },
+      },
+      cross_host_resume: process.platform === "win32"
+        ? "typed_unavailable"
+        : "architecture_and_handoff",
+      p0_to_p1_migration: {
+        adoption: "completed",
+        interruption: "rolled_back_and_recovered",
+      },
+      scenarios: [
+        "cancellation",
+        "cross_host_resume",
+        "denied_write",
+        "environment_isolation",
+        "incomplete_semantic_coverage",
+        "missing_executor",
+        "no_prd",
+        "p0_to_p1_migration",
+        "partial_receipt",
+        "stale_architecture",
+        "unknown_provider",
+      ],
+      fresh_verify: {
+        receipt_claims: "verification_required",
+        successful_downstream: process.platform === "win32"
+          ? "typed_runner_unavailable"
+          : "environment_bound_machine_evidence",
+        unsuccessful_downstream: process.platform === "win32"
+          ? "typed_runner_unavailable"
+          : "environment_bound_no_go",
+      },
+      clean_host: {
+        unauthorized_install: false,
+        unauthorized_login: false,
+        unauthorized_upload: false,
+        unauthorized_write: false,
+        manual_secret_transfer: false,
+        sensitive_persistence: false,
+      },
+    },
     cli_smoke: {
       operation: "version",
       cli_version: "0.3.2",
@@ -1243,7 +1415,7 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       packaged_skill_fixtures: "codex_and_claude_executed",
       protected_journeys: "codex_and_claude_audit_verify_normalized",
       launcher_removal: "project_data_preserved",
-      plugin_removal: "skipped",
+      plugin_removal: "project_data_preserved",
       fixture_invocations: [
         "version",
         "audit_input",
@@ -1269,26 +1441,17 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
         "verify_completed",
       ],
     },
-    native_plugins: "skipped",
+    native_plugins: {
+      claude: "installed_discovered_and_removed",
+      codex: "installed_discovered_and_removed",
+    },
+    native_plugin_boundary: {
+      configuration_isolated: true,
+      sensitive_environment_removed: true,
+      scope: "native_plugin_discovery_only",
+      agent_execution: "p1_external_verification_required",
+    },
   });
-});
-
-test("packed Plugin adapters pass their native host validation", async () => {
-  const { stdout } = await execFileAsync(
-    "npm",
-    ["--silent", "run", "test:artifacts", "--", "--json"],
-    { cwd: root, maxBuffer: 1024 * 1024 * 8 },
-  );
-  const result = JSON.parse(stdout);
-
-  assert.deepEqual(result.native_plugins, {
-    claude: "strictly_validated",
-    codex: "installed_and_removed",
-  });
-  assert.equal(
-    result.installation_journeys.plugin_removal,
-    "project_data_preserved",
-  );
 });
 
 test("Codex and Claude marketplaces resolve their native Plugin adapters", async () => {

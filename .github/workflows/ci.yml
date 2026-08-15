@@ -35,14 +35,19 @@ jobs:
         include:
           - os: ubuntu-latest
             node: 20.12.0
+            target: linux-node20-posix
           - os: ubuntu-latest
             node: 22
+            target: linux-node22-posix
           - os: ubuntu-latest
             node: 24
+            target: linux-node24-posix
           - os: macos-latest
             node: 22
+            target: macos-node22-posix
           - os: windows-latest
             node: 22
+            target: windows-node22-powershell
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -53,7 +58,7 @@ jobs:
       - run: npm run build
       - run: git diff --exit-code
       - run: npm run test:journeys
-      - run: npm run test:artifacts
+      - run: npm run test:artifacts -- --matrix-target "${{ matrix.target }}"
 
   quality-floor:
     runs-on: ubuntu-latest
