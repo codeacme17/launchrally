@@ -1,9 +1,9 @@
 {
   "schema_version": "launchrally.dev/p1-release/v1",
   "phase": "p1",
-  "product_status": "incomplete",
+  "product_status": "complete",
   "release_status": "experimental",
-  "publication_status": "not_published",
+  "publication_status": "published",
   "validation_status": "not_validated",
   "quality_floor_status": "satisfied",
   "supply_chain_assessment_at": "2026-08-15T00:00:00.000Z",
