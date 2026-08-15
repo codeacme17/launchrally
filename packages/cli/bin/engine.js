@@ -755,7 +755,7 @@ async function main() {
     if (process.stdin.isTTY !== true) {
       process.stderr.write([
         "Non-TTY Human Mode cannot prompt safely.",
-        "Use rally init --json --cwd <path> --report <saved-report-path> for the resumable Agent/CI protocol.",
+        "Use rally init --json --cwd <path> --report <saved-report-path> for the resumable Agent Mode protocol, including CI use.",
         "Resume each returned state explicitly with --resume <token> and its requested --permissions or --confirm option.",
       ].join("\n") + "\n");
       return 2;
