@@ -290,7 +290,18 @@ function hasPersistedSensitivePayload(value) {
 }
 
 const SECRET_VALUE_PATTERN = /(?:\bsk_(?:live|test)_[A-Za-z0-9]{16,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|https?:\/\/[^\s/@:]+:[^\s/@]+@)/u;
-const AUTHENTICATED_JOURNEY_TARGET_PATTERN = /^https:\/\/[^@/?#]+\/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces)(?:\/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces))*$/u;
+export const PROTECTED_JOURNEY_PATH_SEGMENTS = Object.freeze([
+  "account", "accounts", "admin", "api", "app", "authorize", "billing", "checkout",
+  "control", "dashboard", "files", "guardian", "health", "home", "inbox", "me",
+  "orders", "organization", "organizations", "portal", "private", "profile",
+  "protected", "session", "settings", "staff", "status", "team", "teams",
+  "uploads", "user", "users", "v1", "v2", "v3", "workspace", "workspaces",
+]);
+const AUTHENTICATED_JOURNEY_PATH_SEGMENT_PATTERN = PROTECTED_JOURNEY_PATH_SEGMENTS.join("|");
+const AUTHENTICATED_JOURNEY_TARGET_PATTERN = new RegExp(
+  `^https:\\/\\/[^@/?#]+\\/(?:${AUTHENTICATED_JOURNEY_PATH_SEGMENT_PATTERN})(?:\\/(?:${AUTHENTICATED_JOURNEY_PATH_SEGMENT_PATTERN}))*$`,
+  "u",
+);
 
 function hasPersistedSecretValue(value) {
   if (typeof value === "string") return SECRET_VALUE_PATTERN.test(value);

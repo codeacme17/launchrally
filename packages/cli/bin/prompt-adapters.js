@@ -410,11 +410,11 @@ function selectionOptions(field, { customValue, skipValue }) {
   ];
 }
 
-const JOURNEY_ACCESS_CHOICES = Object.freeze([
-  Object.freeze({
-    label: "Public — authorize anonymous GET; expect 200-299",
-    value: "public",
-  }),
+const PUBLIC_JOURNEY_ACCESS_CHOICE = Object.freeze({
+  label: "Public — authorize anonymous GET; expect 200-299",
+  value: "public",
+});
+const PROTECTED_JOURNEY_ACCESS_CHOICES = Object.freeze([
   Object.freeze({
     label: "User — anonymous expect 401/403/404; authenticated expect 200",
     value: "user",
@@ -427,8 +427,11 @@ const JOURNEY_ACCESS_CHOICES = Object.freeze([
     label: "Signed token — anonymous expect 401/403/404; authenticated expect 200",
     value: "signed_token",
   }),
-  Object.freeze({ label: "Exclude — do not verify this route", value: "exclude" }),
 ]);
+const EXCLUDE_JOURNEY_ACCESS_CHOICE = Object.freeze({
+  label: "Exclude — do not verify this route",
+  value: "exclude",
+});
 
 function classifiedJourney(journey, accessClass) {
   if (accessClass === "exclude") return null;
@@ -446,19 +449,44 @@ function classifiedJourney(journey, accessClass) {
   };
 }
 
+function journeyAccessChoices(journey) {
+  const protectedSupported = !parsePublicJourneyInput(
+    classifiedJourney(journey, "user"),
+    { allowDescription: false },
+  ).error;
+  return [
+    PUBLIC_JOURNEY_ACCESS_CHOICE,
+    ...(protectedSupported ? PROTECTED_JOURNEY_ACCESS_CHOICES : []),
+    EXCLUDE_JOURNEY_ACCESS_CHOICE,
+  ];
+}
+
 async function classifyDetectedJourneys(field, selectAccess) {
   const detected = fieldOptions(field).filter((option) => option.detected);
   if (detected.length === 0) return null;
   const classified = [];
   for (const option of detected) {
+    const choices = journeyAccessChoices(option.value);
+    const protectedSupported = choices.length > 2;
     const accessClass = await selectAccess(
-      `Route discovery does not establish access. Classify ${journeyLabel(option.value)} (classification required)`,
-      JOURNEY_ACCESS_CHOICES,
+      `Route discovery does not establish access. Classify ${journeyLabel(option.value)} (classification required${protectedSupported ? "" : "; protected access is unsupported for this path"})`,
+      choices,
     );
     const journey = classifiedJourney(option.value, accessClass);
     if (journey) classified.push(journey);
   }
-  return classified;
+  return { classified, detected: detected.map((option) => option.value) };
+}
+
+function retainedCurrentJourneys(field, detected) {
+  return (field.current_value ?? []).filter((current) =>
+    !detected.some((candidate) =>
+      typeof current === "object"
+      && current !== null
+      && current.method === candidate.method
+      && current.path === candidate.path,
+    ),
+  );
 }
 
 function resolveMultiSelection(selected, { customValue, skipValue }) {
@@ -569,8 +597,26 @@ export function createPlainPromptAdapter({
       skipValue,
     });
     if (field.field_id === "core_journeys") {
-      const classified = await classifyDetectedJourneys(field, choose);
-      if (classified) return classified;
+      const classification = await classifyDetectedJourneys(field, choose);
+      if (classification) {
+        const retained = retainedCurrentJourneys(field, classification.detected);
+        const action = await choose("Continue, add another Journey, or explicitly skip all Journey verification", [
+          { label: "Continue with classified Journeys", value: "continue" },
+          { label: "Other — enter a custom value", value: "custom" },
+          { label: field.skip_label, value: "skip" },
+        ]);
+        if (action === "skip") return [];
+        if (action === "continue") return [...classification.classified, ...retained];
+        while (true) {
+          const raw = await ask(`Enter other values separated by commas\nExample: ${field.example}`);
+          const error = fieldInputError({ ...field, required: true }, raw);
+          const custom = parseFieldValue(field, raw);
+          if (!error && !emptyFieldValue(custom)) {
+            return [...classification.classified, ...retained, ...custom];
+          }
+          write(output, error ?? "Enter at least one custom value.");
+        }
+      }
     }
     if (!field.value_type.endsWith("_array")) {
       const value = await choose(fieldMessage(field), choices);
@@ -747,7 +793,7 @@ export async function createClackPromptAdapter({
       skipValue,
     });
     if (field.field_id === "core_journeys") {
-      const classified = await classifyDetectedJourneys(
+      const classification = await classifyDetectedJourneys(
         field,
         async (message, choices) => cancelled(await clack.select({
           ...common,
@@ -755,7 +801,27 @@ export async function createClackPromptAdapter({
           options: choices,
         }), clack, output),
       );
-      if (classified) return classified;
+      if (classification) {
+        const retained = retainedCurrentJourneys(field, classification.detected);
+        const action = cancelled(await clack.select({
+          ...common,
+          message: "Continue, add another Journey, or explicitly skip all Journey verification",
+          options: [
+            { label: "Continue with classified Journeys", value: "continue" },
+            { label: "Other — enter a custom value", value: "custom" },
+            { label: field.skip_label, value: "skip" },
+          ],
+        }), clack, output);
+        if (action === "skip") return [];
+        if (action === "continue") return [...classification.classified, ...retained];
+        const raw = await ask("Enter other values separated by commas", {
+          ...field,
+          current_value: [],
+          required: true,
+        });
+        const custom = parseFieldValue(field, raw);
+        return [...classification.classified, ...retained, ...custom];
+      }
     }
     if (!field.value_type.endsWith("_array")) {
       const selected = cancelled(await clack.select({
