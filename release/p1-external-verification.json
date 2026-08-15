@@ -1,0 +1,20 @@
+{
+  "schema_version": "launchrally.dev/p1-external-verification/v1",
+  "status": "pending",
+  "version": "0.4.0",
+  "tag": "v0.4.0",
+  "channel": "experimental",
+  "verified_at": null,
+  "workflow_url": null,
+  "release_url": null,
+  "review_url": null,
+  "review_body": null,
+  "reviewer": null,
+  "release_actor": null,
+  "release_commit": null,
+  "reviewed_at": null,
+  "packages": [],
+  "publication_jobs": [],
+  "hosts": [],
+  "verification_digest": null
+}

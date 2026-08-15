@@ -9,10 +9,15 @@ import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
+const currentVersion = JSON.parse(await readFile(
+  path.join(root, "package.json"),
+  "utf8",
+)).version;
 
 async function fixture() {
   return copyRepositoryFixture(root, "launchrally-p1-governance-", [
     ".github",
+    "CHANGELOG.md",
     "adapters",
     "docs",
     "package.json",
@@ -54,6 +59,35 @@ test("the independent P1 governance contract maps every canonical requirement", 
   assert.deepEqual(result.requirements, { complete: 37, open: 1, total: 38 });
   assert.deepEqual(result.suspended_authorities, []);
   assert.equal(result.p0_release_status, "stable");
+});
+
+test("P1 Experimental publication readiness permits only external verification to remain open", async () => {
+  const { stdout } = await validateP1(root, ["--require-publish-ready"]);
+  const result = JSON.parse(stdout);
+
+  assert.equal(result.publication_readiness, "ready");
+  assert.deepEqual(result.publish_blockers, []);
+
+  const directory = await fixture();
+  const matrixPath = path.join(directory, "release/p1-acceptance.json");
+  const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
+  matrix.requirements.find(({ id }) => id === "P1-PRIVACY-01").status = "open";
+  await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
+  const docsPath = path.join(directory, "docs/maintainers/p1-acceptance.md");
+  const docs = await readFile(docsPath, "utf8");
+  await writeFile(
+    docsPath,
+    docs.replace(
+      "| P1-PRIVACY-01 | Persisted Phase 1 records reject credentials, business payloads, raw Provider output, and personal data | focused negative fixtures reject sensitive persistence and receipt-as-Evidence | #134 | Complete |",
+      "| P1-PRIVACY-01 | Persisted Phase 1 records reject credentials, business payloads, raw Provider output, and personal data | focused negative fixtures reject sensitive persistence and receipt-as-Evidence | #134 | Open |",
+    ),
+  );
+
+  await assert.rejects(validateP1(directory, ["--require-publish-ready"]), (error) => {
+    assert.match(error.stderr, /p1_publication_blocked/u);
+    assert.match(error.stderr, /P1-PRIVACY-01/u);
+    return true;
+  });
 });
 
 test("P1 validation rejects a requirement deleted from both the matrix and documentation", async () => {
@@ -187,7 +221,7 @@ test("P1 Stable requires every requirement and mandatory gate to be complete", a
     publication_status: "published",
     validation_status: "validated",
     quality_floor_status: "satisfied",
-    stable_promotion: { status: "approved", approved_tag: "v0.3.2" },
+    stable_promotion: { status: "approved", approved_tag: `v${currentVersion}` },
   });
   Object.assign(matrix, { product_status: "complete", release_status: "stable" });
   await Promise.all([
@@ -227,7 +261,7 @@ test("P1 Stable approval binds the exact package release tag", async () => {
   await assert.rejects(validateP1(directory), (error) => {
     assert.match(error.stderr, /p1_stable_promotion_blocked/u);
     assert.match(error.stderr, /wrong-tag/u);
-    assert.match(error.stderr, /v0\.3\.2/u);
+    assert.match(error.stderr, new RegExp(`v${currentVersion.replaceAll(".", "\\.")}`, "u"));
     return true;
   });
 });
@@ -247,9 +281,23 @@ test("P1 Product Complete requires every requirement and mandatory gate to be co
 
   await assert.rejects(validateP1(directory), (error) => {
     assert.match(error.stderr, /p1_product_completion_blocked/u);
+    assert.match(error.stderr, /publication_status=not_published/u);
     assert.match(error.stderr, /P1-RELEASE-01/u);
     assert.doesNotMatch(error.stderr, /p1_exact_artifacts/u);
     assert.match(error.stderr, /p1_external_verification/u);
+    return true;
+  });
+});
+
+test("P1 external verification cannot complete without its signed aggregate record", async () => {
+  const directory = await fixture();
+  const matrixPath = path.join(directory, "release/p1-acceptance.json");
+  const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
+  matrix.release_gates.find(({ id }) => id === "p1_external_verification").status = "complete";
+  await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
+
+  await assert.rejects(validateP1(directory), (error) => {
+    assert.match(error.stderr, /p1_external_evidence_status_drift/u);
     return true;
   });
 });

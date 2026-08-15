@@ -16,7 +16,9 @@ on:
         type: number
 
 permissions:
+  actions: read
   contents: read
+  issues: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -27,15 +29,18 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
-      release_status: ${{ steps.contract.outputs.release_status }}
+      p1_release_status: ${{ steps.contract.outputs.p1_release_status }}
+      p1_publication_status: ${{ steps.contract.outputs.p1_publication_status }}
+      p0_release_status: ${{ steps.contract.outputs.p0_release_status }}
     steps:
       - uses: actions/checkout@v6
       - id: contract
-        run: node -e "require('node:fs').appendFileSync(process.env.GITHUB_OUTPUT, 'release_status=' + require('./release/p0.json').release_status + '\n')"
+        run: |
+          node -e "const fs=require('node:fs'); const p1=require('./release/p1.json'); const p0=require('./release/p0.json'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'p1_release_status=' + p1.release_status + '\np1_publication_status=' + p1.publication_status + '\np0_release_status=' + p0.release_status + '\n')"
 
   contracts:
     needs: release_state
-    if: github.event_name == 'push' && needs.release_state.outputs.release_status == 'experimental'
+    if: github.event_name == 'push' && needs.release_state.outputs.p1_release_status == 'experimental' && needs.release_state.outputs.p1_publication_status == 'not_published' && needs.release_state.outputs.p0_release_status == 'stable'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -55,7 +60,7 @@ jobs:
 
   journeys:
     needs: release_state
-    if: github.event_name == 'push' && needs.release_state.outputs.release_status == 'experimental'
+    if: github.event_name == 'push' && needs.release_state.outputs.p1_release_status == 'experimental' && needs.release_state.outputs.p1_publication_status == 'not_published' && needs.release_state.outputs.p0_release_status == 'stable'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -93,8 +98,10 @@ jobs:
     runs-on: ubuntu-latest
     environment: npm
     permissions:
+      actions: read
       contents: read
       id-token: write
+      issues: read
     steps:
       - uses: actions/checkout@v6
         with:
@@ -111,12 +118,17 @@ jobs:
       - name: Verify generated Plugin bundles are committed
         run: git diff --exit-code
       - run: npm test
-      - run: npm run validate:acceptance -- --require-release-ready
+      - run: npm run validate:acceptance
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: npm run validate:p1 -- --require-publish-ready
       - run: npm run validate:p0
       - run: npm run validate:release -- --tag "$GITHUB_REF_NAME"
       - run: npm run validate:release-ref -- --tag "$GITHUB_REF_NAME"
       - run: npm run test:artifacts
       - run: npm run test:legacy-public
+      - name: Verify committed Phase 1 candidate digests
+        run: node scripts/verify-experimental-release.mjs --phase candidate --json
       - name: Publish public packages with provenance
         run: node scripts/publish-release.mjs
 
@@ -125,6 +137,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: 24
@@ -135,7 +149,9 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build
       - name: Verify exact public CLI and Plugin journeys
-        run: npm run test:public-release -- --json
+        run: npm run test:public-release -- --dist-tag experimental --json
+      - name: Match published digests and provenance to the Phase 1 candidate
+        run: node scripts/verify-experimental-release.mjs --phase published --json
 
   prerelease:
     needs: public-smoke
@@ -149,15 +165,17 @@ jobs:
       - name: Create Experimental GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease --generate-notes --title "LaunchRally $GITHUB_REF_NAME (Experimental)"
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease --notes-file docs/maintainers/experimental-0.4.0-announcement.md --title "LaunchRally $GITHUB_REF_NAME (Phase 1 Experimental)"
 
   stable-promotion:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: npm
     permissions:
+      actions: read
       contents: write
       id-token: write
+      issues: read
       pull-requests: write
     env:
       PROMOTION_TAG: ${{ inputs.tag }}
@@ -179,6 +197,10 @@ jobs:
       - name: Verify generated Plugin bundles are committed
         run: git diff --exit-code
       - run: npm test
+      - name: Validate independently reviewed Phase 1 evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: npm run validate:p1
       - run: npm run validate:acceptance -- --require-stable-ready
       - run: npm run validate:p0
       - run: npm run validate:release -- --tag "$PROMOTION_TAG"

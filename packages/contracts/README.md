@@ -12,12 +12,14 @@ The authenticated Journey Evidence contract qualifies only allowlisted `passed` 
 
 ## Status
 
-LaunchRally 0.3.2 is a **Stable** release. Its public contracts are versioned, and Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor. Consumers should reject unsupported contract major versions and pin the package version they have tested.
+LaunchRally 0.4.0 is an **Experimental Phase 1** release. Its public contracts are versioned independently from package release status. Phase 0 Stable 0.3.2 remains on npm `latest`; publishing Phase 1 does not make it Validated or Stable. Consumers should reject unsupported contract major versions and pin the exact package version they have tested.
+
+Phase 0 0.3.2 remains a **Stable** release. Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor.
 
 ## Install and import
 
 ```sh
-npm install @launchrally/contracts@0.3.2
+npm install @launchrally/contracts@0.4.0
 ```
 
 ```js

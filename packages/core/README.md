@@ -4,7 +4,9 @@
 
 ## Status
 
-LaunchRally 0.3.2 is a **Stable** release. The package is Product Complete, P0 Validated, and published on the stable channel. Pin the exact version and review release changes before upgrading.
+LaunchRally 0.4.0 is an **Experimental Phase 1** release. It adds the local-first Phase 1 decision, coordination, and assurance layer while Phase 0 Stable 0.3.2 remains available on npm `latest`. Publication does not make Phase 1 Validated or Stable. Pin the exact version and review release changes before upgrading.
+
+Phase 0 0.3.2 remains a **Stable** release. The package is Product Complete, P0 Validated, and published on the stable channel.
 
 The additive Phase 1 Core exports `runProductIntentDiscovery` for permissioned, local Product Intent discovery. It separates Local Safe Scan observations, selected-material candidates, explicit user confirmation, conflicts, Unknowns, and coverage. It never persists selected source text and grants no Provider or deployment authority.
 
@@ -29,13 +31,13 @@ Confirmed decisions can be materialized with `createArchitecturePackageBundle`. 
 ## Install and use
 
 ```sh
-npm install @launchrally/core@0.3.2
+npm install @launchrally/core@0.4.0
 ```
 
 ```js
 import { runAudit } from "@launchrally/core";
 
-const interaction = await runAudit(process.cwd(), "0.3.2");
+const interaction = await runAudit(process.cwd(), "0.4.0");
 console.log(interaction.status, interaction.next);
 ```
 

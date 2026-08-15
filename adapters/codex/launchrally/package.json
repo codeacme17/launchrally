@@ -1,6 +1,6 @@
 {
   "name": "@launchrally/codex-plugin",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "LaunchRally Plugin adapter for Codex",
   "keywords": [
     "launchrally",
@@ -24,7 +24,7 @@
     "./resume": "./host-adapter/resume.js"
   },
   "dependencies": {
-    "@launchrally/core": "0.3.2"
+    "@launchrally/core": "0.4.0"
   },
   "repository": {
     "type": "git",
