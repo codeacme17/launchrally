@@ -12,6 +12,7 @@ import {
 } from "@launchrally/core";
 
 import { PromptCancelledError } from "./human-audit.js";
+import { renderHumanInit } from "./human-init.js";
 
 function styleTextSupportsArrays() {
   try {
@@ -280,6 +281,18 @@ function permissionText(permission) {
       (command) => [command.executable, ...command.arguments].join(" "),
     ),
     "Allow this Provider read?",
+  ].join("\n");
+}
+
+function initPermissionText(permission) {
+  const command = permission.commands[0];
+  return [
+    "LaunchRally Init requires an npm registry read after the offline cache attempt failed.",
+    `Source: ${permission.source}`,
+    `Package: ${permission.package}@${permission.version}`,
+    `Temporary target: ${permission.temporary_target}`,
+    `Command: ${[command.executable, ...command.arguments].join(" ")}`,
+    "Lifecycle scripts remain disabled.",
   ].join("\n");
 }
 
@@ -592,8 +605,8 @@ export function createPlainPromptAdapter({
   };
 
   return {
-    async start() {
-      write(output, "LaunchRally Audit");
+    async start(operation = "audit") {
+      write(output, operation === "init" ? "LaunchRally Init" : "LaunchRally Audit");
     },
     async activity(label, operation) {
       return runPromptActivity({
@@ -676,6 +689,28 @@ export function createPlainPromptAdapter({
       }
       return {};
     },
+    async respondInit(result) {
+      if (result.status === "needs_permission") {
+        const permissionDecisions = {};
+        for (const permission of result.request.permissions) {
+          write(output, initPermissionText(permission));
+          permissionDecisions[permission.id] = await confirm(
+            `Approve ${permission.id}?`,
+          ) ? "approved" : "denied";
+        }
+        return { permission_decisions: permissionDecisions };
+      }
+      if (result.status === "needs_confirmation") {
+        write(output, renderHumanInit(result));
+        return {
+          confirmation: await choose(result.request.prompt, [
+            { label: "Confirm", value: "confirm" },
+            { label: "Decline", value: "decline" },
+          ]),
+        };
+      }
+      return {};
+    },
     async close() {
       signals.off("SIGINT", handleInterrupt);
       readline.close();
@@ -683,9 +718,9 @@ export function createPlainPromptAdapter({
   };
 }
 
-function cancelled(value, clack, output) {
+function cancelled(value, clack, output, operation = "Audit") {
   if (!clack.isCancel(value)) return value;
-  clack.cancel("Audit cancelled.", { output });
+  clack.cancel(`${operation} cancelled.`, { output });
   throw new PromptCancelledError();
 }
 
@@ -859,8 +894,8 @@ export async function createClackPromptAdapter({
   };
 
   return {
-    async start() {
-      clack.intro("LaunchRally Audit", common);
+    async start(operation = "audit") {
+      clack.intro(operation === "init" ? "LaunchRally Init" : "LaunchRally Audit", common);
     },
     async activity(label, operation) {
       const completionLabel = completedActivityLabel(label);
@@ -978,6 +1013,37 @@ export async function createClackPromptAdapter({
             : "denied";
         }
         return { permission_decisions: permissionDecisions };
+      }
+      return {};
+    },
+    async respondInit(result) {
+      if (result.status === "needs_permission") {
+        const permissionDecisions = {};
+        for (const permission of result.request.permissions) {
+          clack.note(initPermissionText(permission), "Permission request", common);
+          const approved = await clack.confirm({
+            ...common,
+            message: `Approve ${permission.id}?`,
+            initialValue: false,
+          });
+          permissionDecisions[permission.id] = cancelled(approved, clack, output, "Init")
+            ? "approved"
+            : "denied";
+        }
+        return { permission_decisions: permissionDecisions };
+      }
+      if (result.status === "needs_confirmation") {
+        clack.note(renderHumanInit(result), "Exact initialization preview", common);
+        const confirmation = await clack.select({
+          ...common,
+          message: result.request.prompt,
+          options: [
+            { label: "Confirm", value: "confirm" },
+            { label: "Decline", value: "decline" },
+          ],
+          initialValue: "decline",
+        });
+        return { confirmation: cancelled(confirmation, clack, output, "Init") };
       }
       return {};
     },

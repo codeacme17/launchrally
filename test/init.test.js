@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -30,6 +30,38 @@ const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
 const engine = path.resolve("packages/cli/bin/engine.js");
 const SECRET_SENTINEL = "manifest-secret-must-not-survive";
+const pythonAvailable = process.platform !== "win32"
+  && spawnSync("python3", ["--version"]).status === 0;
+const ptyRunner = [
+  "import errno, os, pty, subprocess, sys",
+  "master, slave = pty.openpty()",
+  "child = subprocess.Popen(sys.argv[1:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)",
+  "os.close(slave)",
+  "chunks = []",
+  "observed = b''",
+  "permission_answered = False",
+  "confirmation_answered = False",
+  "while True:",
+  "    try:",
+  "        chunk = os.read(master, 4096)",
+  "    except OSError as error:",
+  "        if error.errno == errno.EIO:",
+  "            break",
+  "        raise",
+  "    if not chunk:",
+  "        break",
+  "    chunks.append(chunk)",
+  "    observed += chunk",
+  "    if not permission_answered and b'Approve npm_registry_read? [y/N]' in observed:",
+  "        os.write(master, b'y\\n')",
+  "        permission_answered = True",
+  "    if not confirmation_answered and b'Choose 1-2:' in observed:",
+  "        os.write(master, b'1\\n')",
+  "        confirmation_answered = True",
+  "os.close(master)",
+  "sys.stdout.buffer.write(b''.join(chunks))",
+  "raise SystemExit(child.wait())",
+].join("\n");
 
 test("Windows npm execution uses an explicit command interpreter without shell mode", () => {
   assert.deepEqual(
@@ -2151,31 +2183,125 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
   assert.deepEqual(await readdir(directory), [".launchrally", "package-lock.json", "package.json"]);
 });
 
-test("Human Mode renders every exact initialization change before confirmation", async () => {
+test("non-TTY Human Init fails safely and points to the structured protocol", async () => {
   const directory = await fixtureWithCliDependency("0.3.2");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-human-report-"));
   const reportPath = path.join(reportDirectory, "audit.json");
   await writeFile(reportPath, JSON.stringify(audit));
 
-  const processResult = await execFileAsync(process.execPath, [
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      engine,
+      "init",
+      "--cwd",
+      directory,
+      "--report",
+      reportPath,
+    ]),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stderr, /Non-TTY Human Mode cannot prompt safely/u);
+      assert.match(error.stderr, /rally init --json --cwd <path>/u);
+      assert.match(error.stderr, /--resume <token>/u);
+      assert.equal(error.stdout, "");
+      return true;
+    },
+  );
+  assert.deepEqual(
+    await readdir(directory),
+    [".launchrally", "package-lock.json", "package.json"],
+  );
+});
+
+test("TTY Human Init rejects structured resume decisions that bypass its prompt", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const directory = await fixtureWithCliDependency("0.3.2");
+  const audit = await completeAudit(directory);
+  const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-tty-report-"));
+  const reportPath = path.join(reportDirectory, "audit.json");
+  await writeFile(reportPath, JSON.stringify(audit));
+  const preview = JSON.parse((await execFileAsync(process.execPath, [
     engine,
     "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ])).stdout);
+
+  await assert.rejects(
+    execFileAsync("python3", [
+      "-c",
+      ptyRunner,
+      process.execPath,
+      engine,
+      "init",
+      "--plain",
+      "--cwd",
+      directory,
+      "--resume",
+      preview.interaction.resume_token,
+      "--confirm",
+      "confirm",
+    ]),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stdout, /Human Mode does not accept structured Init decisions/u);
+      assert.match(error.stdout, /Use rally init --json/u);
+      return true;
+    },
+  );
+  assert.deepEqual(
+    await readdir(directory),
+    [".launchrally", "package-lock.json", "package.json"],
+  );
+});
+
+test("TTY Human Init renders and confirms the exact preview in one process", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const directory = await fixtureWithCliDependency("0.3.2");
+  const audit = await completeAudit(directory);
+  const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-tty-report-"));
+  const reportPath = path.join(reportDirectory, "audit.json");
+  await writeFile(reportPath, JSON.stringify(audit));
+
+  const { stdout } = await execFileAsync("python3", [
+    "-c",
+    ptyRunner,
+    process.execPath,
+    engine,
+    "init",
+    "--plain",
     "--cwd",
     directory,
     "--report",
     reportPath,
   ]);
 
-  assert.match(processResult.stdout, /^LaunchRally Initialization Preview/mu);
-  assert.match(processResult.stdout, /CREATE \.launchrally\/\.gitignore/u);
+  assert.match(stdout, /LaunchRally Initialization Preview/u);
+  assert.match(stdout, /CREATE \.launchrally\/manifest\.yaml/u);
+  assert.match(stdout, /Apply exactly these local initialization changes\?/u);
+  assert.match(stdout, /1\. Confirm/u);
+  assert.match(stdout, /2\. Decline/u);
+  assert.doesNotMatch(stdout, /Resume token:/u);
+  assert.match(stdout, /"outcome": "initialized"/u);
   assert.match(
-    processResult.stdout,
-    /\/reports\/\n\/evidence\/\n\/cache\/\n\/transactions\/\n\/locks\/\n\/toolchain\/node_modules\/\n\/\.init-transaction\/\n\/\.toolchain-transaction\//u,
+    await readFile(path.join(directory, ".launchrally", "manifest.yaml"), "utf8"),
+    /schema_version: "launchrally\.dev\/manifest\/v2"/u,
   );
-  assert.match(processResult.stdout, /CREATE \.launchrally\/manifest\.yaml/u);
-  assert.match(processResult.stdout, /Apply exactly these local initialization changes\?/u);
-  assert.match(processResult.stdout, /Resume token: .{20,}/u);
+});
+
+test("the Quickstart documents same-process Human Init and explicit Agent resumes", async () => {
+  const quickstart = await readFile("docs/getting-started/quickstart.md", "utf8");
+
+  assert.match(quickstart, /Init remains in the same process/iu);
+  assert.match(quickstart, /confirm or decline/iu);
+  assert.match(quickstart, /Ctrl-C/iu);
+  assert.match(quickstart, /Agent Mode[\s\S]*--resume <token>/iu);
 });
 
 test("initialization never stages or commits its project-owned files", async () => {

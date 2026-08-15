@@ -30,6 +30,7 @@ import {
   renderHumanAuditCompletion,
   runHumanAudit,
 } from "./human-audit.js";
+import { renderHumanInit, runHumanInit } from "./human-init.js";
 import {
   commandName,
   optionValue as argumentValue,
@@ -178,44 +179,6 @@ function renderHumanInteraction(value) {
     );
   }
   lines.push(`Resume token: ${value.interaction.resume_token}`);
-  return lines.join("\n");
-}
-
-function renderHumanInit(value) {
-  const lines = [
-    "LaunchRally Initialization Preview",
-    `Mode: ${value.mode}`,
-    `Source Report: ${value.source_report_id}`,
-    "",
-  ];
-  for (const change of value.preview.changes) {
-    lines.push(
-      `${change.operation.toUpperCase()} ${change.path}`,
-      `Before digest: ${change.before_digest ?? "none"}`,
-      `After digest: ${change.after_digest}`,
-      "Diff:",
-      change.diff,
-      "After content:",
-      change.after,
-    );
-  }
-  if (value.preview.materialization) {
-    const materialization = value.preview.materialization;
-    lines.push(
-      "Rebuildable Project Engine materialization:",
-      `Command: ${[materialization.command.executable, ...materialization.command.arguments].join(" ")}`,
-      `Package closure: ${materialization.package_count} packages`,
-      `Integrity summary: ${materialization.integrity_digest}`,
-      `Target: ${materialization.target}`,
-      `Ignored: ${materialization.ignored ? "yes" : "no"}`,
-      `Authoritative: ${materialization.authoritative ? "yes" : "no"}`,
-    );
-  }
-  lines.push(
-    value.request.prompt,
-    "Choose: confirm or decline.",
-    `Resume token: ${value.interaction.resume_token}`,
-  );
   return lines.join("\n");
 }
 
@@ -769,14 +732,59 @@ async function main() {
         return 2;
       }
     }
-    const result = await runInit(cwd, VERSION, {
+    const initialOptions = {
       resume_token: optionValue("--resume"),
       confirmation: optionValue("--confirm"),
       permission_decisions: permissionDecisions.value,
       report_package: reportPackage,
+    };
+    if (json) {
+      const result = await runInit(cwd, VERSION, initialOptions);
+      print(result);
+      return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+    }
+
+    if (["--resume", "--confirm", "--permissions"].some((option) => args.includes(option))) {
+      process.stderr.write([
+        "Human Mode does not accept structured Init decisions.",
+        "Use rally init --json with --resume <token> and the requested decision option.",
+      ].join("\n") + "\n");
+      return 2;
+    }
+
+    if (process.stdin.isTTY !== true) {
+      process.stderr.write([
+        "Non-TTY Human Mode cannot prompt safely.",
+        "Use rally init --json --cwd <path> --report <saved-report-path> for the resumable Agent Mode protocol, including CI use.",
+        "Resume each returned state explicitly with --resume <token> and its requested --permissions or --confirm option.",
+      ].join("\n") + "\n");
+      return 2;
+    }
+
+    const { createClackPromptAdapter, createPlainPromptAdapter } = await import(
+      "./prompt-adapters.js"
+    );
+    const presentation = humanAuditPresentationOptions({
+      args,
+      env: process.env,
+      output: process.stdout,
     });
-    print(result);
-    return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+    const prompt = presentation.plain
+      ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
+      : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+    const outcome = await runHumanInit({
+      cwd,
+      version: VERSION,
+      prompt,
+      runInit,
+      reportPackage,
+    });
+    if (outcome.exitCode === 130) {
+      process.stderr.write("Init cancelled. Project-owned files were not changed.\n");
+      return 130;
+    }
+    print(outcome.result);
+    return outcome.exitCode;
   }
 
   if (command === "architect") {
