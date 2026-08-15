@@ -37,7 +37,11 @@ import {
 import { inspectReportDestination } from "./report-destination.js";
 import { normalizeArchitectAnswer, runHumanArchitect } from "./human-architect.js";
 import { createSystemFilePicker } from "./system-file-picker.js";
-import { consumeInvocationContext, renderCommand } from "./invocation-context.js";
+import {
+  consumeInvocationContext,
+  createNextAction,
+  renderCommand,
+} from "./invocation-context.js";
 import { VERSION } from "./version.js";
 
 const invocationContext = consumeInvocationContext({
@@ -183,11 +187,31 @@ function renderHumanInteraction(value) {
 
 function renderHumanInit(value) {
   const lines = [
-    "LaunchRally Initialization Preview",
+    value.mode === "rebind"
+      ? "LaunchRally Manifest Rebind Preview"
+      : "LaunchRally Initialization Preview",
     `Mode: ${value.mode}`,
     `Source Report: ${value.source_report_id}`,
     "",
   ];
+  if (value.manifest_action?.action === "preserve") {
+    lines.push(
+      "Manifest intent: preserved",
+      `Existing Manifest source Report: ${value.manifest_action.existing_source_report_id}`,
+      `Supplied Report for immutable history: ${value.manifest_action.supplied_source_report_id}`,
+      `Replace command: ${value.replacement_action.display}`,
+      "",
+    );
+  } else if (value.manifest_action?.action === "replace") {
+    lines.push(
+      "Manifest intent: replace after separate confirmation",
+      `Old source Report: ${value.manifest_action.existing_source_report_id}`,
+      `New source Report: ${value.manifest_action.supplied_source_report_id}`,
+      `Immutable Report-history changes: ${value.preview.history_adoption.changes.length}`,
+      `Release-intent replacement changes: ${value.preview.release_intent_replacement.changes.length}`,
+      "",
+    );
+  }
   for (const change of value.preview.changes) {
     lines.push(
       `${change.operation.toUpperCase()} ${change.path}`,
@@ -515,6 +539,15 @@ function print(value) {
       ].join("\n") + "\n");
       return;
     }
+    if (value.status === "completed" && value.manifest_action?.action === "preserve") {
+      process.stdout.write([
+        "LaunchRally preserved the existing Manifest and project-owned release intent.",
+        `Existing Manifest source Report: ${value.manifest_action.existing_source_report_id}`,
+        `Supplied Report: ${value.manifest_action.supplied_source_report_id}`,
+        `Replace command: ${value.replacement_action.display}`,
+      ].join("\n") + "\n");
+      return;
+    }
   }
 
   if (value.operation === "plan" && value.status === "completed") {
@@ -595,6 +628,7 @@ function help() {
       "  architecture-package Preview or persist a confirmed immutable Architecture Package",
       "  handoff  Discover, preview, and confirm bounded external Executor authority",
       "  init     Preview and confirm local adoption after a complete Audit Report",
+      "           --rebind explicitly replaces an existing Manifest after its own preview",
       "  plan     Build a deterministic read-only Launch Plan and optional Task Graph",
       "  verify   Recollect fresh Evidence for full or targeted verification",
       "",
@@ -774,7 +808,19 @@ async function main() {
       confirmation: optionValue("--confirm"),
       permission_decisions: permissionDecisions.value,
       report_package: reportPackage,
+      rebind_manifest: args.includes("--rebind"),
     });
+    if (result.manifest_action?.next_action && !args.includes("--rebind")) {
+      result.replacement_action = createNextAction(invocationContext, [
+        "init",
+        ...(json ? ["--json"] : []),
+        "--cwd",
+        path.resolve(cwd),
+        "--report",
+        reportPath ?? "<saved-report-path>",
+        "--rebind",
+      ]);
+    }
     print(result);
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
   }

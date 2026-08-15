@@ -1183,6 +1183,213 @@ test("re-running Init preserves the established project Engine pin", async () =>
   );
 });
 
+test("ordinary Init preserves an existing Manifest and identifies explicit rebind", async () => {
+  const directory = await fixture();
+  const original = await completeAudit(directory);
+  const initialPreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: original },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(directory, "0.1.0", {
+    resume_token: initialPreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
+  const manifestBefore = await readFile(manifestPath, "utf8");
+  const corrected = await completeAudit(directory, {
+    ...ANSWERS,
+    core_journeys: ["corrected public journey"],
+  });
+
+  const result = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.equal(result.source_report_id, original.report.report_id);
+  assert.deepEqual(result.interaction.source_report, {
+    report_id: original.report.report_id,
+    role: "manifest_source",
+  });
+  assert.deepEqual(result.manifest_action, {
+    action: "preserve",
+    existing_source_report_id: original.report.report_id,
+    supplied_source_report_id: corrected.report.report_id,
+    rebind_option: "--rebind",
+    next_action: {
+      operation: "init",
+      action: "rebind_manifest",
+      required_option: "--rebind",
+    },
+  });
+  assert.ok(result.preview.history_adoption.changes.length > 0);
+  assert.deepEqual(result.preview.release_intent_replacement, {
+    requested: false,
+    changes: [],
+  });
+  assert.ok(!result.preview.changes.some(({ path: changedPath }) =>
+    changedPath === ".launchrally/manifest.yaml"));
+  assert.equal(await readFile(manifestPath, "utf8"), manifestBefore);
+});
+
+test("explicit rebind replaces Report-derived Manifest intent only after confirmation", async () => {
+  const directory = await fixture();
+  const original = await completeAudit(directory);
+  const initialPreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: original },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(directory, "0.1.0", {
+    resume_token: initialPreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
+  const toolchainPath = path.join(directory, ".launchrally", "toolchain", "package.json");
+  const manifestBefore = await readFile(manifestPath, "utf8");
+  const toolchainBefore = await readFile(toolchainPath, "utf8");
+  const corrected = await completeAudit(directory, {
+    ...ANSWERS,
+    core_journeys: ["corrected public journey"],
+    support_layers: ["monitoring"],
+  });
+
+  const declinedPreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected, rebind_manifest: true },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  assert.equal(declinedPreview.mode, "rebind", JSON.stringify(declinedPreview));
+  assert.deepEqual(declinedPreview.manifest_action, {
+    action: "replace",
+    existing_source_report_id: original.report.report_id,
+    supplied_source_report_id: corrected.report.report_id,
+    rebind_option: "--rebind",
+    next_action: {
+      operation: "init",
+      action: "rebind_manifest",
+      required_option: "--rebind",
+    },
+  });
+  assert.ok(declinedPreview.preview.history_adoption.changes.length > 0);
+  assert.deepEqual(
+    declinedPreview.preview.release_intent_replacement.changes.map(({ path: changedPath }) =>
+      changedPath),
+    [".launchrally/manifest.yaml"],
+  );
+  const declined = await runInit(directory, "0.1.0", {
+    resume_token: declinedPreview.interaction.resume_token,
+    confirmation: "decline",
+  });
+  assert.equal(declined.outcome, "rebind_declined");
+  assert.equal(await readFile(manifestPath, "utf8"), manifestBefore);
+
+  const stalePreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected, rebind_manifest: true },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await writeFile(manifestPath, `${manifestBefore}# changed after preview\n`);
+  const stale = await runInit(directory, "0.1.0", {
+    resume_token: stalePreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  assert.equal(stale.error, "preview_stale");
+  assert.equal(await readFile(toolchainPath, "utf8"), toolchainBefore);
+  await writeFile(manifestPath, manifestBefore);
+
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected, rebind_manifest: true },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  const result = await runInit(directory, "0.1.0", {
+    resume_token: preview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  assert.equal(result.outcome, "rebound");
+  assert.equal(result.source_report_id, corrected.report.report_id);
+  assert.equal(await readFile(toolchainPath, "utf8"), toolchainBefore);
+  assert.equal(preview.manifest.execution.source_report_id.value, corrected.report.report_id);
+  assert.deepEqual(preview.manifest.release.core_journeys.value, ["corrected public journey"]);
+  assert.deepEqual(preview.manifest.support.layers.value, ["observability"]);
+  assert.ok(await readFile(path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    original.report.report_id,
+    "record.json",
+  ), "utf8"));
+  assert.ok(await readFile(path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    corrected.report.report_id,
+    "record.json",
+  ), "utf8"));
+
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: corrected,
+    scope: "full",
+  });
+  const verified = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  assert.equal(verified.status, "completed");
+  assert.equal(verified.report.policy.current, true);
+  assert.deepEqual(verified.manifest_drift, []);
+  assert.equal(verified.history.source_report_id, corrected.report.report_id);
+});
+
+test("explicit rebind rejects a stale corrected Report before preview or write", async () => {
+  const directory = await fixture();
+  const original = await completeAudit(directory);
+  const initialPreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: original },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(directory, "0.1.0", {
+    resume_token: initialPreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
+  const manifestBefore = await readFile(manifestPath, "utf8");
+  const corrected = await completeAudit(directory, {
+    ...ANSWERS,
+    core_journeys: ["corrected public journey"],
+  });
+  await writeFile(path.join(directory, "package.json"), "{\"name\":\"changed\"}\n");
+
+  const result = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected, rebind_manifest: true },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+
+  assert.equal(result.status, "needs_refresh");
+  assert.equal(await readFile(manifestPath, "utf8"), manifestBefore);
+  await assert.rejects(readFile(path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    corrected.report.report_id,
+    "record.json",
+  )), { code: "ENOENT" });
+});
+
 test("confirmed Init persists the complete source Audit as immutable local history", async () => {
   const directory = await fixture();
   const audit = await completeAudit(directory);
@@ -2176,6 +2383,104 @@ test("Human Mode renders every exact initialization change before confirmation",
   assert.match(processResult.stdout, /CREATE \.launchrally\/manifest\.yaml/u);
   assert.match(processResult.stdout, /Apply exactly these local initialization changes\?/u);
   assert.match(processResult.stdout, /Resume token: .{20,}/u);
+});
+
+test("Human and JSON Init expose the explicit Manifest rebind action", async () => {
+  const directory = await fixtureWithCliDependency("0.3.2");
+  const original = await completeAudit(directory);
+  const initialPreview = await runInit(
+    directory,
+    "0.3.2",
+    { report_package: original },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(directory, "0.3.2", {
+    resume_token: initialPreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const corrected = await completeAudit(directory, {
+    ...ANSWERS,
+    core_journeys: ["corrected public journey"],
+  });
+  const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-rebind-report-"));
+  const reportPath = path.join(reportDirectory, "corrected-audit.json");
+  await writeFile(reportPath, JSON.stringify(corrected));
+
+  const human = await execFileAsync(process.execPath, [
+    engine,
+    "init",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ]);
+  assert.match(human.stdout, /Manifest intent: preserved/u);
+  assert.match(human.stdout, new RegExp(original.report.report_id, "u"));
+  assert.match(human.stdout, new RegExp(corrected.report.report_id, "u"));
+  assert.match(human.stdout, /Replace command: .*init .*--rebind/u);
+
+  const json = JSON.parse((await execFileAsync(process.execPath, [
+    engine,
+    "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+    "--rebind",
+  ])).stdout);
+  assert.equal(json.status, "needs_confirmation");
+  assert.equal(json.mode, "rebind");
+  assert.equal(json.manifest_action.action, "replace");
+  assert.equal(json.manifest_action.existing_source_report_id, original.report.report_id);
+  assert.equal(json.manifest_action.supplied_source_report_id, corrected.report.report_id);
+  assert.ok(json.preview.release_intent_replacement.changes.some(
+    ({ path: changedPath }) => changedPath === ".launchrally/manifest.yaml",
+  ));
+});
+
+test("interrupted rebind recovery finalizes the new Manifest and immutable history", async () => {
+  const directory = await fixture();
+  const original = await completeAudit(directory);
+  const initialPreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: original },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(directory, "0.1.0", {
+    resume_token: initialPreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const corrected = await completeAudit(directory, {
+    ...ANSWERS,
+    core_journeys: ["corrected public journey"],
+  });
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected, rebind_manifest: true },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  const interrupted = await runInit(
+    directory,
+    "0.1.0",
+    { resume_token: preview.interaction.resume_token, confirmation: "confirm" },
+    {
+      mark_history_committed: async () => {
+        const error = new Error("simulated crash after rebind Report commit");
+        error.code = "EIO";
+        throw error;
+      },
+    },
+  );
+  assert.equal(interrupted.error, "initialization_recovery_required");
+
+  const recovered = await runInit(directory, "0.1.0");
+  assert.equal(recovered.status, "completed");
+  assert.equal(recovered.outcome, "rebound");
+  assert.equal(recovered.source_report_id, corrected.report.report_id);
+  assert.equal(recovered.recovery, "committed_history_finalized");
 });
 
 test("initialization never stages or commits its project-owned files", async () => {
