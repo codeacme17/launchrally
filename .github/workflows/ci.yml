@@ -27,7 +27,11 @@ jobs:
       - run: npm run build
       - run: git diff --exit-code
       - run: npm run test:contracts
+        env:
+          GH_TOKEN: ${{ github.token }}
       - run: npm run validate:acceptance
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   journeys:
     runs-on: ${{ matrix.os }}
@@ -74,8 +78,12 @@ jobs:
       - run: npm run build
       - run: git diff --exit-code
       - run: npm test
+        env:
+          GH_TOKEN: ${{ github.token }}
       - run: npm run test:legacy-public
       - run: npm run validate:acceptance
+        env:
+          GH_TOKEN: ${{ github.token }}
       - if: github.event_name == 'pull_request'
         run: git fetch origin "$GITHUB_BASE_REF" --depth=1
       - if: github.event_name == 'pull_request'

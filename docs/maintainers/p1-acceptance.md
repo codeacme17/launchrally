@@ -3,7 +3,7 @@
 `release/p1.json` and `release/p1-acceptance.json` are the independent Phase 1
 release and traceability contracts. They supplement, and never rewrite,
 `release/p0.json` or `release/p0-acceptance.json`. P0 remains Stable while P1
-is incomplete, not validated, and limited to the Experimental channel.
+is Product Complete, not validated, and limited to the Experimental channel.
 
 Every requirement below names a versioned contract, implementation, exact
 test, tracking issue, state, and mandatory gate in the machine-readable
@@ -49,7 +49,7 @@ open requirement or pending mandatory gate.
 | P1-HOST-01 | Codex and Claude resume exact Architecture and Handoff state without prose reconstruction | Claude Handoff state resumes in Codex from one validated local artifact | #136 | Complete |
 | P1-COVERAGE-01 | Representative Provider-neutral Packs preserve honest depth for managed and generic implementations | reference packs cover every product shape and integration family without Provider semantics | #137 | Complete |
 | P1-DOCS-01 | Agent and Human users can follow the complete authority-aware Phase 1 journey | documented Phase 1 commands are equivalent across POSIX and PowerShell | #138 | Complete |
-| P1-RELEASE-01 | Exact P1 artifacts publish only as Experimental before separate external verification and Stable promotion | P1 Experimental publication readiness permits only external verification to remain open; P1 external verification cannot complete without its signed aggregate record; published P1 artifacts match candidate digests, provenance, and the preserved latest line; the P1 announcement and external Agent procedure preserve every lifecycle boundary; external Phase 1 results require machine-checked CLI, Codex, and Claude scenario coverage; packed artifacts complete installation, delegation, lifecycle, and full verification journeys | #141 | Open |
+| P1-RELEASE-01 | Exact P1 artifacts publish only as Experimental before separate external verification and Stable promotion | P1 Experimental publication readiness permits only external verification to remain open; P1 external verification cannot complete without its signed aggregate record; published P1 artifacts match candidate digests, provenance, and the preserved latest line; the P1 announcement and external Agent procedure preserve every lifecycle boundary; external Phase 1 results require machine-checked CLI, Codex, and Claude scenario coverage; packed artifacts complete installation, delegation, lifecycle, and full verification journeys | #141 | Complete |
 
 ## Independent lifecycle
 
@@ -78,8 +78,9 @@ artifacts, and external verification are mandatory and independently
 addressable. Cards, Packs, Executor Descriptors, public commands, generated
 copies, effects, exact versions, provenance, platform claims, and any
 authority expansion remain fail-closed under the supply-chain gate. The exact
-artifact gate is Complete; external verification remains Pending, so P1 stays
-Incomplete and Experimental while completed P0 behavior remains available.
+artifact gate and external verification are Complete, so P1 is Product Complete
+and published while remaining Experimental, not P1 Validated, and not Stable.
+Completed P0 behavior remains independently available.
 Supply-chain freshness is evaluated at the explicit
 `supply_chain_assessment_at` timestamp in `release/p1.json`, and release
 validation requires that timestamp to match its current UTC date. A historical
@@ -110,10 +111,10 @@ trusting a label:
 The gate invokes the exact native Codex and Claude local marketplace,
 installation, discovery, and removal commands in isolated configuration roots,
 then runs the typed packaged adapter journeys under a deny-by-default Node
-effect boundary. Model-driven native Agent execution is not inferred from
-plugin discovery or adapter imports: it remains explicitly pending under
-`p1_external_verification` and must run in protected clean external hosts with
-their own short-lived authentication. The same installed-artifact gate
+effect boundary. Model-driven native Agent execution was not inferred from
+plugin discovery or adapter imports: it ran in protected clean external hosts
+with short-lived authentication and is retained only through the signed
+aggregate under `p1_external_verification`. The same installed-artifact gate
 exercises no-PRD and incomplete semantic
 coverage, denied write authority, missing Executor, cancellation, partial
 receipt, stale Architecture, Unknown Provider, environment isolation,
