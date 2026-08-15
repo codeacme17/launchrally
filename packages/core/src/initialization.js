@@ -1136,6 +1136,12 @@ function initializationError(error, message, extra = {}) {
   };
 }
 
+function completedInitializationOutcome(mode) {
+  if (mode === "migration") return "migrated";
+  if (mode === "rebind") return "rebound";
+  return "initialized";
+}
+
 function registryPermissionRequest(version, sourceReportId, temporaryTarget, resumeToken) {
   const npmArguments = toolchainInstallArguments(version, true);
   return {
@@ -1202,9 +1208,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       contract: CLI_INTERACTION_CONTRACT,
       status: "completed",
       operation: "init",
-      outcome: recovered.mode === "migration"
-        ? "migrated"
-        : recovered.mode === "rebind" ? "rebound" : "initialized",
+      outcome: completedInitializationOutcome(recovered.mode),
       recovery: "committed_history_finalized",
       history_commit: recovered.history_commit,
       source_report_id: recovered.source_report_id,
@@ -1533,9 +1537,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       contract: CLI_INTERACTION_CONTRACT,
       status: "completed",
       operation: "init",
-      outcome: state.mode === "migration"
-        ? "migrated"
-        : state.mode === "rebind" ? "rebound" : "initialized",
+      outcome: completedInitializationOutcome(state.mode),
       source_report_id: state.source_report_id,
       changes_applied: state.changes.map((change) => change.path),
     };

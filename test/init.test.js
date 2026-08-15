@@ -70,6 +70,36 @@ async function fixture() {
   return directory;
 }
 
+async function fileTreeSnapshot(directory) {
+  const files = {};
+  const visit = async (current, relative = "") => {
+    const entries = await readdir(current, { withFileTypes: true });
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+      const entryRelative = relative ? `${relative}/${entry.name}` : entry.name;
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await visit(entryPath, entryRelative);
+      } else if (entry.isFile()) {
+        files[entryRelative] = (await readFile(entryPath)).toString("base64");
+      } else {
+        assert.fail(`Unexpected non-file entry in byte snapshot: ${entryRelative}`);
+      }
+    }
+  };
+  await visit(directory);
+  return files;
+}
+
+async function assertSnapshotFilesUnchanged(directory, snapshot) {
+  for (const [relative, expected] of Object.entries(snapshot)) {
+    assert.equal(
+      (await readFile(path.join(directory, relative))).toString("base64"),
+      expected,
+      relative,
+    );
+  }
+}
+
 async function fixtureWithCliDependency(version = "0.1.0") {
   const directory = await fixture();
   const changes = await prepareNpmChanges({
@@ -1244,16 +1274,32 @@ test("explicit rebind replaces Report-derived Manifest intent only after confirm
     directory,
     "0.1.0",
     { report_package: original },
-    { prepare_dependency_changes: prepareNpmChanges },
+    { prepare_dependency_changes: prepareMaterializedToolchain },
   );
   await runInit(directory, "0.1.0", {
     resume_token: initialPreview.interaction.resume_token,
     confirmation: "confirm",
   });
   const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
-  const toolchainPath = path.join(directory, ".launchrally", "toolchain", "package.json");
+  const toolchainRoot = path.join(directory, ".launchrally", "toolchain");
+  const toolchainPath = path.join(toolchainRoot, "package.json");
+  const toolchainLockPath = path.join(toolchainRoot, "package-lock.json");
+  const toolchainAuthorityPath = path.join(toolchainRoot, "authority.json");
+  const materializationPath = path.join(toolchainRoot, "node_modules");
   const manifestBefore = await readFile(manifestPath, "utf8");
   const toolchainBefore = await readFile(toolchainPath, "utf8");
+  const toolchainLockBefore = await readFile(toolchainLockPath);
+  const toolchainAuthorityBefore = await readFile(toolchainAuthorityPath);
+  const materializationBefore = await fileTreeSnapshot(materializationPath);
+  const originalReportPath = path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    original.report.report_id,
+  );
+  const originalReportBefore = await fileTreeSnapshot(originalReportPath);
+  const evidencePath = path.join(directory, ".launchrally", "evidence");
+  const evidenceBefore = await fileTreeSnapshot(evidencePath);
   const corrected = await completeAudit(directory, {
     ...ANSWERS,
     core_journeys: ["corrected public journey"],
@@ -1319,6 +1365,11 @@ test("explicit rebind replaces Report-derived Manifest intent only after confirm
   assert.equal(result.outcome, "rebound");
   assert.equal(result.source_report_id, corrected.report.report_id);
   assert.equal(await readFile(toolchainPath, "utf8"), toolchainBefore);
+  assert.deepEqual(await readFile(toolchainLockPath), toolchainLockBefore);
+  assert.deepEqual(await readFile(toolchainAuthorityPath), toolchainAuthorityBefore);
+  assert.deepEqual(await fileTreeSnapshot(materializationPath), materializationBefore);
+  assert.deepEqual(await fileTreeSnapshot(originalReportPath), originalReportBefore);
+  await assertSnapshotFilesUnchanged(evidencePath, evidenceBefore);
   assert.equal(preview.manifest.execution.source_report_id.value, corrected.report.report_id);
   assert.deepEqual(preview.manifest.release.core_journeys.value, ["corrected public journey"]);
   assert.deepEqual(preview.manifest.support.layers.value, ["observability"]);
@@ -1349,6 +1400,14 @@ test("explicit rebind replaces Report-derived Manifest intent only after confirm
   assert.equal(verified.report.policy.current, true);
   assert.deepEqual(verified.manifest_drift, []);
   assert.equal(verified.history.source_report_id, corrected.report.report_id);
+  assert.deepEqual(
+    verified.report.scope.release_intent.core_journeys,
+    ["corrected public journey"],
+  );
+  assert.deepEqual(
+    verified.report.scope.release_intent.support_layers,
+    ["observability"],
+  );
 });
 
 test("explicit rebind rejects a stale corrected Report before preview or write", async () => {
