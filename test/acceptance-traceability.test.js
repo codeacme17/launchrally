@@ -9,10 +9,15 @@ import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
+const currentVersion = JSON.parse(await readFile(
+  path.join(root, "package.json"),
+  "utf8",
+)).version;
 
 async function createAcceptanceFixture() {
   return copyRepositoryFixture(root, "launchrally-acceptance-", [
     ".github",
+    "CHANGELOG.md",
     "adapters",
     "docs",
     "fixtures",
@@ -39,7 +44,52 @@ test("the committed P0 matrix maps every normative requirement to executable evi
     release_status: "stable",
     requirements: { complete: 25, open: 0, total: 25 },
     release_gates: 12,
+    p1: {
+      status: "completed",
+      schema_version: "launchrally.dev/p1-release/v1",
+      product_status: "incomplete",
+      release_status: "experimental",
+      quality_floor_status: "satisfied",
+      requirements: { complete: 37, open: 1, total: 38 },
+      release_gates: 5,
+      suspended_authorities: [],
+      p0_release_status: "stable",
+    },
   });
+});
+
+test("Phase 1 requirements map public contracts to executable Core and host journeys", async () => {
+  const matrix = JSON.parse(await readFile(path.join(root, "release/p1-acceptance.json"), "utf8"));
+  const docs = await readFile(path.join(root, "docs/maintainers/p1-acceptance.md"), "utf8");
+
+  assert.equal(matrix.schema_version, "launchrally.dev/p1-acceptance/v1");
+  const contract = JSON.parse(await readFile(path.join(root, "release/p1.json"), "utf8"));
+  assert.deepEqual(
+    matrix.requirements.map(({ id }) => id),
+    contract.acceptance_requirement_ids,
+  );
+  assert.equal(matrix.requirements.length, 38);
+  assert.ok(matrix.requirements.find(({ id }) => id === "P1-AUTH-01").contracts.includes(
+    "packages/contracts/schemas/authenticated-journey-evidence/v1.schema.json",
+  ));
+  for (const requirement of matrix.requirements) {
+    assert.equal(
+      requirement.status,
+      requirement.id === "P1-RELEASE-01" ? "open" : "complete",
+    );
+    for (const relativePath of [
+      ...requirement.contracts,
+      ...requirement.implementation,
+      ...requirement.tests.map(({ path: testPath }) => testPath),
+    ]) {
+      await readFile(path.join(root, relativePath), "utf8");
+    }
+    for (const { path: testPath, name } of requirement.tests) {
+      const source = await readFile(path.join(root, testPath), "utf8");
+      assert.ok(source.includes(`test("${name}"`), `${testPath}: ${name}`);
+    }
+    assert.ok(docs.includes(`| ${requirement.id} |`));
+  }
 });
 
 test("acceptance validation rejects a missing mandatory release gate", async () => {
@@ -137,7 +187,7 @@ test("CI runs contract and clean journey gates on every required Node and OS tar
     assert.match(ci, new RegExp(command, "u"), command);
     assert.match(release, new RegExp(command, "u"), command);
   }
-  assert.match(release, /npm run validate:acceptance -- --require-release-ready/u);
+  assert.match(release, /npm run validate:p1 -- --require-publish-ready/u);
   assert.match(release, /public-smoke:[\s\S]*needs: publish[\s\S]*npm run test:public-release/u);
   assert.match(release, /prerelease:[\s\S]*needs: public-smoke[\s\S]*gh release create/u);
 });
@@ -236,7 +286,7 @@ test("Stable readiness requires the separately approved promotion state", async 
         denied_permission: "docs/maintainers/stable-e2e-evidence.md",
         direct_cli: "docs/maintainers/stable-e2e-evidence.md",
       },
-      approved_tag: "v0.3.2",
+      approved_tag: `v${currentVersion}`,
     },
   });
   await writeFile(

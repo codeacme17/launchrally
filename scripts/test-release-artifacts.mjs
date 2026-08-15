@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   access,
   chmod,
@@ -15,10 +16,13 @@ import {
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { createRequire, syncBuiltinESMExports } from "node:module";
+import { createServer } from "node:https";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { hasClaudeInstalledPlugin } from "./native-plugin-state.mjs";
+import { createIsolatedNativeEnvironment } from "./native-environment.mjs";
 import { assertNoConsumerInstallScripts } from "./release-artifact-policy.mjs";
 
 import {
@@ -27,6 +31,7 @@ import {
 } from "../test/helpers/exact-toolchain.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 const consumerRuntimePackages = Object.freeze({
   "@clack/core": "1.4.3",
@@ -36,6 +41,60 @@ const consumerRuntimePackages = Object.freeze({
   "fast-wrap-ansi": "0.2.2",
   sisteransi: "1.0.5",
 });
+const P1_PRODUCT_JOURNEYS = Object.freeze([
+  "astro-hosted-web",
+  "custom-self-hosted",
+  "fastapi-container",
+  "pnpm-edge-monorepo",
+  "react-go-split",
+]);
+const P1_INTEGRATION_FAMILIES = Object.freeze([
+  "backup_to_restore",
+  "email_to_domain_delivery",
+  "identity_to_application_data",
+  "payment_to_entitlement",
+  "queue_background_work",
+  "release_to_observability",
+  "source_to_ci_cd_to_deployment",
+  "storage_to_metadata_access",
+]);
+const P1_SCENARIOS = Object.freeze([
+  "cancellation",
+  "cross_host_resume",
+  "denied_write",
+  "environment_isolation",
+  "incomplete_semantic_coverage",
+  "missing_executor",
+  "no_prd",
+  "p0_to_p1_migration",
+  "partial_receipt",
+  "stale_architecture",
+  "unknown_provider",
+]);
+const P1_MATRIX_TARGETS = Object.freeze({
+  "linux-node20-posix": { platform: "linux", node_major: 20, shell: "posix" },
+  "linux-node22-posix": { platform: "linux", node_major: 22, shell: "posix" },
+  "linux-node24-posix": { platform: "linux", node_major: 24, shell: "posix" },
+  "macos-node22-posix": { platform: "darwin", node_major: 22, shell: "posix" },
+  "windows-node22-powershell": { platform: "win32", node_major: 22, shell: "powershell" },
+});
+
+function assertP1MatrixTarget() {
+  const option = process.argv.indexOf("--matrix-target");
+  if (option === -1) return;
+  const id = process.argv[option + 1];
+  const expected = P1_MATRIX_TARGETS[id];
+  const actual = {
+    platform: process.platform,
+    node_major: Number(process.versions.node.split(".")[0]),
+    shell: process.platform === "win32" ? "powershell" : "posix",
+  };
+  if (!expected || JSON.stringify(expected) !== JSON.stringify(actual)) {
+    throw new Error(
+      `p1_artifact_matrix_target_mismatch: ${id ?? "missing"} does not match ${JSON.stringify(actual)}`,
+    );
+  }
+}
 
 async function json(filePath) {
   return JSON.parse(await readFile(filePath, "utf8"));
@@ -153,6 +212,182 @@ function assertEqual(actual, expected, code, detail) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(`${code}: ${detail}`);
   }
+}
+
+function sha256Text(value) {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+async function withDeniedProcessEffects(observations, action) {
+  const replacements = [];
+  const replace = (owner, method, effect) => {
+    const original = owner[method];
+    if (typeof original !== "function") return;
+    owner[method] = (...arguments_) => {
+      observations.denied_process_effects.push({ effect, method });
+      const error = new Error(`packed_host_unauthorized_effect:${effect}:${method}`);
+      error.code = "packed_host_unauthorized_effect";
+      throw error;
+    };
+    replacements.push(() => { owner[method] = original; });
+  };
+  const childProcess = require("node:child_process");
+  const dns = require("node:dns");
+  const dgram = require("node:dgram");
+  const fs = require("node:fs");
+  const http = require("node:http");
+  const http2 = require("node:http2");
+  const https = require("node:https");
+  const net = require("node:net");
+  const tls = require("node:tls");
+  const workerThreads = require("node:worker_threads");
+  const fsPromises = fs.promises;
+  for (const method of [
+    "exec", "execFile", "execFileSync", "execSync", "fork", "spawn", "spawnSync",
+  ]) {
+    replace(childProcess, method, "process_execution");
+  }
+  for (const method of ["get", "request"]) {
+    replace(http, method, "network_access");
+    replace(https, method, "network_access");
+  }
+  for (const method of ["connect", "createConnection"]) {
+    replace(net, method, "network_access");
+  }
+  replace(tls, "connect", "network_access");
+  replace(http2, "connect", "network_access");
+  replace(dgram, "createSocket", "network_access");
+  for (const method of [
+    "resolve", "resolve4", "resolve6", "resolveAny", "resolveCaa", "resolveCname",
+    "resolveMx", "resolveNaptr", "resolveNs", "resolvePtr", "resolveSoa", "resolveSrv",
+    "resolveTxt", "reverse",
+  ]) replace(dns, method, "network_access");
+  for (const method of [
+    "appendFile",
+    "chmod",
+    "chown",
+    "copyFile",
+    "cp",
+    "link",
+    "mkdir",
+    "mkdtemp",
+    "rename",
+    "rm",
+    "rmdir",
+    "symlink",
+    "truncate",
+    "unlink",
+    "writeFile",
+  ]) replace(fsPromises, method, "filesystem_write");
+  for (const method of [
+    "appendFileSync",
+    "chmodSync",
+    "chownSync",
+    "copyFileSync",
+    "cpSync",
+    "linkSync",
+    "mkdirSync",
+    "renameSync",
+    "rmSync",
+    "rmdirSync",
+    "symlinkSync",
+    "truncateSync",
+    "unlinkSync",
+    "writeFileSync",
+  ]) replace(fs, method, "filesystem_write");
+  replace(process, "dlopen", "native_addon_load");
+  replace(workerThreads, "Worker", "worker_creation");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (...arguments_) => {
+    observations.denied_process_effects.push({ effect: "network_access", method: "fetch" });
+    const error = new Error("packed_host_unauthorized_effect:network_access:fetch");
+    error.code = "packed_host_unauthorized_effect";
+    throw error;
+  };
+  syncBuiltinESMExports();
+  observations.guarded_process_sections += 1;
+  try {
+    return await action();
+  } finally {
+    for (const restore of replacements.reverse()) restore();
+    globalThis.fetch = originalFetch;
+    syncBuiltinESMExports();
+  }
+}
+
+function assertEnvironmentBoundEvidence(
+  result,
+  environment,
+  expectedCheckStatus,
+  { evidenceKind = null, target = null } = {},
+) {
+  const entries = result.evidence_index?.entries ?? [];
+  const qualifying = entries.filter((entry) =>
+    entry.current === true
+    && entry.environment === environment
+    && (evidenceKind === null || entry.evidence_kind === evidenceKind)
+    && (target === null || entry.target === target));
+  const binding = qualifying.find((entry) => result.report?.results?.checks?.some((check) =>
+    check.environment === environment
+    && check.status === expectedCheckStatus
+    && check.evidence.some(({ digest }) => digest === entry.digest)));
+  if (!binding) {
+    throw new Error(
+      `p1_environment_bound_evidence_missing:${environment}:${expectedCheckStatus}:${JSON.stringify({
+        qualifying: qualifying.map(({ digest, evidence_kind: kind, target: observedTarget }) => ({
+          digest,
+          kind,
+          target: observedTarget,
+        })),
+        checks: (result.report?.results?.checks ?? []).filter(
+          ({ environment: observed, status }) =>
+            observed === environment && status === expectedCheckStatus,
+        ).map(({ check_id: id, evidence }) => ({
+          id,
+          evidence: evidence.map(({ digest }) => digest),
+        })),
+      })}`,
+    );
+  }
+  if (evidenceKind === "authenticated_journey_machine_evidence") {
+    const artifact = binding.normalized_artifact;
+    if (
+      artifact?.kind !== evidenceKind
+      || artifact.provenance?.collector !== "host-agent-authenticated-journey/v1"
+      || artifact.provenance?.exact_target !== binding.target
+      || artifact.provenance?.permission_id !== "authenticated_journey_verification"
+      || artifact.provenance?.collected_at !== binding.collected_at
+    ) throw new Error("p1_authenticated_evidence_provenance_drift");
+  }
+  return binding;
+}
+
+function shellCommand(command, replacements) {
+  let rendered = command;
+  for (const [source, target] of replacements) rendered = rendered.replaceAll(source, target);
+  return rendered;
+}
+
+function shellQuote(value) {
+  return process.platform === "win32"
+    ? `'${value.replaceAll("'", "''")}'`
+    : `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+async function runDocumentedShell(command, options) {
+  if (process.platform === "win32") {
+    const windowsPowerShell = path.join(
+      process.env.SystemRoot ?? "C:\\Windows",
+      "System32",
+      "WindowsPowerShell",
+      "v1.0",
+      "powershell.exe",
+    );
+    return run(windowsPowerShell, [
+      "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command,
+    ], options);
+  }
+  return run("/bin/bash", ["--noprofile", "--norc", "-c", command], options);
 }
 
 async function packArtifacts(temporaryRoot, release) {
@@ -308,13 +543,14 @@ async function assertMissing(filePath, code) {
   throw new Error(`${code}: ${filePath} exists unexpectedly`);
 }
 
-async function snapshotTree(directory, relative = "") {
+async function snapshotTree(directory, relative = "", excludedRoots = new Set()) {
   const entries = await readdir(path.join(directory, relative), { withFileTypes: true });
   const snapshot = [];
   for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    if (relative === "" && excludedRoots.has(entry.name)) continue;
     const entryRelative = path.join(relative, entry.name);
     if (entry.isDirectory()) {
-      snapshot.push(...await snapshotTree(directory, entryRelative));
+      snapshot.push(...await snapshotTree(directory, entryRelative, excludedRoots));
     } else {
       snapshot.push([
         entryRelative.split(path.sep).join("/"),
@@ -334,6 +570,23 @@ async function runInstallationJourneys({
   publicLegacy,
   publicRelease,
 }) {
+  const effectObservations = {
+    package_manager: [],
+    authenticated_network: [],
+    denied_process_effects: [],
+    file_boundaries: [],
+    guarded_process_sections: 0,
+    normalized_outputs: [],
+  };
+  const runAuthorizedNpm = (arguments_, options, authority) => {
+    effectObservations.package_manager.push({
+      executable: "npm",
+      arguments: [...arguments_],
+      authority,
+      authorized: true,
+    });
+    return runNpm(arguments_, options);
+  };
   const prefix = path.join(temporaryRoot, "user-npm-prefix");
   const launcher = prefixExecutable(prefix);
   await assertMissing(launcher, "isolated_prefix_not_clean");
@@ -355,9 +608,10 @@ async function runInstallationJourneys({
       "--",
       "rally",
     ];
-  const npmExecVersion = JSON.parse((await runNpm(
+  const npmExecVersion = JSON.parse((await runAuthorizedNpm(
     [...npmExecArguments, "--version", "--json"],
     { cwd: temporaryRoot },
+    "exact_public_or_packed_execution",
   )).stdout);
   if (npmExecVersion.cli_version !== version) {
     throw new Error("npm_exec_artifact_version_drift");
@@ -377,8 +631,13 @@ async function runInstallationJourneys({
     ...(publicRelease ? [] : ["--offline", "--cache", cacheDirectory]),
     ...globalPackageSpecs,
   ];
-  await runNpm(globalInstallArguments, { cwd: temporaryRoot });
+  await runAuthorizedNpm(
+    globalInstallArguments,
+    { cwd: temporaryRoot },
+    "explicit_user_prefix_install",
+  );
   await access(launcher);
+  const installedPrefixSnapshot = await snapshotTree(prefix);
 
   const packagedJourneyPath = path.join(
     cleanProject,
@@ -400,15 +659,184 @@ async function runInstallationJourneys({
     "references",
     "reference-journey.json",
   );
-  const [journey, claudeJourney] = await Promise.all([
+  const codexPhase1CommandsPath = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "codex-plugin",
+    "skills",
+    "launchrally",
+    "references",
+    "phase-1-command-examples.json",
+  );
+  const claudePhase1CommandsPath = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "claude-plugin",
+    "skills",
+    "launchrally",
+    "references",
+    "phase-1-command-examples.json",
+  );
+  const [journey, claudeJourney, phase1Commands, claudePhase1Commands] = await Promise.all([
     json(packagedJourneyPath),
     json(claudeJourneyPath),
+    json(codexPhase1CommandsPath),
+    json(claudePhase1CommandsPath),
   ]);
+  const installedAdapterProjectSnapshot = await snapshotTree(
+    cleanProject,
+    "",
+    new Set(["node_modules"]),
+  );
+  const {
+    applyReferenceJourneyState,
+    buildCapabilityGraph,
+    createCapabilityCatalog,
+    createArchitecturePackageBundle,
+    createIntegrationContract,
+    createReferenceCoverageMatrix,
+    qualifyReferenceVerificationEvidence,
+    referenceExecutorDescriptors,
+    referenceIntegrationPacks,
+    runArchitectureJourney,
+    runHandoff,
+    runReferenceOutcomeJourney,
+  } = await import(pathToFileURL(path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "core",
+    "src",
+    "index.js",
+  )).href);
+  const p1IntegrationFamilies = new Set();
+  const integrationVerificationRequests = new Map();
+  const integrationFreshVerify = {};
+  const p1HostJourneys = new Set();
+  const p1Scenarios = new Set();
+  let successfulDownstreamEvidence = false;
+  let unsuccessfulDownstreamEvidence = false;
+  let receiptClaimsRequireVerification = false;
+  let hostProductIntentModules;
+  const referenceCoverage = createReferenceCoverageMatrix();
+  if (
+    referenceIntegrationPacks.length !== 8
+    || referenceCoverage.cells.length !== 40
+    || referenceExecutorDescriptors.length !== 2
+    || referenceExecutorDescriptors[0].tools[0].exact_version !== "0.147.0"
+    || referenceExecutorDescriptors[1].tools[0].exact_version !== "2.1.231"
+  ) throw new Error("packed_reference_integration_roster_drift");
+  await withDeniedProcessEffects(effectObservations, async () => {
+    for (const host of ["codex", "claude"]) {
+      const module = await import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        `${host}-plugin`,
+        "host-adapter",
+        "reference-journey.js",
+      )).href);
+      const runReferenceJourney = host === "codex"
+        ? module.runCodexReferenceJourney
+        : module.runClaudeReferenceJourney;
+      for (const pack of referenceIntegrationPacks) {
+        p1IntegrationFamilies.add(pack.family);
+        const managed = pack.implementations.filter(({ kind }) => kind === "managed");
+        for (const implementation of managed) {
+          for (const outcome of [
+            "complete", "partial", "denied", "unknown", "stale", "successful", "failed",
+            "cleanup_failed",
+          ]) {
+            const referenceResult = await runReferenceJourney({
+              pack_id: pack.pack_id,
+              implementation_id: implementation.implementation_id,
+              outcome,
+              environment: "production",
+              assessment_time: "2026-08-14T12:00:00.000Z",
+            });
+            effectObservations.normalized_outputs.push(JSON.stringify(referenceResult));
+            const requiresFreshVerification = [
+              "complete", "partial", "successful", "failed", "cleanup_failed",
+            ].includes(outcome);
+            const evidenceTarget = referenceResult.fresh_verification_request
+              ?.task_requests?.[0]?.evidence_targets?.[0] ?? "";
+            if (
+              referenceResult.outcome !== outcome
+              || referenceResult.machine_evidence !== false
+              || referenceResult.assurance_change !== false
+              || (requiresFreshVerification
+                && (referenceResult.receipt_claim_only !== true
+                  || referenceResult.fresh_verification_request?.operation !== "verify"
+                  || referenceResult.fresh_verification_request?.fresh_evidence_required !== true
+                  || !evidenceTarget.includes(pack.pack_digest.slice(7))
+                  || !evidenceTarget.includes(implementation.implementation_id)))
+            ) {
+              throw new Error(
+                `packed_${host}_reference_journey_drift:${pack.family}:${implementation.implementation_id}:${outcome}`,
+              );
+            }
+            if (requiresFreshVerification) receiptClaimsRequireVerification = true;
+            if (outcome === "complete" && !integrationVerificationRequests.has(pack.family)) {
+              integrationVerificationRequests.set(pack.family, {
+                pack_digest: pack.pack_digest,
+                implementation_id: implementation.implementation_id,
+                request: structuredClone(referenceResult.fresh_verification_request),
+                verification_subject: structuredClone(referenceResult.verification_subject),
+              });
+            }
+            if (outcome === "partial") p1Scenarios.add("partial_receipt");
+            if (outcome === "denied") p1Scenarios.add("denied_write");
+            if (outcome === "unknown") p1Scenarios.add("missing_executor");
+          }
+        }
+        const unknown = pack.implementations.find(({ kind }) => kind === "unknown");
+        const unknownProvider = await runReferenceJourney({
+          pack_id: pack.pack_id,
+          implementation_id: unknown.implementation_id,
+          outcome: "unknown",
+          environment: "production",
+          assessment_time: "2026-08-14T12:00:00.000Z",
+        });
+        effectObservations.normalized_outputs.push(JSON.stringify(unknownProvider));
+        if (
+          unknownProvider.status !== "verification_gap"
+          || unknownProvider.reason_code !== "unsupported_reference_executor"
+          || unknownProvider.machine_evidence !== false
+        ) throw new Error(`packed_${host}_unknown_provider_not_transparent:${pack.family}`);
+        p1Scenarios.add("unknown_provider");
+      }
+      p1HostJourneys.add(host);
+    }
+  });
+  const cancellationPack = referenceIntegrationPacks[0];
+  const cancellationImplementation = cancellationPack.implementations.find(
+    ({ kind }) => kind === "managed",
+  );
+  const cancelled = applyReferenceJourneyState(runReferenceOutcomeJourney(
+    cancellationPack,
+    cancellationImplementation.implementation_id,
+    "complete",
+    "2026-08-14T12:00:00.000Z",
+  ), "cancel");
+  if (
+    cancelled.status !== "cancelled"
+    || cancelled.machine_evidence !== false
+    || cancelled.assurance_change !== false
+  ) throw new Error("packed_reference_cancellation_drift");
+  p1Scenarios.add("cancellation");
   assertEqual(
     claudeJourney,
     journey,
     "packaged_skill_journey_drift",
     "Codex and Claude packaged Skills must ship the same reference journey",
+  );
+  assertEqual(
+    claudePhase1Commands,
+    phase1Commands,
+    "packaged_phase_1_command_examples_drift",
+    "Codex and Claude packaged Skills must ship the same Phase 1 command vectors",
   );
   assertEqual(
     journey.launcher_prerequisite,
@@ -436,10 +864,10 @@ async function runInstallationJourneys({
   );
   const invokeNpmExecFixture = async (id, replacements = {}) => {
     const invocation = findFixtureInvocation(journey, id);
-    const execution = await runNpm([
+    const execution = await runAuthorizedNpm([
       ...npmExecArguments,
       ...fixtureArguments(journey, id, replacements),
-    ], { cwd: temporaryRoot });
+    ], { cwd: temporaryRoot }, "exact_npm_exec_journey");
     const result = JSON.parse(execution.stdout);
     assertFixtureResult(journey, invocation, result, 0);
     return result;
@@ -484,6 +912,11 @@ async function runInstallationJourneys({
         plan_schema: "launchrally.dev/authenticated-journey-plan/v1",
         adapter_version: "host-agent-authenticated-journey/v1",
         result_schema: "launchrally.dev/authenticated-journey-results/v1",
+        attestation_schema: "launchrally.dev/authenticated-journey-attestation/v1",
+        attestation_authority: "external_host_adapter",
+        evidence_schema: "launchrally.dev/authenticated-journey-evidence/v1",
+        qualifying_statuses: ["passed", "failed"],
+        unverified_result: "verification_gap_without_evidence",
         resume_argument: "--journey-results",
         retained_fields: ["journey_id", "status", "outcome", "status_code", "collected_at"],
         raw_auth_material: "excluded",
@@ -491,6 +924,180 @@ async function runInstallationJourneys({
       `packaged_${host}_protected_journey_contract_drift`,
       `${host} must ship the complete protected journey host contract`,
     );
+    const { resumeAuthenticatedJourney } = await import(
+      pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        `${host}-plugin`,
+        "host-adapter",
+        "authenticated-journey.js",
+      )).href
+    );
+    const exercisePackagedHostRunner = async (statusCode, expected) => {
+      const expectedOutcome = process.platform === "win32" && expected.authenticated
+        ? "runner_unavailable"
+        : expected.outcome;
+      const expectedEvidence = process.platform === "win32"
+        ? false
+        : expected.evidence;
+      const server = createServer({
+        key: await readFile(path.join(root, "test", "fixtures", "self-signed-key.pem")),
+        cert: await readFile(path.join(root, "test", "fixtures", "self-signed-cert.pem")),
+      }, (request, response) => {
+        effectObservations.authenticated_network.push({
+          effect: "authenticated_network_read",
+          method: request.method,
+          destination: "loopback_fixture",
+          authentication_source: "owner_private_reference",
+        });
+        response.writeHead(statusCode);
+        response.end();
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const target = `https://localhost:${server.address().port}`;
+      const bridgeRepository = path.join(
+        temporaryRoot,
+        `${host} packaged host ${expected.outcome}`,
+      );
+      await cp(
+        path.join(root, "fixtures", "coverage", "typescript-astro"),
+        bridgeRepository,
+        { recursive: true },
+      );
+      const previousOrigin = process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+      const previousAuthorization = process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+      const previousCa = process.env.LAUNCHRALLY_HOST_CA_FILE;
+      const authorizationRoot = await mkdtemp(
+        path.join(os.tmpdir(), "launchrally-packaged-host-auth-"),
+      );
+      const authorizationFile = path.join(authorizationRoot, "authorization");
+      process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = target;
+      process.env.LAUNCHRALLY_HOST_CA_FILE = path.join(
+        root,
+        "test",
+        "fixtures",
+        "self-signed-cert.pem",
+      );
+      if (expected.authenticated) {
+        await writeFile(authorizationFile, "Bearer packaged-host-secret", { mode: 0o600 });
+        process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = authorizationFile;
+      } else {
+        delete process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+      }
+      try {
+        const invoke = async (...arguments_) => JSON.parse((await invokeLauncher(
+          "rally",
+          [...arguments_, "--json", "--cwd", bridgeRepository],
+          { cwd: temporaryRoot, env: launcherEnvironment },
+        )).stdout);
+        const initial = await invoke("audit");
+        const confirmation = await invoke(
+          "audit", "--resume", initial.interaction.resume_token,
+          "--answers", JSON.stringify({
+            intended_environment: "staging",
+            production_targets: [target],
+            core_journeys: [{
+              schema_version: skillJourney.protected_journeys.declaration_schema,
+              method: "GET",
+              path: "/control",
+              purpose: `${host} packaged protected Control Room loads`,
+              access: {
+                authentication_class: "staff",
+                authenticated_status_codes: [200],
+              },
+            }],
+            provider_roles: [],
+            support_layers: [],
+          }),
+        );
+        const permission = await invoke(
+          "audit", "--resume", confirmation.interaction.resume_token,
+          "--confirm", "confirm",
+        );
+        const input = await invoke(
+          "audit", "--resume", permission.interaction.resume_token,
+          "--permissions", JSON.stringify({
+            public_verification: "denied",
+            authenticated_journey_verification: "approved",
+          }),
+        );
+        const result = await resumeAuthenticatedJourney({
+          cwd: bridgeRepository,
+          operation: "audit",
+          resume_token: input.interaction.resume_token,
+          request: input.request,
+        });
+        if (
+          result.status !== "completed"
+          || result.evidence_index.entries.some(
+            ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
+          ) !== expectedEvidence
+          || (expectedEvidence && expected.assessment
+            && result.report.assessment !== expected.assessment)
+          || (!expectedEvidence && !result.report.results.verification_gaps.some(
+            ({ reason_code: reasonCode }) => reasonCode === expectedOutcome,
+          ))
+          || /packaged-host-secret|bearer\s|"cookie"|"headers"|response_body/iu.test(
+            JSON.stringify(result),
+          )
+        ) throw new Error(`packaged_${host}_${expectedOutcome}_host_runner_failed`);
+        effectObservations.normalized_outputs.push(JSON.stringify(result));
+        if (expectedEvidence) {
+          assertEnvironmentBoundEvidence(
+            result,
+            "staging",
+            expected.outcome === "completed" ? "passed" : "failed",
+            {
+              evidenceKind: "authenticated_journey_machine_evidence",
+              target: `${target}/control`,
+            },
+          );
+          if (expected.outcome === "completed") successfulDownstreamEvidence = true;
+          else unsuccessfulDownstreamEvidence = true;
+          p1Scenarios.add("environment_isolation");
+        }
+        return result;
+      } finally {
+        if (previousOrigin === undefined) delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+        else process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = previousOrigin;
+        if (previousAuthorization === undefined) {
+          delete process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+        } else {
+          process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = previousAuthorization;
+        }
+        if (previousCa === undefined) delete process.env.LAUNCHRALLY_HOST_CA_FILE;
+        else process.env.LAUNCHRALLY_HOST_CA_FILE = previousCa;
+        await rm(authorizationRoot, { recursive: true, force: true });
+        await new Promise((resolve) => server.close(resolve));
+      }
+    };
+    const supportedSuccess = await exercisePackagedHostRunner(200, {
+      outcome: "completed", authenticated: true, evidence: true,
+    });
+    const supportedFailure = await exercisePackagedHostRunner(403, {
+      outcome: "unexpected_denial", authenticated: true, evidence: true, assessment: "no_go",
+    });
+    await exercisePackagedHostRunner(401, {
+      outcome: "expired_authentication", authenticated: true, evidence: false,
+    });
+    await exercisePackagedHostRunner(200, {
+      outcome: "missing_authentication", authenticated: false, evidence: false,
+    });
+    if (process.platform === "win32") {
+      const environmentGapObserved = [supportedSuccess, supportedFailure].every((result) =>
+        result.report?.scope?.release_intent?.intended_environment === "staging"
+        && !result.evidence_index.entries.some(
+          ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
+        )
+        && result.report.results.verification_gaps.some(
+          ({ reason_code: reasonCode }) => reasonCode === "runner_unavailable",
+        ));
+      if (!environmentGapObserved) {
+        throw new Error(`packaged_${host}_windows_environment_isolation_gap_missing`);
+      }
+      p1Scenarios.add("environment_isolation");
+    }
     const protectedRepository = path.join(temporaryRoot, `${host} protected journey`);
     await cp(
       path.join(root, "fixtures", "coverage", "typescript-astro"),
@@ -599,7 +1206,6 @@ async function runInstallationJourneys({
       || resultInput.request?.plan?.schema_version !== skillJourney.protected_journeys.plan_schema
     ) throw new Error(`packaged_${host}_protected_audit_input_failed`);
     const normalizedResults = executeFixtureAuthenticatedRead(resultInput.request.plan);
-    const auditCollectedAt = JSON.parse(normalizedResults).results[0].collected_at;
     const audit = await run(
       "audit",
       "--resume",
@@ -609,13 +1215,13 @@ async function runInstallationJourneys({
     );
     if (
       audit.status !== "completed"
-      || !audit.evidence_index.entries.some(
-        ({ evidence_kind: kind, normalized_artifact: artifact }) =>
-          kind === "authenticated_journey_observation"
-          && artifact.outcome === "completed"
-          && artifact.status === "passed",
+      || audit.evidence_index.entries.some(
+        ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
       )
-    ) throw new Error(`packaged_${host}_protected_audit_failed`);
+      || !audit.report.results.verification_gaps.some(
+        ({ reason_code: reasonCode }) => reasonCode === "unsupported_adapter",
+      )
+    ) throw new Error(`packaged_${host}_unattested_audit_not_gap`);
     const reportPath = path.join(temporaryRoot, `${host}-protected-audit.json`);
     await writeFile(reportPath, JSON.stringify(audit));
     const initPreview = await run("init", "--report", reportPath);
@@ -660,14 +1266,13 @@ async function runInstallationJourneys({
     );
     if (
       verify.status !== "completed"
-      || !verify.evidence_index.entries.some(
-        ({ evidence_kind: kind, normalized_artifact: artifact }) =>
-          kind === "authenticated_journey_observation"
-          && artifact.outcome === "completed"
-          && artifact.status === "passed"
-          && artifact.collected_at !== auditCollectedAt,
+      || verify.evidence_index.entries.some(
+        ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
       )
-    ) throw new Error(`packaged_${host}_protected_verify_failed`);
+      || !verify.report.results.verification_gaps.some(
+        ({ reason_code: reasonCode }) => reasonCode === "unsupported_adapter",
+      )
+    ) throw new Error(`packaged_${host}_unattested_verify_not_gap`);
     if (/session=|bearer\s|"cookie"|"headers"/iu.test(JSON.stringify(verify))) {
       throw new Error(`packaged_${host}_protected_auth_material_retained`);
     }
@@ -683,6 +1288,10 @@ async function runInstallationJourneys({
       `packaged_${host}_protected_journey_mutated_application`,
       `${host} must not perform login, capability grants, deployment, or application writes`,
     );
+    effectObservations.file_boundaries.push({
+      boundary: `${host}_protected_application`,
+      preserved: true,
+    });
   };
   await runProtectedSkillJourney(journey, "codex");
   await runProtectedSkillJourney(claudeJourney, "claude");
@@ -751,6 +1360,323 @@ async function runInstallationJourneys({
   const reportPath = path.join(temporaryRoot, "installation-journey-report.json");
   await writeFile(reportPath, JSON.stringify(auditCompleted));
 
+  let intentCompleted;
+  await withDeniedProcessEffects(effectObservations, async () => {
+    hostProductIntentModules = await Promise.all(["codex", "claude"].map(async (host) => ({
+      host,
+      module: await import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        `${host}-plugin`,
+        "host-adapter",
+        "product-intent.js",
+      )).href),
+    })));
+    for (const { host, module } of hostProductIntentModules) {
+      const runProductIntentDiscovery = host === "codex"
+        ? module.runCodexProductIntentDiscovery
+        : module.runClaudeProductIntentDiscovery;
+      const intentInput = await runProductIntentDiscovery(activeRepository);
+      const confirmedBehaviors = intentInput.candidates.behaviors.length > 0
+        ? intentInput.candidates.behaviors.map(({ behavior_id: id }) => id)
+        : ["teams_collaborate_in_realtime"];
+      const intentPreview = await runProductIntentDiscovery(activeRepository, {
+        resume_token: intentInput.resume_token,
+        answers: {
+          intended_environment: "production",
+          confirmed_behaviors: confirmedBehaviors,
+          hard_constraints: [],
+          preferences: [],
+        },
+      });
+      const completed = await runProductIntentDiscovery(activeRepository, {
+        resume_token: intentPreview.resume_token,
+        confirmation: "confirm",
+      });
+      if (completed.status !== "completed") {
+        throw new Error(`packed_${host}_phase_1_intent_discovery_failed`);
+      }
+      intentCompleted ??= completed;
+      assertEqual(
+        { ...completed.profile, created_at: null },
+        { ...intentCompleted.profile, created_at: null },
+        `packed_${host}_phase_1_intent_drift`,
+        "Codex and Claude must expose the same typed no-PRD Product Intent result",
+      );
+    }
+  });
+  p1Scenarios.add("no_prd");
+  const unsupportedMaterial = path.join(activeRepository, "unsupported-product-material.pdf");
+  await writeFile(unsupportedMaterial, "synthetic unsupported product material\n");
+  const semanticPartial = await withDeniedProcessEffects(effectObservations, async () => {
+    const semanticInput = await hostProductIntentModules[0].module
+      .runCodexProductIntentDiscovery(
+        activeRepository,
+        { selected_materials: [path.basename(unsupportedMaterial)] },
+      );
+    return hostProductIntentModules[0].module.runCodexProductIntentDiscovery(
+      activeRepository,
+      {
+        resume_token: semanticInput.resume_token,
+        permission_decision: "approved",
+      },
+    );
+  });
+  await rm(unsupportedMaterial);
+  if (
+    semanticPartial.status !== "needs_input"
+    || semanticPartial.coverage.state !== "partial"
+    || semanticPartial.coverage.negative_findings_allowed !== false
+  ) throw new Error("packed_incomplete_semantic_coverage_drift");
+  p1Scenarios.add("incomplete_semantic_coverage");
+  const catalog = createCapabilityCatalog({ reviewed_at: "2026-08-14T00:00:00.000Z" });
+  const graph = buildCapabilityGraph(intentCompleted.profile, catalog, {
+    graph_id: "graph_packed_phase_1_docs",
+  });
+  const integrationContracts = [createIntegrationContract({
+    contract_id: "integration_packed_identity_data",
+    environment: "production",
+    source_capability_id: "identity_authentication",
+    target_capability_id: "application_data",
+    mode: "asynchronous",
+    provider_binding: { kind: "unknown", provider_id: null },
+    semantics: {
+      authentication: "signed_or_equivalent",
+      ordering: "per_subject",
+      duplication: "possible",
+      retry: "bounded_backoff",
+      replay: "supported",
+      idempotency: "required",
+      eventual_consistency: "expected",
+      failure_visibility: "operator_visible",
+      privacy: "normalized_identifiers_only",
+      success_evidence: ["state_transition_observed"],
+      invalidation_dependencies: ["identity_event_shape", "application_data_projection"],
+    },
+  })];
+  await Promise.all([
+    writeFile(path.join(temporaryRoot, "launchrally-current-report.json"), JSON.stringify(auditCompleted)),
+    writeFile(path.join(temporaryRoot, "product-intent.json"), JSON.stringify(intentCompleted.profile)),
+    writeFile(path.join(temporaryRoot, "capability-catalog.json"), JSON.stringify(catalog)),
+    writeFile(path.join(temporaryRoot, "capability-graph.json"), JSON.stringify(graph)),
+    writeFile(path.join(temporaryRoot, "integration-contracts.json"), JSON.stringify(integrationContracts)),
+  ]);
+  const invokeDocumentedPhase1Command = async (example) => {
+    const rendered = process.platform === "win32" ? example.powershell : example.posix;
+    const substitutions = [["./app", shellQuote(activeRepository)]];
+    for (const argument of example.argv) {
+      if (!argument.startsWith("./") || argument === "./app") continue;
+      substitutions.push([
+        argument,
+        shellQuote(path.join(temporaryRoot, path.basename(argument))),
+      ]);
+    }
+    const execution = await runDocumentedShell(shellCommand(rendered, substitutions), {
+      cwd: temporaryRoot,
+      env: launcherEnvironment,
+    });
+    const result = JSON.parse(execution.stdout);
+    if (
+      result.contract !== example.expected.contract
+      || result.operation !== example.operation
+      || result.status !== example.expected.status
+      || (example.expected.state !== null && result.state !== example.expected.state)
+    ) throw new Error(`packed_phase_1_shell_command_failed:${example.operation}`);
+    return result;
+  };
+  const architectExample = phase1Commands.commands.find(
+    ({ operation }) => operation === "architect",
+  );
+  const architectPreview = await invokeDocumentedPhase1Command(architectExample);
+  const sourceArchitecture = createArchitecturePackageBundle({
+    blueprint: architectPreview.blueprint,
+    product_intent: intentCompleted.profile,
+    catalog,
+    capability_graph: graph,
+    integration_contracts: integrationContracts,
+    provider_knowledge_refs: [],
+    decision_results: architectPreview.blueprint.decisions.map(({ decision_id: id }) => ({
+      decision_id: id,
+      response: "confirm",
+    })),
+    task_graph: null,
+    dependencies: architectPreview.blueprint.decisions.map(({ decision_id: id }) => ({
+      source_id: id,
+      dependent_semantics: ["architecture_record"],
+      evidence_ids: [],
+    })),
+    interaction_id: "interaction_architecture_decision_engine",
+  }, { now: "2026-08-14T00:00:00.000Z" });
+  const architectureCompleted = {
+    status: "completed",
+    architecture_package: sourceArchitecture,
+  };
+  if (architectureCompleted.status !== "completed") {
+    throw new Error("packed_phase_1_architecture_completion_failed");
+  }
+  await writeFile(
+    path.join(temporaryRoot, "architecture-package.json"),
+    JSON.stringify(architectureCompleted.architecture_package),
+  );
+  const planExample = phase1Commands.commands.find(({ operation }) => operation === "plan");
+  const phase1Plan = await invokeDocumentedPhase1Command(planExample);
+  await writeFile(path.join(temporaryRoot, "task-graph.json"), JSON.stringify(phase1Plan.task_graph));
+  const staleArchitecture = structuredClone(sourceArchitecture);
+  staleArchitecture.package.currentness = {
+    state: "needs_reassessment",
+    invalidated_record_ids: [staleArchitecture.architecture_record.record_id],
+    reasons: ["source_report_changed"],
+  };
+  await writeFile(
+    path.join(temporaryRoot, "architecture-package.json"),
+    JSON.stringify(staleArchitecture),
+  );
+  const staleArchitecturePlan = await invokeDocumentedPhase1Command(planExample);
+  if (
+    staleArchitecturePlan.status !== "completed"
+    || staleArchitecturePlan.task_graph?.currentness?.state !== "stale"
+    || staleArchitecturePlan.task_graph?.ready_frontier?.length !== 0
+  ) throw new Error("packed_stale_architecture_not_blocked");
+  p1Scenarios.add("stale_architecture");
+  await writeFile(
+    path.join(temporaryRoot, "architecture-package.json"),
+    JSON.stringify(sourceArchitecture),
+  );
+  const descriptor = referenceExecutorDescriptors[0];
+  await Promise.all([
+    writeFile(path.join(temporaryRoot, "executor-descriptors.json"), JSON.stringify([descriptor])),
+    writeFile(path.join(temporaryRoot, "tool-observations.json"), JSON.stringify([{
+      tool_id: descriptor.tools[0].tool_id,
+      executable: descriptor.tools[0].executable,
+      detected_version: descriptor.tools[0].exact_version,
+      state: "available",
+    }])),
+    writeFile(path.join(temporaryRoot, "reviewed-executors.json"), JSON.stringify([{
+      descriptor_id: descriptor.descriptor_id,
+      descriptor_version: descriptor.descriptor_version,
+      digest: descriptor.trust.digest,
+    }])),
+  ]);
+  const handoffExample = phase1Commands.commands.find(({ operation }) => operation === "handoff");
+  const handoffDiscovery = await invokeDocumentedPhase1Command(handoffExample);
+  const portableTaskTarget = "repository:packed-cross-host-handoff";
+  const portableTaskGraph = {
+    schema_version: "launchrally.dev/task-graph/v1",
+    graph_id: "task_graph_packed_cross_host_handoff",
+    revision: 1,
+    environment: "development",
+    source_report: {
+      id: "report_packed_cross_host_handoff",
+      schema_version: "launchrally.dev/report/v2",
+      digest: `sha256:${"1".repeat(64)}`,
+    },
+    architecture_record: {
+      id: "architecture_packed_cross_host_handoff",
+      schema_version: "launchrally.dev/architecture-record/v1",
+      digest: `sha256:${"2".repeat(64)}`,
+    },
+    currentness: { state: "current", reasons: [] },
+    tasks: [{
+      task_id: "task_packed_cross_host_handoff",
+      task_type: "implement_architecture_decision",
+      source: "implementation_work",
+      source_id: "work_packed_cross_host_handoff",
+      environment: "development",
+      prerequisites: [],
+      effect_class: "local_source",
+      expected_target: portableTaskTarget,
+      allowed_effects: ["source_write"],
+      prohibited_effects: [
+        "credential_persistence",
+        "deployment_write",
+        "production_data_write",
+        "provider_configuration_write",
+      ],
+      recovery_notes: ["Preserve typed state and retry only after explicit approval."],
+      minimum_executor_capability: "local_source_write_v1",
+      structured_result_schema: "launchrally.dev/execution-receipt/v1",
+      evidence_targets: [portableTaskTarget],
+      follow_up_verify: {
+        operation: "verify",
+        scope: "local_source",
+        fresh_evidence_required: true,
+      },
+      cancellation_behavior: "stop_before_next_effect",
+      status: "not_started",
+    }],
+    ready_frontier: ["task_packed_cross_host_handoff"],
+  };
+  const portableHandoff = await runHandoff({
+    task_graph: portableTaskGraph,
+    executor_descriptors: [descriptor],
+    tool_observations: [{
+      tool_id: descriptor.tools[0].tool_id,
+      executable: descriptor.tools[0].executable,
+      detected_version: descriptor.tools[0].exact_version,
+      state: "available",
+    }],
+    reviewed_executors: [{
+      descriptor_id: descriptor.descriptor_id,
+      descriptor_version: descriptor.descriptor_version,
+      digest: descriptor.trust.digest,
+    }],
+  }, {}, {
+    platform: `${process.platform}-${process.arch}`,
+    now: "2026-08-14T12:00:00.000Z",
+  });
+  if (
+    handoffDiscovery.status !== "needs_input"
+    || portableHandoff.status !== "needs_input"
+    || portableHandoff.state !== "executor_discovery"
+    || portableHandoff.request?.kind !== "executor_selection"
+  ) throw new Error("packed_handoff_cli_core_drift");
+  const [codexResume, claudeResume] = await Promise.all(["codex", "claude"].map((host) =>
+    import(pathToFileURL(path.join(
+      cleanProject,
+      "node_modules",
+      "@launchrally",
+      `${host}-plugin`,
+      "host-adapter",
+      "resume.js",
+    )).href)));
+  if (process.platform === "win32") {
+    await claudeResume.saveResumeArtifact(
+      path.join(temporaryRoot, "handoff-cross-host-resume.json"),
+      portableHandoff.interaction,
+      activeRepository,
+    ).then(
+      () => { throw new Error("packed_windows_handoff_cross_host_resume_not_denied"); },
+      (error) => {
+        if (error?.code !== "host_resume_unavailable") throw error;
+      },
+    );
+  } else {
+    const handoffArtifact = path.join(temporaryRoot, "handoff-cross-host-resume.json");
+    try {
+      await claudeResume.saveResumeArtifact(
+        handoffArtifact,
+        portableHandoff.interaction,
+        activeRepository,
+      );
+    } catch (error) {
+      throw new Error(`packed_handoff_artifact_save_failed:${error?.code}:${error?.message}`);
+    }
+    const handoffResumed = await codexResume.resumeArtifactFile({
+      cwd: activeRepository,
+      artifact_path: handoffArtifact,
+      options: {
+        selection: portableHandoff.request.choices[0],
+        now: "2026-08-14T12:00:00.000Z",
+      },
+    });
+    if (
+      handoffResumed.status !== "needs_confirmation"
+      || handoffResumed.state !== "authority_preview"
+      || handoffResumed.handoff_package?.approval?.state !== "required"
+    ) throw new Error("packed_handoff_cross_host_resume_failed");
+  }
+
   const initPreview = await invokeFixture("init_preview", {
     "{manifest_source_report_path}": reportPath,
   });
@@ -763,6 +1689,254 @@ async function runInstallationJourneys({
   if (initialized.status !== "completed") {
     throw new Error("installation_journey_init_failed");
   }
+  const invokePackedAudit = async (...arguments_) => JSON.parse((await invokeLauncher(
+    "rally",
+    [...arguments_, "--json", "--cwd", activeRepository],
+    { cwd: temporaryRoot, env: launcherEnvironment },
+  )).stdout);
+  const currentAuditInput = await invokePackedAudit("audit");
+  const currentAuditConfirmation = await invokePackedAudit(
+    "audit", "--resume", currentAuditInput.interaction.resume_token,
+    "--answers", answers,
+  );
+  const currentAuditPermission = await invokePackedAudit(
+    "audit", "--resume", currentAuditConfirmation.interaction.resume_token,
+    "--confirm", "confirm",
+  );
+  const currentArchitectureReport = await invokePackedAudit(
+    "audit", "--resume", currentAuditPermission.interaction.resume_token,
+    "--permissions", JSON.stringify({ public_verification: "denied" }),
+  );
+  if (
+    currentArchitectureReport.status !== "completed"
+    || !currentArchitectureReport.report
+  ) throw new Error("packed_p0_to_p1_current_report_failed");
+  await writeFile(
+    path.join(temporaryRoot, "launchrally-current-report.json"),
+    JSON.stringify(currentArchitectureReport),
+  );
+  await writeFile(
+    path.join(temporaryRoot, "launchrally-manifest-source-report.json"),
+    JSON.stringify(auditCompleted),
+  );
+  const verifyExample = phase1Commands.commands.find(({ operation }) => operation === "verify");
+  const phase1VerifyPermission = await invokeDocumentedPhase1Command(verifyExample);
+  const verifyContinuation = verifyExample.success_continuation;
+  const completedVerifyCommand = shellCommand(
+    process.platform === "win32"
+      ? verifyContinuation.powershell
+      : verifyContinuation.posix,
+    [
+      ["./app", shellQuote(activeRepository)],
+      ["<verify-token>", phase1VerifyPermission.interaction.resume_token],
+    ],
+  );
+  const phase1Verify = JSON.parse((await runDocumentedShell(completedVerifyCommand, {
+    cwd: temporaryRoot,
+    env: launcherEnvironment,
+  })).stdout);
+  if (
+    phase1Verify.contract !== verifyContinuation.expected.contract
+    || phase1Verify.operation !== "verify"
+    || phase1Verify.status !== verifyContinuation.expected.status
+    || !phase1Verify.report
+    || !phase1Verify.evidence_index
+  ) throw new Error(`packed_phase_1_verify_continuation_failed:${phase1Verify.status}`);
+  const executeIntegrationFreshVerify = async () => {
+    let integrationSource = phase1Verify;
+    const integrationReportPath = path.join(
+      temporaryRoot,
+      "integration-fresh-verify-source.json",
+    );
+    for (const family of P1_INTEGRATION_FAMILIES) {
+      const binding = integrationVerificationRequests.get(family);
+      const evidenceTargets = binding?.request?.task_requests?.[0]?.evidence_targets ?? [];
+      const exactTarget = evidenceTargets[0] ?? "";
+      if (
+        !binding
+        || evidenceTargets.length !== 1
+        || !exactTarget.startsWith("repository:.env.reference_")
+        || !exactTarget.endsWith(".example")
+        || !exactTarget.includes(binding.pack_digest.slice(7))
+        || !exactTarget.includes(binding.implementation_id)
+        || binding.verification_subject?.target !== exactTarget
+        || binding.verification_subject?.environment !== "production"
+        || binding.verification_subject?.payload?.pack_ref?.digest !== binding.pack_digest
+        || binding.verification_subject?.payload?.implementation?.id
+          !== binding.implementation_id
+      ) throw new Error(`packed_integration_verify_request_unbound:${family}`);
+      await writeFile(integrationReportPath, JSON.stringify(integrationSource));
+      const marker = `${JSON.stringify(binding.verification_subject.payload)}\n`;
+      const evidencePath = exactTarget.slice("repository:".length);
+      await writeFile(path.join(activeRepository, evidencePath), marker);
+      const permission = JSON.parse((await invokeLauncher("rally", [
+        "verify", "--json", "--cwd", activeRepository,
+        "--report", integrationReportPath,
+        "--scope", "full",
+      ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+      const verified = JSON.parse((await invokeLauncher("rally", [
+        "verify", "--json", "--cwd", activeRepository,
+        "--resume", permission.interaction.resume_token,
+        "--permissions", JSON.stringify({ public_verification: "denied" }),
+      ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+      const entry = assertEnvironmentBoundEvidence(
+        verified,
+        "production",
+        "passed",
+        { target: exactTarget },
+      );
+      const pack = referenceIntegrationPacks.find(({ family: candidate }) => (
+        candidate === family
+      ));
+      const qualification = qualifyReferenceVerificationEvidence(
+        pack,
+        binding.implementation_id,
+        entry,
+        marker,
+        "2026-08-14T12:00:00.000Z",
+        binding.verification_subject.environment,
+      );
+      if (
+        verified.status !== "completed"
+        || entry.evidence_kind !== "file"
+        || entry.normalized_artifact?.path !== evidencePath
+        || entry.normalized_artifact?.content_digest !== sha256Text(marker)
+        || qualification.status !== "verified"
+        || qualification.evidence_ref?.digest !== entry.digest
+        || JSON.stringify(qualification.observation)
+          !== JSON.stringify(binding.verification_subject.expected_observation)
+        || !verified.comparison?.invalidated_evidence?.some(
+          ({ target }) => target === exactTarget,
+        )
+      ) throw new Error(`packed_integration_fresh_verify_failed:${family}`);
+      integrationFreshVerify[family] = "environment_bound_fresh_evidence";
+      integrationSource = verified;
+    }
+    return integrationSource;
+  };
+  const migrationBefore = await snapshotTree(path.join(activeRepository, ".launchrally"));
+  const migrationSource = {
+    report_package: currentArchitectureReport,
+    product_intent: intentCompleted.profile,
+    catalog,
+    capability_graph: graph,
+    integration_contracts: integrationContracts,
+  };
+  const interruptedPreview = await runArchitectureJourney(
+    activeRepository,
+    migrationSource,
+    { review_date: "2026-08-14", launcher_version: version },
+  );
+  const interrupted = await runArchitectureJourney(activeRepository, {}, {
+    resume_token: interruptedPreview.interaction.resume_token,
+    migration_confirmation: "confirm",
+    launcher_version: version,
+    file_operations: {
+      async before_migration_commit() {
+        const error = new Error("simulated packed P0 to P1 interruption");
+        error.code = "simulated_p0_p1_migration_interruption";
+        throw error;
+      },
+    },
+  });
+  if (
+    interrupted.status !== "execution_error"
+    || interrupted.error !== "simulated_p0_p1_migration_interruption"
+  ) throw new Error(
+    `packed_p0_to_p1_migration_interruption_failed:${JSON.stringify(interrupted)}`,
+  );
+  assertEqual(
+    await snapshotTree(path.join(activeRepository, ".launchrally")),
+    migrationBefore,
+    "packed_p0_to_p1_interruption_changed_p0",
+    "Interrupted P1 adoption must roll back every P0 project byte",
+  );
+  const migrationPreview = await invokeDocumentedPhase1Command(architectExample);
+  if (
+    migrationPreview.status !== "needs_confirmation"
+    || migrationPreview.request?.kind !== "p1_migration_confirmation"
+    || migrationPreview.migration_preview?.schema_version
+      !== "launchrally.dev/phase-1-migration-preview/v1"
+  ) throw new Error("packed_p0_to_p1_migration_preview_failed");
+  const migrationArtifact = path.join(temporaryRoot, "p0-to-p1-cross-host-resume.json");
+  let migrationDenied;
+  if (process.platform === "win32") {
+    await codexResume.saveResumeArtifact(
+      migrationArtifact,
+      migrationPreview.interaction,
+      activeRepository,
+    ).then(
+      () => { throw new Error("packed_windows_cross_host_resume_not_denied"); },
+      (error) => {
+        if (error?.code !== "host_resume_unavailable") throw error;
+      },
+    );
+    migrationDenied = JSON.parse((await invokeLauncher("rally", [
+      "architect", "--json", "--cwd", activeRepository,
+      "--resume", migrationPreview.interaction.resume_token,
+      "--confirm", "deny",
+    ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+  } else {
+    try {
+      await codexResume.saveResumeArtifact(
+        migrationArtifact,
+        migrationPreview.interaction,
+        activeRepository,
+      );
+    } catch (error) {
+      throw new Error(`packed_architecture_artifact_save_failed:${error?.code}:${error?.message}`);
+    }
+    migrationDenied = await claudeResume.resumeArtifactFile({
+      cwd: activeRepository,
+      artifact_path: migrationArtifact,
+      options: { migration_confirmation: "deny", launcher_version: version },
+    });
+  }
+  if (
+    migrationDenied.status !== "denied"
+    || migrationDenied.outcome !== "p1_migration_denied"
+  ) throw new Error("packed_p0_to_p1_migration_denial_failed");
+  assertEqual(
+    await snapshotTree(path.join(activeRepository, ".launchrally")),
+    migrationBefore,
+    "packed_p0_to_p1_migration_changed_p0",
+    "Denied P1 migration must preserve every P0 project byte",
+  );
+  const invokeMigrationArchitect = async (repository) => {
+    const arguments_ = architectExample.argv.map((argument) => {
+      if (argument === "./app") return repository;
+      if (argument.startsWith("./")) {
+        return path.join(temporaryRoot, path.basename(argument));
+      }
+      return argument;
+    });
+    return JSON.parse((await invokeLauncher("rally", arguments_, {
+      cwd: temporaryRoot,
+      env: launcherEnvironment,
+    })).stdout);
+  };
+  const adoptionPreview = await invokeMigrationArchitect(activeRepository);
+  const adopted = JSON.parse((await invokeLauncher("rally", [
+    "architect", "--json", "--cwd", activeRepository,
+    "--resume", adoptionPreview.interaction.resume_token,
+    "--confirm", "confirm",
+  ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+  if (adopted.status !== "needs_confirmation" || adopted.state !== "blueprint_review") {
+    throw new Error("packed_p0_to_p1_migration_adoption_failed");
+  }
+  const adoption = JSON.parse(await readFile(path.join(
+    activeRepository,
+    ".launchrally",
+    "phase-1",
+    "adoption.json",
+  ), "utf8"));
+  if (
+    adoption.schema_version !== "launchrally.dev/phase-1-adoption/v1"
+    || adoption.historical_reports_relabelled !== false
+  ) throw new Error("packed_p0_to_p1_migration_record_drift");
+  await executeIntegrationFreshVerify();
+  p1Scenarios.add("p0_to_p1_migration");
+  p1Scenarios.add("cross_host_resume");
   const projectVersion = await invokeFixture("project_version");
   if (
     projectVersion.status !== "completed"
@@ -1248,20 +2422,127 @@ async function runInstallationJourneys({
 
   const projectData = path.join(activeRepository, ".launchrally");
   await access(path.join(projectData, "manifest.yaml"));
-  await runNpm([
+  assertEqual(
+    await snapshotTree(prefix),
+    installedPrefixSnapshot,
+    "packed_adapter_unauthorized_install",
+    "Installed Host journeys must not change the explicit user prefix",
+  );
+  effectObservations.file_boundaries.push({
+    boundary: "installed_user_prefix",
+    preserved: true,
+  });
+  assertEqual(
+    await snapshotTree(cleanProject, "", new Set(["node_modules"])),
+    installedAdapterProjectSnapshot,
+    "packed_adapter_unauthorized_write",
+    "Installed Host journeys must not mutate their installation project",
+  );
+  effectObservations.file_boundaries.push({
+    boundary: "installed_adapter_project",
+    preserved: true,
+  });
+  await runAuthorizedNpm([
     "uninstall",
     "--global",
     "--prefix",
     prefix,
     "--ignore-scripts",
     "@launchrally/cli",
-  ], { cwd: temporaryRoot });
+  ], { cwd: temporaryRoot }, "explicit_user_prefix_uninstall");
   await assertMissing(launcher, "launcher_removal_failed");
   await access(path.join(projectData, "manifest.yaml"));
   await access(path.join(projectData, "toolchain", "authority.json"));
 
+  assertEqual(
+    [...p1IntegrationFamilies].sort(),
+    [...P1_INTEGRATION_FAMILIES],
+    "p1_integration_matrix_incomplete",
+    "Every reviewed Integration family must execute through both packed Host adapters",
+  );
+  assertEqual(
+    integrationFreshVerify,
+    Object.fromEntries(P1_INTEGRATION_FAMILIES.map((family) => [
+      family,
+      "environment_bound_fresh_evidence",
+    ])),
+    "p1_integration_fresh_verify_incomplete",
+    "Every reviewed Integration family must complete its exact fresh Verify request",
+  );
+  assertEqual(
+    [...p1HostJourneys].sort(),
+    ["claude", "codex"],
+    "p1_host_matrix_incomplete",
+    "Both packed Host adapters must execute typed journeys",
+  );
+  assertEqual(
+    [...p1Scenarios].sort(),
+    [...P1_SCENARIOS],
+    "p1_scenario_matrix_incomplete",
+    "Every P1 exact-artifact boundary must be observed",
+  );
+  if (
+    !receiptClaimsRequireVerification
+    || (process.platform !== "win32"
+      && (!successfulDownstreamEvidence || !unsuccessfulDownstreamEvidence))
+  ) throw new Error("p1_fresh_verify_matrix_incomplete");
+
+  const sensitivePattern = /packaged-host-secret|bearer\s|"cookie"\s*:|"headers"\s*:/iu;
+  const persistedProjectOutput = JSON.stringify(await snapshotTree(projectData));
+  const persistedSensitiveValue = effectObservations.normalized_outputs.some((output) =>
+    sensitivePattern.test(output)) || sensitivePattern.test(persistedProjectOutput);
+  if (
+    effectObservations.package_manager.length < 4
+    || effectObservations.file_boundaries.length < 4
+    || effectObservations.normalized_outputs.length === 0
+    || effectObservations.guarded_process_sections < 3
+    || (process.platform !== "win32"
+      && effectObservations.authenticated_network.length !== 6)
+  ) throw new Error("p1_clean_host_observation_incomplete");
+  const cleanHost = {
+    unauthorized_install: effectObservations.package_manager.some(
+      ({ authorized }) => authorized !== true,
+    ) || effectObservations.denied_process_effects.some(
+      ({ effect }) => effect === "process_execution",
+    ),
+    unauthorized_login: effectObservations.authenticated_network.some(
+      ({ effect }) => effect !== "authenticated_network_read",
+    ),
+    unauthorized_upload: effectObservations.denied_process_effects.some(
+      ({ effect }) => effect === "network_access",
+    ) || effectObservations.authenticated_network.some(
+      ({ method, destination }) => method !== "GET" || destination !== "loopback_fixture",
+    ),
+    unauthorized_write: effectObservations.denied_process_effects.some(
+      ({ effect }) => effect === "filesystem_write",
+    ) || effectObservations.file_boundaries.some(
+      ({ preserved }) => preserved !== true,
+    ),
+    manual_secret_transfer: effectObservations.authenticated_network.some(
+      ({ authentication_source: source }) => source !== "owner_private_reference",
+    ),
+    sensitive_persistence: persistedSensitiveValue,
+  };
+  if (Object.values(cleanHost).some(Boolean)) {
+    throw new Error(`p1_clean_host_effect_boundary_failed:${JSON.stringify(cleanHost)}`);
+  }
+
   return {
     projectData,
+    p1Evidence: {
+      integrationFamilies: [...p1IntegrationFamilies].sort(),
+      integrationFreshVerify,
+      hostJourneys: [...p1HostJourneys].sort(),
+      p0ToP1Migration: {
+        adoption: "completed",
+        interruption: "rolled_back_and_recovered",
+      },
+      cleanHost,
+      scenarios: [...p1Scenarios].sort(),
+      receiptClaimsRequireVerification,
+      successfulDownstreamEvidence,
+      unsuccessfulDownstreamEvidence,
+    },
     result: {
       no_launcher: "confirmed",
       npm_exec: publicRelease
@@ -1458,7 +2739,7 @@ async function smokeCli(
     instructions.recovery?.installation_instructions?.[0]?.command,
     {
       executable: "npm",
-      arguments: ["install", "--global", "clerk@3.0.1"],
+      arguments: ["install", "--global", "clerk@3.1.0"],
       shell: false,
     },
     "packed_provider_recovery_instruction_drift",
@@ -1504,7 +2785,7 @@ async function smokeCli(
   await writeFile(providerScript, [
     'const fs = require("node:fs");',
     "fs.appendFileSync(process.env.PROVIDER_RECOVERY_CALLS, JSON.stringify(process.argv.slice(2)) + \"\\n\");",
-    'process.stdout.write("3.0.1\\n");',
+    'process.stdout.write("3.1.0\\n");',
   ].join("\n"));
   if (process.platform === "win32") {
     await writeFile(
@@ -1739,17 +3020,29 @@ async function smokeCli(
     ) {
       throw new Error(`coverage_artifact_verification_failed: ${representative.id}`);
     }
+    assertEnvironmentBoundEvidence(verified, "production", "passed");
+    if (
+      verified.report.results.checks.some(({ environment }) => environment !== "production")
+      || verified.evidence_index.entries.some(({ environment }) => environment !== "production")
+    ) throw new Error(`coverage_artifact_environment_drift:${representative.id}`);
     coverageJourneys.push(representative.id);
   }
 
+  assertEqual(
+    coverageJourneys.sort(),
+    [...P1_PRODUCT_JOURNEYS],
+    "p1_product_matrix_incomplete",
+    "Every representative Product journey must complete fresh Verify",
+  );
   return {
     cleanProject,
+    p1ProductJourneys: coverageJourneys,
     result: {
       operation: versionResult.operation,
       cli_version: versionResult.cli_version,
       audit_status: audit.status,
       provider_tool_recovery: "exact_instruction_and_fresh_permission",
-      coverage_journeys: coverageJourneys.sort(),
+      coverage_journeys: coverageJourneys,
     },
   };
 }
@@ -1795,7 +3088,72 @@ async function runNative(name, arguments_, options) {
   return run(native.command, [...native.prefix, ...arguments_], options);
 }
 
+async function isolatedNativeEnvironment(temporaryRoot, name) {
+  const directory = path.join(temporaryRoot, name);
+  await mkdir(directory, { recursive: true });
+  const home = path.join(directory, "home");
+  const codexHome = path.join(directory, "codex");
+  const claudeConfig = path.join(directory, "claude");
+  await Promise.all([
+    mkdir(home, { recursive: true }),
+    mkdir(codexHome, { recursive: true }),
+    mkdir(claudeConfig, { recursive: true }),
+  ]);
+  return {
+    directory,
+    codexHome,
+    claudeConfig,
+    environment: createIsolatedNativeEnvironment(process.env, {
+      home,
+      codex_home: codexHome,
+      claude_config_dir: claudeConfig,
+    }),
+  };
+}
+
+async function nativeEffectBoundary(temporaryRoot) {
+  const boundary = await isolatedNativeEnvironment(
+    temporaryRoot,
+    "native-host-effect-boundary",
+  );
+  const guard = path.join(boundary.directory, "deny-undisclosed-effects.cjs");
+  await writeFile(guard, [
+    'const deny = (effect) => () => { throw new Error(`native host ${effect} attempted`); };',
+    'const childProcess = require("node:child_process");',
+    'const originalSpawn = childProcess.spawn;',
+    'const http = require("node:http");',
+    'const https = require("node:https");',
+    'const net = require("node:net");',
+    'for (const method of ["exec", "execFile", "fork"]) {',
+    '  childProcess[method] = deny("process execution");',
+    '}',
+    'childProcess.spawn = (command, ...args) => {',
+    '  const normalized = String(command).replaceAll("\\\\", "/");',
+    '  if ((normalized.includes("/node_modules/@openai/codex/vendor/")',
+    '    || normalized.includes("/node_modules/@openai/codex-"))',
+    '    && (normalized.endsWith("/codex") || normalized.endsWith("/codex.exe"))) {',
+    '    return originalSpawn(command, ...args);',
+    '  }',
+    '  throw new Error("native host process execution attempted");',
+    '};',
+    'for (const owner of [http, https]) {',
+    '  owner.get = deny("network access");',
+    '  owner.request = deny("network access");',
+    '}',
+    'net.connect = deny("network access");',
+    'net.createConnection = deny("network access");',
+    'global.fetch = deny("network access");',
+    'require("node:module").syncBuiltinESMExports();',
+  ].join("\n"));
+  boundary.environment.NODE_OPTIONS = [
+    boundary.environment.NODE_OPTIONS ?? "",
+    `--require=${guard}`,
+  ].filter(Boolean).join(" ");
+  return boundary;
+}
+
 async function validatePackedNativePlugins(temporaryRoot, cleanProject) {
+  const boundary = await nativeEffectBoundary(temporaryRoot);
   const claudePlugin = path.join(
     cleanProject,
     "node_modules",
@@ -1807,7 +3165,48 @@ async function validatePackedNativePlugins(temporaryRoot, cleanProject) {
     "validate",
     "--strict",
     claudePlugin,
-  ], { cwd: cleanProject });
+  ], { cwd: cleanProject, env: boundary.environment });
+  const claudeMarketplaceRoot = path.join(temporaryRoot, "claude-marketplace");
+  const claudeMarketplacePlugin = path.join(
+    claudeMarketplaceRoot,
+    "plugins",
+    "launchrally",
+  );
+  await mkdir(path.join(claudeMarketplaceRoot, ".claude-plugin"), { recursive: true });
+  await cp(claudePlugin, claudeMarketplacePlugin, { recursive: true });
+  await writeFile(
+    path.join(claudeMarketplaceRoot, ".claude-plugin", "marketplace.json"),
+    `${JSON.stringify({
+      $schema: "https://anthropic.com/claude-code/marketplace.schema.json",
+      name: "launchrally-smoke",
+      description: "Local packed LaunchRally smoke-test marketplace.",
+      owner: { name: "LaunchRally" },
+      plugins: [{
+        name: "launchrally",
+        source: "./plugins/launchrally",
+        description: "Local packed LaunchRally plugin.",
+        category: "development",
+      }],
+    }, null, 2)}\n`,
+  );
+  await runNative("claude", [
+    "plugin", "marketplace", "add", claudeMarketplaceRoot, "--scope", "user",
+  ], { cwd: cleanProject, env: boundary.environment });
+  await runNative("claude", [
+    "plugin", "install", "launchrally@launchrally-smoke", "--scope", "user",
+  ], { cwd: cleanProject, env: boundary.environment });
+  const claudeInstalled = JSON.parse((await runNative("claude", [
+    "plugin", "list", "--json",
+  ], { cwd: cleanProject, env: boundary.environment })).stdout);
+  if (!JSON.stringify(claudeInstalled).includes("launchrally@launchrally-smoke")) {
+    throw new Error("packed_claude_native_plugin_not_discovered");
+  }
+  await runNative("claude", [
+    "plugin", "uninstall", "launchrally@launchrally-smoke", "--scope", "user",
+  ], { cwd: cleanProject, env: boundary.environment });
+  await runNative("claude", [
+    "plugin", "marketplace", "remove", "launchrally-smoke",
+  ], { cwd: cleanProject, env: boundary.environment });
 
   const codexPlugin = path.join(
     cleanProject,
@@ -1831,29 +3230,42 @@ async function validatePackedNativePlugins(temporaryRoot, cleanProject) {
       }],
     }, null, 2)}\n`,
   );
-  const codexHome = path.join(temporaryRoot, "codex-user-scope");
-  await mkdir(codexHome, { recursive: true });
-  const codexEnvironment = { ...process.env, CODEX_HOME: codexHome };
   await runNative("codex", [
     "plugin", "marketplace", "add", marketplaceRoot, "--json",
-  ], { cwd: cleanProject, env: codexEnvironment });
+  ], { cwd: cleanProject, env: boundary.environment });
   await runNative("codex", [
     "plugin", "add", "launchrally@launchrally-smoke", "--json",
-  ], { cwd: cleanProject, env: codexEnvironment });
+  ], { cwd: cleanProject, env: boundary.environment });
+  const codexInstalled = JSON.parse((await runNative("codex", [
+    "plugin", "list", "--json",
+  ], { cwd: cleanProject, env: boundary.environment })).stdout);
+  if (!JSON.stringify(codexInstalled).includes("launchrally@launchrally-smoke")) {
+    throw new Error("packed_codex_native_plugin_not_discovered");
+  }
   await runNative("codex", [
     "plugin", "remove", "launchrally@launchrally-smoke", "--json",
-  ], { cwd: cleanProject, env: codexEnvironment });
+  ], { cwd: cleanProject, env: boundary.environment });
 
   return {
-    claude: "strictly_validated",
-    codex: "installed_and_removed",
+    statuses: {
+      claude: "installed_discovered_and_removed",
+      codex: "installed_discovered_and_removed",
+    },
+    effects: {
+      configuration_isolated: true,
+      sensitive_environment_removed: true,
+      scope: "native_plugin_discovery_only",
+      agent_execution: "p1_external_verification_required",
+    },
   };
 }
 
 async function validatePublicNativePlugins(temporaryRoot, cleanProject, version) {
-  const claudeConfig = path.join(temporaryRoot, "claude-user-scope");
-  await mkdir(claudeConfig, { recursive: true });
-  const claudeEnvironment = { ...process.env, CLAUDE_CONFIG_DIR: claudeConfig };
+  const boundary = await isolatedNativeEnvironment(
+    temporaryRoot,
+    "public-native-host-boundary",
+  );
+  const claudeEnvironment = boundary.environment;
   await runNative("claude", [
     "plugin", "marketplace", "add", "codeacme17/launchrally", "--scope", "user",
   ], { cwd: cleanProject, env: claudeEnvironment });
@@ -1897,9 +3309,7 @@ async function validatePublicNativePlugins(temporaryRoot, cleanProject, version)
     "plugin", "marketplace", "remove", "launchrally", "--scope", "user",
   ], { cwd: cleanProject, env: claudeEnvironment });
 
-  const codexHome = path.join(temporaryRoot, "codex-user-scope");
-  await mkdir(codexHome, { recursive: true });
-  const codexEnvironment = { ...process.env, CODEX_HOME: codexHome };
+  const codexEnvironment = boundary.environment;
   await runNative("codex", [
     "plugin", "marketplace", "add", "codeacme17/launchrally", "--ref", `v${version}`, "--json",
   ], { cwd: cleanProject, env: codexEnvironment });
@@ -1922,8 +3332,16 @@ async function validatePublicNativePlugins(temporaryRoot, cleanProject, version)
   ], { cwd: cleanProject, env: codexEnvironment });
 
   return {
-    claude: "public_marketplace_installed_and_removed",
-    codex: "tagged_public_marketplace_installed_and_removed",
+    statuses: {
+      claude: "public_marketplace_installed_and_removed",
+      codex: "tagged_public_marketplace_installed_and_removed",
+    },
+    effects: {
+      configuration_isolated: true,
+      sensitive_environment_removed: true,
+      scope: "public_native_plugin_discovery_only",
+      agent_execution: "p1_external_verification_required",
+    },
   };
 }
 
@@ -2044,6 +3462,7 @@ function publicDistTag() {
 }
 
 async function main() {
+  assertP1MatrixTarget();
   const release = await json(path.join(root, "release", "artifacts.json"));
   const rootPackage = await json(path.join(root, "package.json"));
   const publicRelease = process.argv.includes("--public");
@@ -2095,8 +3514,8 @@ async function main() {
       publicLegacy,
       publicRelease,
     });
-    const nativePlugins = process.argv.includes("--skip-native")
-      ? "skipped"
+    const nativeValidation = process.argv.includes("--skip-native")
+      ? { statuses: "skipped", effects: null }
       : publicRelease
         ? await validatePublicNativePlugins(
           temporaryRoot,
@@ -2104,6 +3523,7 @@ async function main() {
           rootPackage.version,
         )
         : await validatePackedNativePlugins(temporaryRoot, cliSmoke.cleanProject);
+    const nativePlugins = nativeValidation.statuses;
     if (nativePlugins === "skipped") {
       installationJourneys.result.plugin_removal = "skipped";
     } else {
@@ -2115,12 +3535,52 @@ async function main() {
       ));
       installationJourneys.result.plugin_removal = "project_data_preserved";
     }
+    const p1ExactArtifacts = {
+      result_version: 1,
+      matrix_target: {
+        platform: process.platform,
+        node_major: Number(process.versions.node.split(".")[0]),
+        shell: process.platform === "win32" ? "powershell" : "posix",
+      },
+      public_surfaces: ["claude", "cli", "codex", "contracts", "core", "skill"],
+      product_journeys: cliSmoke.p1ProductJourneys,
+      integration_families: installationJourneys.p1Evidence.integrationFamilies,
+      integration_fresh_verify: installationJourneys.p1Evidence.integrationFreshVerify,
+      host_journeys: installationJourneys.p1Evidence.hostJourneys,
+      native_host_journeys: nativePlugins === "skipped" ? "skipped" : {
+        claude: {
+          discovery: "native_plugin_installed_listed_and_removed",
+          agent_execution: "p1_external_verification_required",
+        },
+        codex: {
+          discovery: "native_plugin_installed_listed_and_removed",
+          agent_execution: "p1_external_verification_required",
+        },
+      },
+      cross_host_resume: process.platform === "win32"
+        ? "typed_unavailable"
+        : "architecture_and_handoff",
+      p0_to_p1_migration: installationJourneys.p1Evidence.p0ToP1Migration,
+      scenarios: installationJourneys.p1Evidence.scenarios,
+      fresh_verify: {
+        receipt_claims: "verification_required",
+        successful_downstream: process.platform === "win32"
+          ? "typed_runner_unavailable"
+          : "environment_bound_machine_evidence",
+        unsuccessful_downstream: process.platform === "win32"
+          ? "typed_runner_unavailable"
+          : "environment_bound_no_go",
+      },
+      clean_host: installationJourneys.p1Evidence.cleanHost,
+    };
     const result = {
       status: "completed",
       version: rootPackage.version,
       cli_smoke: cliSmoke.result,
       installation_journeys: installationJourneys.result,
+      p1_exact_artifacts: p1ExactArtifacts,
       native_plugins: nativePlugins,
+      native_plugin_boundary: nativeValidation.effects,
     };
     return publicRelease
       ? {
@@ -2138,7 +3598,13 @@ async function main() {
   }
 }
 
-if (process.argv.includes("--public") && process.argv.includes("--dry-run")) {
+const autoDiscoveredByNodeTest = process.env.NODE_TEST_CONTEXT !== undefined
+  && process.argv.length === 2;
+
+if (autoDiscoveredByNodeTest) {
+  // The named release-gate test invokes this script once with --json. Avoid a
+  // second concurrent full journey when node --test discovers this file by name.
+} else if (process.argv.includes("--public") && process.argv.includes("--dry-run")) {
   const release = await json(path.join(root, "release", "artifacts.json"));
   const rootPackage = await json(path.join(root, "package.json"));
   const distTag = publicDistTag();

@@ -1,0 +1,238 @@
+{
+  "schema_version": "launchrally.dev/reference-integration-pack/v1",
+  "pack_id": "pack_backup_to_restore",
+  "pack_version": "1.0.0",
+  "family": "backup_to_restore",
+  "product_shapes": [
+    "subscription_saas",
+    "custom_self_hosted_web",
+    "desktop_shared_backend"
+  ],
+  "capability_contract": {
+    "contract_version": "launchrally.dev/capability-catalog/v1",
+    "provider_fields": false
+  },
+  "integration_contract": {
+    "contract_version": "launchrally.dev/integration-contract/v1",
+    "provider_fields": false
+  },
+  "effects": {
+    "allowed": [
+      "provider_configuration_read",
+      "source_write"
+    ],
+    "prohibited": [
+      "credential_persistence",
+      "deployment_write",
+      "production_data_write",
+      "provider_configuration_write"
+    ]
+  },
+  "test_recipe_ids": [],
+  "implementations": [
+    {
+      "implementation_id": "neon_restore",
+      "name": "Neon restore",
+      "kind": "managed",
+      "interface_version": "neon-api/v2",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [
+        {
+          "id": "executor_codex_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:c00001281025da4c49431633c52a68f7043a3a6eb9c3f546a241ee53ba6beb04"
+        },
+        {
+          "id": "executor_claude_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:7abb7b7649be159b9dde8258dcb540c0a3ad3f581d8cda327abfb02adc8e58f0"
+        }
+      ],
+      "normalization_shape": "snapshot_branch",
+      "normalization_fixture": {
+        "fixture_id": "normalize_neon_restore",
+        "synthetic_input": {
+          "shape": "snapshot_branch",
+          "signals": [
+            "configured",
+            "recoverable"
+          ]
+        },
+        "required_signals": [
+          "configured",
+          "recoverable"
+        ],
+        "expected_observation": {
+          "configuration_state": "configured",
+          "verification_state": "unverified"
+        }
+      },
+      "official_sources": [
+        {
+          "title": "Neon API",
+          "url": "https://api-docs.neon.tech/reference/getting-started-with-neon-api",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "supabase_database_backup",
+      "name": "Supabase Database backups",
+      "kind": "managed",
+      "interface_version": "supabase-cli/2.114.0",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [
+        {
+          "id": "executor_codex_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:c00001281025da4c49431633c52a68f7043a3a6eb9c3f546a241ee53ba6beb04"
+        },
+        {
+          "id": "executor_claude_reference",
+          "schema_version": "launchrally.dev/executor-descriptor/v1",
+          "digest": "sha256:7abb7b7649be159b9dde8258dcb540c0a3ad3f581d8cda327abfb02adc8e58f0"
+        }
+      ],
+      "normalization_shape": "managed_backup_window",
+      "normalization_fixture": {
+        "fixture_id": "normalize_supabase_database_backup",
+        "synthetic_input": {
+          "shape": "managed_backup_window",
+          "signals": [
+            "enabled",
+            "recoverable"
+          ]
+        },
+        "required_signals": [
+          "enabled",
+          "recoverable"
+        ],
+        "expected_observation": {
+          "configuration_state": "configured",
+          "verification_state": "unverified"
+        }
+      },
+      "official_sources": [
+        {
+          "title": "Supabase backups",
+          "url": "https://supabase.com/docs/guides/platform/backups",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "backup_to_restore_retained",
+      "name": "Retain existing implementation",
+      "kind": "retained",
+      "interface_version": "existing-contract/v1",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "backup_to_restore_custom",
+      "name": "Custom implementation",
+      "kind": "custom",
+      "interface_version": "generic-contract/v1",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "backup_to_restore_self_hosted",
+      "name": "Self-hosted implementation",
+      "kind": "self_hosted",
+      "interface_version": "generic-contract/v1",
+      "support_depth": "generic_contract",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    },
+    {
+      "implementation_id": "backup_to_restore_unknown",
+      "name": "Unknown implementation",
+      "kind": "unknown",
+      "interface_version": "unknown/v1",
+      "support_depth": "transparent_gap",
+      "read_adapter": null,
+      "executor_descriptors": [],
+      "normalization_shape": null,
+      "normalization_fixture": null,
+      "official_sources": [
+        {
+          "title": "LaunchRally generic contract",
+          "url": "https://github.com/codeacme17/launchrally/tree/dev/packages/contracts",
+          "reviewed_at": "2026-08-14"
+        }
+      ]
+    }
+  ],
+  "fixture_outcomes": [
+    {
+      "fixture_id": "fixture_backup_to_restore_complete",
+      "outcome": "complete"
+    },
+    {
+      "fixture_id": "fixture_backup_to_restore_partial",
+      "outcome": "partial"
+    },
+    {
+      "fixture_id": "fixture_backup_to_restore_denied",
+      "outcome": "denied"
+    },
+    {
+      "fixture_id": "fixture_backup_to_restore_unknown",
+      "outcome": "unknown"
+    },
+    {
+      "fixture_id": "fixture_backup_to_restore_stale",
+      "outcome": "stale"
+    },
+    {
+      "fixture_id": "fixture_backup_to_restore_successful",
+      "outcome": "successful"
+    },
+    {
+      "fixture_id": "fixture_backup_to_restore_failed",
+      "outcome": "failed"
+    },
+    {
+      "fixture_id": "fixture_backup_to_restore_cleanup_failed",
+      "outcome": "cleanup_failed"
+    }
+  ],
+  "review": {
+    "reviewed_at": "2026-08-14T00:00:00.000Z",
+    "expires_at": "2026-11-12T00:00:00.000Z",
+    "tamper_validation": true
+  },
+  "pack_digest": "sha256:f69fd9b1f71681cbf8142b1283eb3010dc2711bb605de4d9410614f7c5bd09bb"
+}

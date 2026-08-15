@@ -140,7 +140,7 @@ test("a missing Provider executable returns a default-safe typed recovery withou
   assert.equal(recovery.evidence_benefit.target, "authenticated_workspace_applications");
   assert.deepEqual(recovery.evidence_benefit.requested_fields, plan.requests[0].requested_fields);
   assert.equal(recovery.installation_authority.package.name, "clerk");
-  assert.equal(recovery.installation_authority.package.exact_version, "3.0.1");
+  assert.equal(recovery.installation_authority.package.exact_version, "3.1.0");
   assert.equal(recovery.installation_authority.official_source.url, "https://clerk.com/docs/cli");
   assert.deepEqual(recovery.installation_authority.verification_command, {
     executable: "clerk",
@@ -302,7 +302,7 @@ test("successful rediscovery creates a fresh pending Provider-read permission wi
   const inspected = await applyProviderToolRecoveryChoice(
     recovery,
     "rediscover_executable",
-    { runner: async () => ({ stdout: "3.1.1\n", stderr: "" }) },
+    { runner: async () => ({ stdout: "3.2.0\n", stderr: "" }) },
   );
 
   assertValidProviderToolRecovery(inspected);
@@ -310,7 +310,7 @@ test("successful rediscovery creates a fresh pending Provider-read permission wi
   assert.deepEqual(inspected.detected, {
     executable: "present",
     version: "supported",
-    detected_version: "3.1.1",
+    detected_version: "3.2.0",
     authentication: "unknown",
   });
   assert.deepEqual(inspected.fresh_permission, {
@@ -476,7 +476,7 @@ test("runtime recovery rejects Report-tampered execution authority before runnin
   }, {
     runner: async () => {
       calls += 1;
-      return { stdout: "3.0.1\n", stderr: "" };
+      return { stdout: "3.1.0\n", stderr: "" };
     },
   });
 
@@ -502,7 +502,7 @@ test("runtime recovery rejects a Report-tampered Provider-read scope before perm
   }, {
     runner: async () => {
       calls += 1;
-      return { stdout: "3.0.1\n", stderr: "" };
+      return { stdout: "3.1.0\n", stderr: "" };
     },
   });
 
@@ -614,7 +614,7 @@ test("the bounded Provider runner wraps an npm Windows command shim safely", asy
     },
     execute: async (executable, arguments_, options) => {
       invocation = { executable, arguments_, options };
-      return { stdout: "3.0.1\n", stderr: "" };
+      return { stdout: "3.1.0\n", stderr: "" };
     },
   });
 
@@ -655,7 +655,7 @@ test("the JSON CLI consumes a saved typed recovery and renders reviewed instruct
     assert.equal(result.status, "needs_input");
     assert.deepEqual(result.recovery.installation_instructions[0].command, {
       executable: "npm",
-      arguments: ["install", "--global", "clerk@3.0.1"],
+      arguments: ["install", "--global", "clerk@3.1.0"],
       shell: false,
     });
   } finally {

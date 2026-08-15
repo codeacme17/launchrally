@@ -1,6 +1,6 @@
 {
   "name": "@launchrally/codex-plugin",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "LaunchRally Plugin adapter for Codex",
   "keywords": [
     "launchrally",
@@ -11,10 +11,21 @@
     "launch-readiness"
   ],
   "license": "Apache-2.0",
+  "type": "module",
   "files": [
     ".codex-plugin/",
+    "host-adapter/",
     "skills/"
   ],
+  "exports": {
+    "./authenticated-journey": "./host-adapter/authenticated-journey.js",
+    "./product-intent": "./host-adapter/product-intent.js",
+    "./reference-journey": "./host-adapter/reference-journey.js",
+    "./resume": "./host-adapter/resume.js"
+  },
+  "dependencies": {
+    "@launchrally/core": "0.4.0"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/codeacme17/launchrally.git",

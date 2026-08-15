@@ -4,14 +4,16 @@ The LaunchRally CLI provides the `rally` Launcher and deterministic Engine for a
 
 ## Status
 
-LaunchRally 0.3.2 is a **Stable** release. P0 is Product Complete and P0 Validated with the Quality Floor satisfied. Review every disclosed permission and preview before continuing.
+LaunchRally 0.4.0 is an **Experimental Phase 1** release. Phase 1 adds Product Intent, Provider-neutral Architecture, bounded Executor coordination, and fresh assurance without relabeling Phase 0 Stable 0.3.2 on npm `latest`. Phase 1 publication does not imply Validated or Stable. Review every disclosed permission and preview before continuing.
+
+Phase 0 0.3.2 remains a **Stable** release. P0 is Product Complete and P0 Validated with the Quality Floor satisfied.
 
 ## Install and complete the first journey
 
 Install the exact Launcher through your current user-writable npm prefix and verify it before entering a repository:
 
 ```sh
-npm install --global @launchrally/cli@0.3.2
+npm install --global @launchrally/cli@0.4.0
 rally --version --json
 ```
 
@@ -24,6 +26,10 @@ rally --version --json --cwd .
 ```
 
 Audit performs no repository write and does not create `.launchrally`. Public and Provider reads are independent and default-denied. Confirmed Init is the first project mutation, stays under LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
+
+`rally architect` is the read-only Phase 1 whole-product decision flow. It consumes a current full Report plus confirmed Product Intent, Capability Catalog, and Capability Graph files, returns a typed Blueprint before confirmation, and then accepts independent decision responses. A completed confirmed set includes an immutable Architecture Package bundle. Use `rally architecture-package --package <bundle.json> --output <path>` to write only an explicitly selected pre-Init output. After Init, omit `--output` to inspect the exact local-history preview, then repeat with its exact `--resume <token> --confirm confirm` to append the digest-bound package transactionally. Neither command performs Provider writes, stages files, commits files, or turns the Manifest into reasoning history.
+
+`rally handoff` is the typed external Executor coordination flow for the current Task Graph frontier. It accepts exact reviewed Executor Descriptors and observed tool versions, groups compatible Tasks by their real authority boundary, and creates an unapproved Handoff Package for one selected batch. Only `--confirm confirm` approves that exact package; the CLI still performs no installation, login, credential collection, Provider write, deployment, or external execution. A supplied normalized Execution Receipt remains an unverified claim and routes to fresh Verify.
 
 Exact-version npm-exec remains a no-install trial and CI fallback. Keep its full prefix on every follow-up; see the [Quickstart](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/quickstart.md) for the directly executable sequence.
 

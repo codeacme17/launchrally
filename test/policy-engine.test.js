@@ -494,6 +494,54 @@ test("a gating Failed claim backed only by release intent cannot produce No-Go",
   assert.equal(result.assessment, "inconclusive");
 });
 
+test("a gating authenticated journey failure is normative Machine Evidence and produces No-Go", () => {
+  const required = declaration("web.public.core-journeys", "critical", "always");
+  required.failure_evidence_requirement = {
+    accepted_kinds: ["authenticated_journey_machine_evidence"],
+    minimum_items: 1,
+    provenance_required: true,
+  };
+  const evidence = {
+    digest: "sha256:authenticated-denial",
+    evidence_kind: "authenticated_journey_machine_evidence",
+    source: "host-agent-authenticated-journey/v1",
+    target: "https://example.com/control",
+    collected_at: "2026-08-06T12:00:00.000Z",
+    normalized_artifact: {
+      schema_version: "launchrally.dev/authenticated-journey-evidence/v1",
+      kind: "authenticated_journey_machine_evidence",
+      journey_id: "target-1:journey-1:authenticated",
+      target: "https://example.com/control",
+      method: "GET",
+      purpose: "authenticated Core Journey",
+      authentication_class: "staff",
+      status: "failed",
+      outcome: "unexpected_denial",
+      status_code: 403,
+      collected_at: "2026-08-06T12:00:00.000Z",
+      provenance: {
+        collector: "host-agent-authenticated-journey/v1",
+        exact_target: "https://example.com/control",
+        collected_at: "2026-08-06T12:00:00.000Z",
+        permission_id: "authenticated_journey_verification",
+        collection_not_before: "2026-08-06T11:59:00.000Z",
+        collection_not_after: "2026-08-06T12:14:00.000Z",
+      },
+    },
+  };
+  const result = evaluate({
+    declarations: [required],
+    checks: [{
+      ...finding("web.public.core-journeys", "failed"),
+      evidence: [{ digest: evidence.digest }],
+    }],
+    evidence_entries: [evidence],
+  });
+
+  assert.equal(result.findings[0].status, "failed");
+  assert.equal(result.assessment, "no_go");
+});
+
 test("non-gating Unverified produces Ready with Warnings, not Inconclusive", () => {
   const result = evaluate({
     declarations: [declaration("moderate-optional", "moderate", "never")],

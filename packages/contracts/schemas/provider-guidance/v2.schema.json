@@ -24,7 +24,21 @@
     "request": { "$ref": "#/$defs/request" },
     "interaction": { "$ref": "#/$defs/interaction" },
     "next": { "$ref": "#/$defs/next" },
-    "message": { "type": "string", "minLength": 1 }
+    "message": { "type": "string", "minLength": 1 },
+    "provider_verification_gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "knowledge_id", "entry_id"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "knowledge_id": { "type": ["string", "null"] },
+          "entry_id": { "type": ["string", "null"] },
+          "provider_id": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    }
   },
   "additionalProperties": false,
   "oneOf": [
@@ -192,8 +206,9 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["card", "reasons", "limits"],
+        "required": ["knowledge_ref", "card", "reasons", "limits"],
         "properties": {
+          "knowledge_ref": { "$ref": "#/$defs/knowledgeReference" },
           "card": { "type": "object" },
           "reasons": { "$ref": "#/$defs/nonEmptyStrings" },
           "limits": { "$ref": "#/$defs/nonEmptyStrings" }
@@ -215,8 +230,9 @@
     },
     "selection": {
       "type": "object",
-      "required": ["card_id", "provider_id", "provider_name", "provider_role"],
+      "required": ["knowledge_ref", "card_id", "provider_id", "provider_name", "provider_role"],
       "properties": {
+        "knowledge_ref": { "$ref": "#/$defs/knowledgeReference" },
         "card_id": { "type": "string", "minLength": 1 },
         "provider_id": { "type": "string", "minLength": 1 },
         "provider_name": { "type": "string", "minLength": 1 },
@@ -373,6 +389,16 @@
       "additionalProperties": false
     },
     "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "knowledgeReference": {
+      "type": "object",
+      "required": ["id", "schema_version", "digest"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^knowledge_[a-f0-9]{24}$" },
+        "schema_version": { "const": "launchrally.dev/provider-knowledge/v1" },
+        "digest": { "$ref": "#/$defs/digest" }
+      },
+      "additionalProperties": false
+    },
     "nonEmptyStrings": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 },

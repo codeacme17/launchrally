@@ -17,7 +17,10 @@ import {
   runAudit,
   runVerify,
 } from "../packages/core/src/index.js";
-import { createAuthenticatedJourneyPlan } from "../packages/core/src/authenticated-journeys.js";
+import {
+  createAuthenticatedJourneyAttestation,
+  createAuthenticatedJourneyPlan,
+} from "../packages/core/src/authenticated-journeys.js";
 import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
@@ -63,6 +66,23 @@ async function completeAudit(
     permission_decisions: permissionDecisions,
   });
 }
+
+function attestedJourneyResults(plan, results, collectedAt) {
+  const supplied = {
+    schema_version: "launchrally.dev/authenticated-journey-results/v1",
+    adapter_version: "host-agent-authenticated-journey/v1",
+    results,
+  };
+  supplied.attestation = createAuthenticatedJourneyAttestation(plan, supplied, {
+    attestation_id: "verified_host_adapter_observation_01",
+    issued_at: collectedAt,
+  });
+  return supplied;
+}
+
+const HOST_ATTESTATION_VERIFIER = {
+  verify_host_attestation: () => true,
+};
 
 function declared(value) {
   return { state: "declared", value: structuredClone(value) };
@@ -140,7 +160,7 @@ test("full Verify requests protected journey reads independently from public ver
     schema_version: "launchrally.dev/protected-journey/v1",
     method: "GET",
     path: "/control",
-    purpose: "staff Control Room loads",
+    purpose: "authenticated Core Journey",
     access: {
       authentication_class: "staff",
       anonymous_status_codes: [404],
@@ -188,7 +208,7 @@ test("full Verify requests typed authenticated results before executing approved
     schema_version: "launchrally.dev/protected-journey/v1",
     method: "GET",
     path: "/control",
-    purpose: "staff Control Room loads",
+    purpose: "authenticated Core Journey",
     access: {
       authentication_class: "staff",
       anonymous_status_codes: [404],
@@ -226,6 +246,11 @@ test("full Verify requests typed authenticated results before executing approved
   assert.equal(result.status, "needs_input", JSON.stringify(result));
   assert.equal(result.request.type, "authenticated_journey_results");
   assert.equal(result.request.result_schema, "launchrally.dev/authenticated-journey-results/v1");
+  assert.deepEqual(result.request.attestation, {
+    schema_version: "launchrally.dev/authenticated-journey-attestation/v1",
+    required_for_evidence: true,
+    verification: "external_host_adapter",
+  });
   assert.equal(result.request.plan.schema_version, "launchrally.dev/authenticated-journey-plan/v1");
   assert.deepEqual(result.request.allowed_outcomes, [
     "completed",
@@ -242,13 +267,13 @@ test("full Verify requests typed authenticated results before executing approved
   assert.ok(result.interaction.resume_token.length > 20);
 });
 
-test("full Verify records redacted authenticated evidence and completes protected journeys", async () => {
+test("full Verify cannot upgrade caller-attested authenticated success", async () => {
   const directory = await fixture();
   const protectedJourney = {
     schema_version: "launchrally.dev/protected-journey/v1",
     method: "GET",
     path: "/control",
-    purpose: "staff Control Room loads",
+    purpose: "authenticated Core Journey",
     access: {
       authentication_class: "staff",
       anonymous_status_codes: [404],
@@ -278,18 +303,15 @@ test("full Verify records redacted authenticated evidence and completes protecte
   const collectedAt = new Date(Date.now() + 1).toISOString();
   const result = await runVerify(directory, "0.1.0", {
     resume_token: input.interaction.resume_token,
-    journey_results: {
-      schema_version: "launchrally.dev/authenticated-journey-results/v1",
-      adapter_version: "host-agent-authenticated-journey/v1",
-      results: [{
+    journey_results: attestedJourneyResults(input.request.plan, [{
         journey_id: "target-1:journey-1:authenticated",
         status: "passed",
         outcome: "completed",
         status_code: 200,
         collected_at: collectedAt,
-      }],
-    },
+      }], collectedAt),
   }, {
+    ...HOST_ATTESTATION_VERIFIER,
     collect_public_evidence: async () => [{
       kind: "public_observation",
       probe_id: "target-1:journey-1:anonymous",
@@ -299,7 +321,7 @@ test("full Verify records redacted authenticated evidence and completes protecte
       port: 443,
       path: "/control",
       method: "GET",
-      purpose: "Verify anonymous boundary for protected Core Journey: staff Control Room loads",
+      purpose: "Verify anonymous boundary for protected Core Journey: authenticated Core Journey",
       verification_mode: "protected_anonymous_boundary",
       status: "passed",
       outcome: "access_boundary_confirmed",
@@ -318,15 +340,76 @@ test("full Verify records redacted authenticated evidence and completes protecte
   const journeyCheck = result.report.results.checks.find(
     ({ check_id }) => check_id === "web.public.core-journeys",
   );
-  assert.equal(journeyCheck.status, "passed");
+  assert.equal(journeyCheck.status, "unverified");
   const authenticated = result.evidence_index.entries.find(
-    ({ evidence_kind }) => evidence_kind === "authenticated_journey_observation",
+    ({ evidence_kind }) => evidence_kind === "authenticated_journey_machine_evidence",
   );
-  assert.equal(authenticated.redaction_state, "normalized");
-  assert.equal(authenticated.normalized_artifact.status_code, 200);
+  assert.equal(authenticated, undefined);
   assert.doesNotMatch(
     JSON.stringify(result),
     /session=|bearer\s|"cookie"|"headers"|"token"/iu,
+  );
+  assertValidReportPackage(result);
+  assertValidVerificationResult(result);
+});
+
+test("full Verify cannot turn caller-attested failure into normative No-Go Evidence", async () => {
+  const directory = await fixture();
+  const protectedJourney = {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/control",
+    purpose: "authenticated Core Journey",
+    access: {
+      authentication_class: "staff",
+      authenticated_status_codes: [200],
+    },
+  };
+  const source = await completeAudit(
+    directory,
+    { ...ANSWERS, core_journeys: [protectedJourney] },
+    {
+      public_verification: "denied",
+      authenticated_journey_verification: "denied",
+    },
+  );
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const input = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: {
+      public_verification: "denied",
+      authenticated_journey_verification: "approved",
+    },
+  });
+  const collectedAt = new Date(Date.now() + 1).toISOString();
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: input.interaction.resume_token,
+    journey_results: attestedJourneyResults(input.request.plan, [{
+        journey_id: "target-1:journey-1:authenticated",
+        status: "failed",
+        outcome: "unexpected_denial",
+        status_code: 403,
+        collected_at: collectedAt,
+      }], collectedAt),
+  }, HOST_ATTESTATION_VERIFIER);
+
+  assert.equal(result.status, "completed", JSON.stringify(result));
+  assert.equal(result.assessment, "inconclusive");
+  const check = result.report.results.checks.find(
+    ({ check_id }) => check_id === "web.public.core-journeys",
+  );
+  assert.equal(check.status, "unverified");
+  const entry = result.evidence_index.entries.find(
+    ({ evidence_kind }) => evidence_kind === "authenticated_journey_machine_evidence",
+  );
+  assert.equal(entry, undefined);
+  assert.doesNotMatch(
+    JSON.stringify(result),
+    /session=|bearer\s|"cookie"|"headers"|"token"|response_body/iu,
   );
   assertValidReportPackage(result);
   assertValidVerificationResult(result);

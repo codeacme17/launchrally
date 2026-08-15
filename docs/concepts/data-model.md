@@ -24,9 +24,15 @@ A targeted Verify result covers only selected Checks and never carries a whole-r
 
 ## Evidence Index
 
-The separately versioned Evidence Index stores normalized, content-addressed Evidence entries. Report Findings reference those entries by digest and collection metadata. Every Check declares separate pass and failure Evidence Requirements. A negative local finding requires a complete target-specific scan and is stored as provenance-bearing `local_observation` Evidence; ignored, symlinked, oversized, binary, unreadable, or otherwise uncovered candidates remain Verification Gaps. Content-bound Evidence is invalidated by relevant source changes; live-state Evidence is invalidated by its declared freshness policy. Denied permission, missing tooling, or insufficient observations remain explicit Verification Gaps.
+The separately versioned Evidence Index stores normalized, content-addressed Evidence entries. Report Findings reference those entries by digest and collection metadata. Every Check declares separate pass and failure Evidence Requirements. A negative local finding requires a complete target-specific scan and is stored as provenance-bearing `local_observation` Evidence; ignored, symlinked, oversized, binary, unreadable, or otherwise uncovered candidates remain Verification Gaps. Authenticated Core Journey `passed` and `failed` observations become `authenticated_journey_machine_evidence` only through the exact supported host adapter, a fresh permission window, an exact target, and the allowlisted normalized contract. Authentication denial, unavailable capability, stale collection, partial coverage, Agent statements, user assertions, and Execution Receipts never substitute for that Evidence. Content-bound Evidence is invalidated by relevant source changes; live-state Evidence is invalidated by its declared freshness policy. Denied permission, missing tooling, or insufficient observations remain explicit Verification Gaps.
 
 Raw repository contents, environment values, credentials, and raw package-script commands are not Evidence payloads. See the [privacy guide](privacy.md) for the collection boundary.
+
+## Composite Assurance
+
+Phase 1 Composite Assurance is a separate versioned derivation bound to a current full Report and Evidence Index, Capability Graph, immutable Architecture Record, and Integration Contracts for one explicit environment. Each capability retains Requirement, Local Implementation, Provider Configuration, Integration Consistency, Deployment, Operational Delivery, and Downstream Outcome facets. Passing one facet cannot pass a higher facet, and Provider configuration alone cannot prove an end-to-end outcome.
+
+The deterministic states are Unverified, Locally Evidenced, Configured but Not Deployed, Deployed but Not Operationally Verified, Operationally Verified, and Outcome Verified. Required current-release capabilities gate against capability-specific minimum assurance. Optional, deferred, future, and not-applicable capabilities do not silently gate. Incomplete or unsupported negative coverage remains Unverified, and Evidence is never generalized across environments without a future explicit versioned rule. Composite Launch Assessment and Architecture Status remain independent records.
 
 ## Immutable local history
 

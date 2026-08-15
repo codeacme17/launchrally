@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { createServer as createSecureServer } from "node:https";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,10 +10,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import { exactToolchainLock } from "./helpers/exact-toolchain.js";
+import { runAudit } from "../packages/core/src/index.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(root, "packages", "cli", "bin", "rally.js");
 const execFileAsync = promisify(execFile);
+const currentVersion = JSON.parse(await readFile(
+  path.join(root, "package.json"),
+  "utf8",
+)).version;
 const volatileKeys = new Set([
   "resume_token",
   "content",
@@ -56,15 +62,15 @@ const directJourney = {
   schema_version: "launchrally.dev/reference-journey/v3",
   compatibility: {
     launcher: {
-      supported_versions: ["0.3.0", "0.3.2"],
+      supported_versions: ["0.3.0", "0.3.2", currentVersion],
     },
     engine: {
-      supported_versions: ["0.2.2", "0.3.0", "0.3.2"],
+      supported_versions: ["0.2.2", "0.3.0", "0.3.2", currentVersion],
     },
   },
   cli: {
     package: "@launchrally/cli",
-    version: "0.3.2",
+    version: currentVersion,
     contract: "launchrally.dev/cli/v2",
   },
   invocations: [
@@ -415,7 +421,7 @@ async function executeReferenceJourney(
   } = {},
 ) {
   const directory = await createFixture(label, fixturePath);
-  const registryStub = await createRegistryNpmStub("0.3.2", {
+  const registryStub = await createRegistryNpmStub(currentVersion, {
     offlineAvailable: !exerciseRegistryPermission,
   });
   const journeyEnv = {
@@ -848,14 +854,14 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
     },
     launcher: {
       package: "@launchrally/cli",
-      supported_versions: ["0.3.0", "0.3.1", cliPackage.version],
+      supported_versions: ["0.3.0", "0.3.1", "0.3.2", cliPackage.version],
     },
     execution_authority: {
       supported_contracts: ["launchrally.dev/execution-authority/v1"],
     },
     engine: {
       package: "@launchrally/cli",
-      supported_versions: ["0.2.2", "0.3.0", "0.3.1", cliPackage.version],
+      supported_versions: ["0.2.2", "0.3.0", "0.3.1", "0.3.2", cliPackage.version],
       authority_contracts: ["launchrally.dev/execution-authority/v1"],
       interaction_contracts: ["launchrally.dev/cli/v2"],
     },
@@ -867,7 +873,7 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
   });
   assert.deepEqual(
     journey.compatibility.launcher.supported_versions,
-    ["0.3.0", "0.3.1", journey.compatibility.plugin.version],
+    ["0.3.0", "0.3.1", "0.3.2", journey.compatibility.plugin.version],
     "a pre-authority direct binary cannot be treated as a supported Launcher",
   );
   assert.notEqual(
@@ -1040,6 +1046,11 @@ test("canonical and generated Skills route protected journeys through normalized
     plan_schema: "launchrally.dev/authenticated-journey-plan/v1",
     adapter_version: "host-agent-authenticated-journey/v1",
     result_schema: "launchrally.dev/authenticated-journey-results/v1",
+    attestation_schema: "launchrally.dev/authenticated-journey-attestation/v1",
+    attestation_authority: "external_host_adapter",
+    evidence_schema: "launchrally.dev/authenticated-journey-evidence/v1",
+    qualifying_statuses: ["passed", "failed"],
+    unverified_result: "verification_gap_without_evidence",
     resume_argument: "--journey-results",
     retained_fields: ["journey_id", "status", "outcome", "status_code", "collected_at"],
     raw_auth_material: "excluded",
@@ -1056,8 +1067,162 @@ test("canonical and generated Skills route protected journeys through normalized
     ]);
     assert.match(skill, /references\/protected-journeys\.md/u);
     assert.match(protectedJourneys, /host-agent-authenticated-journey\/v1/u);
+    assert.match(protectedJourneys, /authenticated-journey-evidence\/v1/u);
+    assert.match(protectedJourneys, /gating Failed Check and `no_go`/u);
     assert.match(protectedJourneys, /--journey-results/u);
     assert.doesNotMatch(protectedJourneys, /copy (?:a )?(?:cookie|token)/iu);
+  }
+});
+
+test("Codex and Claude host runners create Evidence without caller-supplied observations", async () => {
+  const cases = [
+    { outcome: "completed", responseCode: 200, evidence: true, authenticated: true },
+    { outcome: "unexpected_denial", responseCode: 403, evidence: true, authenticated: true },
+    { outcome: "execution_failure", responseCode: 500, evidence: true, authenticated: true },
+    { outcome: "expired_authentication", responseCode: 401, evidence: false, authenticated: true },
+    { outcome: "missing_authentication", responseCode: 200, evidence: false, authenticated: false },
+    {
+      outcome: "runner_unavailable",
+      responseCode: 200,
+      evidence: false,
+      authenticated: true,
+      invalidReference: true,
+    },
+  ];
+
+  for (const adapter of adapters) {
+    const adapterJourney = await loadAdapterJourney(adapter);
+    const { resumeAuthenticatedJourney } = await import(pathToFileURL(path.join(
+      root,
+      "adapters",
+      adapter.host,
+      "launchrally",
+      "host-adapter",
+      "authenticated-journey.js",
+    )).href);
+    for (const journeyCase of cases) {
+      const expectedOutcome = process.platform === "win32" && journeyCase.authenticated
+        ? "runner_unavailable"
+        : journeyCase.outcome;
+      const expectedEvidence = process.platform === "win32"
+        ? false
+        : journeyCase.evidence;
+      const directory = await createFixture(
+        `${adapter.host}-protected-${journeyCase.outcome}`,
+      );
+      const server = createSecureServer({
+        key: await readFile(path.join(root, "test", "fixtures", "self-signed-key.pem")),
+        cert: await readFile(path.join(root, "test", "fixtures", "self-signed-cert.pem")),
+      }, (request, response) => {
+        response.writeHead(journeyCase.responseCode);
+        response.end();
+      });
+      await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const target = `https://localhost:${server.address().port}`;
+      const previousOrigin = process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+      const previousAuthorization = process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+      const previousCookie = process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
+      const previousCa = process.env.LAUNCHRALLY_HOST_CA_FILE;
+      const authorizationRoot = await mkdtemp(path.join(os.tmpdir(), "launchrally-host-auth-"));
+      const authorizationFile = path.join(authorizationRoot, "authorization");
+      process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = target;
+      process.env.LAUNCHRALLY_HOST_CA_FILE = path.join(
+        root,
+        "test",
+        "fixtures",
+        "self-signed-cert.pem",
+      );
+      if (journeyCase.authenticated) {
+        await writeFile(authorizationFile, "Bearer host-owned-secret", { mode: 0o600 });
+        process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = journeyCase.invalidReference
+          ? "relative-authentication-reference"
+          : authorizationFile;
+      } else {
+        delete process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+        delete process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
+      }
+      try {
+        const initial = await runAudit(directory, "0.3.2");
+        const confirmation = await runAudit(directory, "0.3.2", {
+        resume_token: initial.interaction.resume_token,
+        answers: {
+          intended_environment: "staging",
+          production_targets: [target],
+          core_journeys: [{
+            schema_version: adapterJourney.protected_journeys.declaration_schema,
+            method: "GET",
+            path: "/control",
+            purpose: `${adapter.host} protected Control Room loads`,
+            access: {
+              authentication_class: "staff",
+              authenticated_status_codes: [200],
+            },
+          }],
+          provider_roles: [],
+          support_layers: [],
+        },
+        });
+        const permission = await runAudit(directory, "0.3.2", {
+        resume_token: confirmation.interaction.resume_token,
+        confirmation: "confirm",
+        });
+        const input = await runAudit(directory, "0.3.2", {
+        resume_token: permission.interaction.resume_token,
+        permission_decisions: {
+          public_verification: "denied",
+          authenticated_journey_verification: "approved",
+        },
+        });
+        assert.equal(input.status, "needs_input");
+        assert.equal(
+        input.request.attestation.schema_version,
+        "launchrally.dev/authenticated-journey-attestation/v1",
+        );
+        const completed = await resumeAuthenticatedJourney({
+        cwd: directory,
+        operation: "audit",
+        resume_token: input.interaction.resume_token,
+        request: input.request,
+        });
+
+        assert.equal(completed.status, "completed");
+        assert.equal(
+        completed.evidence_index.entries.some(
+          ({ evidence_kind: kind }) => kind === "authenticated_journey_machine_evidence",
+        ),
+        expectedEvidence,
+        `${adapter.host}:${journeyCase.outcome}`,
+        );
+        assert.equal(
+        completed.report.results.verification_gaps.some(
+          ({ reason_code: reasonCode }) =>
+            reasonCode === expectedOutcome,
+        ),
+        !expectedEvidence,
+        );
+        if (expectedEvidence && expectedOutcome !== "completed") {
+          assert.equal(completed.report.assessment, "no_go");
+        }
+        assert.doesNotMatch(
+        JSON.stringify(completed),
+        /host-owned-secret|bearer\s|"cookie"|"headers"|"token"|response_body/iu,
+        );
+      } finally {
+        if (previousOrigin === undefined) delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+        else process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = previousOrigin;
+        if (previousAuthorization === undefined) {
+          delete process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+        } else {
+          process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = previousAuthorization;
+        }
+        if (previousCookie === undefined) delete process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
+        else process.env.LAUNCHRALLY_HOST_COOKIE_FILE = previousCookie;
+        if (previousCa === undefined) delete process.env.LAUNCHRALLY_HOST_CA_FILE;
+        else process.env.LAUNCHRALLY_HOST_CA_FILE = previousCa;
+        await rm(authorizationRoot, { recursive: true, force: true });
+        await new Promise((resolve) => server.close(resolve));
+      }
+    }
   }
 });
 

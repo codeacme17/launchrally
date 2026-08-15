@@ -1,0 +1,37 @@
+{
+  "schema_version": "launchrally.dev/product-intent-profile/v1",
+  "profile_id": "intent_01hphase1",
+  "revision": 1,
+  "environment": "production",
+  "created_at": "2026-08-13T00:00:00.000Z",
+  "desired_intent": {
+    "confirmation": "confirmed",
+    "behaviors": ["customers_sign_in"],
+    "hard_constraints": [],
+    "preferences": []
+  },
+  "observed_implementation": [],
+  "provenance": [
+    {
+      "source_id": "source_product_brief",
+      "source_class": "product_brief",
+      "path": "docs/product.md",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "permission": "local_semantic_analysis"
+    }
+  ],
+  "coverage": {
+    "state": "partial",
+    "supported_sources": ["product_brief"],
+    "excluded_sources": [],
+    "negative_findings_allowed": false
+  },
+  "conflicts": [],
+  "unknowns": [],
+  "retention": {
+    "raw_source_retained": false,
+    "provider_output_retained": false,
+    "sensitive_data_retained": false
+  },
+  "raw_source": "This persisted field is prohibited."
+}

@@ -5,6 +5,7 @@ const MACHINE_EVIDENCE_KINDS = new Set([
   "local_observation",
   "project_fact",
   "public_observation",
+  "authenticated_journey_machine_evidence",
   "machine_evidence",
 ]);
 
@@ -72,6 +73,23 @@ function failedPublicObservation(entry) {
   return observation;
 }
 
+function failedAuthenticatedObservation(entry) {
+  const artifact = entry.normalized_artifact;
+  if (
+    entry.evidence_kind !== "authenticated_journey_machine_evidence"
+    || artifact?.kind !== "authenticated_journey_machine_evidence"
+    || artifact.status !== "failed"
+  ) return null;
+  return {
+    kind: "authenticated_journey_machine_evidence",
+    evidence_digest: entry.digest,
+    journey_id: artifact.journey_id,
+    method: artifact.method,
+    outcome: artifact.outcome,
+    status_code: artifact.status_code,
+  };
+}
+
 function localObservation(entry) {
   const artifact = entry.normalized_artifact;
   if (
@@ -90,15 +108,15 @@ function actionEvidence(finding, evidenceByDigest) {
   const entries = finding.evidence
     .map((reference) => evidenceByDigest.get(reference.digest))
     .filter(Boolean);
-  const failedPublic = entries.map((entry) => ({
+  const failedObservations = entries.map((entry) => ({
     entry,
-    observation: failedPublicObservation(entry),
+    observation: failedPublicObservation(entry) ?? failedAuthenticatedObservation(entry),
   })).filter(({ observation }) => observation);
-  const supportingEntries = failedPublic.length > 0
-    ? failedPublic.map(({ entry }) => entry)
+  const supportingEntries = failedObservations.length > 0
+    ? failedObservations.map(({ entry }) => entry)
     : entries;
-  const observations = failedPublic.length > 0
-    ? failedPublic.map(({ observation }) => observation)
+  const observations = failedObservations.length > 0
+    ? failedObservations.map(({ observation }) => observation)
     : entries.map(localObservation).filter(Boolean);
   return {
     evidence: supportingEntries.map(actionEvidenceReference),

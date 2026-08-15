@@ -2,19 +2,19 @@
   "schema_version": "launchrally.dev/reference-journey/v3",
   "compatibility": {
     "plugin": {
-      "version": "0.3.2",
+      "version": "0.4.0",
       "role": "interaction_only"
     },
     "launcher": {
       "package": "@launchrally/cli",
-      "supported_versions": ["0.3.0", "0.3.1", "0.3.2"]
+      "supported_versions": ["0.3.0", "0.3.1", "0.3.2", "0.4.0"]
     },
     "execution_authority": {
       "supported_contracts": ["launchrally.dev/execution-authority/v1"]
     },
     "engine": {
       "package": "@launchrally/cli",
-      "supported_versions": ["0.2.2", "0.3.0", "0.3.1", "0.3.2"],
+      "supported_versions": ["0.2.2", "0.3.0", "0.3.1", "0.3.2", "0.4.0"],
       "authority_contracts": ["launchrally.dev/execution-authority/v1"],
       "interaction_contracts": ["launchrally.dev/cli/v2"]
     },
@@ -31,7 +31,7 @@
     "installation": {
       "owner": "user",
       "executable": "npm",
-      "arguments": ["install", "--global", "@launchrally/cli@0.3.2"]
+      "arguments": ["install", "--global", "@launchrally/cli@0.4.0"]
     },
     "verification": {
       "arguments": ["--version", "--json", "--cwd", "{repository_root}"]
@@ -57,7 +57,7 @@
   },
   "cli": {
     "package": "@launchrally/cli",
-    "version": "0.3.2",
+    "version": "0.4.0",
     "contract": "launchrally.dev/cli/v2"
   },
   "protected_journeys": {
@@ -67,6 +67,11 @@
     "plan_schema": "launchrally.dev/authenticated-journey-plan/v1",
     "adapter_version": "host-agent-authenticated-journey/v1",
     "result_schema": "launchrally.dev/authenticated-journey-results/v1",
+    "attestation_schema": "launchrally.dev/authenticated-journey-attestation/v1",
+    "attestation_authority": "external_host_adapter",
+    "evidence_schema": "launchrally.dev/authenticated-journey-evidence/v1",
+    "qualifying_statuses": ["passed", "failed"],
+    "unverified_result": "verification_gap_without_evidence",
     "resume_argument": "--journey-results",
     "retained_fields": ["journey_id", "status", "outcome", "status_code", "collected_at"],
     "raw_auth_material": "excluded"

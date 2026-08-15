@@ -29,6 +29,8 @@ Audit does not create `.launchrally`; `--output` saves the complete Report at th
 
 The final version command is read-only. Require `authority.state: "ready"` and, after Init, `authority.source: "project_toolchain"`. The Launcher then delegates repository commands to the project-pinned Engine. A supported same, newer, or older Launcher follows the valid pin; it does not upgrade, downgrade, or replace it.
 
+After obtaining a current full Report, continue with the [Phase 1 Agent and Human journey](phase-1.md) to confirm Product Intent, review Architecture, build a Task Graph, coordinate bounded external work, and independently Verify it.
+
 Init makes the saved Manifest-bound Audit Report historical. Follow the typed `needs_refresh` response with a full Verify, use the new current Report for Plan and Handoff, and retain the original saved Report for future whole-release Verify input. The [Agent reference journey](../../skills/launchrally/references/reference-journey.md) shows that complete typed flow.
 
 ## No-install trial and CI fallback

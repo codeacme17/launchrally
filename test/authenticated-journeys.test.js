@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createAuthenticatedJourneyAttestation,
   createAuthenticatedJourneyPlan,
   normalizeAuthenticatedJourneyResults,
 } from "../packages/core/src/authenticated-journeys.js";
@@ -22,63 +23,59 @@ const ANSWERS = {
   }],
 };
 
-test("authenticated journey results normalize only allowlisted observations", () => {
-  const plan = createAuthenticatedJourneyPlan(ANSWERS);
-  const normalized = normalizeAuthenticatedJourneyResults(plan, {
+function permissionBoundPlan() {
+  return {
+    ...createAuthenticatedJourneyPlan(ANSWERS),
+    collection_not_before: "2026-08-12T05:59:00.000Z",
+    collection_not_after: "2026-08-12T06:14:00.000Z",
+  };
+}
+
+function attested(plan, results) {
+  const supplied = {
     schema_version: "launchrally.dev/authenticated-journey-results/v1",
     adapter_version: "host-agent-authenticated-journey/v1",
-    results: [{
+    results,
+  };
+  supplied.attestation = createAuthenticatedJourneyAttestation(plan, supplied, {
+    attestation_id: "attestation_host_observation_01",
+    issued_at: "2026-08-12T06:00:00.000Z",
+  });
+  return supplied;
+}
+
+const VERIFY_ATTESTATION = { verify_host_attestation: () => true };
+
+test("caller-attested journey results cannot bypass the host runner", () => {
+  const plan = permissionBoundPlan();
+  const normalized = normalizeAuthenticatedJourneyResults(plan, attested(plan, [{
       journey_id: "target-1:journey-1:authenticated",
       status: "passed",
       outcome: "completed",
       status_code: 200,
       collected_at: "2026-08-12T06:00:00.000Z",
-    }],
-  });
+    }]), VERIFY_ATTESTATION);
 
-  assert.deepEqual(normalized.verification_gaps, []);
-  assert.deepEqual(normalized.evidence, [{
-    kind: "authenticated_journey_observation",
-    journey_id: "target-1:journey-1:authenticated",
-    target: "https://example.com/control",
-    method: "GET",
-    purpose: "staff Control Room loads",
-    authentication_class: "staff",
-    status: "passed",
-    outcome: "completed",
-    status_code: 200,
-    collected_at: "2026-08-12T06:00:00.000Z",
-    provenance: {
-      collector: "host-agent-authenticated-journey/v1",
-      exact_target: "https://example.com/control",
-      collected_at: "2026-08-12T06:00:00.000Z",
-    },
-  }]);
+  assert.deepEqual(normalized.evidence, []);
+  assert.equal(normalized.verification_gaps[0].outcome, "unsupported_adapter");
 });
 
 test("authenticated journey results preserve typed gaps without auth material", () => {
-  const plan = createAuthenticatedJourneyPlan(ANSWERS);
-  const normalized = normalizeAuthenticatedJourneyResults(plan, {
-    schema_version: "launchrally.dev/authenticated-journey-results/v1",
-    adapter_version: "host-agent-authenticated-journey/v1",
-    results: [{
+  const plan = permissionBoundPlan();
+  const normalized = normalizeAuthenticatedJourneyResults(plan, attested(plan, [{
       journey_id: "target-1:journey-1:authenticated",
       status: "unverified",
       outcome: "missing_authentication",
       status_code: null,
       collected_at: "2026-08-12T06:00:00.000Z",
-    }],
-  });
+    }]), VERIFY_ATTESTATION);
 
-  assert.equal(normalized.evidence[0].outcome, "missing_authentication");
-  assert.deepEqual(normalized.verification_gaps, [{
-    journey_id: "target-1:journey-1:authenticated",
-    outcome: "missing_authentication",
-  }]);
+  assert.deepEqual(normalized.evidence, []);
+  assert.equal(normalized.verification_gaps[0].outcome, "unsupported_adapter");
 });
 
 test("authenticated journey results reject undeclared fields and inconsistent outcomes", () => {
-  const plan = createAuthenticatedJourneyPlan(ANSWERS);
+  const plan = permissionBoundPlan();
   const valid = {
     schema_version: "launchrally.dev/authenticated-journey-results/v1",
     adapter_version: "host-agent-authenticated-journey/v1",
@@ -135,10 +132,43 @@ test("protected journeys may omit an anonymous boundary assertion", () => {
     authentication_class: "user",
     authenticated_status_codes: [200],
   });
+  assert.equal(parsed.value.purpose, "authenticated Core Journey");
 });
 
-test("every disclosed authenticated journey outcome has a normalized contract path", () => {
-  const plan = createAuthenticatedJourneyPlan(ANSWERS);
+test("protected journey declarations reject personal identifiers before persistence", () => {
+  for (const candidate of [
+    { path: "/users/alice@example.com", purpose: "account loads" },
+    { path: "/account-12345", purpose: "account loads" },
+    { path: "/orders/12345678", purpose: "order loads" },
+    { path: "/", purpose: "account loads" },
+    { path: "/account/", purpose: "account loads" },
+  ]) {
+    const parsed = parsePublicJourneyInput({
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      ...candidate,
+      access: {
+        authentication_class: "user",
+        authenticated_status_codes: [200],
+      },
+    });
+    assert.equal(parsed.error, "invalid_protected_journey");
+  }
+  const normalized = parsePublicJourneyInput({
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/control",
+    purpose: "John Smith patient profile loads",
+    access: {
+      authentication_class: "user",
+      authenticated_status_codes: [200],
+    },
+  });
+  assert.equal(normalized.value.purpose, "authenticated Core Journey");
+});
+
+test("every caller-supplied authenticated outcome remains unsupported without the host runner", () => {
+  const plan = permissionBoundPlan();
   const cases = [
     ["completed", "passed", 200],
     ["missing_authentication", "unverified", null],
@@ -152,25 +182,62 @@ test("every disclosed authenticated journey outcome has a normalized contract pa
   ];
 
   for (const [outcome, status, statusCode] of cases) {
-    const normalized = normalizeAuthenticatedJourneyResults(plan, {
-      schema_version: "launchrally.dev/authenticated-journey-results/v1",
-      adapter_version: "host-agent-authenticated-journey/v1",
-      results: [{
+    const normalized = normalizeAuthenticatedJourneyResults(plan, attested(plan, [{
         journey_id: "target-1:journey-1:authenticated",
         status,
         outcome,
         status_code: statusCode,
         collected_at: "2026-08-12T06:00:00.000Z",
-      }],
-    });
-    assert.equal(normalized.evidence[0].outcome, outcome);
-    assert.equal(normalized.evidence[0].status, status);
+      }]), VERIFY_ATTESTATION);
+    assert.deepEqual(normalized.evidence, []);
+    assert.equal(normalized.verification_gaps[0].outcome, "unsupported_adapter");
   }
+});
+
+test("an Agent or user result assertion cannot substitute for host-adapter collection", () => {
+  const plan = permissionBoundPlan();
+  const supplied = {
+    schema_version: "launchrally.dev/authenticated-journey-results/v1",
+    adapter_version: "host-agent-authenticated-journey/v1",
+    results: [{
+      journey_id: "target-1:journey-1:authenticated",
+      status: "failed",
+      outcome: "unexpected_denial",
+      status_code: 403,
+      collected_at: "2026-08-12T06:00:00.000Z",
+    }],
+  };
+
+  const asserted = normalizeAuthenticatedJourneyResults(plan, supplied);
+  assert.deepEqual(asserted.evidence, []);
+  assert.equal(asserted.verification_gaps[0].outcome, "unsupported_adapter");
+
+  const forged = attested(plan, supplied.results);
+  const rejected = normalizeAuthenticatedJourneyResults(plan, forged, {
+    verify_host_attestation: () => false,
+  });
+  assert.deepEqual(rejected.evidence, []);
+  assert.equal(rejected.verification_gaps[0].outcome, "unsupported_adapter");
+
+  const tampered = structuredClone(forged);
+  tampered.results[0].collected_at = "2026-08-12T06:00:01.000Z";
+  const digestRejected = normalizeAuthenticatedJourneyResults(plan, tampered,
+    VERIFY_ATTESTATION);
+  assert.deepEqual(digestRejected.evidence, []);
+  assert.equal(digestRejected.verification_gaps[0].outcome, "unsupported_adapter");
+
+  const verifierError = normalizeAuthenticatedJourneyResults(plan, forged, {
+    verify_host_attestation: () => {
+      throw new Error("host adapter unavailable");
+    },
+  });
+  assert.deepEqual(verifierError.evidence, []);
+  assert.equal(verifierError.verification_gaps[0].outcome, "unsupported_adapter");
 });
 
 test("authenticated observations must be collected after the permission-bound request", () => {
   const plan = {
-    ...createAuthenticatedJourneyPlan(ANSWERS),
+    ...permissionBoundPlan(),
     collection_not_before: "2026-08-12T06:00:01.000Z",
   };
 
@@ -185,4 +252,27 @@ test("authenticated observations must be collected after the permission-bound re
       collected_at: "2026-08-12T06:00:00.000Z",
     }],
   }), { code: "invalid_authenticated_journey_results" });
+});
+
+test("authenticated observations require a fresh declared permission window", () => {
+  const supplied = {
+    schema_version: "launchrally.dev/authenticated-journey-results/v1",
+    adapter_version: "host-agent-authenticated-journey/v1",
+    results: [{
+      journey_id: "target-1:journey-1:authenticated",
+      status: "passed",
+      outcome: "completed",
+      status_code: 200,
+      collected_at: "2026-08-12T06:15:00.000Z",
+    }],
+  };
+
+  assert.throws(
+    () => normalizeAuthenticatedJourneyResults(createAuthenticatedJourneyPlan(ANSWERS), supplied),
+    { code: "invalid_authenticated_journey_results" },
+  );
+  assert.throws(
+    () => normalizeAuthenticatedJourneyResults(permissionBoundPlan(), supplied),
+    { code: "invalid_authenticated_journey_results" },
+  );
 });

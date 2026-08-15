@@ -538,7 +538,7 @@ test("Plan preserves each protected declaration and its typed authenticated resu
         schema_version: "launchrally.dev/protected-journey/v1",
         method: "GET",
         path: "/control",
-        purpose: "staff Control Room loads",
+        purpose: "authenticated Core Journey",
         access: {
           authentication_class: "staff",
           authenticated_status_codes: [200],
@@ -573,25 +573,19 @@ test("Plan preserves each protected declaration and its typed authenticated resu
   });
 
   const result = runPlan(audit);
-  const authenticatedEntry = audit.evidence_index.entries.find(
-    ({ evidence_kind }) => evidence_kind === "authenticated_journey_observation",
-  );
-
   assert.deepEqual(result.authenticated_journeys, [{
     journey_id: "target-1:journey-1:authenticated",
     target: "https://example.com/control",
     method: "GET",
-    purpose: "staff Control Room loads",
+    purpose: "authenticated Core Journey",
     authentication_class: "staff",
     expected_status_codes: [200],
     result: {
       status: "unverified",
-      outcome: "insufficient_capability",
+      outcome: "unsupported_adapter",
       status_code: null,
-      collected_at: authenticatedEntry.collected_at,
-      evidence_digest: authenticatedEntry.digest,
-      current: authenticatedEntry.current,
-      currentness: authenticatedEntry.currentness,
+      collected_at: audit.report.results.authenticated_journey_gaps[0].collected_at,
+      verification_gap: true,
     },
   }]);
 });

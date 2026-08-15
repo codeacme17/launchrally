@@ -16,12 +16,71 @@ import { executeWebBaseline } from "./check-catalog.js";
 import { collectPublicEvidence } from "./public-verification.js";
 import { executeProviderAdapters } from "./provider-adapters.js";
 import { createReportPackage } from "./reporting.js";
+import { collectTrustedAuthenticatedJourneyResults } from "./authenticated-journeys.js";
 
 export {
   EXECUTION_AUTHORITY_DESCRIPTOR_PATH,
   resolveExecutionAuthority,
 } from "./execution-authority.js";
 export { runToolchainLifecycle } from "./toolchain-lifecycle.js";
+export { runArchitectureDecisionEngine } from "./architecture-engine.js";
+export { runArchitectureJourney } from "./architecture-journey.js";
+export {
+  createHostResumeArtifact,
+  readHostResumeArtifact,
+  resumeFromHostArtifact,
+  resumeFromHostArtifactFile,
+  writeHostResumeArtifact,
+} from "./host-resume.js";
+export {
+  createArchitecturePackageBundle,
+  evaluateArchitecturePackageCurrentness,
+  persistArchitecturePackage,
+  previewArchitecturePackagePersistence,
+} from "./architecture-package.js";
+export { generateTaskGraph, mapTaskGraphExecutors } from "./task-graph.js";
+export { runHandoff } from "./handoff.js";
+export {
+  REFERENCE_INTEGRATION_FAMILIES,
+  REFERENCE_PRODUCT_SHAPES,
+  applyReferenceJourneyState,
+  createReferenceCoverageMatrix,
+  normalizeReferenceImplementation,
+  qualifyReferenceVerificationEvidence,
+  referenceIntegrationPacks,
+  referenceVerificationPayload,
+  referenceVerificationTarget,
+  runReferenceOutcomeJourney,
+} from "./reference-integration-packs.js";
+export { referenceExecutorDescriptors } from "./reference-executors.js";
+export { runReferenceHostJourney } from "./reference-journey.js";
+export {
+  CAPABILITY_CATALOG_DOMAINS,
+  buildCapabilityGraph,
+  confirmDerivedObligations,
+  createCapabilityCatalog,
+  createIntegrationContract,
+  invalidatedOutputsForCatalogUpdate,
+} from "./capability-model.js";
+export {
+  COMPOSITE_ASSURANCE_LAYERS,
+  COMPOSITE_ASSURANCE_STATES,
+  deriveArchitectureStatus,
+  deriveCompositeAssurance,
+  deriveCompositeAssuranceFromReport,
+} from "./composite-assurance.js";
+export { createRecordReference, createReportReference } from "./record-reference.js";
+export {
+  ACTIVE_VERIFICATION_RECIPES,
+  activeVerificationOutcomeCheck,
+  activeVerificationVerificationEvidence,
+  approveActiveVerification,
+  planActiveVerification,
+  reviewActiveVerificationObservation,
+} from "./active-verification.js";
+export {
+  resumeAuthenticatedJourneyFromHost,
+} from "./authenticated-journeys.js";
 
 const LOCAL_AUDIT_LIMITATIONS = Object.freeze([
   "Local Checks use only normalized, secret-safe repository facts.",
@@ -90,14 +149,31 @@ export async function createInitialSnapshot(cwd, { signal } = {}) {
   };
 }
 
-export async function runAudit(cwd, version, interactionOptions = {}, { signal } = {}) {
+export async function runAudit(cwd, version, interactionOptions = {}, dependencies = {}) {
+  const { signal } = dependencies;
   throwIfAborted(signal);
   const snapshot = await createInitialSnapshot(cwd, { signal });
   throwIfAborted(signal);
   if (!interactionOptions.resume_token) {
     return createInitialAuditInteraction(snapshot);
   }
-  const interactionResult = advanceAuditInteraction(snapshot, interactionOptions);
+  let interactionResult = advanceAuditInteraction(snapshot, interactionOptions, dependencies);
+  if (
+    interactionResult.status === "needs_input"
+    && interactionResult.request?.type === "authenticated_journey_results"
+    && interactionOptions.journey_results === undefined
+  ) {
+    const collected = await collectTrustedAuthenticatedJourneyResults(
+      dependencies,
+      interactionResult.request.plan,
+    );
+    if (collected !== undefined) {
+      interactionResult = advanceAuditInteraction(snapshot, {
+        ...interactionOptions,
+        journey_results: collected,
+      }, dependencies);
+    }
+  }
   if (interactionResult.status !== "completed") return interactionResult;
   const publicPermission = interactionResult.authorization_plan.find(
     (permission) => permission.permission_id === "public_verification",
@@ -192,5 +268,14 @@ export { runPlan } from "./planning.js";
 export { parsePublicJourneyInput } from "./public-journey.js";
 export { parsePublicTargetInput } from "./public-target.js";
 export { runProviderGuidance } from "./provider-guidance.js";
+export {
+  CORE_PROVIDER_KNOWLEDGE,
+  assessProviderKnowledge,
+  createProviderKnowledge,
+} from "./provider-knowledge.js";
+export {
+  PRODUCT_INTENT_ANALYZER_VERSION,
+  runProductIntentDiscovery,
+} from "./product-intent.js";
 export { SUPPORT_LAYER_CATEGORIES } from "./support-layers.js";
 export { runVerify } from "./verification.js";

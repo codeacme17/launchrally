@@ -245,6 +245,7 @@ const MACHINE_EVIDENCE_KINDS = new Set([
   "local_observation",
   "project_fact",
   "public_observation",
+  "authenticated_journey_machine_evidence",
   "machine_evidence",
 ]);
 

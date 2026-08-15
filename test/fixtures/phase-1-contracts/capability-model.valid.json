@@ -1,0 +1,211 @@
+{
+  "catalog": {
+    "schema_version": "launchrally.dev/capability-catalog/v1",
+    "catalog_id": "catalog_phase1",
+    "catalog_version": "1.0.0",
+    "digest": "sha256:a6a77264b87a174c66a50a44f7686130e0018645cea8110dc8b0b731dc6b6707",
+    "reviewed_at": "2026-08-13T00:00:00.000Z",
+    "domains": [
+      "runtime",
+      "identity",
+      "data",
+      "billing_entitlement",
+      "object_storage",
+      "communication",
+      "background_work",
+      "observability",
+      "analytics_privacy",
+      "dns_tls",
+      "ci_cd",
+      "secrets_configuration",
+      "backup_recovery_retention"
+    ],
+    "capabilities": [
+      {
+        "capability_id": "identity_authentication",
+        "domain": "identity",
+        "summary": "Authenticate product users.",
+        "requirement_facets": ["applicability", "environment"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["local", "provider"],
+        "evidence_facets": ["configuration", "operational", "outcome"]
+      },
+      {
+        "capability_id": "runtime_execution",
+        "domain": "runtime",
+        "summary": "Execute the product runtime.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "application_data",
+        "domain": "data",
+        "summary": "Persist application data.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "billing_entitlement",
+        "domain": "billing_entitlement",
+        "summary": "Connect billing and entitlements.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "object_storage",
+        "domain": "object_storage",
+        "summary": "Store product objects.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "communication_delivery",
+        "domain": "communication",
+        "summary": "Deliver product communications.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "background_work",
+        "domain": "background_work",
+        "summary": "Execute background work.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "operational_observability",
+        "domain": "observability",
+        "summary": "Expose operational health.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "analytics_privacy",
+        "domain": "analytics_privacy",
+        "summary": "Constrain product analytics.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "dns_tls",
+        "domain": "dns_tls",
+        "summary": "Route trusted traffic.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "ci_cd",
+        "domain": "ci_cd",
+        "summary": "Build and deliver changes.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "secrets_configuration",
+        "domain": "secrets_configuration",
+        "summary": "Supply scoped configuration.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      },
+      {
+        "capability_id": "backup_recovery_retention",
+        "domain": "backup_recovery_retention",
+        "summary": "Recover retained product state.",
+        "requirement_facets": ["applicability"],
+        "decision_facets": ["implementation_path"],
+        "implementation_facets": ["presence"],
+        "evidence_facets": ["outcome"]
+      }
+    ],
+    "provenance": {
+      "trust_tier": "core_catalog",
+      "source_refs": ["launchrally_phase1_contract"]
+    }
+  },
+  "graph": {
+    "schema_version": "launchrally.dev/capability-graph/v1",
+    "graph_id": "graph_product_01",
+    "revision": 1,
+    "environment": "production",
+    "product_intent": {
+      "id": "intent_01hphase1",
+      "schema_version": "launchrally.dev/product-intent-profile/v1",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "catalog": {
+      "id": "catalog_phase1",
+      "schema_version": "launchrally.dev/capability-catalog/v1",
+      "digest": "sha256:a6a77264b87a174c66a50a44f7686130e0018645cea8110dc8b0b731dc6b6707"
+    },
+    "nodes": [
+      {
+        "capability_id": "identity_authentication",
+        "environment": "production",
+        "release_scope": "current_release",
+        "requirement_state": "required",
+        "decision_state": "investigate",
+        "implementation_state": "unknown",
+        "evidence_state": "unverified",
+        "implementation_path": "unknown"
+      }
+    ],
+    "edges": [],
+    "derived_obligations": [
+      {
+        "obligation_id": "obligation_session_revocation",
+        "source_behavior_ids": ["customers_sign_in"],
+        "target_capability_id": "identity_authentication",
+        "state": "candidate",
+        "derivation_chain": ["customers_sign_in", "sessions_exist", "revocation_is_required"]
+      }
+    ]
+  },
+  "integration": {
+    "schema_version": "launchrally.dev/integration-contract/v1",
+    "contract_id": "integration_identity_data",
+    "contract_version": "1.0.0",
+    "environment": "production",
+    "source_capability_id": "identity_authentication",
+    "target_capability_id": "application_data",
+    "mode": "asynchronous",
+    "provider_binding": {
+      "kind": "unknown",
+      "provider_id": null
+    },
+    "semantics": {
+      "authentication": "signed_event",
+      "ordering": "per_subject",
+      "duplication": "possible",
+      "retry": "bounded_backoff",
+      "replay": "supported",
+      "idempotency": "required",
+      "eventual_consistency": "expected",
+      "failure_visibility": "dead_letter_or_equivalent",
+      "privacy": "normalized_identifiers_only",
+      "success_evidence": ["entitlement_state_observed"],
+      "invalidation_dependencies": ["identity_event_shape", "entitlement_projection"]
+    }
+  }
+}

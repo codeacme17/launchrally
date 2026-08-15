@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { isIP } from "node:net";
+import { assertValidAuthenticatedJourneyEvidence } from "@launchrally/contracts";
 
 const EXCLUSION_KEYS = [
   "ignored",
@@ -451,6 +452,13 @@ export function isSafeEvidenceArtifact(artifact) {
       && artifact.provenance.collector === "host-agent-authenticated-journey/v1"
       && artifact.provenance.exact_target === artifact.target
       && artifact.provenance.collected_at === artifact.collected_at;
+  }
+  if (artifact.kind === "authenticated_journey_machine_evidence") {
+    try {
+      return assertValidAuthenticatedJourneyEvidence(artifact);
+    } catch {
+      return false;
+    }
   }
   if (artifact.kind === "machine_evidence") {
     const provider = PROVIDERS[artifact.provider];

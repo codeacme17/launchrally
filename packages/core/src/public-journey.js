@@ -2,6 +2,14 @@ import { PROTECTED_JOURNEY_SCHEMA } from "@launchrally/contracts";
 
 const DECLARED_JOURNEY = /^([a-z]+)\s+(\/\S*)(?:\s+(?:—|-)\s+(.+))?$/iu;
 const AUTHENTICATION_CLASSES = new Set(["user", "staff", "signed_token"]);
+const PROTECTED_JOURNEY_PURPOSE = "authenticated Core Journey";
+const SAFE_PROTECTED_PATH_SEGMENTS = new Set([
+  "account", "accounts", "admin", "api", "app", "billing", "checkout",
+  "control", "dashboard", "files", "health", "home", "inbox", "me",
+  "orders", "organization", "organizations", "portal", "private", "profile",
+  "protected", "session", "settings", "staff", "status", "team", "teams",
+  "uploads", "user", "users", "v1", "v2", "v3", "workspace", "workspaces",
+]);
 
 function exactKeys(value, expected) {
   return value
@@ -40,7 +48,9 @@ function parseProtectedJourney(input) {
     schema_version: input.schema_version,
     method: typeof input.method === "string" ? input.method.toUpperCase() : "",
     path: typeof input.path === "string" ? input.path.trim() : "",
-    purpose: typeof input.purpose === "string" ? input.purpose.trim() : "",
+    purpose: typeof input.purpose === "string" && input.purpose.trim()
+      ? PROTECTED_JOURNEY_PURPOSE
+      : "",
     access: {
       authentication_class: input.access.authentication_class,
       ...(Object.hasOwn(input.access, "anonymous_status_codes")
@@ -52,13 +62,25 @@ function parseProtectedJourney(input) {
   return journey.schema_version === PROTECTED_JOURNEY_SCHEMA
     && journey.method === "GET"
     && safeJourneyPath(journey.path)
-    && journey.purpose
+    && safeProtectedJourneyPath(journey.path)
+    && journey.purpose === PROTECTED_JOURNEY_PURPOSE
     && AUTHENTICATION_CLASSES.has(journey.access.authentication_class)
     && (!Object.hasOwn(journey.access, "anonymous_status_codes")
       || statusCodes(journey.access.anonymous_status_codes, 300, 499))
     && statusCodes(journey.access.authenticated_status_codes, 200, 299)
     ? { value: journey }
     : { error: "invalid_protected_journey" };
+}
+
+function safeProtectedJourneyPath(value) {
+  if (
+    !safeJourneyPath(value)
+    || value === "/"
+    || value.endsWith("/")
+    || value.includes("%")
+  ) return false;
+  return value.split("/").filter(Boolean).every((segment) =>
+    SAFE_PROTECTED_PATH_SEGMENTS.has(segment));
 }
 
 function safeJourneyPath(journeyPath) {

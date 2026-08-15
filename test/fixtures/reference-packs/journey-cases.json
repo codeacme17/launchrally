@@ -1,0 +1,74 @@
+[
+  {
+    "case_id": "subscription_saas_complete",
+    "product_shape": "subscription_saas",
+    "integration_family": "identity_to_application_data",
+    "implementation_kind": "managed",
+    "executor_state": "available",
+    "outcome": "complete",
+    "expected_support_state": "deep"
+  },
+  {
+    "case_id": "media_async_partial",
+    "product_shape": "media_productivity_async",
+    "integration_family": "queue_background_work",
+    "implementation_kind": "managed",
+    "executor_state": "available",
+    "outcome": "partial",
+    "expected_support_state": "generic"
+  },
+  {
+    "case_id": "content_web_denied",
+    "product_shape": "content_marketing_web",
+    "integration_family": "email_to_domain_delivery",
+    "implementation_kind": "managed",
+    "executor_state": "denied",
+    "outcome": "denied",
+    "expected_support_state": "deep"
+  },
+  {
+    "case_id": "custom_web_unknown",
+    "product_shape": "custom_self_hosted_web",
+    "integration_family": "release_to_observability",
+    "implementation_kind": "unknown",
+    "executor_state": "missing",
+    "outcome": "unknown",
+    "expected_support_state": "transparent_gap"
+  },
+  {
+    "case_id": "desktop_backend_stale",
+    "product_shape": "desktop_shared_backend",
+    "integration_family": "backup_to_restore",
+    "implementation_kind": "self_hosted",
+    "executor_state": "expired",
+    "outcome": "stale",
+    "expected_support_state": "generic"
+  },
+  {
+    "case_id": "saas_active_success",
+    "product_shape": "subscription_saas",
+    "integration_family": "payment_to_entitlement",
+    "implementation_kind": "managed",
+    "executor_state": "available",
+    "outcome": "successful",
+    "expected_support_state": "generic"
+  },
+  {
+    "case_id": "async_active_failure",
+    "product_shape": "media_productivity_async",
+    "integration_family": "storage_to_metadata_access",
+    "implementation_kind": "managed",
+    "executor_state": "available",
+    "outcome": "failed",
+    "expected_support_state": "generic"
+  },
+  {
+    "case_id": "email_cleanup_failure",
+    "product_shape": "subscription_saas",
+    "integration_family": "email_to_domain_delivery",
+    "implementation_kind": "managed",
+    "executor_state": "available",
+    "outcome": "cleanup_failed",
+    "expected_support_state": "deep"
+  }
+]

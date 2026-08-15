@@ -1,0 +1,33 @@
+{
+  "schema_version": "launchrally.dev/execution-receipt/v1",
+  "receipt_id": "receipt_unsafe",
+  "handoff": {
+    "id": "handoff_01",
+    "schema_version": "launchrally.dev/handoff-package/v1",
+    "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "executor": {
+    "id": "executor_provider_config",
+    "schema_version": "launchrally.dev/executor-descriptor/v1",
+    "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "reported_at": "2026-08-13T00:02:00.000Z",
+  "task_results": [
+    {
+      "task_id": "task_configure_identity",
+      "state": "reported_succeeded",
+      "claim_codes": ["configuration_submitted"]
+    }
+  ],
+  "classification": {
+    "claim_only": false,
+    "machine_evidence": true,
+    "verification_status": "verified"
+  },
+  "retention": {
+    "raw_stdout_retained": false,
+    "raw_stderr_retained": false,
+    "response_body_retained": false,
+    "sensitive_data_retained": false
+  }
+}

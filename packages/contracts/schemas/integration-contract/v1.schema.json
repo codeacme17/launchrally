@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/integration-contract/v1",
+  "$ref": "../phase-1/v1.schema.json#/$defs/integrationContract",
+  "x-launchrally-contract-major": 1
+}

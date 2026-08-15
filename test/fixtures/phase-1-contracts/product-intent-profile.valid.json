@@ -1,0 +1,42 @@
+{
+  "schema_version": "launchrally.dev/product-intent-profile/v1",
+  "profile_id": "intent_01hphase1",
+  "revision": 1,
+  "environment": "production",
+  "created_at": "2026-08-13T00:00:00.000Z",
+  "desired_intent": {
+    "confirmation": "confirmed",
+    "behaviors": ["customers_sign_in"],
+    "hard_constraints": ["data_residency_eu"],
+    "preferences": ["managed_operations"]
+  },
+  "observed_implementation": [
+    {
+      "fact_id": "fact_identity_dependency",
+      "summary": "An identity dependency is declared.",
+      "confidence": "observed"
+    }
+  ],
+  "provenance": [
+    {
+      "source_id": "source_package_manifest",
+      "source_class": "package_manifest",
+      "path": "package.json",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "permission": "local_safe_scan"
+    }
+  ],
+  "coverage": {
+    "state": "partial",
+    "supported_sources": ["package_manifest"],
+    "excluded_sources": ["application_source"],
+    "negative_findings_allowed": false
+  },
+  "conflicts": [],
+  "unknowns": ["identity_provider_selection"],
+  "retention": {
+    "raw_source_retained": false,
+    "provider_output_retained": false,
+    "sensitive_data_retained": false
+  }
+}

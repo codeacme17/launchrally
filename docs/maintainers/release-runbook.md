@@ -45,17 +45,29 @@ npm ci --ignore-scripts
 npm run build
 git diff --exit-code
 npm test
-npm run validate:acceptance -- --require-release-ready
+npm run validate:acceptance
 npm run validate:p0
+npm run validate:p1 -- --require-publish-ready
 npm run validate:release
+npm run test:p1-exact-artifacts
+node scripts/verify-experimental-release.mjs --phase candidate --json
 ```
+
+The P1 exact-artifact result must name all five Product journeys, all eight
+Integration families and their digest-bound fresh-Verify outcomes, both typed
+Host journeys and their native validation/installation commands, successful
+plus interrupted P0-to-P1 adoption, the authority/interruption scenario roster,
+and the environment-bound downstream outcomes. CI and the
+release workflow pass an exact matrix target to the artifact runner; a target
+that does not match the actual OS, Node major, and shell fails before packing.
+This gate does not satisfy the separate public external-verification gate.
 
 Create a protected annotated tag on that exact `main` commit and push only the
 tag:
 
 ```bash
-git tag --annotate v0.3.1 <approved-main-sha> --message "LaunchRally 0.3.1 Experimental"
-git push origin v0.3.1
+git tag --annotate v0.4.0 <approved-main-sha> --message "LaunchRally 0.4.0 Phase 1 Experimental"
+git push origin v0.4.0
 ```
 
 The release workflow independently rejects a lightweight tag, a tag whose
@@ -81,8 +93,18 @@ that every new page shows its package-specific README and keywords during the
 public smoke check; source changes alone do not update the registry pages.
 
 Attach the successful workflow URL, five public package URLs, attestation
-result, exact CLI result, and both Plugin results to issue #40. Only then may
-the phase tracker mark Product Complete and the Experimental P0 release.
+result, exact CLI result, and both Plugin results to issue #141. Keep Phase 1
+Incomplete, Experimental, and Not Validated until those external results have
+been independently reviewed and merged into the P1 evidence and governance
+records. Publication never moves npm `latest`; Phase 0 Stable 0.3.2 remains
+independently supported.
+
+The workflow's public smoke proves installation and typed packaged behavior;
+it does not claim model-driven Agent execution. After publication, complete
+the separate [Phase 1 external verification
+procedure](p1-external-verification.md) in clean Codex and Claude hosts. That
+procedure is the only path to completing `p1_external_verification` and must
+remain pending if either native Agent journey is unavailable or inconclusive.
 
 ## 4. Partial publication
 

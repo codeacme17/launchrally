@@ -29,6 +29,10 @@ import {
 
 import { PROVIDER_DECISION_CARDS } from "./provider-decision-cards.js";
 import {
+  CORE_PROVIDER_KNOWLEDGE,
+  assessProviderKnowledge,
+} from "./provider-knowledge.js";
+import {
   MANIFEST_RELATIVE_PATH,
   parseManifest,
   serializeManifest,
@@ -300,30 +304,60 @@ function explainCard(card, constraints) {
   return { card: structuredClone(card), reasons, limits };
 }
 
-function shortlistFor(state) {
-  return PROVIDER_DECISION_CARDS
-    .filter((card) => card.capability_scope.id === state.capability_id)
-    .filter((card) =>
+function assessmentDate(dependencies) {
+  const now = dependencies.now ? dependencies.now() : new Date();
+  return now.toISOString().slice(0, 10);
+}
+
+function assessedCards(state, dependencies) {
+  return assessProviderKnowledge(
+    Object.hasOwn(dependencies, "provider_knowledge")
+      ? dependencies.provider_knowledge
+      : state.provider_knowledge ?? [CORE_PROVIDER_KNOWLEDGE],
+    {
+      capability_id: state.capability_id,
+      environment: state.intended_environment,
+      region: state.constraints.region,
+    },
+    {
+      as_of: assessmentDate(dependencies),
+      reviewed_extensions: Object.hasOwn(dependencies, "reviewed_extensions")
+        ? dependencies.reviewed_extensions
+        : state.reviewed_extensions ?? [],
+    },
+  );
+}
+
+function shortlistFor(state, dependencies) {
+  const assessment = assessedCards(state, dependencies);
+  const shortlist = assessment.recommendations
+    .filter(({ card }) => card.capability_scope.id === state.capability_id)
+    .filter(({ card }) =>
       card.constraints.budgets.includes(state.constraints.budget)
       && card.constraints.scales.includes(state.constraints.scale)
       && OPERATIONAL_ABILITY_RANK[state.constraints.operational_ability]
         >= OPERATIONAL_ABILITY_RANK[card.constraints.minimum_operational_ability],
     )
-    .filter((card) => card.compatibility.region_signals.includes(state.constraints.region))
-    .filter((card) => state.constraints.existing_stack.every((item) =>
+    .filter(({ card }) => card.compatibility.region_signals.includes(state.constraints.region))
+    .filter(({ card }) => state.constraints.existing_stack.every((item) =>
       card.compatibility.stack_signals.includes(item)))
-    .filter((card) => state.constraints.lock_in_preference !== "minimize"
+    .filter(({ card }) => state.constraints.lock_in_preference !== "minimize"
       || card.lock_in.level === "low")
-    .filter((card) => state.constraints.lock_in_preference !== "balanced"
+    .filter(({ card }) => state.constraints.lock_in_preference !== "balanced"
       || card.lock_in.level !== "high")
-    .filter((card) => state.trigger_kind !== "confirmed_constraint_mismatch"
+    .filter(({ card }) => state.trigger_kind !== "confirmed_constraint_mismatch"
       || card.provider.id !== state.current_provider_id)
-    .sort((left, right) => left.card_id.localeCompare(right.card_id))
-    .map((card) => explainCard(card, state.constraints));
+    .sort((left, right) => left.card.card_id.localeCompare(right.card.card_id))
+    .map(({ card, knowledge_ref: knowledgeRef }) => ({
+      knowledge_ref: structuredClone(knowledgeRef),
+      ...explainCard(card, state.constraints),
+    }));
+  return { assessment, shortlist };
 }
 
-function confirmedMismatches(state) {
-  const current = PROVIDER_DECISION_CARDS.find((card) =>
+function confirmedMismatches(state, dependencies) {
+  const assessment = assessedCards(state, dependencies);
+  const current = assessment.recommendations.map(({ card }) => card).find((card) =>
     card.provider.id === state.current_provider_id
     && card.capability_scope.id === state.capability_id,
   );
@@ -349,8 +383,8 @@ function confirmedMismatches(state) {
   return mismatches;
 }
 
-async function selectionRequest(state, statePath, token) {
-  const shortlist = shortlistFor(state);
+async function selectionRequest(state, statePath, token, dependencies) {
+  const { assessment, shortlist } = shortlistFor(state, dependencies);
   if (shortlist.length === 0) {
     await rm(path.dirname(statePath), { recursive: true, force: true });
     return guidanceResult("completed", {
@@ -359,11 +393,13 @@ async function selectionRequest(state, statePath, token) {
       trigger: triggerFrom(state),
       constraints: { ...structuredClone(state.constraints), confirmed: true },
       information_boundary: { brands_disclosed: false },
+      provider_verification_gaps: assessment.provider_verification_gaps,
       manifest_intent_changed: false,
       message: "No current Decision Card satisfies the confirmed hard constraints; no Provider was recommended.",
     });
   }
   state.shortlist_card_ids = shortlist.map(({ card }) => card.card_id);
+  state.shortlist = structuredClone(shortlist);
   await saveState(statePath, state);
   return guidanceResult("needs_input", {
     source_report_id: state.source_report_id,
@@ -371,6 +407,7 @@ async function selectionRequest(state, statePath, token) {
     constraints: { ...structuredClone(state.constraints), confirmed: true },
     information_boundary: { brands_disclosed: true },
     shortlist,
+    provider_verification_gaps: assessment.provider_verification_gaps,
     guidance: {
       advisory: true,
       universal_best_claimed: false,
@@ -465,8 +502,9 @@ async function readManifest(root) {
   }
 }
 
-function selectedProvider(card) {
+function selectedProvider(card, knowledgeRef) {
   return {
+    knowledge_ref: structuredClone(knowledgeRef),
     card_id: card.card_id,
     provider_id: card.provider.id,
     provider_name: card.provider.name,
@@ -483,7 +521,7 @@ function classification() {
   };
 }
 
-function manifestWithSelection(manifest, card, sourceReportId) {
+function manifestWithSelection(manifest, card, knowledgeRef, sourceReportId) {
   const role = card.capability_scope.provider_role;
   const existing = manifest.providers.roles.state === "declared"
     ? manifest.providers.roles.value
@@ -501,6 +539,7 @@ function manifestWithSelection(manifest, card, sourceReportId) {
     source_report_id: sourceReportId,
     card_id: card.card_id,
     card_version: card.card_version,
+    knowledge_ref: structuredClone(knowledgeRef),
     capability_id: card.capability_scope.id,
     provider: card.provider.id,
     role,
@@ -520,16 +559,30 @@ function manifestError(error) {
   });
 }
 
-async function previewSelection(state, statePath, token, selection) {
-  const card = PROVIDER_DECISION_CARDS.find((candidate) =>
-    candidate.card_id === selection
-    && candidate.capability_scope.id === state.capability_id
-    && state.shortlist_card_ids?.includes(candidate.card_id),
-  );
+function currentShortlistItem(state, selection, dependencies) {
+  const saved = state.shortlist?.find(({ card }) =>
+    card.card_id === selection
+    && card.capability_scope.id === state.capability_id
+    && state.shortlist_card_ids?.includes(card.card_id));
+  const assessment = assessedCards(state, dependencies);
+  const current = assessment.recommendations.find(({ card, knowledge_ref: knowledgeRef }) =>
+    card.card_id === selection
+    && JSON.stringify(knowledgeRef) === JSON.stringify(saved?.knowledge_ref));
+  return { assessment, item: saved && current ? saved : null };
+}
+
+async function previewSelection(state, statePath, token, selection, dependencies) {
+  const { assessment, item } = currentShortlistItem(state, selection, dependencies);
+  const card = item?.card;
   if (!card) {
     return result("execution_error", {
-      error: "invalid_provider_selection",
-      message: "Select one of the Provider Decision Cards in the confirmed shortlist.",
+      error: state.shortlist_card_ids?.includes(selection)
+        ? "provider_knowledge_changed_after_shortlist"
+        : "invalid_provider_selection",
+      provider_verification_gaps: assessment.provider_verification_gaps,
+      message: state.shortlist_card_ids?.includes(selection)
+        ? "Provider Knowledge changed or expired after the shortlist; start guidance again."
+        : "Select one of the Provider Decision Cards in the confirmed shortlist.",
     });
   }
   let current;
@@ -545,10 +598,15 @@ async function previewSelection(state, statePath, token, selection) {
     }
     return manifestError(error);
   }
-  const updated = manifestWithSelection(current.manifest, card, state.source_report_id);
+  const updated = manifestWithSelection(
+    current.manifest,
+    card,
+    item.knowledge_ref,
+    state.source_report_id,
+  );
   const after = serializeManifest(updated);
   state.step = "selection_confirmation";
-  state.selection = selectedProvider(card);
+  state.selection = selectedProvider(card, item.knowledge_ref);
   state.manifest_before_digest = digest(current.content);
   state.manifest_after = after;
   await saveState(statePath, state);
@@ -740,18 +798,33 @@ async function writeConfirmedManifest(state, dependencies = {}) {
         message: "The Launch Manifest changed after preview; start Provider guidance again.",
       });
     }
-    const card = PROVIDER_DECISION_CARDS.find((candidate) =>
-      candidate.card_id === state.selection?.card_id
-      && state.shortlist_card_ids?.includes(candidate.card_id),
+    const currentItem = currentShortlistItem(
+      state,
+      state.selection?.card_id,
+      dependencies,
     );
-    if (!card || JSON.stringify(selectedProvider(card)) !== JSON.stringify(state.selection)) {
+    const card = currentItem.item?.card;
+    if (!card) {
+      return result("execution_error", {
+        error: "provider_knowledge_changed_after_preview",
+        provider_verification_gaps: currentItem.assessment.provider_verification_gaps,
+        message: "Provider Knowledge changed or expired after preview; start guidance again.",
+      });
+    }
+    if (JSON.stringify(selectedProvider(card, currentItem.item.knowledge_ref))
+      !== JSON.stringify(state.selection)) {
       return result("execution_error", {
         error: "invalid_interaction_state",
         message: "The Provider selection preview is invalid; start Provider guidance again.",
       });
     }
     const expectedAfter = serializeManifest(
-      manifestWithSelection(current.manifest, card, state.source_report_id),
+      manifestWithSelection(
+        current.manifest,
+        card,
+        currentItem.item.knowledge_ref,
+        state.source_report_id,
+      ),
     );
     if (state.manifest_after !== expectedAfter) {
       return result("execution_error", {
@@ -889,7 +962,13 @@ async function resumeGuidance(cwd, options, dependencies) {
         message: "Provider guidance was cancelled without a selection or Manifest change.",
       });
     }
-    return previewSelection(state, statePath, options.resume_token, options.selection);
+    return previewSelection(
+      state,
+      statePath,
+      options.resume_token,
+      options.selection,
+      dependencies,
+    );
   }
   if (state.step === "selection_confirmation") {
     return confirmSelection(state, statePath, options, dependencies);
@@ -928,7 +1007,7 @@ async function resumeGuidance(cwd, options, dependencies) {
       });
     }
     if (state.trigger_kind === "constraint_mismatch_candidate") {
-      state.mismatch_constraint_ids = confirmedMismatches(state);
+      state.mismatch_constraint_ids = confirmedMismatches(state, dependencies);
       if (state.mismatch_constraint_ids.length === 0) {
         await rm(path.dirname(statePath), { recursive: true, force: true });
         return guidanceResult("completed", {
@@ -943,7 +1022,7 @@ async function resumeGuidance(cwd, options, dependencies) {
       state.trigger_kind = "confirmed_constraint_mismatch";
     }
     state.step = "selection";
-    return selectionRequest(state, statePath, options.resume_token);
+    return selectionRequest(state, statePath, options.resume_token, dependencies);
   }
   if (state.step !== "constraints") {
     return result("execution_error", {
@@ -1042,10 +1121,6 @@ export async function runProviderGuidance(cwd, reportPackage, options = {}, depe
     (entry) => entry.role === providerRole,
   );
   const roleCapabilityId = CAPABILITY_BY_ROLE[providerRole];
-  const currentCard = PROVIDER_DECISION_CARDS.find((card) =>
-    card.provider.id === currentProvider?.provider
-    && card.capability_scope.id === roleCapabilityId,
-  );
   const sourceAction = report.results.action_queue.find(
     (action) => action.check_id === source?.check_id,
   );
@@ -1065,8 +1140,7 @@ export async function runProviderGuidance(cwd, reportPackage, options = {}, depe
     && sourceAction.gating === source.gating;
   const mismatchCandidate = !options.source_check_id
     && currentProvider
-    && roleCapabilityId
-    && currentCard;
+    && roleCapabilityId;
   if (!evidencedGap && !mismatchCandidate) {
     return result("unavailable", {
       reason: "evidenced_capability_gap_required",
@@ -1093,6 +1167,11 @@ export async function runProviderGuidance(cwd, reportPackage, options = {}, depe
         current_provider_role: currentProvider.role,
       }),
     capability_id: evidencedGap ? capabilityId : roleCapabilityId,
+    intended_environment: report.scope.release_intent.intended_environment,
+    provider_knowledge: structuredClone(
+      dependencies.provider_knowledge ?? [CORE_PROVIDER_KNOWLEDGE],
+    ),
+    reviewed_extensions: structuredClone(dependencies.reviewed_extensions ?? []),
     step: "constraints",
   };
   return guidanceResult("needs_input", {

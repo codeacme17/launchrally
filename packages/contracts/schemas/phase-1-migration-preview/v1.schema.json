@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/phase-1-migration-preview/v1",
+  "title": "LaunchRally Phase 1 Migration Preview v1",
+  "type": "object",
+  "required": ["schema_version", "migration", "files", "preserved_paths"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/phase-1-migration-preview/v1" },
+    "migration": { "const": "additive" },
+    "files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "preserved_paths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 3,
+      "maxItems": 3
+    }
+  },
+  "additionalProperties": false,
+  "x-launchrally-contract-major": 1
+}

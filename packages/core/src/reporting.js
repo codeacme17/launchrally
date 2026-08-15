@@ -70,7 +70,10 @@ function evidenceMetadata(evidence, createdAt) {
       redaction_state: "normalized",
     };
   }
-  if (evidence.kind === "authenticated_journey_observation") {
+  if ([
+    "authenticated_journey_observation",
+    "authenticated_journey_machine_evidence",
+  ].includes(evidence.kind)) {
     return {
       source: evidence.provenance.collector,
       target: evidence.provenance.exact_target,
@@ -129,7 +132,7 @@ function evidenceMetadata(evidence, createdAt) {
   throw error;
 }
 
-function createEvidenceRegistry({ reportId, createdAt, id, repositoryDigests }) {
+function createEvidenceRegistry({ reportId, createdAt, environment, id, repositoryDigests }) {
   const byDigest = new Map();
 
   function reference(evidence) {
@@ -144,6 +147,7 @@ function createEvidenceRegistry({ reportId, createdAt, id, repositoryDigests }) 
         digest: artifactDigest,
         evidence_kind: evidence.kind,
         ...evidenceMetadata(evidence, createdAt),
+        environment,
         normalized_artifact: normalizedArtifact,
       });
     }
@@ -420,6 +424,7 @@ export function createReportPackage({
   const evidenceRegistry = createEvidenceRegistry({
     reportId,
     createdAt,
+    environment: audit_brief.intended_environment.value,
     id,
     repositoryDigests: repository_digests,
   });
@@ -510,6 +515,7 @@ export function createReportPackage({
       checks: reportChecks,
       public_evidence_refs: publicEvidenceRefs,
       authenticated_journey_evidence_refs: authenticatedJourneyEvidenceRefs,
+      authenticated_journey_gaps: structuredClone(authenticated_result.verification_gaps),
       provider_evidence_refs: providerEvidenceRefs,
       provider_tool_recoveries: structuredClone(
         provider_result.provider_tool_recoveries ?? [],

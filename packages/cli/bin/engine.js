@@ -3,6 +3,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { createInterface } from "node:readline/promises";
 
 import {
   CLI_INTERACTION_CONTRACT,
@@ -13,7 +14,10 @@ import {
   environmentTargetLabel,
   reviewedEnvironmentLabel,
   resolveExecutionAuthority,
+  persistArchitecturePackage,
   runAudit,
+  runArchitectureJourney,
+  runHandoff,
   runInit,
   runPlan,
   runProviderGuidance,
@@ -31,6 +35,7 @@ import {
   optionValue as argumentValue,
 } from "./cli-arguments.js";
 import { inspectReportDestination } from "./report-destination.js";
+import { normalizeArchitectAnswer, runHumanArchitect } from "./human-architect.js";
 import { createSystemFilePicker } from "./system-file-picker.js";
 import { consumeInvocationContext, renderCommand } from "./invocation-context.js";
 import { VERSION } from "./version.js";
@@ -246,6 +251,18 @@ function renderHumanPlan(value) {
       `  Next: ${gap.next_action}`,
     );
   }
+  if (value.task_graph) {
+    lines.push(
+      "",
+      "Provider-neutral Task Graph",
+      `Currentness: ${value.task_graph.currentness.state}`,
+      `Tasks: ${value.task_graph.tasks.length}`,
+      `Ready frontier: ${value.task_graph.ready_frontier.join(", ") || "none"}`,
+      ...value.task_graph.tasks.map((task) =>
+        `- ${task.task_id} [${task.status}] ${task.source}:${task.source_id} — ${task.effect_class} on ${task.expected_target}`),
+      "Executor selection and write authority are not granted by planning.",
+    );
+  }
   if (value.handoff) {
     lines.push(
       "",
@@ -258,6 +275,44 @@ function renderHumanPlan(value) {
     );
   }
   lines.push("", value.next.message);
+  return lines.join("\n");
+}
+
+function renderHumanHandoff(value) {
+  const lines = [
+    "LaunchRally External Executor Handoff",
+    `State: ${value.state}`,
+    "LaunchRally does not install, log in, request credentials, or execute the external Task.",
+  ];
+  if (value.candidates?.length > 0) {
+    lines.push(
+      "Compatible authority batches:",
+      ...value.candidates.map((candidate) =>
+        `- ${candidate.batch_id}: ${candidate.executor_id}; ${candidate.effect_class} on ${candidate.target}; tools ${candidate.tools.map(({ executable, exact_version: version }) => `${executable}@${version}`).join(", ")}; authentication ${candidate.authentication_state} (${candidate.auth_assumptions.join(", ")}); secret handling ${candidate.secret_handling}; cancellation ${candidate.cancellation}; partial failure ${candidate.partial_failure}; ${candidate.available ? "available" : "unavailable"}${candidate.recommended ? "; recommended narrowest match" : ""}`),
+    );
+  }
+  if (value.handoff_package) {
+    lines.push(
+      `Handoff Package: ${value.handoff_package.handoff_id}`,
+      `Approval: ${value.handoff_package.approval.state}`,
+      `Cancellation: ${value.handoff_package.authority_batch.coordination.cancellation}`,
+      `Partial failure: ${value.handoff_package.authority_batch.coordination.partial_failure}`,
+      `Authentication: ${value.handoff_package.authority_batch.executor_requirements.authentication_state} (${value.handoff_package.authority_batch.executor_requirements.auth_assumptions.join(", ")})`,
+      `Secret handling: ${value.handoff_package.authority_batch.executor_requirements.secret_handling}`,
+      ...value.handoff_package.authority_batch.user_visible_effects.map((effect) =>
+        `- ${effect}`),
+    );
+  }
+  if (value.recovery) {
+    lines.push(
+      `Missing tool: ${value.recovery.tool.executable}@${value.recovery.tool.exact_version}`,
+      `Official manual: ${value.recovery.official_manual.url}`,
+      ...value.recovery.installation_instructions.map(({ command }) =>
+        `User-managed command (not executed): ${[command.executable, ...command.arguments].join(" ")}`),
+    );
+  }
+  if (value.request?.choices) lines.push(`Choices: ${value.request.choices.join(", ")}`);
+  if (value.resume_token) lines.push(`Resume token: ${value.resume_token}`);
   return lines.join("\n");
 }
 
@@ -467,6 +522,11 @@ function print(value) {
     return;
   }
 
+  if (value.operation === "handoff" && value.status !== "execution_error") {
+    process.stdout.write(`${renderHumanHandoff(value)}\n`);
+    return;
+  }
+
   if (
     value.operation === "providers"
     && ["needs_input", "needs_confirmation", "completed"].includes(value.status)
@@ -516,7 +576,7 @@ function help() {
     status: "completed",
     operation: "help",
     commands: {
-      core: ["audit", "init", "plan", "verify"],
+      core: ["audit", "architect", "architecture-package", "handoff", "init", "plan", "verify"],
       bootstrap: [
         "toolchain status",
         "toolchain restore",
@@ -530,8 +590,12 @@ function help() {
       "",
       "Core commands:",
       "  audit    Build, confirm, authorize, and run a local-first Web Audit",
+      "  architect Build and independently confirm a whole-product Architecture Blueprint",
+      "            --desktop-shared-backend-capabilities <json-array> records the reviewed desktop topology while excluding distribution readiness",
+      "  architecture-package Preview or persist a confirmed immutable Architecture Package",
+      "  handoff  Discover, preview, and confirm bounded external Executor authority",
       "  init     Preview and confirm local adoption after a complete Audit Report",
-      "  plan     Build a deterministic read-only Launch Plan from a current Report",
+      "  plan     Build a deterministic read-only Launch Plan and optional Task Graph",
       "  verify   Recollect fresh Evidence for full or targeted verification",
       "",
       "Project Toolchain bootstrap commands:",
@@ -715,6 +779,144 @@ async function main() {
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
   }
 
+  if (command === "architect") {
+    const cwd = optionValue("--cwd") ?? process.cwd();
+    const fileOptions = [
+      ["report_package", "--report"],
+      ["product_intent", "--intent"],
+      ["catalog", "--catalog"],
+      ["capability_graph", "--graph"],
+      ["integration_contracts", "--integrations"],
+    ];
+    const source = {};
+    try {
+      for (const [field, option] of fileOptions) {
+        const file = optionValue(option);
+        if (file) source[field] = JSON.parse(await readFile(file, "utf8"));
+      }
+    } catch {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "architect",
+        error: "invalid_architecture_input_file",
+        message: "An Architecture source file could not be read and parsed.",
+      });
+      return 2;
+    }
+    const alternatives = jsonOption("--alternatives");
+    const desktopSharedBackend = jsonOption("--desktop-shared-backend-capabilities");
+    const decisionResponses = jsonOption("--decisions");
+    if (alternatives.error || desktopSharedBackend.error || decisionResponses.error) {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "architect",
+        error: "invalid_option_json",
+        message: "Architecture alternatives and decision responses must use valid JSON.",
+      });
+      return 2;
+    }
+    if (alternatives.value !== undefined) source.alternatives = alternatives.value;
+    if (!json) {
+      if (process.stdin.isTTY !== true) {
+        process.stderr.write([
+          "Non-TTY Human Mode cannot confirm Architecture decisions safely.",
+          "Use rally architect --json for the resumable Agent/CI protocol.",
+        ].join("\n") + "\n");
+        return 2;
+      }
+      const readline = createInterface({ input: process.stdin, output: process.stderr });
+      const choose = async (message) => {
+        while (true) {
+          const answer = normalizeArchitectAnswer(
+            await readline.question(`${message} [y/n/cancel] `),
+          );
+          if (answer) return answer;
+        }
+      };
+      try {
+        const result = await runHumanArchitect({
+          cwd,
+          source,
+          reviewDate: optionValue("--review-date"),
+          desktopSharedBackendCapabilityIds: desktopSharedBackend.value,
+          runArchitect: runArchitectureJourney,
+          prompt: {
+            async confirmMigration(preview) {
+              process.stdout.write(`${JSON.stringify(preview, null, 2)}\n`);
+              return choose("Adopt additive Phase 1 local records while preserving Phase 0 history?");
+            },
+            async confirmBlueprint(blueprint) {
+              process.stdout.write(`${JSON.stringify(blueprint, null, 2)}\n`);
+              return choose("Confirm this whole-product Blueprint?");
+            },
+            async reviewDecision(decision) {
+              process.stdout.write(`${JSON.stringify(decision, null, 2)}\n`);
+              return choose(`Confirm decision ${decision.decision_id}?`);
+            },
+          },
+        });
+        print(result);
+        return ["unavailable", "execution_error", "stale_input"].includes(result.status) ? 2 : 0;
+      } finally {
+        readline.close();
+      }
+    }
+    const result = await runArchitectureJourney(cwd, source, {
+      review_date: optionValue("--review-date"),
+      launcher_version: VERSION,
+      resume_token: optionValue("--resume"),
+      migration_confirmation: optionValue("--confirm"),
+      blueprint_confirmation: optionValue("--confirm"),
+      decision_responses: decisionResponses.value,
+      desktop_shared_backend_capability_ids: desktopSharedBackend.value,
+    });
+    print(result);
+    return ["unavailable", "execution_error", "stale_input"].includes(result.status) ? 2 : 0;
+  }
+
+  if (command === "architecture-package") {
+    const cwd = optionValue("--cwd") ?? process.cwd();
+    const packagePath = optionValue("--package");
+    let architecturePackage;
+    try {
+      architecturePackage = JSON.parse(await readFile(packagePath, "utf8"));
+    } catch {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "architecture-package",
+        error: "invalid_architecture_package_file",
+        message: "The Architecture Package bundle could not be read and parsed.",
+      });
+      return 2;
+    }
+    try {
+      const persistence = await persistArchitecturePackage(cwd, architecturePackage, {
+        output_path: optionValue("--output"),
+        confirmation: optionValue("--confirm"),
+        resume_token: optionValue("--resume"),
+        launcher_version: VERSION,
+      });
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        operation: "architecture-package",
+        ...persistence,
+      });
+      return ["completed", "needs_confirmation"].includes(persistence.status) ? 0 : 1;
+    } catch (error) {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "architecture-package",
+        error: error.code ?? "architecture_package_persistence_failed",
+        message: error.message,
+      });
+      return 2;
+    }
+  }
+
   if (command === "toolchain") {
     const toolchainIndex = args.indexOf("toolchain");
     const operation = args[toolchainIndex + 1];
@@ -752,12 +954,126 @@ async function main() {
         return 2;
       }
     }
-    const result = runPlan(reportPackage, {
-      cwd,
-      handoff_requested: args.includes("--handoff"),
-    });
+    let architectureBundle;
+    let previousTaskGraph;
+    for (const [option, target, error] of [
+      ["--architecture-package", "architecture", "invalid_architecture_package_file"],
+      ["--task-graph", "task_graph", "invalid_task_graph_file"],
+    ]) {
+      const selectedPath = optionValue(option);
+      if (!selectedPath) {
+        if (args.includes(option)) {
+          print({
+            contract: CLI_INTERACTION_CONTRACT,
+            status: "execution_error",
+            operation: "plan",
+            error,
+            message: `Plan ${option} requires a readable JSON file.`,
+          });
+          return 2;
+        }
+        continue;
+      }
+      try {
+        const value = JSON.parse(await readFile(selectedPath, "utf8"));
+        if (target === "architecture") architectureBundle = value;
+        else previousTaskGraph = value;
+      } catch {
+        print({
+          contract: CLI_INTERACTION_CONTRACT,
+          status: "execution_error",
+          operation: "plan",
+          error,
+          message: `Plan ${option} could not be read and parsed.`,
+        });
+        return 2;
+      }
+    }
+    const taskUpdates = jsonOption("--task-updates");
+    if (taskUpdates.error) {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "plan",
+        error: "invalid_task_updates",
+        message: "Plan Task updates must use valid JSON.",
+      });
+      return 2;
+    }
+    let result;
+    try {
+      result = runPlan(reportPackage, {
+        cwd,
+        handoff_requested: args.includes("--handoff"),
+        ...(architectureBundle ? { architecture_bundle: architectureBundle } : {}),
+        ...(previousTaskGraph ? { previous_task_graph: previousTaskGraph } : {}),
+        ...(taskUpdates.value ? { task_updates: taskUpdates.value } : {}),
+      });
+    } catch (error) {
+      result = {
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "plan",
+        error: error.code ?? "task_graph_generation_failed",
+        message: error.message,
+      };
+    }
     print(result);
     return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+  }
+
+  if (command === "handoff") {
+    const resumeToken = optionValue("--resume");
+    const source = {};
+    const files = [
+      ["task_graph", "--task-graph"],
+      ["executor_descriptors", "--executors"],
+      ["tool_observations", "--tools"],
+      ["reviewed_executors", "--reviewed-executors"],
+    ];
+    try {
+      if (!resumeToken) {
+        for (const [field, option] of files) {
+          const file = optionValue(option);
+          if (!file) throw new Error("missing_handoff_input");
+          source[field] = JSON.parse(await readFile(file, "utf8"));
+        }
+      }
+    } catch {
+      print({
+        contract: CLI_INTERACTION_CONTRACT,
+        status: "execution_error",
+        operation: "handoff",
+        error: "invalid_handoff_input_file",
+        message: "Handoff requires readable Task Graph, Executor, tool, and review JSON files.",
+      });
+      return 2;
+    }
+    let receipt;
+    const receiptPath = optionValue("--receipt");
+    if (receiptPath) {
+      try {
+        receipt = JSON.parse(await readFile(receiptPath, "utf8"));
+      } catch {
+        print({
+          contract: CLI_INTERACTION_CONTRACT,
+          status: "execution_error",
+          operation: "handoff",
+          error: "invalid_execution_receipt_file",
+          message: "The execution receipt JSON could not be read and parsed.",
+        });
+        return 2;
+      }
+    }
+    const result = await runHandoff(source, {
+      resume_token: resumeToken,
+      selection: optionValue("--select"),
+      confirmation: optionValue("--confirm"),
+      choice: optionValue("--choice"),
+      receipt,
+    });
+    print(result);
+    return ["unavailable", "execution_error", "stale_input"].includes(result.status) ? 2 : 0;
   }
 
   if (command === "providers") {

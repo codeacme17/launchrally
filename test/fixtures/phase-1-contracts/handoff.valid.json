@@ -1,0 +1,183 @@
+{
+  "task_graph": {
+    "schema_version": "launchrally.dev/task-graph/v1",
+    "graph_id": "task_graph_01",
+    "revision": 1,
+    "environment": "production",
+    "source_report": {
+      "id": "report_task_graph_01",
+      "schema_version": "launchrally.dev/report/v2",
+      "digest": "sha256:26a4de50fd022ac618a2ae2b261517c90d3d74213f54156c0da8fa3a76bc4a9c"
+    },
+    "architecture_record": {
+      "id": "architecture_record_01",
+      "schema_version": "launchrally.dev/architecture-record/v1",
+      "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "currentness": {
+      "state": "current",
+      "reasons": []
+    },
+    "tasks": [
+      {
+        "task_id": "task_configure_identity",
+        "task_type": "configure_capability",
+        "source": "architecture_decision",
+        "source_id": "decision_identity",
+        "environment": "production",
+        "prerequisites": [],
+        "effect_class": "provider_configuration",
+        "expected_target": "identity_authentication",
+        "allowed_effects": ["provider_configuration_write"],
+        "prohibited_effects": ["credential_persistence", "deployment_write", "production_data_write", "source_write"],
+        "recovery_notes": ["Inspect the Provider audit log before retrying."],
+        "minimum_executor_capability": "provider_configuration_v1",
+        "structured_result_schema": "launchrally.dev/execution-receipt/v1",
+        "evidence_targets": ["identity_configuration"],
+        "follow_up_verify": {
+          "operation": "verify",
+          "scope": "identity_authentication",
+          "fresh_evidence_required": true
+        },
+        "cancellation_behavior": "stop_before_next_effect",
+        "status": "not_started"
+      },
+      {
+        "task_id": "task_verify_identity",
+        "task_type": "verify_capability",
+        "source": "verification_gap",
+        "source_id": "identity_configuration_gap",
+        "environment": "production",
+        "prerequisites": ["task_configure_identity"],
+        "effect_class": "read_only",
+        "expected_target": "identity_authentication",
+        "allowed_effects": ["provider_configuration_read"],
+        "prohibited_effects": ["credential_persistence", "deployment_write", "production_data_write", "provider_configuration_write", "source_write"],
+        "recovery_notes": ["Leave the gap unverified when access is denied."],
+        "minimum_executor_capability": "provider_read_v1",
+        "structured_result_schema": "launchrally.dev/active-verification-result/v1",
+        "evidence_targets": ["identity_configuration"],
+        "follow_up_verify": {
+          "operation": "verify",
+          "scope": "identity_authentication",
+          "fresh_evidence_required": true
+        },
+        "cancellation_behavior": "preserve_completed_prerequisites",
+        "status": "blocked"
+      }
+    ],
+    "ready_frontier": ["task_configure_identity"]
+  },
+  "executor": {
+    "schema_version": "launchrally.dev/executor-descriptor/v1",
+    "descriptor_id": "executor_provider_config",
+    "descriptor_version": "1.0.0",
+    "executor_name": "Example configuration executor",
+    "supported_task_types": ["configure_capability"],
+    "contract_versions": ["launchrally.dev/handoff-package/v1", "launchrally.dev/execution-receipt/v1"],
+    "platforms": ["darwin-arm64", "linux-x64"],
+    "environments": ["production", "staging"],
+    "tools": [{
+      "tool_id": "codex_cli",
+      "executable": "codex",
+      "exact_version": "0.147.0",
+      "installation_authority_id": "authority_codex_cli_v1"
+    }],
+    "auth_assumptions": ["user_completes_login_outside_launchrally"],
+    "allowed_effects": ["provider_configuration_write"],
+    "prohibited_effects": ["credential_persistence", "production_data_write"],
+    "secret_handling": "external_reference_only",
+    "result_schema": "launchrally.dev/execution-receipt/v1",
+    "cancellation": "supported_between_effects",
+    "partial_failure": "reported_per_task",
+    "trust": {
+      "tier": "reviewed_extension",
+      "digest": "sha256:e48a231b4432a78cbc30cbf1e7b510bbdf2f5c95c0846abf6e5aaab8924fe073",
+      "reviewed_at": "2026-08-13T00:00:00.000Z",
+      "expires_at": "2026-11-11T00:00:00.000Z"
+    }
+  },
+  "handoff": {
+    "schema_version": "launchrally.dev/handoff-package/v1",
+    "handoff_id": "handoff_01",
+    "revision": 1,
+    "created_at": "2026-08-13T00:00:00.000Z",
+    "environment": "production",
+    "task_graph": {
+      "id": "task_graph_01",
+      "schema_version": "launchrally.dev/task-graph/v1",
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "task_ids": ["task_configure_identity"],
+    "executor": {
+      "id": "executor_provider_config",
+      "schema_version": "launchrally.dev/executor-descriptor/v1",
+      "digest": "sha256:a72e220f229b779578cfca066345c6664abf2c01854753f7649dd146b1bd6c8a"
+    },
+    "authority_batch": {
+      "effect_classes": ["provider_configuration"],
+      "target": "identity_authentication",
+      "allowed_effects": ["provider_configuration_write"],
+      "prohibited_effects": ["credential_persistence", "deployment_write", "production_data_write", "source_write"],
+      "user_visible_effects": ["The external Executor may change identity Provider configuration."],
+      "coordination": {
+        "cancellation": "supported_between_effects",
+        "task_cancellation_behaviors": ["stop_before_next_effect"],
+        "partial_failure": "reported_per_task"
+      },
+      "executor_requirements": {
+        "tools": [{
+          "tool_id": "codex_cli",
+          "executable": "codex",
+          "exact_version": "0.147.0"
+        }],
+        "auth_assumptions": ["user_completes_login_outside_launchrally"],
+        "authentication_state": "user_managed_unverified",
+        "secret_handling": "external_reference_only"
+      }
+    },
+    "approval": {
+      "state": "approved",
+      "confirmation": "explicit_user_confirmation",
+      "confirmed_at": "2026-08-13T00:01:00.000Z"
+    },
+    "retention": {
+      "raw_provider_output_retained": false,
+      "receipt_payload_retained": false,
+      "sensitive_data_retained": false
+    }
+  },
+  "receipt": {
+    "schema_version": "launchrally.dev/execution-receipt/v1",
+    "receipt_id": "receipt_01",
+    "handoff": {
+      "id": "handoff_01",
+      "schema_version": "launchrally.dev/handoff-package/v1",
+      "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "executor": {
+      "id": "executor_provider_config",
+      "schema_version": "launchrally.dev/executor-descriptor/v1",
+      "digest": "sha256:a72e220f229b779578cfca066345c6664abf2c01854753f7649dd146b1bd6c8a"
+    },
+    "reported_at": "2026-08-13T00:02:00.000Z",
+    "task_results": [
+      {
+        "task_id": "task_configure_identity",
+        "state": "reported_succeeded",
+        "claim_codes": ["configuration_submitted"]
+      }
+    ],
+    "classification": {
+      "claim_only": true,
+      "machine_evidence": false,
+      "verification_status": "unverified"
+    },
+    "retention": {
+      "raw_stdout_retained": false,
+      "raw_stderr_retained": false,
+      "response_body_retained": false,
+      "sensitive_data_retained": false
+    }
+  }
+}

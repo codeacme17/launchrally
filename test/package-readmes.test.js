@@ -9,6 +9,10 @@ import { promisify } from "node:util";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
+const currentVersion = JSON.parse(await readFile(
+  path.join(repositoryRoot, "package.json"),
+  "utf8",
+)).version;
 
 const publishedPackages = [
   {
@@ -19,7 +23,7 @@ const publishedPackages = [
     requiredContent: [
       "# @launchrally/cli",
       "Stable",
-      "npm install --global @launchrally/cli@0.3.2",
+      `npm install --global @launchrally/cli@${currentVersion}`,
       "Node.js 20.12.0 or newer",
       "local-first",
       "docs/getting-started/quickstart.md",
@@ -34,7 +38,7 @@ const publishedPackages = [
     requiredContent: [
       "# @launchrally/contracts",
       "Stable",
-      "npm install @launchrally/contracts@0.3.2",
+      `npm install @launchrally/contracts@${currentVersion}`,
       "import { REPORT_SCHEMA } from \"@launchrally/contracts\";",
       "versioned JSON Schemas",
       "ESM",
@@ -44,12 +48,18 @@ const publishedPackages = [
   {
     name: "@launchrally/core",
     packagePath: "packages/core",
-    packageFiles: ["provider-decision-cards/", "provider-tool-installation/", "src/"],
+    packageFiles: [
+      "executor-installation/",
+      "provider-decision-cards/",
+      "provider-tool-installation/",
+      "reference-integration-packs/",
+      "src/",
+    ],
     keywords: ["launchrally", "launch-readiness", "audit", "verification", "local-first", "release"],
     requiredContent: [
       "# @launchrally/core",
       "Stable",
-      "npm install @launchrally/core@0.3.2",
+      `npm install @launchrally/core@${currentVersion}`,
       "import { runAudit } from \"@launchrally/core\";",
       "deterministic",
       "ESM",
@@ -59,12 +69,12 @@ const publishedPackages = [
   {
     name: "@launchrally/codex-plugin",
     packagePath: "adapters/codex/launchrally",
-    packageFiles: [".codex-plugin/", "skills/"],
+    packageFiles: [".codex-plugin/", "host-adapter/", "skills/"],
     keywords: ["launchrally", "codex", "plugin", "agent-skill", "audit", "launch-readiness"],
     requiredContent: [
       "# @launchrally/codex-plugin",
       "Stable",
-      "codex plugin marketplace add codeacme17/launchrally --ref v0.3.2",
+      `codex plugin marketplace add codeacme17/launchrally --ref v${currentVersion}`,
       "codex plugin add launchrally@launchrally",
       "codex plugin remove launchrally@launchrally",
       "canonical Agent Skill",
@@ -74,7 +84,7 @@ const publishedPackages = [
   {
     name: "@launchrally/claude-plugin",
     packagePath: "adapters/claude/launchrally",
-    packageFiles: [".claude-plugin/", "skills/"],
+    packageFiles: [".claude-plugin/", "host-adapter/", "skills/"],
     keywords: ["launchrally", "claude-code", "plugin", "agent-skill", "audit", "launch-readiness"],
     requiredContent: [
       "# @launchrally/claude-plugin",

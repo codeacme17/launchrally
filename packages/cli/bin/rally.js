@@ -17,6 +17,8 @@ import { VERSION } from "./version.js";
 
 const REPOSITORY_OPERATIONS = new Set([
   "audit",
+  "architect",
+  "architecture-package",
   "init",
   "plan",
   "providers",

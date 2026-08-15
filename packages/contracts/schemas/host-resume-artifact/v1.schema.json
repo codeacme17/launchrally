@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/host-resume-artifact/v1",
+  "title": "LaunchRally Host Resume Artifact v1",
+  "type": "object",
+  "required": ["schema_version", "artifact_id", "origin_host", "operation", "state", "resume_token", "source_refs", "portable_state", "artifact_digest", "attestation"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/host-resume-artifact/v1" },
+    "artifact_id": { "type": "string", "pattern": "^host_resume_[a-f0-9]{20}$" },
+    "origin_host": { "enum": ["codex", "claude"] },
+    "operation": { "enum": ["architect", "handoff"] },
+    "state": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "resume_token": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "source_refs": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "required": ["id", "schema_version", "digest"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "schema_version": { "type": "string", "maxLength": 128, "pattern": "^launchrally\\.dev/[a-z0-9-]+/v[1-9][0-9]*$" },
+          "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "portable_state": {
+      "type": "object",
+      "required": ["algorithm", "nonce", "ciphertext", "tag"],
+      "properties": {
+        "algorithm": { "const": "aes-256-gcm" },
+        "nonce": { "type": "string", "pattern": "^[A-Za-z0-9_-]{16}$" },
+        "ciphertext": { "type": "string", "minLength": 1, "maxLength": 220000 },
+        "tag": { "type": "string", "pattern": "^[A-Za-z0-9_-]{22}$" }
+      },
+      "additionalProperties": false
+    },
+    "artifact_digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "attestation": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "operation": { "const": "architect" } }, "required": ["operation"] },
+      "then": { "properties": { "state": { "enum": ["intent_discovery", "blueprint_review", "decision_confirmation"] } } }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "handoff" } }, "required": ["operation"] },
+      "then": {
+        "required": ["portable_state"],
+        "properties": { "state": { "enum": ["executor_discovery", "authority_preview", "receipt_review", "verification_pending"] } }
+      }
+    }
+  ],
+  "additionalProperties": false,
+  "x-launchrally-contract-major": 1
+}

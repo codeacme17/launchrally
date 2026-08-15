@@ -1,0 +1,158 @@
+{
+  "blueprint": {
+    "schema_version": "launchrally.dev/architecture-blueprint/v1",
+    "blueprint_id": "blueprint_product_01",
+    "revision": 1,
+    "environment": "production",
+    "source_report": {
+      "id": "report_01hphase1",
+      "schema_version": "launchrally.dev/report/v2",
+      "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "product_intent": {
+      "id": "intent_01hphase1",
+      "schema_version": "launchrally.dev/product-intent-profile/v1",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "capability_graph": {
+      "id": "graph_product_01",
+      "schema_version": "launchrally.dev/capability-graph/v1",
+      "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "constraints": {
+      "hard": ["data_residency_eu"],
+      "preferences": ["managed_operations"]
+    },
+    "decisions": [
+      {
+        "decision_id": "decision_identity",
+        "capability_id": "identity_authentication",
+        "action": "investigate",
+        "implementation_path": "unknown",
+        "disposition": "recommended",
+        "rationale": ["The current implementation is not yet known."],
+        "tradeoffs": ["Selection remains pending."],
+        "assumptions": ["EU residency remains a hard constraint."],
+        "reevaluation_triggers": ["An implementation is discovered."],
+        "knowledge_refs": []
+      }
+    ],
+    "whole_product": {
+      "integration_compatibility": "unknown",
+      "operational_burden": ["identity_operations_unknown"],
+      "cost_scenarios": [
+        {
+          "scenario": "unknown_provider",
+          "drivers": ["active_users"],
+          "assumptions": ["No current official pricing is available."],
+          "review_date": "2026-08-13",
+          "unknowns": ["currency_estimate"],
+          "currency_estimate": null
+        }
+      ],
+      "data_flow_residency": ["eu_only"],
+      "failure_domains": ["identity_unavailable"],
+      "provider_concentration": "unknown",
+      "lock_in_exit": ["provider_not_selected"],
+      "duplication": ["none_known"],
+      "migration_cost": ["not_applicable_until_selection"]
+    },
+    "unknowns": ["identity_provider_selection"]
+  },
+  "record": {
+    "schema_version": "launchrally.dev/architecture-record/v1",
+    "record_id": "architecture_record_01",
+    "revision": 1,
+    "created_at": "2026-08-13T00:00:00.000Z",
+    "environment": "production",
+    "blueprint": {
+      "id": "blueprint_product_01",
+      "schema_version": "launchrally.dev/architecture-blueprint/v1",
+      "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "bindings": {
+      "source_report": {
+        "id": "report_01hphase1",
+        "schema_version": "launchrally.dev/report/v2",
+        "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "product_intent": {
+        "id": "intent_01hphase1",
+        "schema_version": "launchrally.dev/product-intent-profile/v1",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "capability_catalog": {
+        "id": "catalog_phase1",
+        "schema_version": "launchrally.dev/capability-catalog/v1",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "integration_contracts": [
+        {
+          "id": "integration_identity_data",
+          "schema_version": "launchrally.dev/integration-contract/v1",
+          "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      ],
+      "provider_knowledge": [],
+      "constraints_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "confirmed_decisions": [
+      {
+        "decision_id": "decision_identity",
+        "decision_revision": 1,
+        "confirmation": "explicit_user_confirmation",
+        "status": "investigate"
+      }
+    ],
+    "provenance": {
+      "actor": "user",
+      "interaction_id": "interaction_architect_01"
+    },
+    "retention": {
+      "raw_provider_output_retained": false,
+      "receipt_payload_retained": false,
+      "sensitive_data_retained": false
+    }
+  },
+  "package": {
+    "schema_version": "launchrally.dev/architecture-package/v1",
+    "package_id": "architecture_package_01",
+    "revision": 1,
+    "created_at": "2026-08-13T00:00:00.000Z",
+    "environment": "production",
+    "records": {
+      "product_intent": {
+        "id": "intent_01hphase1",
+        "schema_version": "launchrally.dev/product-intent-profile/v1",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "capability_graph": {
+        "id": "graph_product_01",
+        "schema_version": "launchrally.dev/capability-graph/v1",
+        "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "architecture_record": {
+        "id": "architecture_record_01",
+        "schema_version": "launchrally.dev/architecture-record/v1",
+        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "task_graph": null
+    },
+    "currentness": {
+      "state": "current",
+      "invalidated_record_ids": [],
+      "reasons": []
+    },
+    "storage": {
+      "shareable_intent_separate": true,
+      "local_history_immutable": true,
+      "automatically_staged": false,
+      "automatically_committed": false
+    },
+    "retention": {
+      "raw_provider_output_retained": false,
+      "receipt_payload_retained": false,
+      "sensitive_data_retained": false
+    }
+  }
+}

@@ -26,6 +26,7 @@ import { writeExactToolchain } from "./helpers/exact-toolchain.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
+const currentVersion = JSON.parse(await readFile("package.json", "utf8")).version;
 
 async function repositoryFixture() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-authority-"));
@@ -406,8 +407,8 @@ test("structured version reports the effective Engine and separate Launcher auth
   assert.equal(result.contract, "launchrally.dev/cli/v2");
   assert.equal(result.status, "completed");
   assert.equal(result.operation, "version");
-  assert.equal(result.cli_version, "0.3.2");
-  assert.equal(result.launcher_version, "0.3.2");
+  assert.equal(result.cli_version, currentVersion);
+  assert.equal(result.launcher_version, currentVersion);
   assert.equal(result.authority.schema_version, "launchrally.dev/execution-authority/v1");
   assert.equal(result.authority.source, "launcher");
   assert.equal(result.authority.materialization.state, "bundled");

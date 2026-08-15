@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://launchrally.dev/desktop-shared-backend/v1",
+  "title": "LaunchRally Desktop Shared Backend v1",
+  "type": "object",
+  "required": ["schema_version", "topology", "capability_ids", "excluded_release_readiness"],
+  "properties": {
+    "schema_version": { "const": "launchrally.dev/desktop-shared-backend/v1" },
+    "topology": { "const": "desktop_with_shared_backend" },
+    "capability_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{2,127}$" }
+    },
+    "excluded_release_readiness": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": { "enum": ["signing", "notarization", "store_review", "distribution", "updater"] }
+    }
+  },
+  "additionalProperties": false,
+  "x-launchrally-contract-major": 1
+}

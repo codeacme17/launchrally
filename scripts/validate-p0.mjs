@@ -17,6 +17,7 @@ import {
   invalidStablePromotionEvidence,
   stablePromotionBlockers,
 } from "./stable-promotion-policy.mjs";
+import { isLaterReleaseVersion } from "./release-version.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -74,13 +75,31 @@ if (
 
 const rootLicense = await readFile(path.join(root, "LICENSE"), "utf8");
 const rootPackage = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+const p0StableVersion = /^v\d+\.\d+\.\d+$/u.test(stablePromotion.approved_tag ?? "")
+  ? stablePromotion.approved_tag.slice(1)
+  : null;
+let preservesIndependentP0 = false;
 if (
   contract.release_status === "stable"
   && stablePromotion.approved_tag !== `v${rootPackage.version}`
 ) {
-  throw new Error(
-    `stable_promotion_tag_drift: ${stablePromotion.approved_tag}; expected v${rootPackage.version}`,
+  const p1 = JSON.parse(await readFile(path.join(root, "release/p1.json"), "utf8"));
+  preservesIndependentP0 = (
+    p1.schema_version === "launchrally.dev/p1-release/v1"
+    && p1.phase === "p1"
+    && p1.release_status === "experimental"
+    && p1.p0_stable_ref?.schema_version === contract.schema_version
+    && p1.p0_stable_ref?.release_status === contract.release_status
+    && p1.experimental_publication?.candidate_tag === `v${rootPackage.version}`
+    && p1.experimental_publication?.p0_stable_tag === stablePromotion.approved_tag
+    && p1.experimental_publication?.stable_channel === "latest"
+    && isLaterReleaseVersion(rootPackage.version, p0StableVersion)
   );
+  if (!preservesIndependentP0) {
+    throw new Error(
+      `stable_promotion_tag_drift: ${stablePromotion.approved_tag}; expected v${rootPackage.version}`,
+    );
+  }
 }
 if (rootPackage.license !== contract.license) {
   throw new Error(
@@ -237,7 +256,7 @@ if (isStableState) {
     contract,
     release: artifacts,
     tag: stablePromotion.approved_tag,
-    version: rootPackage.version,
+    version: preservesIndependentP0 ? p0StableVersion : rootPackage.version,
   });
   const postPromotionSuspensionBlockers = new Set([
     "p0_validated",

@@ -9,6 +9,7 @@ import {
 
 import { createNeedsRefreshResult } from "./interaction-result.js";
 import { evaluateReportCurrentness } from "./report-currentness.js";
+import { generateTaskGraph } from "./task-graph.js";
 
 function titleCase(value) {
   return `${value[0].toUpperCase()}${value.slice(1)}`;
@@ -90,8 +91,14 @@ function authenticatedJourneySnapshot(report, evidenceIndex) {
     evidenceIndex.entries
       .filter(({ digest, evidence_kind }) =>
         referencedDigests.has(digest)
-        && evidence_kind === "authenticated_journey_observation")
+        && [
+          "authenticated_journey_observation",
+          "authenticated_journey_machine_evidence",
+        ].includes(evidence_kind))
       .map((entry) => [entry.normalized_artifact.journey_id, entry]),
+  );
+  const gaps = new Map(
+    (report.results.authenticated_journey_gaps ?? []).map((gap) => [gap.journey_id, gap]),
   );
   const snapshots = [];
   report.scope.release_intent.production_targets.forEach((target, targetIndex) => {
@@ -101,6 +108,7 @@ function authenticatedJourneySnapshot(report, evidenceIndex) {
       const journeyId = `target-${targetIndex + 1}:journey-${journeyIndex + 1}:authenticated`;
       const observationEntry = observations.get(journeyId);
       const observation = observationEntry?.normalized_artifact;
+      const gap = gaps.get(journeyId);
       snapshots.push({
         journey_id: journeyId,
         target: new URL(journey.path, origin).toString(),
@@ -118,7 +126,15 @@ function authenticatedJourneySnapshot(report, evidenceIndex) {
               current: observationEntry.current,
               currentness: structuredClone(observationEntry.currentness),
             }
-          : null,
+          : gap
+            ? {
+                status: "unverified",
+                outcome: gap.outcome,
+                status_code: null,
+                collected_at: gap.collected_at,
+                verification_gap: true,
+              }
+            : null,
       });
     });
   });
@@ -306,6 +322,21 @@ export function runPlan(reportPackage, options = {}) {
   if (options.handoff_requested === true) {
     plan.handoff = remediationHandoff();
     plan.next = plan.handoff.return_to_verify;
+  }
+  if (!options.architecture_bundle && (options.previous_task_graph || options.task_updates)) {
+    const error = new Error("Task Graph recomputation requires an Architecture Package.");
+    error.code = "task_graph_architecture_required";
+    throw error;
+  }
+  if (options.architecture_bundle) {
+    plan.task_graph = generateTaskGraph(reportPackage, options.architecture_bundle, {
+      cwd: options.cwd ?? process.cwd(),
+      ...(options.now ? { now: options.now } : {}),
+      ...(options.previous_task_graph
+        ? { previous_graph: options.previous_task_graph }
+        : {}),
+      ...(options.task_updates ? { task_updates: options.task_updates } : {}),
+    });
   }
   assertValidLaunchPlan(plan);
   return plan;
