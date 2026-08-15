@@ -1298,7 +1298,16 @@ test("P1 governance binds the completed exact-artifact gate to runtime evidence"
       name: "packed artifacts complete installation, delegation, lifecycle, and full verification journeys",
     },
   });
-  assert.equal(external.status, "pending");
+  assert.deepEqual(external, {
+    id: "p1_external_verification",
+    command: "test:p1-external",
+    mandatory: true,
+    status: "complete",
+    evidence: {
+      type: "script",
+      path: "scripts/verify-p1-external-results.mjs",
+    },
+  });
 });
 
 test("packed artifacts complete installation, delegation, lifecycle, and full verification journeys", async () => {
@@ -1596,10 +1605,11 @@ test("the P1 announcement and external Agent procedure preserve every lifecycle 
     readFile(path.join(root, "docs/maintainers/p1-external-verification.md"), "utf8"),
   ]);
 
-  assert.match(announcement, /Product Incomplete/u);
+  assert.match(announcement, /Product Complete/u);
   assert.match(announcement, /Experimental/u);
   assert.match(announcement, /not P1 Validated/u);
   assert.match(announcement, /not Stable/u);
+  assert.match(announcement, /independent external verification/u);
   assert.match(announcement, /Phase 0[\s\S]*0\.3\.2[\s\S]*npm `latest`/u);
   assert.match(procedure, /verify-experimental-release\.mjs --phase published/u);
   assert.match(procedure, /codex plugin marketplace add[\s\S]*--ref v0\.4\.0/u);

@@ -48,36 +48,84 @@ async function registerRegression(directory, conditionId, regression) {
   await writeFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
 }
 
+function pendingExternalRecord() {
+  return {
+    schema_version: "launchrally.dev/p1-external-verification/v1",
+    status: "pending",
+    version: currentVersion,
+    tag: `v${currentVersion}`,
+    channel: "experimental",
+    verified_at: null,
+    workflow_url: null,
+    release_url: null,
+    review_url: null,
+    review_body: null,
+    reviewer: null,
+    release_actor: null,
+    release_commit: null,
+    reviewed_at: null,
+    packages: [],
+    publication_jobs: [],
+    hosts: [],
+    verification_digest: null,
+  };
+}
+
+async function setDocumentedRequirementStatus(directory, requirementId, status) {
+  const docsPath = path.join(directory, "docs/maintainers/p1-acceptance.md");
+  const docs = await readFile(docsPath, "utf8");
+  await writeFile(
+    docsPath,
+    docs.split("\n").map((line) => line.startsWith(`| ${requirementId} |`)
+      ? line.replace(/\| (?:Complete|Open) \|$/u, `| ${status} |`)
+      : line).join("\n"),
+  );
+}
+
 test("the independent P1 governance contract maps every canonical requirement", async () => {
   const { stdout } = await validateP1(root);
   const result = JSON.parse(stdout);
 
   assert.equal(result.status, "completed");
   assert.equal(result.schema_version, "launchrally.dev/p1-release/v1");
-  assert.equal(result.product_status, "incomplete");
+  assert.equal(result.product_status, "complete");
   assert.equal(result.release_status, "experimental");
-  assert.deepEqual(result.requirements, { complete: 37, open: 1, total: 38 });
+  assert.deepEqual(result.requirements, { complete: 38, open: 0, total: 38 });
   assert.deepEqual(result.suspended_authorities, []);
   assert.equal(result.p0_release_status, "stable");
 });
 
 test("P1 Experimental publication readiness permits only external verification to remain open", async () => {
-  const { stdout } = await validateP1(root, ["--require-publish-ready"]);
+  const directory = await fixture();
+  const contractPath = path.join(directory, "release/p1.json");
+  const matrixPath = path.join(directory, "release/p1-acceptance.json");
+  const externalPath = path.join(directory, "release/p1-external-verification.json");
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
+  contract.product_status = "incomplete";
+  contract.publication_status = "not_published";
+  matrix.product_status = "incomplete";
+  matrix.requirements.find(({ id }) => id === "P1-RELEASE-01").status = "open";
+  matrix.release_gates.find(({ id }) => id === "p1_external_verification").status = "pending";
+  await Promise.all([
+    writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
+    writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
+    writeFile(externalPath, `${JSON.stringify(pendingExternalRecord(), null, 2)}\n`),
+  ]);
+  await setDocumentedRequirementStatus(directory, "P1-RELEASE-01", "Open");
+  const { stdout } = await validateP1(directory, ["--require-publish-ready"]);
   const result = JSON.parse(stdout);
 
   assert.equal(result.publication_readiness, "ready");
   assert.deepEqual(result.publish_blockers, []);
 
-  const directory = await fixture();
-  const matrixPath = path.join(directory, "release/p1-acceptance.json");
-  const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
   matrix.requirements.find(({ id }) => id === "P1-PRIVACY-01").status = "open";
   await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
   const docsPath = path.join(directory, "docs/maintainers/p1-acceptance.md");
-  const docs = await readFile(docsPath, "utf8");
+  const changedDocs = await readFile(docsPath, "utf8");
   await writeFile(
     docsPath,
-    docs.replace(
+    changedDocs.replace(
       "| P1-PRIVACY-01 | Persisted Phase 1 records reject credentials, business payloads, raw Provider output, and personal data | focused negative fixtures reject sensitive persistence and receipt-as-Evidence | #134 | Complete |",
       "| P1-PRIVACY-01 | Persisted Phase 1 records reject credentials, business payloads, raw Provider output, and personal data | focused negative fixtures reject sensitive persistence and receipt-as-Evidence | #134 | Open |",
     ),
@@ -140,6 +188,8 @@ test("a P1 regression suspends only its declared authority and never changes P0 
   condition.regressions.push(regression);
   await registerRegression(directory, condition.id, regression);
   contract.quality_floor_status = "suspended";
+  contract.product_status = "suspended";
+  matrix.product_status = "suspended";
   await Promise.all([
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
@@ -170,6 +220,8 @@ test("a reviewed P1 fix remains suspended until a distinct restoration entry", a
   condition.regressions.push(regression);
   await registerRegression(directory, condition.id, regression);
   contract.quality_floor_status = "suspended";
+  contract.product_status = "suspended";
+  matrix.product_status = "suspended";
   await Promise.all([
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
@@ -182,6 +234,8 @@ test("a reviewed P1 fix remains suspended until a distinct restoration entry", a
   condition.regressions[0].status = "restored";
   condition.regressions[0].restoration = "review:quality-floor-restored";
   contract.quality_floor_status = "satisfied";
+  contract.product_status = "complete";
+  matrix.product_status = "complete";
   await Promise.all([
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
@@ -213,6 +267,7 @@ test("P1 Stable requires every requirement and mandatory gate to be complete", a
   const directory = await fixture();
   const contractPath = path.join(directory, "release/p1.json");
   const matrixPath = path.join(directory, "release/p1-acceptance.json");
+  const externalPath = path.join(directory, "release/p1-external-verification.json");
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
   Object.assign(contract, {
@@ -224,10 +279,14 @@ test("P1 Stable requires every requirement and mandatory gate to be complete", a
     stable_promotion: { status: "approved", approved_tag: `v${currentVersion}` },
   });
   Object.assign(matrix, { product_status: "complete", release_status: "stable" });
+  matrix.requirements.find(({ id }) => id === "P1-RELEASE-01").status = "open";
+  matrix.release_gates.find(({ id }) => id === "p1_external_verification").status = "pending";
   await Promise.all([
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
+    writeFile(externalPath, `${JSON.stringify(pendingExternalRecord(), null, 2)}\n`),
   ]);
+  await setDocumentedRequirementStatus(directory, "P1-RELEASE-01", "Open");
 
   await assert.rejects(validateP1(directory), (error) => {
     assert.match(error.stderr, /p1_stable_promotion_blocked/u);
@@ -270,14 +329,20 @@ test("P1 Product Complete requires every requirement and mandatory gate to be co
   const directory = await fixture();
   const contractPath = path.join(directory, "release/p1.json");
   const matrixPath = path.join(directory, "release/p1-acceptance.json");
+  const externalPath = path.join(directory, "release/p1-external-verification.json");
   const contract = JSON.parse(await readFile(contractPath, "utf8"));
   const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
   contract.product_status = "complete";
+  contract.publication_status = "not_published";
   matrix.product_status = "complete";
+  matrix.requirements.find(({ id }) => id === "P1-RELEASE-01").status = "open";
+  matrix.release_gates.find(({ id }) => id === "p1_external_verification").status = "pending";
   await Promise.all([
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
+    writeFile(externalPath, `${JSON.stringify(pendingExternalRecord(), null, 2)}\n`),
   ]);
+  await setDocumentedRequirementStatus(directory, "P1-RELEASE-01", "Open");
 
   await assert.rejects(validateP1(directory), (error) => {
     assert.match(error.stderr, /p1_product_completion_blocked/u);
@@ -292,9 +357,13 @@ test("P1 Product Complete requires every requirement and mandatory gate to be co
 test("P1 external verification cannot complete without its signed aggregate record", async () => {
   const directory = await fixture();
   const matrixPath = path.join(directory, "release/p1-acceptance.json");
+  const externalPath = path.join(directory, "release/p1-external-verification.json");
   const matrix = JSON.parse(await readFile(matrixPath, "utf8"));
   matrix.release_gates.find(({ id }) => id === "p1_external_verification").status = "complete";
-  await writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
+  await Promise.all([
+    writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
+    writeFile(externalPath, `${JSON.stringify(pendingExternalRecord(), null, 2)}\n`),
+  ]);
 
   await assert.rejects(validateP1(directory), (error) => {
     assert.match(error.stderr, /p1_external_evidence_status_drift/u);
