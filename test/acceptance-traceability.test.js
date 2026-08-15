@@ -187,6 +187,25 @@ test("CI runs contract and clean journey gates on every required Node and OS tar
   assert.match(release, /npm run validate:p1 -- --require-publish-ready/u);
   assert.match(release, /public-smoke:[\s\S]*needs: publish[\s\S]*npm run test:public-release/u);
   assert.match(release, /prerelease:[\s\S]*needs: public-smoke[\s\S]*gh release create/u);
+
+  const contractsJob = ci.match(/\n  contracts:\n([\s\S]*?)\n  journeys:/u)?.[1] ?? "";
+  const qualityFloorJob = ci.match(/\n  quality-floor:\n([\s\S]*)/u)?.[1] ?? "";
+  for (const [job, commands] of [
+    [contractsJob, ["npm run test:contracts", "npm run validate:acceptance"]],
+    [qualityFloorJob, ["npm test", "npm run validate:acceptance"]],
+  ]) {
+    for (const command of commands) {
+      assert.match(
+        job,
+        new RegExp(
+          `- run: ${command}\\n`
+            + "\\s+env:\\n\\s+GH_TOKEN: \\$\\{\\{ github\\.token \\}\\}",
+          "u",
+        ),
+        `${command} receives the GitHub token required for completed public evidence`,
+      );
+    }
+  }
 });
 
 test("release readiness fails closed if a completed normative requirement reopens", async () => {
