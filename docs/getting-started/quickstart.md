@@ -29,6 +29,8 @@ Audit does not create `.launchrally`; `--output` saves the complete Report at th
 
 Agent Mode, including CI use, retains the explicit structured protocol. Start with `rally init --json --cwd . --report ./launchrally-audit-report.json`, then use each returned `--resume <token>` with only the requested permission or confirmation option. Non-TTY Human Mode fails safely and points to this protocol instead of presenting an inactive choice.
 
+Re-running ordinary Init preserves an existing Manifest and identifies the explicit replacement action. If a corrected current Audit should become the new source of project-owned release intent, run `rally init --plain --cwd . --report ./corrected-audit-report.json --rebind`. Confirm only after reviewing both source Report identities and the exact Manifest diff. Decline, abandonment, or a stale preview changes nothing, and rebind preserves the Project Toolchain and immutable history.
+
 The final version command is read-only. Require `authority.state: "ready"` and, after Init, `authority.source: "project_toolchain"`. The Launcher then delegates repository commands to the project-pinned Engine. A supported same, newer, or older Launcher follows the valid pin; it does not upgrade, downgrade, or replace it.
 
 After obtaining a current full Report, continue with the [Phase 1 Agent and Human journey](phase-1.md) to confirm Product Intent, review Architecture, build a Task Graph, coordinate bounded external work, and independently Verify it.

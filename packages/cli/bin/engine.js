@@ -38,7 +38,11 @@ import {
 import { inspectReportDestination } from "./report-destination.js";
 import { normalizeArchitectAnswer, runHumanArchitect } from "./human-architect.js";
 import { createSystemFilePicker } from "./system-file-picker.js";
-import { consumeInvocationContext, renderCommand } from "./invocation-context.js";
+import {
+  consumeInvocationContext,
+  createNextAction,
+  renderCommand,
+} from "./invocation-context.js";
 import { VERSION } from "./version.js";
 
 const invocationContext = consumeInvocationContext({
@@ -478,6 +482,15 @@ function print(value) {
       ].join("\n") + "\n");
       return;
     }
+    if (value.status === "completed" && value.manifest_action?.action === "preserve") {
+      process.stdout.write([
+        "LaunchRally preserved the existing Manifest and project-owned release intent.",
+        `Existing Manifest source Report: ${value.manifest_action.existing_source_report_id}`,
+        `Supplied Report: ${value.manifest_action.supplied_source_report_id}`,
+        `Replace command: ${value.replacement_action.display}`,
+      ].join("\n") + "\n");
+      return;
+    }
   }
 
   if (value.operation === "plan" && value.status === "completed") {
@@ -558,6 +571,7 @@ function help() {
       "  architecture-package Preview or persist a confirmed immutable Architecture Package",
       "  handoff  Discover, preview, and confirm bounded external Executor authority",
       "  init     Preview and confirm local adoption after a complete Audit Report",
+      "           --rebind explicitly replaces an existing Manifest after its own preview",
       "  plan     Build a deterministic read-only Launch Plan and optional Task Graph",
       "  verify   Recollect fresh Evidence for full or targeted verification",
       "",
@@ -738,8 +752,29 @@ async function main() {
       permission_decisions: permissionDecisions.value,
       report_package: reportPackage,
     };
+    const rebindManifest = args.includes("--rebind");
+    const runInitWithActions = async (runCwd, version, options) => {
+      const result = await runInit(runCwd, version, {
+        ...options,
+        ...(rebindManifest && options.report_package
+          ? { rebind_manifest: true }
+          : {}),
+      });
+      if (result.manifest_action?.next_action && !rebindManifest) {
+        result.replacement_action = createNextAction(invocationContext, [
+          "init",
+          ...(json ? ["--json"] : []),
+          "--cwd",
+          path.resolve(cwd),
+          "--report",
+          reportPath ?? "<saved-report-path>",
+          "--rebind",
+        ]);
+      }
+      return result;
+    };
     if (json) {
-      const result = await runInit(cwd, VERSION, initialOptions);
+      const result = await runInitWithActions(cwd, VERSION, initialOptions);
       print(result);
       return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
     }
@@ -776,7 +811,7 @@ async function main() {
       cwd,
       version: VERSION,
       prompt,
-      runInit,
+      runInit: runInitWithActions,
       reportPackage,
     });
     if (outcome.exitCode === 130) {

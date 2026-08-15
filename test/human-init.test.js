@@ -3,7 +3,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 
 import { PromptCancelledError } from "../packages/cli/bin/human-audit.js";
-import { runHumanInit } from "../packages/cli/bin/human-init.js";
+import { renderHumanInit, runHumanInit } from "../packages/cli/bin/human-init.js";
 import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
 
 test("the Human Init driver accepts permission and confirmation in one process", async () => {
@@ -125,6 +125,52 @@ test("the plain Human Init prompt reads a decision after rendering the exact pre
   assert.match(rendered, /1\. Confirm/u);
   assert.match(rendered, /2\. Decline/u);
   assert.doesNotMatch(rendered, /Resume token:/u);
+});
+
+test("Human Init explains preserved Manifest intent and the explicit rebind action", () => {
+  const rendered = renderHumanInit({
+    mode: "update",
+    source_report_id: "report-new",
+    manifest_action: {
+      action: "preserve",
+      existing_source_report_id: "report-old",
+      supplied_source_report_id: "report-new",
+    },
+    replacement_action: {
+      display: "rally init --cwd /workspace --report corrected.json --rebind",
+    },
+    preview: { changes: [] },
+    request: { prompt: "Adopt immutable Report history?" },
+  });
+
+  assert.match(rendered, /Manifest intent: preserved/u);
+  assert.match(rendered, /Existing Manifest source Report: report-old/u);
+  assert.match(rendered, /Supplied Report for immutable history: report-new/u);
+  assert.match(rendered, /Replace command: rally init .* --rebind/u);
+});
+
+test("Human Init separates rebind history adoption from release-intent replacement", () => {
+  const rendered = renderHumanInit({
+    mode: "rebind",
+    source_report_id: "report-new",
+    manifest_action: {
+      action: "replace",
+      existing_source_report_id: "report-old",
+      supplied_source_report_id: "report-new",
+    },
+    preview: {
+      changes: [],
+      history_adoption: { changes: [{ path: ".launchrally/reports/report-new/record.json" }] },
+      release_intent_replacement: { changes: [{ path: ".launchrally/manifest.yaml" }] },
+    },
+    request: { prompt: "Replace project-owned release intent?" },
+  });
+
+  assert.match(rendered, /^LaunchRally Manifest Rebind Preview/mu);
+  assert.match(rendered, /Old source Report: report-old/u);
+  assert.match(rendered, /New source Report: report-new/u);
+  assert.match(rendered, /Immutable Report-history changes: 1/u);
+  assert.match(rendered, /Release-intent replacement changes: 1/u);
 });
 
 test("the Human Init driver submits an explicit decline without applying changes", async () => {

@@ -773,10 +773,10 @@ function storedPreviewIsBound(state) {
     if (
       JSON.stringify(Object.keys(state).sort()) !== JSON.stringify(expectedKeys)
       || !state.report_package
-      || state.source_report_id !== state.report_package.report?.report_id
+      || state.source_report_id !== state.manifest?.execution?.source_report_id?.value
       || !Array.isArray(state.changes)
       || !Array.isArray(state.history_preexisting)
-      || !["initialization", "migration", "update"].includes(state.mode)
+      || !["initialization", "migration", "rebind", "update"].includes(state.mode)
     ) return false;
     if (state.materialization && (
       JSON.stringify(Object.keys(state.materialization).sort()) !== JSON.stringify([
@@ -1034,7 +1034,7 @@ async function recoverPendingInitialization(root) {
     || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(journal.history.report_id)
     || !/^sha256:[a-f0-9]{64}$/u.test(journal.history.record_digest)
     || typeof journal.history.source_report_id !== "string"
-    || !["initialization", "migration", "update"].includes(journal.history.mode)
+    || !["initialization", "migration", "rebind", "update"].includes(journal.history.mode)
     || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u
       .test(journal.history.commit_token)
     || typeof journal.history.report_preexisting !== "boolean"
@@ -1136,6 +1136,12 @@ function initializationError(error, message, extra = {}) {
   };
 }
 
+function completedInitializationOutcome(mode) {
+  if (mode === "migration") return "migrated";
+  if (mode === "rebind") return "rebound";
+  return "initialized";
+}
+
 function registryPermissionRequest(version, sourceReportId, temporaryTarget, resumeToken) {
   const npmArguments = toolchainInstallArguments(version, true);
   return {
@@ -1202,7 +1208,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       contract: CLI_INTERACTION_CONTRACT,
       status: "completed",
       operation: "init",
-      outcome: recovered.mode === "migration" ? "migrated" : "initialized",
+      outcome: completedInitializationOutcome(recovered.mode),
       recovery: "committed_history_finalized",
       history_commit: recovered.history_commit,
       source_report_id: recovered.source_report_id,
@@ -1326,7 +1332,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
         contract: CLI_INTERACTION_CONTRACT,
         status: "completed",
         operation: "init",
-        outcome: "initialization_declined",
+        outcome: state.mode === "rebind" ? "rebind_declined" : "initialization_declined",
         changes_applied: [],
       };
     }
@@ -1531,7 +1537,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       contract: CLI_INTERACTION_CONTRACT,
       status: "completed",
       operation: "init",
-      outcome: state.mode === "migration" ? "migrated" : "initialized",
+      outcome: completedInitializationOutcome(state.mode),
       source_report_id: state.source_report_id,
       changes_applied: state.changes.map((change) => change.path),
     };
@@ -1659,14 +1665,24 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       };
     }
   }
+  if (options.rebind_manifest === true && existingManifest === null) {
+    return initializationError(
+      "rebind_requires_initialized_manifest",
+      "Manifest rebind requires an existing valid canonical Manifest; nothing was changed.",
+    );
+  }
   const mode = legacyManifestContent !== null
     ? "migration"
-    : existingManifestContent === null ? "initialization" : "update";
+    : existingManifestContent === null
+      ? "initialization"
+      : options.rebind_manifest === true ? "rebind" : "update";
   let manifest;
   try {
     manifest = legacyManifest
       ? migrateLegacyManifest(legacyManifest, source.report)
-      : existingManifest ?? createManifest(source.report);
+      : mode === "rebind" || existingManifest === null
+        ? createManifest(source.report)
+        : existingManifest;
   } catch (error) {
     return initializationError(
       error?.code ?? "invalid_manifest",
@@ -1844,20 +1860,38 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
     );
   }
   const changes = previewedChanges.filter((change) => change.before !== change.after);
+  const existingSourceReportId = existingManifest?.execution?.source_report_id?.value ?? null;
+  const boundSourceReportId = mode === "update"
+    ? existingSourceReportId
+    : source.report.report_id;
+  const manifestAction = existingManifest === null
+    ? { action: "create", supplied_source_report_id: source.report.report_id }
+    : {
+        action: mode === "rebind" ? "replace" : "preserve",
+        existing_source_report_id: existingSourceReportId,
+        supplied_source_report_id: source.report.report_id,
+        rebind_option: "--rebind",
+        next_action: {
+          operation: "init",
+          action: "rebind_manifest",
+          required_option: "--rebind",
+        },
+      };
   if (changes.length === 0) {
     return {
       contract: CLI_INTERACTION_CONTRACT,
       status: "completed",
       operation: "init",
       outcome: "already_initialized",
-      source_report_id: source.report.report_id,
+      source_report_id: boundSourceReportId,
+      manifest_action: manifestAction,
       changes_applied: [],
     };
   }
   const state = {
     schema_version: INIT_INTERACTION_SCHEMA,
     root,
-    source_report_id: source.report.report_id,
+    source_report_id: boundSourceReportId,
     mode,
     manifest,
     changes,
@@ -1869,15 +1903,29 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       ? { materialization: dependencyChanges.materialization }
       : {}),
   };
+  const historyAdoptionChanges = changes.filter((change) =>
+    isImmutableHistoryPath(change.path));
+  const releaseIntentChanges = mode === "rebind"
+    ? changes.filter((change) => change.path === MANIFEST_RELATIVE_PATH)
+    : [];
   return {
     contract: CLI_INTERACTION_CONTRACT,
     status: "needs_confirmation",
     operation: "init",
-    source_report_id: source.report.report_id,
+    source_report_id: boundSourceReportId,
     mode,
     manifest,
+    manifest_action: manifestAction,
     preview: {
       changes,
+      history_adoption: {
+        report_id: source.report.report_id,
+        changes: historyAdoptionChanges,
+      },
+      release_intent_replacement: {
+        requested: mode === "rebind",
+        changes: releaseIntentChanges,
+      },
       ...(dependencyChanges.materialization ? {
         materialization: {
           command: dependencyChanges.materialization.command,
@@ -1892,11 +1940,13 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
     interaction: {
       schema_version: INIT_INTERACTION_SCHEMA,
       resume_token: await (dependencies.store_state ?? storeState)(state),
-      source_report: manifestSourceReportIdentity(source.report.report_id),
+      source_report: manifestSourceReportIdentity(boundSourceReportId),
     },
     request: {
       type: "confirmation",
-      prompt: "Apply exactly these local initialization changes?",
+      prompt: mode === "rebind"
+        ? "Replace project-owned release intent and apply exactly these local changes?"
+        : "Apply exactly these local initialization changes?",
       choices: ["confirm", "decline"],
     },
   };
