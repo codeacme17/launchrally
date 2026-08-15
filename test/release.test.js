@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { computeReferenceIntegrationPackDigest } from "@launchrally/contracts";
 import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
+import { createIsolatedNativeEnvironment } from "../scripts/native-environment.mjs";
 import { hasClaudeInstalledPlugin } from "../scripts/native-plugin-state.mjs";
 import { assertNoConsumerInstallScripts } from "../scripts/release-artifact-policy.mjs";
 
@@ -39,6 +40,36 @@ test("Claude public smoke recognizes the installed-list schema", () => {
   assert.equal(hasClaudeInstalledPlugin({
     installed: [{ pluginId: "launchrally@launchrally", version: "0.3.2" }],
   }, "launchrally@launchrally", "0.3.2"), false);
+});
+
+test("native Plugin validation forwards only an isolated non-secret environment", () => {
+  const environment = createIsolatedNativeEnvironment({
+    PATH: "/synthetic/bin",
+    GH_PAT: "sentinel-gh-secret",
+    DATABASE_URL: "postgres://person:secret@example.com/database",
+    NPM_CONFIG_USERCONFIG: "/real/user/npmrc",
+    NODE_OPTIONS: "--require=/untrusted/preload.cjs",
+    HTTPS_PROXY: "https://person:secret@proxy.example.com",
+    NO_PROXY: "127.0.0.1",
+  }, {
+    home: "/isolated/home",
+    codex_home: "/isolated/codex",
+    claude_config_dir: "/isolated/claude",
+  });
+
+  assert.deepEqual(environment, {
+    PATH: "/synthetic/bin",
+    NO_PROXY: "127.0.0.1",
+    APPDATA: "/isolated/home",
+    CLAUDE_CONFIG_DIR: "/isolated/claude",
+    CODEX_HOME: "/isolated/codex",
+    HOME: "/isolated/home",
+    LOCALAPPDATA: "/isolated/home",
+    NODE_OPTIONS: "",
+    USERPROFILE: "/isolated/home",
+    XDG_CACHE_HOME: "/isolated/home",
+    XDG_CONFIG_HOME: "/isolated/home",
+  });
 });
 
 async function createReleaseFixture() {
@@ -1300,8 +1331,14 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       },
       host_journeys: ["claude", "codex"],
       native_host_journeys: {
-        claude: "strict_validation_and_typed_journey",
-        codex: "native_installation_and_typed_journey",
+        claude: {
+          discovery: "native_plugin_installed_listed_and_removed",
+          agent_execution: "p1_external_verification_required",
+        },
+        codex: {
+          discovery: "native_plugin_installed_listed_and_removed",
+          agent_execution: "p1_external_verification_required",
+        },
       },
       cross_host_resume: process.platform === "win32"
         ? "typed_unavailable"
@@ -1405,28 +1442,16 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       ],
     },
     native_plugins: {
-      claude: "strictly_validated",
-      codex: "installed_and_removed",
+      claude: "installed_discovered_and_removed",
+      codex: "installed_discovered_and_removed",
+    },
+    native_plugin_boundary: {
+      configuration_isolated: true,
+      sensitive_environment_removed: true,
+      scope: "native_plugin_discovery_only",
+      agent_execution: "p1_external_verification_required",
     },
   });
-});
-
-test("packed Plugin adapters pass their native host validation", async () => {
-  const { stdout } = await execFileAsync(
-    "npm",
-    ["--silent", "run", "test:artifacts", "--", "--json"],
-    { cwd: root, maxBuffer: 1024 * 1024 * 8 },
-  );
-  const result = JSON.parse(stdout);
-
-  assert.deepEqual(result.native_plugins, {
-    claude: "strictly_validated",
-    codex: "installed_and_removed",
-  });
-  assert.equal(
-    result.installation_journeys.plugin_removal,
-    "project_data_preserved",
-  );
 });
 
 test("Codex and Claude marketplaces resolve their native Plugin adapters", async () => {

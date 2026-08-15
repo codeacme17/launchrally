@@ -107,15 +107,23 @@ trusting a label:
 | macOS | 22 | POSIX |
 | Windows | 22 | PowerShell |
 
-The gate invokes the exact native Codex installation and Claude strict
-validation commands in the same run as their typed packaged journeys. The same
-installed-artifact gate exercises no-PRD and incomplete semantic
+The gate invokes the exact native Codex and Claude local marketplace,
+installation, discovery, and removal commands in isolated configuration roots,
+then runs the typed packaged adapter journeys under a deny-by-default Node
+effect boundary. Model-driven native Agent execution is not inferred from
+plugin discovery or adapter imports: it remains explicitly pending under
+`p1_external_verification` and must run in protected clean external hosts with
+their own short-lived authentication. The same installed-artifact gate
+exercises no-PRD and incomplete semantic
 coverage, denied write authority, missing Executor, cancellation, partial
 receipt, stale Architecture, Unknown Provider, environment isolation,
 cross-host resume (or the explicit unsupported Windows boundary), additive
 P0-to-P1 migration denial, successful adoption, injected interruption rollback
 and retry, project-pinned execution, uninstall, and retained local project
-data. The reported clean-host result is derived from observed package-manager,
-authenticated-network, application-tree, installed-prefix, and normalized
-output boundaries; those guards fail the gate on an undisclosed upload,
-install, login, write, secret transfer, or persisted sensitive value.
+data. The reported clean-host result covers the packed adapter and CLI journey:
+typed adapter imports and no-effect calls are guarded across asynchronous and
+synchronous process, filesystem, network, worker, and native-addon seams;
+authorized package-manager and authenticated loopback operations are recorded
+separately; and application-tree, installed-prefix, and normalized outputs are
+inspected for boundary drift. Native host discovery has a separate result and
+does not claim that model execution or all native-binary effects were observed.

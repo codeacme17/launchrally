@@ -16,11 +16,13 @@ import {
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import { createServer } from "node:https";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { hasClaudeInstalledPlugin } from "./native-plugin-state.mjs";
+import { createIsolatedNativeEnvironment } from "./native-environment.mjs";
 import { assertNoConsumerInstallScripts } from "./release-artifact-policy.mjs";
 
 import {
@@ -29,6 +31,7 @@ import {
 } from "../test/helpers/exact-toolchain.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
 const execFileAsync = promisify(execFile);
 const consumerRuntimePackages = Object.freeze({
   "@clack/core": "1.4.3",
@@ -213,6 +216,103 @@ function assertEqual(actual, expected, code, detail) {
 
 function sha256Text(value) {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+async function withDeniedProcessEffects(observations, action) {
+  const replacements = [];
+  const replace = (owner, method, effect) => {
+    const original = owner[method];
+    if (typeof original !== "function") return;
+    owner[method] = (...arguments_) => {
+      observations.denied_process_effects.push({ effect, method });
+      const error = new Error(`packed_host_unauthorized_effect:${effect}:${method}`);
+      error.code = "packed_host_unauthorized_effect";
+      throw error;
+    };
+    replacements.push(() => { owner[method] = original; });
+  };
+  const childProcess = require("node:child_process");
+  const dns = require("node:dns");
+  const dgram = require("node:dgram");
+  const fs = require("node:fs");
+  const http = require("node:http");
+  const http2 = require("node:http2");
+  const https = require("node:https");
+  const net = require("node:net");
+  const tls = require("node:tls");
+  const workerThreads = require("node:worker_threads");
+  const fsPromises = fs.promises;
+  for (const method of [
+    "exec", "execFile", "execFileSync", "execSync", "fork", "spawn", "spawnSync",
+  ]) {
+    replace(childProcess, method, "process_execution");
+  }
+  for (const method of ["get", "request"]) {
+    replace(http, method, "network_access");
+    replace(https, method, "network_access");
+  }
+  for (const method of ["connect", "createConnection"]) {
+    replace(net, method, "network_access");
+  }
+  replace(tls, "connect", "network_access");
+  replace(http2, "connect", "network_access");
+  replace(dgram, "createSocket", "network_access");
+  for (const method of [
+    "resolve", "resolve4", "resolve6", "resolveAny", "resolveCaa", "resolveCname",
+    "resolveMx", "resolveNaptr", "resolveNs", "resolvePtr", "resolveSoa", "resolveSrv",
+    "resolveTxt", "reverse",
+  ]) replace(dns, method, "network_access");
+  for (const method of [
+    "appendFile",
+    "chmod",
+    "chown",
+    "copyFile",
+    "cp",
+    "link",
+    "mkdir",
+    "mkdtemp",
+    "rename",
+    "rm",
+    "rmdir",
+    "symlink",
+    "truncate",
+    "unlink",
+    "writeFile",
+  ]) replace(fsPromises, method, "filesystem_write");
+  for (const method of [
+    "appendFileSync",
+    "chmodSync",
+    "chownSync",
+    "copyFileSync",
+    "cpSync",
+    "linkSync",
+    "mkdirSync",
+    "renameSync",
+    "rmSync",
+    "rmdirSync",
+    "symlinkSync",
+    "truncateSync",
+    "unlinkSync",
+    "writeFileSync",
+  ]) replace(fs, method, "filesystem_write");
+  replace(process, "dlopen", "native_addon_load");
+  replace(workerThreads, "Worker", "worker_creation");
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (...arguments_) => {
+    observations.denied_process_effects.push({ effect: "network_access", method: "fetch" });
+    const error = new Error("packed_host_unauthorized_effect:network_access:fetch");
+    error.code = "packed_host_unauthorized_effect";
+    throw error;
+  };
+  syncBuiltinESMExports();
+  observations.guarded_process_sections += 1;
+  try {
+    return await action();
+  } finally {
+    for (const restore of replacements.reverse()) restore();
+    globalThis.fetch = originalFetch;
+    syncBuiltinESMExports();
+  }
 }
 
 function assertEnvironmentBoundEvidence(
@@ -473,7 +573,9 @@ async function runInstallationJourneys({
   const effectObservations = {
     package_manager: [],
     authenticated_network: [],
+    denied_process_effects: [],
     file_boundaries: [],
+    guarded_process_sections: 0,
     normalized_outputs: [],
   };
   const runAuthorizedNpm = (arguments_, options, authority) => {
@@ -595,6 +697,7 @@ async function runInstallationJourneys({
     createArchitecturePackageBundle,
     createIntegrationContract,
     createReferenceCoverageMatrix,
+    qualifyReferenceVerificationEvidence,
     referenceExecutorDescriptors,
     referenceIntegrationPacks,
     runArchitectureJourney,
@@ -616,17 +719,7 @@ async function runInstallationJourneys({
   let successfulDownstreamEvidence = false;
   let unsuccessfulDownstreamEvidence = false;
   let receiptClaimsRequireVerification = false;
-  const hostProductIntentModules = await Promise.all(["codex", "claude"].map(async (host) => ({
-    host,
-    module: await import(pathToFileURL(path.join(
-      cleanProject,
-      "node_modules",
-      "@launchrally",
-      `${host}-plugin`,
-      "host-adapter",
-      "product-intent.js",
-    )).href),
-  })));
+  let hostProductIntentModules;
   const referenceCoverage = createReferenceCoverageMatrix();
   if (
     referenceIntegrationPacks.length !== 8
@@ -635,83 +728,88 @@ async function runInstallationJourneys({
     || referenceExecutorDescriptors[0].tools[0].exact_version !== "0.147.0"
     || referenceExecutorDescriptors[1].tools[0].exact_version !== "2.1.231"
   ) throw new Error("packed_reference_integration_roster_drift");
-  for (const host of ["codex", "claude"]) {
-    const module = await import(pathToFileURL(path.join(
-      cleanProject,
-      "node_modules",
-      "@launchrally",
-      `${host}-plugin`,
-      "host-adapter",
-      "reference-journey.js",
-    )).href);
-    const runReferenceJourney = host === "codex"
-      ? module.runCodexReferenceJourney
-      : module.runClaudeReferenceJourney;
-    for (const pack of referenceIntegrationPacks) {
-      p1IntegrationFamilies.add(pack.family);
-      const managed = pack.implementations.filter(({ kind }) => kind === "managed");
-      for (const implementation of managed) {
-        for (const outcome of [
-          "complete", "partial", "denied", "unknown", "stale", "successful", "failed",
-          "cleanup_failed",
-        ]) {
-          const referenceResult = await runReferenceJourney({
-            pack_id: pack.pack_id,
-            implementation_id: implementation.implementation_id,
-            outcome,
-            assessment_time: "2026-08-14T12:00:00.000Z",
-          });
-          effectObservations.normalized_outputs.push(JSON.stringify(referenceResult));
-          const requiresFreshVerification = [
-            "complete", "partial", "successful", "failed", "cleanup_failed",
-          ].includes(outcome);
-          const evidenceTarget = referenceResult.fresh_verification_request
-            ?.task_requests?.[0]?.evidence_targets?.[0] ?? "";
-          if (
-            referenceResult.outcome !== outcome
-            || referenceResult.machine_evidence !== false
-            || referenceResult.assurance_change !== false
-            || (requiresFreshVerification
-              && (referenceResult.receipt_claim_only !== true
-                || referenceResult.fresh_verification_request?.operation !== "verify"
-                || referenceResult.fresh_verification_request?.fresh_evidence_required !== true
-                || !evidenceTarget.includes(pack.pack_digest.slice(7))
-                || !evidenceTarget.includes(implementation.implementation_id)))
-          ) {
-            throw new Error(
-              `packed_${host}_reference_journey_drift:${pack.family}:${implementation.implementation_id}:${outcome}`,
-            );
-          }
-          if (requiresFreshVerification) receiptClaimsRequireVerification = true;
-          if (outcome === "complete" && !integrationVerificationRequests.has(pack.family)) {
-            integrationVerificationRequests.set(pack.family, {
-              pack_digest: pack.pack_digest,
+  await withDeniedProcessEffects(effectObservations, async () => {
+    for (const host of ["codex", "claude"]) {
+      const module = await import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        `${host}-plugin`,
+        "host-adapter",
+        "reference-journey.js",
+      )).href);
+      const runReferenceJourney = host === "codex"
+        ? module.runCodexReferenceJourney
+        : module.runClaudeReferenceJourney;
+      for (const pack of referenceIntegrationPacks) {
+        p1IntegrationFamilies.add(pack.family);
+        const managed = pack.implementations.filter(({ kind }) => kind === "managed");
+        for (const implementation of managed) {
+          for (const outcome of [
+            "complete", "partial", "denied", "unknown", "stale", "successful", "failed",
+            "cleanup_failed",
+          ]) {
+            const referenceResult = await runReferenceJourney({
+              pack_id: pack.pack_id,
               implementation_id: implementation.implementation_id,
-              request: structuredClone(referenceResult.fresh_verification_request),
+              outcome,
+              environment: "production",
+              assessment_time: "2026-08-14T12:00:00.000Z",
             });
+            effectObservations.normalized_outputs.push(JSON.stringify(referenceResult));
+            const requiresFreshVerification = [
+              "complete", "partial", "successful", "failed", "cleanup_failed",
+            ].includes(outcome);
+            const evidenceTarget = referenceResult.fresh_verification_request
+              ?.task_requests?.[0]?.evidence_targets?.[0] ?? "";
+            if (
+              referenceResult.outcome !== outcome
+              || referenceResult.machine_evidence !== false
+              || referenceResult.assurance_change !== false
+              || (requiresFreshVerification
+                && (referenceResult.receipt_claim_only !== true
+                  || referenceResult.fresh_verification_request?.operation !== "verify"
+                  || referenceResult.fresh_verification_request?.fresh_evidence_required !== true
+                  || !evidenceTarget.includes(pack.pack_digest.slice(7))
+                  || !evidenceTarget.includes(implementation.implementation_id)))
+            ) {
+              throw new Error(
+                `packed_${host}_reference_journey_drift:${pack.family}:${implementation.implementation_id}:${outcome}`,
+              );
+            }
+            if (requiresFreshVerification) receiptClaimsRequireVerification = true;
+            if (outcome === "complete" && !integrationVerificationRequests.has(pack.family)) {
+              integrationVerificationRequests.set(pack.family, {
+                pack_digest: pack.pack_digest,
+                implementation_id: implementation.implementation_id,
+                request: structuredClone(referenceResult.fresh_verification_request),
+                verification_subject: structuredClone(referenceResult.verification_subject),
+              });
+            }
+            if (outcome === "partial") p1Scenarios.add("partial_receipt");
+            if (outcome === "denied") p1Scenarios.add("denied_write");
+            if (outcome === "unknown") p1Scenarios.add("missing_executor");
           }
-          if (outcome === "partial") p1Scenarios.add("partial_receipt");
-          if (outcome === "denied") p1Scenarios.add("denied_write");
-          if (outcome === "unknown") p1Scenarios.add("missing_executor");
         }
+        const unknown = pack.implementations.find(({ kind }) => kind === "unknown");
+        const unknownProvider = await runReferenceJourney({
+          pack_id: pack.pack_id,
+          implementation_id: unknown.implementation_id,
+          outcome: "unknown",
+          environment: "production",
+          assessment_time: "2026-08-14T12:00:00.000Z",
+        });
+        effectObservations.normalized_outputs.push(JSON.stringify(unknownProvider));
+        if (
+          unknownProvider.status !== "verification_gap"
+          || unknownProvider.reason_code !== "unsupported_reference_executor"
+          || unknownProvider.machine_evidence !== false
+        ) throw new Error(`packed_${host}_unknown_provider_not_transparent:${pack.family}`);
+        p1Scenarios.add("unknown_provider");
       }
-      const unknown = pack.implementations.find(({ kind }) => kind === "unknown");
-      const unknownProvider = await runReferenceJourney({
-        pack_id: pack.pack_id,
-        implementation_id: unknown.implementation_id,
-        outcome: "unknown",
-        assessment_time: "2026-08-14T12:00:00.000Z",
-      });
-      effectObservations.normalized_outputs.push(JSON.stringify(unknownProvider));
-      if (
-        unknownProvider.status !== "verification_gap"
-        || unknownProvider.reason_code !== "unsupported_reference_executor"
-        || unknownProvider.machine_evidence !== false
-      ) throw new Error(`packed_${host}_unknown_provider_not_transparent:${pack.family}`);
-      p1Scenarios.add("unknown_provider");
+      p1HostJourneys.add(host);
     }
-    p1HostJourneys.add(host);
-  }
+  });
   const cancellationPack = referenceIntegrationPacks[0];
   const cancellationImplementation = cancellationPack.implementations.find(
     ({ kind }) => kind === "managed",
@@ -1248,52 +1346,68 @@ async function runInstallationJourneys({
   await writeFile(reportPath, JSON.stringify(auditCompleted));
 
   let intentCompleted;
-  for (const { host, module } of hostProductIntentModules) {
-    const runProductIntentDiscovery = host === "codex"
-      ? module.runCodexProductIntentDiscovery
-      : module.runClaudeProductIntentDiscovery;
-    const intentInput = await runProductIntentDiscovery(activeRepository);
-    const confirmedBehaviors = intentInput.candidates.behaviors.length > 0
-      ? intentInput.candidates.behaviors.map(({ behavior_id: id }) => id)
-      : ["teams_collaborate_in_realtime"];
-    const intentPreview = await runProductIntentDiscovery(activeRepository, {
-      resume_token: intentInput.resume_token,
-      answers: {
-        intended_environment: "production",
-        confirmed_behaviors: confirmedBehaviors,
-        hard_constraints: [],
-        preferences: [],
-      },
-    });
-    const completed = await runProductIntentDiscovery(activeRepository, {
-      resume_token: intentPreview.resume_token,
-      confirmation: "confirm",
-    });
-    if (completed.status !== "completed") {
-      throw new Error(`packed_${host}_phase_1_intent_discovery_failed`);
+  await withDeniedProcessEffects(effectObservations, async () => {
+    hostProductIntentModules = await Promise.all(["codex", "claude"].map(async (host) => ({
+      host,
+      module: await import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        `${host}-plugin`,
+        "host-adapter",
+        "product-intent.js",
+      )).href),
+    })));
+    for (const { host, module } of hostProductIntentModules) {
+      const runProductIntentDiscovery = host === "codex"
+        ? module.runCodexProductIntentDiscovery
+        : module.runClaudeProductIntentDiscovery;
+      const intentInput = await runProductIntentDiscovery(activeRepository);
+      const confirmedBehaviors = intentInput.candidates.behaviors.length > 0
+        ? intentInput.candidates.behaviors.map(({ behavior_id: id }) => id)
+        : ["teams_collaborate_in_realtime"];
+      const intentPreview = await runProductIntentDiscovery(activeRepository, {
+        resume_token: intentInput.resume_token,
+        answers: {
+          intended_environment: "production",
+          confirmed_behaviors: confirmedBehaviors,
+          hard_constraints: [],
+          preferences: [],
+        },
+      });
+      const completed = await runProductIntentDiscovery(activeRepository, {
+        resume_token: intentPreview.resume_token,
+        confirmation: "confirm",
+      });
+      if (completed.status !== "completed") {
+        throw new Error(`packed_${host}_phase_1_intent_discovery_failed`);
+      }
+      intentCompleted ??= completed;
+      assertEqual(
+        { ...completed.profile, created_at: null },
+        { ...intentCompleted.profile, created_at: null },
+        `packed_${host}_phase_1_intent_drift`,
+        "Codex and Claude must expose the same typed no-PRD Product Intent result",
+      );
     }
-    intentCompleted ??= completed;
-    assertEqual(
-      { ...completed.profile, created_at: null },
-      { ...intentCompleted.profile, created_at: null },
-      `packed_${host}_phase_1_intent_drift`,
-      "Codex and Claude must expose the same typed no-PRD Product Intent result",
-    );
-  }
+  });
   p1Scenarios.add("no_prd");
   const unsupportedMaterial = path.join(activeRepository, "unsupported-product-material.pdf");
   await writeFile(unsupportedMaterial, "synthetic unsupported product material\n");
-  const semanticInput = await hostProductIntentModules[0].module.runCodexProductIntentDiscovery(
-    activeRepository,
-    { selected_materials: [path.basename(unsupportedMaterial)] },
-  );
-  const semanticPartial = await hostProductIntentModules[0].module.runCodexProductIntentDiscovery(
-    activeRepository,
-    {
-      resume_token: semanticInput.resume_token,
-      permission_decision: "approved",
-    },
-  );
+  const semanticPartial = await withDeniedProcessEffects(effectObservations, async () => {
+    const semanticInput = await hostProductIntentModules[0].module
+      .runCodexProductIntentDiscovery(
+        activeRepository,
+        { selected_materials: [path.basename(unsupportedMaterial)] },
+      );
+    return hostProductIntentModules[0].module.runCodexProductIntentDiscovery(
+      activeRepository,
+      {
+        resume_token: semanticInput.resume_token,
+        permission_decision: "approved",
+      },
+    );
+  });
   await rm(unsupportedMaterial);
   if (
     semanticPartial.status !== "needs_input"
@@ -1622,20 +1736,24 @@ async function runInstallationJourneys({
     for (const family of P1_INTEGRATION_FAMILIES) {
       const binding = integrationVerificationRequests.get(family);
       const evidenceTargets = binding?.request?.task_requests?.[0]?.evidence_targets ?? [];
+      const exactTarget = evidenceTargets[0] ?? "";
       if (
         !binding
-        || !evidenceTargets.some((target) => target.includes(binding.pack_digest.slice(7)))
-        || !evidenceTargets.some((target) => target.includes(binding.implementation_id))
-        || !evidenceTargets.includes("repository:.env.example")
+        || evidenceTargets.length !== 1
+        || !exactTarget.startsWith("repository:.env.reference_")
+        || !exactTarget.endsWith(".example")
+        || !exactTarget.includes(binding.pack_digest.slice(7))
+        || !exactTarget.includes(binding.implementation_id)
+        || binding.verification_subject?.target !== exactTarget
+        || binding.verification_subject?.environment !== "production"
+        || binding.verification_subject?.payload?.pack_ref?.digest !== binding.pack_digest
+        || binding.verification_subject?.payload?.implementation?.id
+          !== binding.implementation_id
       ) throw new Error(`packed_integration_verify_request_unbound:${family}`);
       await writeFile(integrationReportPath, JSON.stringify(integrationSource));
-      const marker = [
-        `LAUNCHRALLY_REFERENCE_FAMILY=${family}`,
-        `LAUNCHRALLY_REFERENCE_PACK_DIGEST=${binding.pack_digest}`,
-        `LAUNCHRALLY_REFERENCE_IMPLEMENTATION=${binding.implementation_id}`,
-        "",
-      ].join("\n");
-      await writeFile(path.join(activeRepository, ".env.example"), marker);
+      const marker = `${JSON.stringify(binding.verification_subject.payload)}\n`;
+      const evidencePath = exactTarget.slice("repository:".length);
+      await writeFile(path.join(activeRepository, evidencePath), marker);
       const permission = JSON.parse((await invokeLauncher("rally", [
         "verify", "--json", "--cwd", activeRepository,
         "--report", integrationReportPath,
@@ -1650,15 +1768,30 @@ async function runInstallationJourneys({
         verified,
         "production",
         "passed",
-        { target: "repository:.env.example" },
+        { target: exactTarget },
+      );
+      const pack = referenceIntegrationPacks.find(({ family: candidate }) => (
+        candidate === family
+      ));
+      const qualification = qualifyReferenceVerificationEvidence(
+        pack,
+        binding.implementation_id,
+        entry,
+        marker,
+        "2026-08-14T12:00:00.000Z",
+        binding.verification_subject.environment,
       );
       if (
         verified.status !== "completed"
         || entry.evidence_kind !== "file"
-        || entry.normalized_artifact?.path !== ".env.example"
+        || entry.normalized_artifact?.path !== evidencePath
         || entry.normalized_artifact?.content_digest !== sha256Text(marker)
+        || qualification.status !== "verified"
+        || qualification.evidence_ref?.digest !== entry.digest
+        || JSON.stringify(qualification.observation)
+          !== JSON.stringify(binding.verification_subject.expected_observation)
         || !verified.comparison?.invalidated_evidence?.some(
-          ({ target }) => target === "repository:.env.example",
+          ({ target }) => target === exactTarget,
         )
       ) throw new Error(`packed_integration_fresh_verify_failed:${family}`);
       integrationFreshVerify[family] = "environment_bound_fresh_evidence";
@@ -2339,26 +2472,35 @@ async function runInstallationJourneys({
       && (!successfulDownstreamEvidence || !unsuccessfulDownstreamEvidence))
   ) throw new Error("p1_fresh_verify_matrix_incomplete");
 
+  const sensitivePattern = /packaged-host-secret|bearer\s|"cookie"\s*:|"headers"\s*:/iu;
+  const persistedProjectOutput = JSON.stringify(await snapshotTree(projectData));
   const persistedSensitiveValue = effectObservations.normalized_outputs.some((output) =>
-    /packaged-host-secret|bearer\s|"cookie"|"headers"|response_body/iu.test(output));
+    sensitivePattern.test(output)) || sensitivePattern.test(persistedProjectOutput);
   if (
     effectObservations.package_manager.length < 4
     || effectObservations.file_boundaries.length < 4
     || effectObservations.normalized_outputs.length === 0
+    || effectObservations.guarded_process_sections < 3
     || (process.platform !== "win32"
       && effectObservations.authenticated_network.length !== 6)
   ) throw new Error("p1_clean_host_observation_incomplete");
   const cleanHost = {
     unauthorized_install: effectObservations.package_manager.some(
       ({ authorized }) => authorized !== true,
+    ) || effectObservations.denied_process_effects.some(
+      ({ effect }) => effect === "process_execution",
     ),
     unauthorized_login: effectObservations.authenticated_network.some(
       ({ effect }) => effect !== "authenticated_network_read",
     ),
-    unauthorized_upload: effectObservations.authenticated_network.some(
+    unauthorized_upload: effectObservations.denied_process_effects.some(
+      ({ effect }) => effect === "network_access",
+    ) || effectObservations.authenticated_network.some(
       ({ method, destination }) => method !== "GET" || destination !== "loopback_fixture",
     ),
-    unauthorized_write: effectObservations.file_boundaries.some(
+    unauthorized_write: effectObservations.denied_process_effects.some(
+      ({ effect }) => effect === "filesystem_write",
+    ) || effectObservations.file_boundaries.some(
       ({ preserved }) => preserved !== true,
     ),
     manual_secret_transfer: effectObservations.authenticated_network.some(
@@ -2367,7 +2509,7 @@ async function runInstallationJourneys({
     sensitive_persistence: persistedSensitiveValue,
   };
   if (Object.values(cleanHost).some(Boolean)) {
-    throw new Error("p1_clean_host_effect_boundary_failed");
+    throw new Error(`p1_clean_host_effect_boundary_failed:${JSON.stringify(cleanHost)}`);
   }
 
   return {
@@ -2931,7 +3073,72 @@ async function runNative(name, arguments_, options) {
   return run(native.command, [...native.prefix, ...arguments_], options);
 }
 
+async function isolatedNativeEnvironment(temporaryRoot, name) {
+  const directory = path.join(temporaryRoot, name);
+  await mkdir(directory, { recursive: true });
+  const home = path.join(directory, "home");
+  const codexHome = path.join(directory, "codex");
+  const claudeConfig = path.join(directory, "claude");
+  await Promise.all([
+    mkdir(home, { recursive: true }),
+    mkdir(codexHome, { recursive: true }),
+    mkdir(claudeConfig, { recursive: true }),
+  ]);
+  return {
+    directory,
+    codexHome,
+    claudeConfig,
+    environment: createIsolatedNativeEnvironment(process.env, {
+      home,
+      codex_home: codexHome,
+      claude_config_dir: claudeConfig,
+    }),
+  };
+}
+
+async function nativeEffectBoundary(temporaryRoot) {
+  const boundary = await isolatedNativeEnvironment(
+    temporaryRoot,
+    "native-host-effect-boundary",
+  );
+  const guard = path.join(boundary.directory, "deny-undisclosed-effects.cjs");
+  await writeFile(guard, [
+    'const deny = (effect) => () => { throw new Error(`native host ${effect} attempted`); };',
+    'const childProcess = require("node:child_process");',
+    'const originalSpawn = childProcess.spawn;',
+    'const http = require("node:http");',
+    'const https = require("node:https");',
+    'const net = require("node:net");',
+    'for (const method of ["exec", "execFile", "fork"]) {',
+    '  childProcess[method] = deny("process execution");',
+    '}',
+    'childProcess.spawn = (command, ...args) => {',
+    '  const normalized = String(command).replaceAll("\\\\", "/");',
+    '  if ((normalized.includes("/node_modules/@openai/codex/vendor/")',
+    '    || normalized.includes("/node_modules/@openai/codex-"))',
+    '    && (normalized.endsWith("/codex") || normalized.endsWith("/codex.exe"))) {',
+    '    return originalSpawn(command, ...args);',
+    '  }',
+    '  throw new Error("native host process execution attempted");',
+    '};',
+    'for (const owner of [http, https]) {',
+    '  owner.get = deny("network access");',
+    '  owner.request = deny("network access");',
+    '}',
+    'net.connect = deny("network access");',
+    'net.createConnection = deny("network access");',
+    'global.fetch = deny("network access");',
+    'require("node:module").syncBuiltinESMExports();',
+  ].join("\n"));
+  boundary.environment.NODE_OPTIONS = [
+    boundary.environment.NODE_OPTIONS ?? "",
+    `--require=${guard}`,
+  ].filter(Boolean).join(" ");
+  return boundary;
+}
+
 async function validatePackedNativePlugins(temporaryRoot, cleanProject) {
+  const boundary = await nativeEffectBoundary(temporaryRoot);
   const claudePlugin = path.join(
     cleanProject,
     "node_modules",
@@ -2943,7 +3150,48 @@ async function validatePackedNativePlugins(temporaryRoot, cleanProject) {
     "validate",
     "--strict",
     claudePlugin,
-  ], { cwd: cleanProject });
+  ], { cwd: cleanProject, env: boundary.environment });
+  const claudeMarketplaceRoot = path.join(temporaryRoot, "claude-marketplace");
+  const claudeMarketplacePlugin = path.join(
+    claudeMarketplaceRoot,
+    "plugins",
+    "launchrally",
+  );
+  await mkdir(path.join(claudeMarketplaceRoot, ".claude-plugin"), { recursive: true });
+  await cp(claudePlugin, claudeMarketplacePlugin, { recursive: true });
+  await writeFile(
+    path.join(claudeMarketplaceRoot, ".claude-plugin", "marketplace.json"),
+    `${JSON.stringify({
+      $schema: "https://anthropic.com/claude-code/marketplace.schema.json",
+      name: "launchrally-smoke",
+      description: "Local packed LaunchRally smoke-test marketplace.",
+      owner: { name: "LaunchRally" },
+      plugins: [{
+        name: "launchrally",
+        source: "./plugins/launchrally",
+        description: "Local packed LaunchRally plugin.",
+        category: "development",
+      }],
+    }, null, 2)}\n`,
+  );
+  await runNative("claude", [
+    "plugin", "marketplace", "add", claudeMarketplaceRoot, "--scope", "user",
+  ], { cwd: cleanProject, env: boundary.environment });
+  await runNative("claude", [
+    "plugin", "install", "launchrally@launchrally-smoke", "--scope", "user",
+  ], { cwd: cleanProject, env: boundary.environment });
+  const claudeInstalled = JSON.parse((await runNative("claude", [
+    "plugin", "list", "--json",
+  ], { cwd: cleanProject, env: boundary.environment })).stdout);
+  if (!JSON.stringify(claudeInstalled).includes("launchrally@launchrally-smoke")) {
+    throw new Error("packed_claude_native_plugin_not_discovered");
+  }
+  await runNative("claude", [
+    "plugin", "uninstall", "launchrally@launchrally-smoke", "--scope", "user",
+  ], { cwd: cleanProject, env: boundary.environment });
+  await runNative("claude", [
+    "plugin", "marketplace", "remove", "launchrally-smoke",
+  ], { cwd: cleanProject, env: boundary.environment });
 
   const codexPlugin = path.join(
     cleanProject,
@@ -2967,29 +3215,42 @@ async function validatePackedNativePlugins(temporaryRoot, cleanProject) {
       }],
     }, null, 2)}\n`,
   );
-  const codexHome = path.join(temporaryRoot, "codex-user-scope");
-  await mkdir(codexHome, { recursive: true });
-  const codexEnvironment = { ...process.env, CODEX_HOME: codexHome };
   await runNative("codex", [
     "plugin", "marketplace", "add", marketplaceRoot, "--json",
-  ], { cwd: cleanProject, env: codexEnvironment });
+  ], { cwd: cleanProject, env: boundary.environment });
   await runNative("codex", [
     "plugin", "add", "launchrally@launchrally-smoke", "--json",
-  ], { cwd: cleanProject, env: codexEnvironment });
+  ], { cwd: cleanProject, env: boundary.environment });
+  const codexInstalled = JSON.parse((await runNative("codex", [
+    "plugin", "list", "--json",
+  ], { cwd: cleanProject, env: boundary.environment })).stdout);
+  if (!JSON.stringify(codexInstalled).includes("launchrally@launchrally-smoke")) {
+    throw new Error("packed_codex_native_plugin_not_discovered");
+  }
   await runNative("codex", [
     "plugin", "remove", "launchrally@launchrally-smoke", "--json",
-  ], { cwd: cleanProject, env: codexEnvironment });
+  ], { cwd: cleanProject, env: boundary.environment });
 
   return {
-    claude: "strictly_validated",
-    codex: "installed_and_removed",
+    statuses: {
+      claude: "installed_discovered_and_removed",
+      codex: "installed_discovered_and_removed",
+    },
+    effects: {
+      configuration_isolated: true,
+      sensitive_environment_removed: true,
+      scope: "native_plugin_discovery_only",
+      agent_execution: "p1_external_verification_required",
+    },
   };
 }
 
 async function validatePublicNativePlugins(temporaryRoot, cleanProject, version) {
-  const claudeConfig = path.join(temporaryRoot, "claude-user-scope");
-  await mkdir(claudeConfig, { recursive: true });
-  const claudeEnvironment = { ...process.env, CLAUDE_CONFIG_DIR: claudeConfig };
+  const boundary = await isolatedNativeEnvironment(
+    temporaryRoot,
+    "public-native-host-boundary",
+  );
+  const claudeEnvironment = boundary.environment;
   await runNative("claude", [
     "plugin", "marketplace", "add", "codeacme17/launchrally", "--scope", "user",
   ], { cwd: cleanProject, env: claudeEnvironment });
@@ -3033,9 +3294,7 @@ async function validatePublicNativePlugins(temporaryRoot, cleanProject, version)
     "plugin", "marketplace", "remove", "launchrally", "--scope", "user",
   ], { cwd: cleanProject, env: claudeEnvironment });
 
-  const codexHome = path.join(temporaryRoot, "codex-user-scope");
-  await mkdir(codexHome, { recursive: true });
-  const codexEnvironment = { ...process.env, CODEX_HOME: codexHome };
+  const codexEnvironment = boundary.environment;
   await runNative("codex", [
     "plugin", "marketplace", "add", "codeacme17/launchrally", "--ref", `v${version}`, "--json",
   ], { cwd: cleanProject, env: codexEnvironment });
@@ -3058,8 +3317,16 @@ async function validatePublicNativePlugins(temporaryRoot, cleanProject, version)
   ], { cwd: cleanProject, env: codexEnvironment });
 
   return {
-    claude: "public_marketplace_installed_and_removed",
-    codex: "tagged_public_marketplace_installed_and_removed",
+    statuses: {
+      claude: "public_marketplace_installed_and_removed",
+      codex: "tagged_public_marketplace_installed_and_removed",
+    },
+    effects: {
+      configuration_isolated: true,
+      sensitive_environment_removed: true,
+      scope: "public_native_plugin_discovery_only",
+      agent_execution: "p1_external_verification_required",
+    },
   };
 }
 
@@ -3232,8 +3499,8 @@ async function main() {
       publicLegacy,
       publicRelease,
     });
-    const nativePlugins = process.argv.includes("--skip-native")
-      ? "skipped"
+    const nativeValidation = process.argv.includes("--skip-native")
+      ? { statuses: "skipped", effects: null }
       : publicRelease
         ? await validatePublicNativePlugins(
           temporaryRoot,
@@ -3241,6 +3508,7 @@ async function main() {
           rootPackage.version,
         )
         : await validatePackedNativePlugins(temporaryRoot, cliSmoke.cleanProject);
+    const nativePlugins = nativeValidation.statuses;
     if (nativePlugins === "skipped") {
       installationJourneys.result.plugin_removal = "skipped";
     } else {
@@ -3265,8 +3533,14 @@ async function main() {
       integration_fresh_verify: installationJourneys.p1Evidence.integrationFreshVerify,
       host_journeys: installationJourneys.p1Evidence.hostJourneys,
       native_host_journeys: nativePlugins === "skipped" ? "skipped" : {
-        claude: "strict_validation_and_typed_journey",
-        codex: "native_installation_and_typed_journey",
+        claude: {
+          discovery: "native_plugin_installed_listed_and_removed",
+          agent_execution: "p1_external_verification_required",
+        },
+        codex: {
+          discovery: "native_plugin_installed_listed_and_removed",
+          agent_execution: "p1_external_verification_required",
+        },
       },
       cross_host_resume: process.platform === "win32"
         ? "typed_unavailable"
@@ -3291,6 +3565,7 @@ async function main() {
       installation_journeys: installationJourneys.result,
       p1_exact_artifacts: p1ExactArtifacts,
       native_plugins: nativePlugins,
+      native_plugin_boundary: nativeValidation.effects,
     };
     return publicRelease
       ? {
@@ -3308,7 +3583,13 @@ async function main() {
   }
 }
 
-if (process.argv.includes("--public") && process.argv.includes("--dry-run")) {
+const autoDiscoveredByNodeTest = process.env.NODE_TEST_CONTEXT !== undefined
+  && process.argv.length === 2;
+
+if (autoDiscoveredByNodeTest) {
+  // The named release-gate test invokes this script once with --json. Avoid a
+  // second concurrent full journey when node --test discovers this file by name.
+} else if (process.argv.includes("--public") && process.argv.includes("--dry-run")) {
   const release = await json(path.join(root, "release", "artifacts.json"));
   const rootPackage = await json(path.join(root, "package.json"));
   const distTag = publicDistTag();
