@@ -22,6 +22,7 @@ const PUBLIC_OUTCOMES = new Set([
   "healthy",
   "completed",
   "access_boundary_confirmed",
+  "access_boundary_failure",
   "timeout",
   "dns_failure",
   "certificate_failure",

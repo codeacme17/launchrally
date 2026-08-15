@@ -261,6 +261,16 @@ test("authenticated Journey success and failure are normative Phase 1 Machine Ev
     "launchrally.dev/authenticated-journey-evidence/v1");
   assert.equal(assertValidAuthenticatedJourneyEvidence(failure), true);
   assert.equal(assertValidAuthenticatedJourneyEvidence(success), true);
+  const signedTokenJourney = {
+    ...structuredClone(success),
+    target: "https://example.com/guardian/authorize",
+    authentication_class: "signed_token",
+    provenance: {
+      ...success.provenance,
+      exact_target: "https://example.com/guardian/authorize",
+    },
+  };
+  assert.equal(assertValidAuthenticatedJourneyEvidence(signedTokenJourney), true);
   assert.throws(
     () => assertValidAuthenticatedJourneyEvidence({
       ...failure,

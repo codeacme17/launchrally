@@ -1,15 +1,12 @@
-import { PROTECTED_JOURNEY_SCHEMA } from "@launchrally/contracts";
+import {
+  PROTECTED_JOURNEY_PATH_SEGMENTS,
+  PROTECTED_JOURNEY_SCHEMA,
+} from "@launchrally/contracts";
 
 const DECLARED_JOURNEY = /^([a-z]+)\s+(\/\S*)(?:\s+(?:—|-)\s+(.+))?$/iu;
 const AUTHENTICATION_CLASSES = new Set(["user", "staff", "signed_token"]);
 const PROTECTED_JOURNEY_PURPOSE = "authenticated Core Journey";
-const SAFE_PROTECTED_PATH_SEGMENTS = new Set([
-  "account", "accounts", "admin", "api", "app", "billing", "checkout",
-  "control", "dashboard", "files", "health", "home", "inbox", "me",
-  "orders", "organization", "organizations", "portal", "private", "profile",
-  "protected", "session", "settings", "staff", "status", "team", "teams",
-  "uploads", "user", "users", "v1", "v2", "v3", "workspace", "workspaces",
-]);
+const SAFE_PROTECTED_PATH_SEGMENTS = new Set(PROTECTED_JOURNEY_PATH_SEGMENTS);
 
 function exactKeys(value, expected) {
   return value

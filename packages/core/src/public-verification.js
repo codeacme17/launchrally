@@ -296,6 +296,13 @@ async function runProbe(probe, { signal } = {}) {
       details: { status_code: statusCode },
     };
   }
+  if (probe.expected_status_codes) {
+    return {
+      status: "failed",
+      outcome: "access_boundary_failure",
+      details: { status_code: statusCode },
+    };
+  }
   const location = redirectTarget(response.headers.location, probe.target);
   if (statusCode >= 300 && statusCode < 400) {
     const targetMismatch = location && location !== "invalid"
