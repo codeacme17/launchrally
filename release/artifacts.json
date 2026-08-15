@@ -164,6 +164,7 @@
         "bin/engine.js",
         "bin/human-architect.js",
         "bin/human-audit.js",
+        "bin/human-init.js",
         "bin/invocation-context.js",
         "bin/prompt-adapters.js",
         "bin/rally.js",
