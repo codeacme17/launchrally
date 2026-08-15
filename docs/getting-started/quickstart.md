@@ -27,7 +27,7 @@ The Audit presents the complete Brief and Check plan before work begins. Local s
 
 Audit does not create `.launchrally`; `--output` saves the complete Report at the explicit path shown above. Confirmed Init is the first project mutation. In TTY Human Mode, Init remains in the same process: approve or deny any separate `npm_registry_read` request, review the authoritative digest-bound preview, and then explicitly confirm or decline it. Decline or Ctrl-C leaves project-owned files unchanged. Init changes only LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
 
-Agent/CI Mode retains the explicit structured protocol. Start with `rally init --json --cwd . --report ./launchrally-audit-report.json`, then use each returned `--resume <token>` with only the requested permission or confirmation option. Non-TTY Human Mode fails safely and points to this protocol instead of presenting an inactive choice.
+Agent Mode, including CI use, retains the explicit structured protocol. Start with `rally init --json --cwd . --report ./launchrally-audit-report.json`, then use each returned `--resume <token>` with only the requested permission or confirmation option. Non-TTY Human Mode fails safely and points to this protocol instead of presenting an inactive choice.
 
 The final version command is read-only. Require `authority.state: "ready"` and, after Init, `authority.source: "project_toolchain"`. The Launcher then delegates repository commands to the project-pinned Engine. A supported same, newer, or older Launcher follows the valid pin; it does not upgrade, downgrade, or replace it.
 

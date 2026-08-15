@@ -145,7 +145,7 @@ test("the Human Init driver submits an explicit decline without applying changes
   const outcome = await runHumanInit({
     cwd: "/workspace",
     version: "0.4.0",
-    initialOptions: { report_package: { report: { report_id: "report-1" } } },
+    reportPackage: { report: { report_id: "report-1" } },
     prompt: {
       async start() {},
       async respondInit() {

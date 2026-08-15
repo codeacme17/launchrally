@@ -744,6 +744,14 @@ async function main() {
       return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
     }
 
+    if (["--resume", "--confirm", "--permissions"].some((option) => args.includes(option))) {
+      process.stderr.write([
+        "Human Mode does not accept structured Init decisions.",
+        "Use rally init --json with --resume <token> and the requested decision option.",
+      ].join("\n") + "\n");
+      return 2;
+    }
+
     if (process.stdin.isTTY !== true) {
       process.stderr.write([
         "Non-TTY Human Mode cannot prompt safely.",
@@ -769,7 +777,7 @@ async function main() {
       version: VERSION,
       prompt,
       runInit,
-      initialOptions,
+      reportPackage,
     });
     if (outcome.exitCode === 130) {
       process.stderr.write("Init cancelled. Project-owned files were not changed.\n");

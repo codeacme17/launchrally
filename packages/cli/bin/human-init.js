@@ -43,16 +43,11 @@ export async function runHumanInit({
   prompt,
   runInit,
   reportPackage,
-  initialOptions,
 }) {
   let result;
   try {
     await prompt.start("init");
-    result = await runInit(
-      cwd,
-      version,
-      initialOptions ?? { report_package: reportPackage },
-    );
+    result = await runInit(cwd, version, { report_package: reportPackage });
 
     while (["needs_confirmation", "needs_permission"].includes(result.status)) {
       const response = await prompt.respondInit(result);
