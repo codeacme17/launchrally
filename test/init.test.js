@@ -2151,31 +2151,44 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
   assert.deepEqual(await readdir(directory), [".launchrally", "package-lock.json", "package.json"]);
 });
 
-test("Human Mode renders every exact initialization change before confirmation", async () => {
+test("non-TTY Human Init fails safely and points to the structured protocol", async () => {
   const directory = await fixtureWithCliDependency("0.3.2");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-human-report-"));
   const reportPath = path.join(reportDirectory, "audit.json");
   await writeFile(reportPath, JSON.stringify(audit));
 
-  const processResult = await execFileAsync(process.execPath, [
-    engine,
-    "init",
-    "--cwd",
-    directory,
-    "--report",
-    reportPath,
-  ]);
-
-  assert.match(processResult.stdout, /^LaunchRally Initialization Preview/mu);
-  assert.match(processResult.stdout, /CREATE \.launchrally\/\.gitignore/u);
-  assert.match(
-    processResult.stdout,
-    /\/reports\/\n\/evidence\/\n\/cache\/\n\/transactions\/\n\/locks\/\n\/toolchain\/node_modules\/\n\/\.init-transaction\/\n\/\.toolchain-transaction\//u,
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      engine,
+      "init",
+      "--cwd",
+      directory,
+      "--report",
+      reportPath,
+    ]),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stderr, /Non-TTY Human Mode cannot prompt safely/u);
+      assert.match(error.stderr, /rally init --json --cwd <path>/u);
+      assert.match(error.stderr, /--resume <token>/u);
+      assert.equal(error.stdout, "");
+      return true;
+    },
   );
-  assert.match(processResult.stdout, /CREATE \.launchrally\/manifest\.yaml/u);
-  assert.match(processResult.stdout, /Apply exactly these local initialization changes\?/u);
-  assert.match(processResult.stdout, /Resume token: .{20,}/u);
+  assert.deepEqual(
+    await readdir(directory),
+    [".launchrally", "package-lock.json", "package.json"],
+  );
+});
+
+test("the Quickstart documents same-process Human Init and explicit Agent resumes", async () => {
+  const quickstart = await readFile("docs/getting-started/quickstart.md", "utf8");
+
+  assert.match(quickstart, /Init remains in the same process/iu);
+  assert.match(quickstart, /confirm or decline/iu);
+  assert.match(quickstart, /Ctrl-C/iu);
+  assert.match(quickstart, /Agent\/CI Mode[\s\S]*--resume <token>/iu);
 });
 
 test("initialization never stages or commits its project-owned files", async () => {
