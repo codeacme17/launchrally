@@ -9,10 +9,15 @@ import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
+const currentVersion = JSON.parse(await readFile(
+  path.join(root, "package.json"),
+  "utf8",
+)).version;
 
 async function createAcceptanceFixture() {
   return copyRepositoryFixture(root, "launchrally-acceptance-", [
     ".github",
+    "CHANGELOG.md",
     "adapters",
     "docs",
     "fixtures",
@@ -182,7 +187,7 @@ test("CI runs contract and clean journey gates on every required Node and OS tar
     assert.match(ci, new RegExp(command, "u"), command);
     assert.match(release, new RegExp(command, "u"), command);
   }
-  assert.match(release, /npm run validate:acceptance -- --require-release-ready/u);
+  assert.match(release, /npm run validate:p1 -- --require-publish-ready/u);
   assert.match(release, /public-smoke:[\s\S]*needs: publish[\s\S]*npm run test:public-release/u);
   assert.match(release, /prerelease:[\s\S]*needs: public-smoke[\s\S]*gh release create/u);
 });
@@ -281,7 +286,7 @@ test("Stable readiness requires the separately approved promotion state", async 
         denied_permission: "docs/maintainers/stable-e2e-evidence.md",
         direct_cli: "docs/maintainers/stable-e2e-evidence.md",
       },
-      approved_tag: "v0.3.2",
+      approved_tag: `v${currentVersion}`,
     },
   });
   await writeFile(

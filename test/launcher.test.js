@@ -13,6 +13,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const launcher = path.resolve("packages/cli/bin/rally.js");
+const currentVersion = JSON.parse(await readFile("package.json", "utf8")).version;
 const pythonAvailable = process.platform !== "win32"
   && spawnSync("python3", ["--version"]).status === 0;
 
@@ -216,7 +217,7 @@ test("a missing project Engine returns the Audit authority state and executable 
       executable: "npm",
       arguments: [
         "exec",
-        "--package=@launchrally/cli@0.3.2",
+        `--package=@launchrally/cli@${currentVersion}`,
         "--",
         "rally",
         "toolchain",
@@ -279,7 +280,7 @@ test("migration and invalid authority return exact bootstrap actions without run
         "toolchain",
         "migrate",
         "--to",
-        "0.3.2",
+        currentVersion,
         "--cwd",
         migrationRepository,
       ],
@@ -320,7 +321,7 @@ test("the Launcher replaces an inherited internal context before delegation", as
   assert.deepEqual(context, {
     schema_version: "launchrally.dev/invocation-context/v1",
     source: "unknown",
-    launcher_version: "0.3.2",
+    launcher_version: currentVersion,
   });
 });
 
@@ -510,7 +511,7 @@ test("every repository operation resolves to the project Engine", async () => {
 
 test("older, matching, and newer project pins all outrank the Launcher", async () => {
   const selected = [];
-  for (const version of ["0.1.0", "0.2.2", "0.3.2"]) {
+  for (const version of ["0.1.0", "0.2.2", "0.3.2", currentVersion]) {
     const repository = await projectWithEngine(
       `process.stdout.write(${JSON.stringify(version)});\n`,
       version,
@@ -523,7 +524,7 @@ test("older, matching, and newer project pins all outrank the Launcher", async (
     ])).stdout);
   }
 
-  assert.deepEqual(selected, ["0.1.0", "0.2.2", "0.3.2"]);
+  assert.deepEqual(selected, ["0.1.0", "0.2.2", "0.3.2", currentVersion]);
 });
 
 test("version and toolchain status remain Launcher bootstrap operations", async () => {
@@ -561,7 +562,7 @@ test("version and toolchain status remain Launcher bootstrap operations", async 
   }, {
     version: {
       cli: "0.3.2",
-      launcher: "0.3.2",
+      launcher: currentVersion,
       source: "project_toolchain",
     },
     status: {

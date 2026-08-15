@@ -99,6 +99,28 @@ test("the P0 release contract keeps Product Complete, Stable, and validation dis
   });
 });
 
+test("P0 Stable remains valid only when a later Experimental P1 candidate preserves its exact line", async () => {
+  const fixture = await createP0Fixture();
+  const p1Path = path.join(fixture, "release/p1.json");
+  const p1 = JSON.parse(await readFile(p1Path, "utf8"));
+  p1.experimental_publication.p0_stable_tag = "v0.3.1";
+  await writeFile(p1Path, `${JSON.stringify(p1, null, 2)}\n`);
+
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      ["scripts/validate-p0.mjs", "--root", fixture, "--json"],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /stable_promotion_tag_drift/u);
+      assert.match(error.stderr, /v0\.3\.2/u);
+      assert.match(error.stderr, /v0\.4\.0/u);
+      return true;
+    },
+  );
+});
+
 test("the public release kit documents use, data, safety, feedback, and validation", async () => {
   const [readme, quickstart, dataModel, privacy, contribution, security, validation] =
     await Promise.all([

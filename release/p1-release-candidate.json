@@ -1,0 +1,35 @@
+{
+  "schema_version": "launchrally.dev/p1-release-candidate/v1",
+  "version": "0.4.0",
+  "tag": "v0.4.0",
+  "channel": "experimental",
+  "stable_channel": "latest",
+  "p0_stable_version": "0.3.2",
+  "packages": [
+    {
+      "name": "@launchrally/contracts",
+      "integrity": "sha512-D2g+j1wdOxbNN+gaGaOnHKYITJ70N4wwKWFwfnsCtWiTsqvqXvA78ECLih9+c0nemsnaNt16zxoLHVYkTHuYHw==",
+      "shasum": "ff6ff98e91e06fcf58d576cfd38fdaa671b7b552"
+    },
+    {
+      "name": "@launchrally/core",
+      "integrity": "sha512-yT6GxEbCDiO25l+i+1yRi6klMVHKJpI7xYLNEujxgQ6Cxqwpf2UEXG5HAY1YcqhklKbtlWVYFswmi8R1Yr0mzA==",
+      "shasum": "ebc54f2f3d706d139af3e75dc33139c0dddce099"
+    },
+    {
+      "name": "@launchrally/cli",
+      "integrity": "sha512-TuzPHjlNGMTNBfl/oPrxzTHHNaskTIjSqLGGc8srtYzg5t4P8N9MdcybCVTEjlKT1n9meggR3notXJphEN0SPA==",
+      "shasum": "a0097a93f2860939d430ce9a9d23d226fa29ffe2"
+    },
+    {
+      "name": "@launchrally/codex-plugin",
+      "integrity": "sha512-J7h/LkvDGMrKLIxKCWVejsj4MkW+K7h84j3VfViQhbF2KmImftnujr6e6A65D0MYmh+vk7xRoYtLCyLDT+eHAQ==",
+      "shasum": "bd32f6433c0aabd5dcb44ebb01357bb7f10add7d"
+    },
+    {
+      "name": "@launchrally/claude-plugin",
+      "integrity": "sha512-OxY6q+h9hHAYQs3SAyaEmKInBLlPLTie6CZThIeBloBTXE2CAicHzWbY/xZJ8gLFiPZWNpEo16T5IPpdz4DgbA==",
+      "shasum": "7de71194a550ff388ab8567ad4aec6563361d26f"
+    }
+  ]
+}

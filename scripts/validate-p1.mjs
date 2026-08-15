@@ -4,6 +4,11 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { isLaterReleaseVersion } from "./release-version.mjs";
+import {
+  verifyExternalEvidenceRecord,
+  verifyExternalEvidenceWithGitHub,
+} from "./verify-p1-external-results.mjs";
 
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootOption = process.argv.indexOf("--root");
@@ -146,10 +151,22 @@ async function baselineRegressionRegistry() {
 }
 
 export async function validateP1() {
-  const [contract, matrix, regressionRegistry, p0, packageJson, markdown, baselineRegistry] = await Promise.all([
+  const [
+    contract,
+    matrix,
+    regressionRegistry,
+    externalEvidence,
+    releaseCandidate,
+    p0,
+    packageJson,
+    markdown,
+    baselineRegistry,
+  ] = await Promise.all([
     json("release/p1.json"),
     json("release/p1-acceptance.json"),
     json("release/p1-regression-registry.json"),
+    json("release/p1-external-verification.json"),
+    json("release/p1-release-candidate.json"),
     json("release/p0.json"),
     json("package.json"),
     readFile(path.join(root, "docs/maintainers/p1-acceptance.md"), "utf8"),
@@ -184,6 +201,36 @@ export async function validateP1() {
     || contract.p0_stable_ref?.schema_version !== p0.schema_version
     || contract.p0_stable_ref?.release_status !== p0.release_status
   ) fail("p1_p0_independence_violation", "P0 Stable is not an independently bound input");
+  const stableTag = p0.stable_promotion?.approved_tag;
+  const stableVersion = /^v\d+\.\d+\.\d+$/u.test(stableTag ?? "")
+    ? stableTag.slice(1)
+    : null;
+  const publication = contract.experimental_publication;
+  if (
+    JSON.stringify(Object.keys(publication ?? {}).sort()) !== JSON.stringify([
+      "announcement",
+      "candidate_manifest",
+      "candidate_tag",
+      "changelog",
+      "channel",
+      "evidence_record",
+      "migration_notes",
+      "p0_stable_tag",
+      "stable_channel",
+    ])
+    || publication.candidate_tag !== `v${packageJson.version}`
+    || publication.channel !== "experimental"
+    || publication.stable_channel !== "latest"
+    || publication.p0_stable_tag !== stableTag
+    || !isLaterReleaseVersion(packageJson.version, stableVersion)
+  ) fail("p1_invalid_experimental_publication", "release/p1.json");
+  for (const relativePath of [
+    publication.announcement,
+    publication.changelog,
+    publication.candidate_manifest,
+    publication.migration_notes,
+    publication.evidence_record,
+  ]) await assertFile(relativePath, "experimental_publication");
   if (
     JSON.stringify(contract.mandatory_release_gate_ids)
       !== JSON.stringify(MANDATORY_P1_GATES)
@@ -257,6 +304,28 @@ export async function validateP1() {
   }
   for (const id of contract.mandatory_release_gate_ids) {
     if (!gates.has(id)) fail("p1_missing_gate", id);
+  }
+  const externalGate = gates.get("p1_external_verification");
+  let verifiedExternalEvidence;
+  try {
+    verifiedExternalEvidence = verifyExternalEvidenceRecord(externalEvidence, {
+      candidate: releaseCandidate,
+    });
+  } catch (error) {
+    fail("p1_external_evidence_invalid", error.message);
+  }
+  if (
+    verifiedExternalEvidence.version !== packageJson.version
+    || verifiedExternalEvidence.status !== (externalGate.status === "complete"
+      ? "completed"
+      : "pending")
+  ) fail("p1_external_evidence_status_drift", externalGate.status);
+  if (externalGate.status === "complete") {
+    try {
+      await verifyExternalEvidenceWithGitHub(externalEvidence, { candidate: releaseCandidate });
+    } catch (error) {
+      fail("p1_external_public_evidence_invalid", error.message);
+    }
   }
   for (const requirement of requirements.values()) {
     for (const gate of requirement.gates) {
@@ -351,12 +420,47 @@ export async function validateP1() {
     pendingGates.length > 0 ? `pending gates: ${pendingGates.join(", ")}` : null,
     qualityFloorStatus !== "satisfied" ? "Quality Floor is suspended" : null,
   ].filter(Boolean);
+  const publishBlockers = [
+    contract.product_status !== "incomplete"
+      ? `product_status=${contract.product_status}`
+      : null,
+    contract.release_status !== "experimental"
+      ? `release_status=${contract.release_status}`
+      : null,
+    contract.publication_status !== "not_published"
+      ? `publication_status=${contract.publication_status}`
+      : null,
+    contract.validation_status !== "not_validated"
+      ? `validation_status=${contract.validation_status}`
+      : null,
+    qualityFloorStatus !== "satisfied" ? "Quality Floor is suspended" : null,
+    ...openRequirements
+      .filter((id) => id !== "P1-RELEASE-01")
+      .map((id) => `open requirement: ${id}`),
+    ...pendingGates
+      .filter((id) => id !== "p1_external_verification")
+      .map((id) => `pending gate: ${id}`),
+    JSON.stringify(openRequirements) !== JSON.stringify(["P1-RELEASE-01"])
+      ? "P1-RELEASE-01 must be the only open requirement"
+      : null,
+    JSON.stringify(pendingGates) !== JSON.stringify(["p1_external_verification"])
+      ? "p1_external_verification must be the only pending gate"
+      : null,
+  ].filter(Boolean);
+  if (process.argv.includes("--require-publish-ready") && publishBlockers.length > 0) {
+    fail("p1_publication_blocked", publishBlockers.join("; "));
+  }
   if (
     contract.product_status === "complete"
     && contract.release_status !== "stable"
-    && completionBlockers.length > 0
+    && (contract.publication_status !== "published" || completionBlockers.length > 0)
   ) {
-    fail("p1_product_completion_blocked", completionBlockers.join("; "));
+    fail("p1_product_completion_blocked", [
+      contract.publication_status !== "published"
+        ? `publication_status=${contract.publication_status}`
+        : null,
+      ...completionBlockers,
+    ].filter(Boolean).join("; "));
   }
   if (contract.release_status === "stable") {
     const expectedTag = `v${packageJson.version}`;
@@ -390,6 +494,10 @@ export async function validateP1() {
     release_gates: gates.size,
     suspended_authorities: [...suspended].sort(),
     p0_release_status: p0.release_status,
+    ...(process.argv.includes("--require-publish-ready") ? {
+      publication_readiness: "ready",
+      publish_blockers: publishBlockers,
+    } : {}),
   };
 }
 

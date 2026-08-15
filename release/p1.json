@@ -15,6 +15,17 @@
     "status": "not_approved",
     "approved_tag": null
   },
+  "experimental_publication": {
+    "announcement": "docs/maintainers/experimental-0.4.0-announcement.md",
+    "candidate_tag": "v0.4.0",
+    "channel": "experimental",
+    "stable_channel": "latest",
+    "p0_stable_tag": "v0.3.2",
+    "candidate_manifest": "release/p1-release-candidate.json",
+    "changelog": "CHANGELOG.md",
+    "migration_notes": "docs/maintainers/p1-migration-notes.md",
+    "evidence_record": "docs/maintainers/experimental-0.4.0-p1-evidence.md"
+  },
   "acceptance_requirement_ids": [
     "P1-INTENT-01", "P1-INTENT-02", "P1-INTENT-03",
     "P1-SCAN-01", "P1-SCAN-02", "P1-SCAN-03",

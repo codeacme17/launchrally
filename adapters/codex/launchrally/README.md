@@ -10,7 +10,9 @@ The optional `@launchrally/codex-plugin/resume` host adapter atomically saves va
 
 ## Status
 
-LaunchRally 0.3.2 is a **Stable** release. It is Product Complete, P0 Validated, and published on the stable channel.
+LaunchRally 0.4.0 is an **Experimental Phase 1** release. It adds the Phase 1 Skill and host bridges while Phase 0 Stable 0.3.2 remains on npm `latest`. Publication does not make Phase 1 Validated or Stable.
+
+Phase 0 0.3.2 remains a **Stable** release. It is Product Complete, P0 Validated, and published on the stable channel.
 
 ## CLI prerequisite
 
@@ -21,7 +23,7 @@ CLI installation and Plugin installation are separate. Before installing this Pl
 Codex installs Plugins at user scope. Pin the marketplace to the exact release tag, then install LaunchRally:
 
 ```sh
-codex plugin marketplace add codeacme17/launchrally --ref v0.3.2
+codex plugin marketplace add codeacme17/launchrally --ref v0.4.0
 codex plugin add launchrally@launchrally
 codex plugin list --json
 ```
@@ -35,7 +37,7 @@ Replace the installed Plugin and exact marketplace checkout deliberately:
 ```sh
 codex plugin remove launchrally@launchrally
 codex plugin marketplace remove launchrally
-codex plugin marketplace add codeacme17/launchrally --ref v0.3.2
+codex plugin marketplace add codeacme17/launchrally --ref v0.4.0
 codex plugin add launchrally@launchrally
 ```
 
