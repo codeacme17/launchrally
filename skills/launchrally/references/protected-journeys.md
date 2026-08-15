@@ -2,6 +2,8 @@
 
 Use this branch only when Audit or Verify returns `request.type: "authenticated_journey_results"` after the separate `authenticated_journey_verification` permission was approved.
 
+Static route discovery identifies a possible path; it does not establish whether anonymous, user, staff, or signed-token access is intended. In Human Mode, classify every detected route as `public`, `user`, `staff`, `signed_token`, or excluded before confirmation. A public classification authorizes an anonymous GET and asserts a 200-299 response. A protected classification records the disclosed anonymous denial statuses separately from the expected authenticated response and never grants access to authentication material.
+
 ## Validate the request
 
 Require these exact contracts:

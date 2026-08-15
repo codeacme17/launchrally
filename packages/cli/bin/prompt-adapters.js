@@ -53,8 +53,8 @@ const FIELD_PRESENTATION = Object.freeze({
   }),
   core_journeys: Object.freeze({
     required: true,
-    display_prompt: "Which public Journeys should LaunchRally verify?",
-    requirement: "Select one or more Journeys. Select all detected journeys includes only detected choices; you can then deselect individual Journeys.",
+    display_prompt: "Classify detected routes before LaunchRally verifies them",
+    requirement: "Route discovery does not establish access. Public authorizes an anonymous GET and asserts a 200-299 response; protected access keeps anonymous and authenticated verification separate.",
     example: "GET /, GET /checkout — checkout completes",
     allow_custom: true,
     allow_skip: true,
@@ -213,6 +213,18 @@ function journeyLabel(journey) {
     : `${journey.method} ${journey.path} — ${journey.purpose}`;
 }
 
+function journeyAccessLabel(journey) {
+  if (typeof journey === "string") {
+    return `${journey} [access: descriptive; anonymous: not executable; authenticated: not applicable]`;
+  }
+  if (!journey.access) {
+    return `${journeyLabel(journey)} [access: public; anonymous: 200-299; authenticated: not applicable]`;
+  }
+  const anonymous = journey.access.anonymous_status_codes?.join("/") ?? "not probed";
+  const authenticated = journey.access.authenticated_status_codes.join("/");
+  return `${journeyLabel(journey)} [access: ${journey.access.authentication_class}; anonymous: ${anonymous}; authenticated: ${authenticated}]`;
+}
+
 function providerLabel(role) {
   return `${role.provider}:${role.role}`;
 }
@@ -227,7 +239,7 @@ function auditBriefText(result) {
     `${environmentTargetLabel(brief.intended_environment.value, { capitalize: true, plural: true })}:`,
     list(brief.production_targets.values),
     "Core journeys:",
-    list(brief.core_journeys.values, journeyLabel),
+    list(brief.core_journeys.values, journeyAccessLabel),
     "Provider roles:",
     list(brief.provider_roles.values, providerLabel),
     "Support layers:",
@@ -387,18 +399,66 @@ function fieldOptions(field) {
   }));
 }
 
-function selectionOptions(field, { customValue, selectAllValue, skipValue }) {
+function selectionOptions(field, { customValue, skipValue }) {
   const options = fieldOptions(field);
   return [
-    ...(selectAllValue && options.some((option) => option.detected)
-      ? [{ label: "Select all detected journeys", value: selectAllValue }]
-      : []),
     ...options,
     ...(field.allow_custom
       ? [{ label: "Other — enter a custom value", value: customValue }]
       : []),
     ...(field.allow_skip ? [{ label: field.skip_label, value: skipValue }] : []),
   ];
+}
+
+const JOURNEY_ACCESS_CHOICES = Object.freeze([
+  Object.freeze({
+    label: "Public — authorize anonymous GET; expect 200-299",
+    value: "public",
+  }),
+  Object.freeze({
+    label: "User — anonymous expect 401/403/404; authenticated expect 200",
+    value: "user",
+  }),
+  Object.freeze({
+    label: "Staff — anonymous expect 401/403/404; authenticated expect 200",
+    value: "staff",
+  }),
+  Object.freeze({
+    label: "Signed token — anonymous expect 401/403/404; authenticated expect 200",
+    value: "signed_token",
+  }),
+  Object.freeze({ label: "Exclude — do not verify this route", value: "exclude" }),
+]);
+
+function classifiedJourney(journey, accessClass) {
+  if (accessClass === "exclude") return null;
+  if (accessClass === "public") return journey;
+  return {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: journey.method,
+    path: journey.path,
+    purpose: "authenticated Core Journey",
+    access: {
+      authentication_class: accessClass,
+      anonymous_status_codes: [401, 403, 404],
+      authenticated_status_codes: [200],
+    },
+  };
+}
+
+async function classifyDetectedJourneys(field, selectAccess) {
+  const detected = fieldOptions(field).filter((option) => option.detected);
+  if (detected.length === 0) return null;
+  const classified = [];
+  for (const option of detected) {
+    const accessClass = await selectAccess(
+      `Route discovery does not establish access. Classify ${journeyLabel(option.value)} (classification required)`,
+      JOURNEY_ACCESS_CHOICES,
+    );
+    const journey = classifiedJourney(option.value, accessClass);
+    if (journey) classified.push(journey);
+  }
+  return classified;
 }
 
 function resolveMultiSelection(selected, { customValue, skipValue }) {
@@ -503,13 +563,15 @@ export function createPlainPromptAdapter({
   };
   const selectField = async (field) => {
     const customValue = Symbol("custom-value");
-    const selectAllValue = Symbol("select-all-value");
     const skipValue = Symbol("skip-value");
     const choices = selectionOptions(field, {
       customValue,
-      selectAllValue,
       skipValue,
     });
+    if (field.field_id === "core_journeys") {
+      const classified = await classifyDetectedJourneys(field, choose);
+      if (classified) return classified;
+    }
     if (!field.value_type.endsWith("_array")) {
       const value = await choose(fieldMessage(field), choices);
       if (value !== customValue) return value;
@@ -537,38 +599,6 @@ export function createPlainPromptAdapter({
         continue;
       }
       const selected = indexes.map((index) => choices[index].value);
-      if (selected.includes(selectAllValue)) {
-        if (selected.length > 1) {
-          write(output, "Select all detected journeys by itself, then deselect any you do not want.");
-          continue;
-        }
-        const detected = fieldOptions(field).filter((option) => option.detected);
-        write(output, "All detected Journeys selected:");
-        detected.forEach((option, index) => write(output, `${index + 1}. ${option.label}`));
-        while (true) {
-          const deselected = (await ask(
-            "Deselect detected Journeys by number, or press Enter to keep all:",
-          )).trim();
-          if (!deselected) return detected.map((option) => option.value);
-          const deselectedIndexes = [...new Set(
-            deselected.split(",").map((value) => Number(value.trim()) - 1),
-          )];
-          if (deselectedIndexes.some((index) => !detected[index])) {
-            write(output, `Enter numbers from 1 to ${detected.length}, separated by commas.`);
-            continue;
-          }
-          const remaining = detected
-            .filter((_, index) => !deselectedIndexes.includes(index))
-            .map((option) => option.value);
-          if (remaining.length > 0) return remaining;
-          write(
-            output,
-            "Select at least one detected Journey, or return to the picker and explicitly choose Skip.",
-          );
-          break;
-        }
-        continue;
-      }
       const resolution = resolveMultiSelection(selected, {
         customValue,
         skipValue,
@@ -689,82 +719,6 @@ function cancelled(value, clack, output) {
   throw new PromptCancelledError();
 }
 
-async function journeyMultiselect({
-  clack,
-  common,
-  detectedValues,
-  initialValues,
-  message,
-  options,
-  required,
-  selectAllValue,
-}) {
-  const { MultiSelectPrompt } = await import("@clack/core");
-  class JourneyMultiSelectPrompt extends MultiSelectPrompt {
-    constructor(promptOptions) {
-      super(promptOptions);
-      this.on("cursor", (action) => {
-        if (action !== "space" || !this.value?.includes(selectAllValue)) return;
-        this.value = [...detectedValues];
-      });
-      this.on("key", (_character, key) => {
-        if (key.name === "a") this.value = [...detectedValues];
-      });
-    }
-  }
-
-  return new JourneyMultiSelectPrompt({
-    ...common,
-    options,
-    initialValues,
-    required,
-    validate(values) {
-      if (required && (!values || values.length === 0)) {
-        return "Select at least one Journey or Skip public Journey verification.";
-      }
-      return undefined;
-    },
-    render() {
-      const selected = this.value ?? [];
-      const selectedLabels = options
-        .filter((option) => selected.includes(option.value))
-        .map((option) => option.label);
-      if (this.state === "submit") {
-        return `${clack.symbol(this.state)}  ${message}\n  ${selectedLabels.join(", ") || "none"}`;
-      }
-      const choices = clack.limitOptions({
-        cursor: this.cursor,
-        options,
-        output: common.output,
-        rowPadding: 3,
-        style: (option, active) => {
-          const checked = selected.includes(option.value);
-          const cursor = active ? "› " : "  ";
-          const marker = checked
-            ? styleText("green", "◼")
-            : styleText(active ? "cyan" : "dim", "◻");
-          const label = active
-            ? option.label
-            : styleText("dim", option.label);
-          return `${cursor}${marker} ${label}`;
-        },
-      });
-      const instructions = [
-        `${styleText("dim", "Up/Down:")} navigate`,
-        `${styleText("dim", "Space:")} toggle`,
-        `${styleText("dim", "Enter:")} confirm`,
-        `${styleText("dim", "A:")} select all detected`,
-      ].join("  ");
-      return [
-        `${clack.symbol(this.state)}  ${message}`,
-        ...choices,
-        ...(this.state === "error" ? [this.error] : []),
-        instructions,
-      ].join("\n");
-    },
-  }).prompt();
-}
-
 export async function createClackPromptAdapter({
   input,
   output,
@@ -787,16 +741,22 @@ export async function createClackPromptAdapter({
   }), clack, output);
   const selectField = async (field) => {
     const customValue = "__launchrally_custom_value__";
-    const selectAllValue = "__launchrally_select_all_detected_value__";
     const skipValue = "__launchrally_skip_value__";
-    const detectedValues = fieldOptions(field)
-      .filter((option) => option.detected)
-      .map((option) => option.value);
     const options = selectionOptions(field, {
       customValue,
-      selectAllValue: detectedValues.length > 0 ? selectAllValue : undefined,
       skipValue,
     });
+    if (field.field_id === "core_journeys") {
+      const classified = await classifyDetectedJourneys(
+        field,
+        async (message, choices) => cancelled(await clack.select({
+          ...common,
+          message,
+          options: choices,
+        }), clack, output),
+      );
+      if (classified) return classified;
+    }
     if (!field.value_type.endsWith("_array")) {
       const selected = cancelled(await clack.select({
         ...common,
@@ -819,24 +779,13 @@ export async function createClackPromptAdapter({
       field.options.find((option) => sameOptionValue(option.value, current))?.value ?? current,
     );
     while (true) {
-      const selected = cancelled(await (detectedValues.length > 0
-        ? journeyMultiselect({
-          clack,
-          common,
-          detectedValues,
-          initialValues,
-          message: fieldMessage({ ...field, requirement: "Select one or more Journeys" }),
-          options,
-          required: field.required,
-          selectAllValue,
-        })
-        : clack.multiselect({
-          ...common,
-          message: fieldMessage(field),
-          options,
-          initialValues,
-          required: field.required,
-        })), clack, output);
+      const selected = cancelled(await clack.multiselect({
+        ...common,
+        message: fieldMessage(field),
+        options,
+        initialValues,
+        required: field.required,
+      }), clack, output);
       const resolution = resolveMultiSelection(selected, {
         customValue,
         skipValue,

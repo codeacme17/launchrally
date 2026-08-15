@@ -428,11 +428,11 @@ test("the Plain adapter offers a recommended Journey and an explicit Skip choice
   assert.match(rendered, /Skip cannot be combined with another Journey\./u);
   assert.match(
     rendered,
-    /Which public Journeys should LaunchRally verify\? \(Select one or more Journeys\./u,
+    /Classify detected routes before LaunchRally verifies them \(Route discovery does not establish access\./u,
   );
 });
 
-test("the Plain adapter offers safely detected public routes as Journey choices", async () => {
+test("the Plain adapter requires access classification for every detected route", async () => {
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -441,7 +441,9 @@ test("the Plain adapter offers safely detected public routes as Journey choices"
   });
   const prompt = createPlainPromptAdapter({ input, output });
 
-  setTimeout(() => input.write("3\n"), 10);
+  ["5\n", "1\n", "5\n", "5\n"].forEach((answer, index) => {
+    setTimeout(() => input.write(answer), 10 + (index * 20));
+  });
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -473,13 +475,75 @@ test("the Plain adapter offers safely detected public routes as Journey choices"
       core_journeys: [{ method: "GET", path: "/dashboard", purpose: "dashboard page loads" }],
     },
   });
-  assert.match(rendered, /GET \/ — homepage loads \(detected\)/u);
-  assert.match(rendered, /GET \/dashboard — dashboard page loads \(detected\)/u);
-  assert.match(rendered, /GET \/docs — docs page loads \(detected\)/u);
-  assert.match(rendered, /GET \/pricing — pricing page loads \(detected\)/u);
+  assert.match(rendered, /Classify GET \/ — homepage loads \(classification required\)/u);
+  assert.match(rendered, /Classify GET \/dashboard — dashboard page loads \(classification required\)/u);
+  assert.match(rendered, /Exclude — do not verify this route/u);
+  assert.doesNotMatch(rendered, /\(detected\)/u);
 });
 
-test("the Plain adapter selects detected Journeys without recommended, Other, or Skip choices", async () => {
+test("the Plain adapter classifies mixed detected routes before verification", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  ["1\n", "3\n", "4\n", "2\n"].forEach((answer, index) => {
+    setTimeout(() => input.write(answer), 10 + (index * 20));
+  });
+  const response = await prompt.respond(journeyInput([
+    "GET / — homepage loads",
+    "GET /me/profile — profile page loads",
+    "GET /control/staff — staff page loads",
+    "GET /guardian/authorize — authorize page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response.answers.core_journeys, [
+    { method: "GET", path: "/", purpose: "homepage loads" },
+    {
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/control/staff",
+      purpose: "authenticated Core Journey",
+      access: {
+        authentication_class: "staff",
+        anonymous_status_codes: [401, 403, 404],
+        authenticated_status_codes: [200],
+      },
+    },
+    {
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/guardian/authorize",
+      purpose: "authenticated Core Journey",
+      access: {
+        authentication_class: "signed_token",
+        anonymous_status_codes: [401, 403, 404],
+        authenticated_status_codes: [200],
+      },
+    },
+    {
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/me/profile",
+      purpose: "authenticated Core Journey",
+      access: {
+        authentication_class: "user",
+        anonymous_status_codes: [401, 403, 404],
+        authenticated_status_codes: [200],
+      },
+    },
+  ]);
+  assert.match(rendered, /Route discovery does not establish access/u);
+  assert.match(rendered, /Public — authorize anonymous GET; expect 200-299/u);
+  assert.match(rendered, /User — anonymous expect 401\/403\/404; authenticated expect 200/u);
+  assert.doesNotMatch(rendered, /Select all detected journeys/u);
+});
+
+test("the final Audit Brief shows Journey access and status expectations", async () => {
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -489,7 +553,51 @@ test("the Plain adapter selects detected Journeys without recommended, Other, or
   const prompt = createPlainPromptAdapter({ input, output });
 
   setTimeout(() => input.write("1\n"), 10);
-  setTimeout(() => input.write("\n"), 30);
+  await prompt.respond({
+    status: "needs_confirmation",
+    operation: "audit",
+    audit_brief: {
+      intended_environment: { value: "production" },
+      production_targets: { values: ["https://example.com/"] },
+      core_journeys: {
+        values: [
+          { method: "GET", path: "/", purpose: "homepage loads" },
+          {
+            schema_version: "launchrally.dev/protected-journey/v1",
+            method: "GET",
+            path: "/control",
+            purpose: "authenticated Core Journey",
+            access: {
+              authentication_class: "staff",
+              anonymous_status_codes: [404],
+              authenticated_status_codes: [200],
+            },
+          },
+        ],
+      },
+      provider_roles: { values: [] },
+      support_layers: { values: [] },
+      planned_checks: [],
+    },
+    request: { prompt: "Confirm?" },
+  });
+  await prompt.close();
+
+  assert.match(rendered, /GET \/ — homepage loads \[access: public; anonymous: 200-299; authenticated: not applicable\]/u);
+  assert.match(rendered, /GET \/control — authenticated Core Journey \[access: staff; anonymous: 404; authenticated: 200\]/u);
+});
+
+test("the Plain adapter can include public and exclude detected routes independently", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("1\n"), 10);
+  setTimeout(() => input.write("5\n"), 30);
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
     "GET /docs — docs page loads",
@@ -500,28 +608,21 @@ test("the Plain adapter selects detected Journeys without recommended, Other, or
     answers: {
       core_journeys: [
         { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
-        { method: "GET", path: "/docs", purpose: "docs page loads" },
       ],
     },
   });
-  assert.match(rendered, /Select all detected journeys/u);
-  assert.match(rendered, /GET \/ — homepage loads \(recommended\)/u);
-  assert.match(rendered, /Other — enter a custom value/u);
-  assert.match(rendered, /Skip public Journey verification/u);
-  assert.match(rendered, /Deselect detected Journeys by number, or press Enter to keep all:/u);
-  assert.match(
-    rendered,
-    /Select one or more Journeys\. Select all detected journeys includes only detected choices; you can then deselect individual Journeys\./u,
-  );
+  assert.match(rendered, /Public — authorize anonymous GET/u);
+  assert.match(rendered, /Exclude — do not verify this route/u);
+  assert.doesNotMatch(rendered, /Select all detected journeys/u);
 });
 
-test("the Plain adapter lets users deselect a detected Journey after selecting all", async () => {
+test("the Plain adapter creates a protected classification for a detected route", async () => {
   const input = ttyStream();
   const output = ttyStream();
   const prompt = createPlainPromptAdapter({ input, output });
 
-  setTimeout(() => input.write("1\n"), 10);
-  setTimeout(() => input.write("2\n"), 30);
+  setTimeout(() => input.write("3\n"), 10);
+  setTimeout(() => input.write("5\n"), 30);
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
     "GET /docs — docs page loads",
@@ -531,13 +632,23 @@ test("the Plain adapter lets users deselect a detected Journey after selecting a
   assert.deepEqual(response, {
     answers: {
       core_journeys: [
-        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
+        {
+          schema_version: "launchrally.dev/protected-journey/v1",
+          method: "GET",
+          path: "/dashboard",
+          purpose: "authenticated Core Journey",
+          access: {
+            authentication_class: "staff",
+            anonymous_status_codes: [401, 403, 404],
+            authenticated_status_codes: [200],
+          },
+        },
       ],
     },
   });
 });
 
-test("the Plain adapter requires an explicit Skip after deselecting every detected Journey", async () => {
+test("the Plain adapter permits explicitly excluding every detected route", async () => {
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -546,9 +657,8 @@ test("the Plain adapter requires an explicit Skip after deselecting every detect
   });
   const prompt = createPlainPromptAdapter({ input, output });
 
-  setTimeout(() => input.write("1\n"), 10);
-  setTimeout(() => input.write("1,2\n"), 30);
-  setTimeout(() => input.write("6\n"), 50);
+  setTimeout(() => input.write("5\n"), 10);
+  setTimeout(() => input.write("5\n"), 30);
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
     "GET /docs — docs page loads",
@@ -556,14 +666,7 @@ test("the Plain adapter requires an explicit Skip after deselecting every detect
   await prompt.close();
 
   assert.deepEqual(response, { answers: { core_journeys: [] } });
-  assert.match(
-    rendered,
-    /Select at least one detected Journey, or return to the picker and explicitly choose Skip\./u,
-  );
-  assert.equal(
-    rendered.match(/Select one or more numbers separated by commas:/gu)?.length,
-    2,
-  );
+  assert.equal(rendered.match(/Exclude — do not verify this route/gu)?.length, 2);
 });
 
 test("the Plain adapter rejects unsafe custom Journeys before submitting to Core", async () => {
@@ -1196,7 +1299,7 @@ test("the Clack adapter selects a recommended public Journey without free-form i
   );
 });
 
-test("the Clack adapter selects only detected Journeys and allows individual deselection", async () => {
+test("the Clack adapter classifies detected routes without a bulk public action", async () => {
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -1205,9 +1308,8 @@ test("the Clack adapter selects only detected Journeys and allows individual des
   });
   const prompt = await createClackPromptAdapter({ input, output });
 
-  setTimeout(() => input.write(" "), 20);
-  setTimeout(() => input.write("\u001b[B\u001b[B "), 40);
-  setTimeout(() => input.write("\r"), 60);
+  setTimeout(() => input.write("\r"), 20);
+  setTimeout(() => input.write("\u001b[B\u001b[B\u001b[B\u001b[B\r"), 50);
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
     "GET /docs — docs page loads",
@@ -1217,96 +1319,15 @@ test("the Clack adapter selects only detected Journeys and allows individual des
   assert.deepEqual(response, {
     answers: {
       core_journeys: [
-        { method: "GET", path: "/docs", purpose: "docs page loads" },
+        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
       ],
     },
   });
   const semanticOutput = stripVTControlCharacters(rendered);
-  assert.match(semanticOutput, /Select all detected journeys/u);
-  assert.match(semanticOutput, /GET \/ — homepage loads \(recommended\)/u);
-  assert.match(semanticOutput, /Other — enter a custom value/u);
-  assert.match(semanticOutput, /Skip public Journey verification/u);
-  assert.match(semanticOutput, /Space: toggle/u);
-  assert.match(semanticOutput, /Enter: confirm/u);
-  assert.match(semanticOutput, /› ◻ Select all detected journeys/u);
-  assert.match(semanticOutput, /◻ Select all detected journeys/u);
-  assert.match(semanticOutput, /◼ GET \/dashboard — dashboard page loads \(detected\)/u);
-  assert.doesNotMatch(semanticOutput, /\[(?: |x)\]/u);
-});
-
-test("the Clack bulk action clears a recommended Journey selection", async () => {
-  const input = ttyStream();
-  const output = ttyStream();
-  const prompt = await createClackPromptAdapter({ input, output });
-
-  setTimeout(() => input.write("\u001b[B "), 20);
-  setTimeout(() => input.write("\u001b[A "), 40);
-  setTimeout(() => input.write("\r"), 60);
-  const response = await prompt.respond(journeyInput([
-    "GET /dashboard — dashboard page loads",
-    "GET /docs — docs page loads",
-  ]));
-  await prompt.close();
-
-  assert.deepEqual(response, {
-    answers: {
-      core_journeys: [
-        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
-        { method: "GET", path: "/docs", purpose: "docs page loads" },
-      ],
-    },
-  });
-});
-
-test("the Clack bulk action clears Other and Skip Journey selections", async () => {
-  const input = ttyStream();
-  const output = ttyStream();
-  const prompt = await createClackPromptAdapter({ input, output });
-
-  setTimeout(() => input.write("\u001b[B\u001b[B\u001b[B\u001b[B "), 20);
-  setTimeout(() => input.write("\u001b[B "), 40);
-  setTimeout(() => input.write("\u001b[B "), 60);
-  setTimeout(() => input.write("\r"), 80);
-  const response = await prompt.respond(journeyInput([
-    "GET /dashboard — dashboard page loads",
-    "GET /docs — docs page loads",
-  ]));
-  await prompt.close();
-
-  assert.deepEqual(response, {
-    answers: {
-      core_journeys: [
-        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
-        { method: "GET", path: "/docs", purpose: "docs page loads" },
-      ],
-    },
-  });
-});
-
-test("the Clack A shortcut selects only detected Journeys and remains editable", async () => {
-  const input = ttyStream();
-  const output = ttyStream();
-  const prompt = await createClackPromptAdapter({ input, output });
-
-  setTimeout(() => input.write("\u001b[B "), 20);
-  setTimeout(() => input.write("\u001b[B\u001b[B\u001b[B "), 40);
-  setTimeout(() => input.write("\u001b[B "), 60);
-  setTimeout(() => input.write("a"), 80);
-  setTimeout(() => input.write("\u001b[A\u001b[A "), 100);
-  setTimeout(() => input.write("\r"), 120);
-  const response = await prompt.respond(journeyInput([
-    "GET /dashboard — dashboard page loads",
-    "GET /docs — docs page loads",
-  ]));
-  await prompt.close();
-
-  assert.deepEqual(response, {
-    answers: {
-      core_journeys: [
-        { method: "GET", path: "/dashboard", purpose: "dashboard page loads" },
-      ],
-    },
-  });
+  assert.match(semanticOutput, /classification required/u);
+  assert.match(semanticOutput, /Public — authorize anonymous GET/u);
+  assert.match(semanticOutput, /Exclude — do not verify this route/u);
+  assert.doesNotMatch(semanticOutput, /Select all detected journeys/u);
 });
 
 test("the Clack adapter accepts a safe GET path without requiring a purpose", async () => {

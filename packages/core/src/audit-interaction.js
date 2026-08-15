@@ -355,7 +355,7 @@ function inputFields(auditBrief) {
     {
       field_id: "core_journeys",
       value_type: "journey_array",
-      prompt: "Which GET paths and user journeys must work for this release?",
+      prompt: "Which unclassified detected routes should be public, protected, or excluded for this release?",
       candidates: auditBrief.core_journeys.candidates,
       current_value: auditBrief.core_journeys.values,
     },

@@ -285,7 +285,7 @@
       "properties": {
         "schema_version": { "const": "launchrally.dev/protected-journey/v1" },
         "purpose": { "const": "authenticated Core Journey" },
-        "path": { "type": "string", "pattern": "^/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces)(?:/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces))*$" },
+        "path": { "type": "string", "pattern": "^/(?:account|accounts|admin|api|app|authorize|billing|checkout|control|dashboard|files|guardian|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces)(?:/(?:account|accounts|admin|api|app|authorize|billing|checkout|control|dashboard|files|guardian|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces))*$" },
         "method": { "const": "GET" },
         "access": {
           "type": "object",
@@ -334,7 +334,7 @@
         "purpose": { "type": "string", "minLength": 1 },
         "verification_mode": { "enum": ["description_only", "executable_path", "protected_anonymous_boundary"] },
         "status": { "enum": ["passed", "failed", "unverified"] },
-        "outcome": { "enum": ["resolved", "secure", "reachable", "healthy", "completed", "access_boundary_confirmed", "journey_definition_incomplete", "redirect_not_followed", "target_mismatch", "http_status_failure", "dns_failure", "certificate_failure", "unreachable", "timeout", "execution_failure"] },
+        "outcome": { "enum": ["resolved", "secure", "reachable", "healthy", "completed", "access_boundary_confirmed", "access_boundary_failure", "journey_definition_incomplete", "redirect_not_followed", "target_mismatch", "http_status_failure", "dns_failure", "certificate_failure", "unreachable", "timeout", "execution_failure"] },
         "collected_at": { "type": "string", "format": "date-time" },
         "duration_ms": { "type": "integer", "minimum": 0 },
         "details": { "type": "object" },
@@ -494,7 +494,7 @@
         "probe_kind": { "enum": ["dns", "tls", "http", "health", "journey"] },
         "method": { "enum": ["DNS_LOOKUP", "TLS_HANDSHAKE", "GET"] },
         "path": { "type": "string", "pattern": "^/" },
-        "outcome": { "enum": ["resolved", "secure", "reachable", "healthy", "completed", "journey_definition_incomplete", "redirect_not_followed", "target_mismatch", "http_status_failure", "dns_failure", "certificate_failure", "unreachable", "timeout", "execution_failure"] },
+        "outcome": { "enum": ["resolved", "secure", "reachable", "healthy", "completed", "access_boundary_confirmed", "access_boundary_failure", "journey_definition_incomplete", "redirect_not_followed", "target_mismatch", "http_status_failure", "dns_failure", "certificate_failure", "unreachable", "timeout", "execution_failure"] },
         "status_code": { "type": "integer", "minimum": 0, "maximum": 599 }
       },
       "additionalProperties": false

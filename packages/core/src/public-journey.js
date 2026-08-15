@@ -5,7 +5,7 @@ const AUTHENTICATION_CLASSES = new Set(["user", "staff", "signed_token"]);
 const PROTECTED_JOURNEY_PURPOSE = "authenticated Core Journey";
 const SAFE_PROTECTED_PATH_SEGMENTS = new Set([
   "account", "accounts", "admin", "api", "app", "billing", "checkout",
-  "control", "dashboard", "files", "health", "home", "inbox", "me",
+  "authorize", "control", "dashboard", "files", "guardian", "health", "home", "inbox", "me",
   "orders", "organization", "organizations", "portal", "private", "profile",
   "protected", "session", "settings", "staff", "status", "team", "teams",
   "uploads", "user", "users", "v1", "v2", "v3", "workspace", "workspaces",
