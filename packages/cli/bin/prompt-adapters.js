@@ -489,6 +489,14 @@ function retainedCurrentJourneys(field, detected) {
   );
 }
 
+function protectedJourneys(journeys) {
+  return journeys.filter((journey) =>
+    typeof journey === "object"
+    && journey !== null
+    && typeof journey.access?.authentication_class === "string",
+  );
+}
+
 function resolveMultiSelection(selected, { customValue, skipValue }) {
   const skip = selected.includes(skipValue);
   const custom = selected.includes(customValue);
@@ -600,12 +608,14 @@ export function createPlainPromptAdapter({
       const classification = await classifyDetectedJourneys(field, choose);
       if (classification) {
         const retained = retainedCurrentJourneys(field, classification.detected);
-        const action = await choose("Continue, add another Journey, or explicitly skip all Journey verification", [
+        const action = await choose("Continue, add another Journey, or explicitly skip public Journey verification", [
           { label: "Continue with classified Journeys", value: "continue" },
           { label: "Other — enter a custom value", value: "custom" },
           { label: field.skip_label, value: "skip" },
         ]);
-        if (action === "skip") return [];
+        if (action === "skip") {
+          return protectedJourneys([...classification.classified, ...retained]);
+        }
         if (action === "continue") return [...classification.classified, ...retained];
         while (true) {
           const raw = await ask(`Enter other values separated by commas\nExample: ${field.example}`);
@@ -805,14 +815,16 @@ export async function createClackPromptAdapter({
         const retained = retainedCurrentJourneys(field, classification.detected);
         const action = cancelled(await clack.select({
           ...common,
-          message: "Continue, add another Journey, or explicitly skip all Journey verification",
+          message: "Continue, add another Journey, or explicitly skip public Journey verification",
           options: [
             { label: "Continue with classified Journeys", value: "continue" },
             { label: "Other — enter a custom value", value: "custom" },
             { label: field.skip_label, value: "skip" },
           ],
         }), clack, output);
-        if (action === "skip") return [];
+        if (action === "skip") {
+          return protectedJourneys([...classification.classified, ...retained]);
+        }
         if (action === "continue") return [...classification.classified, ...retained];
         const raw = await ask("Enter other values separated by commas", {
           ...field,

@@ -543,6 +543,33 @@ test("the Plain adapter classifies mixed detected routes before verification", a
   assert.doesNotMatch(rendered, /Select all detected journeys/u);
 });
 
+test("the Plain adapter public Skip preserves a protected classification", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  ["1\n", "3\n", "3\n"].forEach((answer, index) => {
+    setTimeout(() => input.write(answer), 10 + (index * 20));
+  });
+  const response = await prompt.respond(journeyInput([
+    "GET / — homepage loads",
+    "GET /control — control page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response.answers.core_journeys, [{
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/control",
+    purpose: "authenticated Core Journey",
+    access: {
+      authentication_class: "staff",
+      anonymous_status_codes: [401, 403, 404],
+      authenticated_status_codes: [200],
+    },
+  }]);
+});
+
 test("the final Audit Brief shows Journey access and status expectations", async () => {
   const input = ttyStream();
   const output = ttyStream();
@@ -1381,6 +1408,33 @@ test("the Clack adapter classifies detected routes without a bulk public action"
   assert.match(semanticOutput, /Public — authorize anonymous GET/u);
   assert.match(semanticOutput, /Exclude — do not verify this route/u);
   assert.doesNotMatch(semanticOutput, /Select all detected journeys/u);
+});
+
+test("the Clack adapter public Skip preserves a protected classification", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\r"), 20);
+  setTimeout(() => input.write("\u001b[B\u001b[B\r"), 50);
+  setTimeout(() => input.write("\u001b[B\u001b[B\r"), 80);
+  const response = await prompt.respond(journeyInput([
+    "GET / — homepage loads",
+    "GET /control — control page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response.answers.core_journeys, [{
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/control",
+    purpose: "authenticated Core Journey",
+    access: {
+      authentication_class: "staff",
+      anonymous_status_codes: [401, 403, 404],
+      authenticated_status_codes: [200],
+    },
+  }]);
 });
 
 test("the Clack adapter accepts a safe GET path without requiring a purpose", async () => {
