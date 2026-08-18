@@ -25,7 +25,7 @@ rally init --plain --cwd . --report ./launchrally-audit-report.json
 rally --version --json --cwd .
 ```
 
-Audit performs no repository write and does not create `.launchrally`. Public and Provider reads are independent and default-denied. Confirmed Init is the first project mutation, stays under LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
+Audit performs no repository write and does not create `.launchrally`. Public and Provider reads are independent and default-denied. Human Init first shows a concise summary of every affected path, operation, digest, source identity, toolchain materialization, and authority boundary. Choose `View full preview` to inspect every exact diff and after-content before returning to the same confirmation. Confirmed Init is the first project mutation, stays under LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
 
 Ordinary Init preserves an existing Manifest while it may preview adoption of a newer Report into immutable history. To replace incorrect or outdated release intent with a current corrected Audit, run `rally init --cwd . --report ./corrected-audit-report.json --rebind`, review the old/new source identities and exact Manifest diff, and confirm that separate preview. Rebind preserves the exact Project Toolchain and all prior Reports and Evidence.
 

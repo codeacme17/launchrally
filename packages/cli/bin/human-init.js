@@ -1,59 +1,111 @@
+import path from "node:path";
+
 import { PromptCancelledError } from "./human-audit.js";
 
-export function renderHumanInit(value) {
+function changeCounts(changes) {
+  const counts = { create: 0, update: 0, delete: 0 };
+  for (const change of changes) counts[change.operation] += 1;
+  return counts;
+}
+
+function manifestSummary(value) {
+  const action = value.manifest_action;
+  if (!action) return [`Manifest source Report: ${value.source_report_id}`];
+  const lines = [`Manifest action: ${action.action}`];
+  if (action.action === "preserve") {
+    lines.push(
+      "Manifest intent: preserved",
+      `Existing Manifest source Report: ${action.existing_source_report_id}`,
+      `Supplied Report for immutable history: ${action.supplied_source_report_id}`,
+      `Replace command: ${value.replacement_action.display}`,
+    );
+  } else if (action.action === "replace") {
+    lines.push(
+      "Manifest intent: replace after separate confirmation",
+      `Old source Report: ${action.existing_source_report_id}`,
+      `New source Report: ${action.supplied_source_report_id}`,
+      `Immutable Report-history changes: ${value.preview.history_adoption.changes.length}`,
+      `Release-intent replacement changes: ${value.preview.release_intent_replacement.changes.length}`,
+    );
+  } else {
+    lines.push(`Manifest source Report: ${action.supplied_source_report_id}`);
+  }
+  return lines;
+}
+
+function materializationSummary(materialization) {
+  if (!materialization) return ["Materialization: preserved existing Project Toolchain"];
+  return [
+    `Materialization: ${materialization.target}`,
+    `Materialization command: ${[
+      materialization.command.executable,
+      ...materialization.command.arguments,
+    ].join(" ")}`,
+    `Materialization package closure: ${materialization.package_count} packages`,
+    `Materialization integrity: ${materialization.integrity_digest}`,
+    `Materialization boundary: ignored ${materialization.ignored ? "yes" : "no"}; authoritative before confirmation ${materialization.authoritative ? "yes" : "no"}`,
+  ];
+}
+
+export function renderHumanInit(value, {
+  root = "not provided",
+  version = "unknown",
+} = {}) {
+  const changes = value.preview.changes;
+  const counts = changeCounts(changes);
   const lines = [
     value.mode === "rebind"
       ? "LaunchRally Manifest Rebind Preview"
       : "LaunchRally Initialization Preview",
     `Mode: ${value.mode}`,
     `Source Report: ${value.source_report_id}`,
+    `Affected root: ${root}`,
+    `Changes: ${counts.create} create, ${counts.update} update, ${counts.delete} delete`,
+    ...manifestSummary(value),
+    `Project Toolchain: @launchrally/cli@${version}`,
+    ...materializationSummary(value.preview.materialization),
     "",
+    "Affected paths and exact content digests:",
   ];
-  if (value.manifest_action?.action === "preserve") {
-    lines.push(
-      "Manifest intent: preserved",
-      `Existing Manifest source Report: ${value.manifest_action.existing_source_report_id}`,
-      `Supplied Report for immutable history: ${value.manifest_action.supplied_source_report_id}`,
-      `Replace command: ${value.replacement_action.display}`,
-      "",
-    );
-  } else if (value.manifest_action?.action === "replace") {
-    lines.push(
-      "Manifest intent: replace after separate confirmation",
-      `Old source Report: ${value.manifest_action.existing_source_report_id}`,
-      `New source Report: ${value.manifest_action.supplied_source_report_id}`,
-      `Immutable Report-history changes: ${value.preview.history_adoption.changes.length}`,
-      `Release-intent replacement changes: ${value.preview.release_intent_replacement.changes.length}`,
-      "",
-    );
-  }
-  for (const change of value.preview.changes) {
+  for (const change of changes) {
     lines.push(
       `${change.operation.toUpperCase()} ${change.path}`,
       `Before digest: ${change.before_digest ?? "none"}`,
-      `After digest: ${change.after_digest}`,
+      `After digest: ${change.after_digest ?? "none"}`,
+    );
+  }
+  lines.push(
+    "",
+    "Authority boundaries:",
+    "Write authority: exact listed .launchrally paths only",
+    "Application source and dependency files: no writes",
+    "Version control: no staging or commits",
+    "Confirmation remains bound to this exact preview; stale or altered previews fail closed.",
+    "Choose View full preview to inspect every exact diff and after-content before deciding.",
+    "",
+    value.request.prompt,
+  );
+  return lines.join("\n");
+}
+
+export function renderHumanInitFullPreview(value, context = {}) {
+  const lines = [
+    renderHumanInit(value, context),
+    "",
+    "Full exact digest-bound preview:",
+  ];
+  for (const change of value.preview.changes) {
+    lines.push(
+      "",
+      `${change.operation.toUpperCase()} ${change.path}`,
+      `Before digest: ${change.before_digest ?? "none"}`,
+      `After digest: ${change.after_digest ?? "none"}`,
       "Diff:",
       change.diff,
       "After content:",
-      change.after,
+      change.after ?? "none",
     );
   }
-  if (value.preview.materialization) {
-    const materialization = value.preview.materialization;
-    lines.push(
-      "Rebuildable Project Engine materialization:",
-      `Command: ${[
-        materialization.command.executable,
-        ...materialization.command.arguments,
-      ].join(" ")}`,
-      `Package closure: ${materialization.package_count} packages`,
-      `Integrity summary: ${materialization.integrity_digest}`,
-      `Target: ${materialization.target}`,
-      `Ignored: ${materialization.ignored ? "yes" : "no"}`,
-      `Authoritative: ${materialization.authoritative ? "yes" : "no"}`,
-    );
-  }
-  lines.push(value.request.prompt);
   return lines.join("\n");
 }
 
@@ -70,7 +122,7 @@ export async function runHumanInit({
     result = await runInit(cwd, version, { report_package: reportPackage });
 
     while (["needs_confirmation", "needs_permission"].includes(result.status)) {
-      const response = await prompt.respondInit(result);
+      const response = await prompt.respondInit(result, { root: path.resolve(cwd), version });
       if (result.status === "needs_permission") {
         result = await runInit(cwd, version, {
           resume_token: result.interaction.resume_token,

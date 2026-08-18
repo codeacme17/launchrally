@@ -40,7 +40,7 @@ const ptyRunner = [
   "chunks = []",
   "observed = b''",
   "permission_answered = False",
-  "confirmation_answered = False",
+  "decision_prompts = 0",
   "while True:",
   "    try:",
   "        chunk = os.read(master, 4096)",
@@ -55,9 +55,10 @@ const ptyRunner = [
   "    if not permission_answered and b'Approve npm_registry_read? [y/N]' in observed:",
   "        os.write(master, b'y\\n')",
   "        permission_answered = True",
-  "    if not confirmation_answered and b'Choose 1-2:' in observed:",
-  "        os.write(master, b'1\\n')",
-  "        confirmation_answered = True",
+  "    observed_prompts = observed.count(b'Choose 1-3:')",
+  "    if observed_prompts > decision_prompts:",
+  "        decision_prompts = observed_prompts",
+  "        os.write(master, b'3\\n' if decision_prompts == 1 else b'1\\n')",
   "os.close(master)",
   "sys.stdout.buffer.write(b''.join(chunks))",
   "raise SystemExit(child.wait())",
@@ -2550,6 +2551,10 @@ test("TTY Human Init renders and confirms the exact preview in one process", {
 
   assert.match(stdout, /LaunchRally Initialization Preview/u);
   assert.match(stdout, /CREATE \.launchrally\/manifest\.yaml/u);
+  assert.match(stdout, /3\. View full preview/u);
+  assert.match(stdout, /Full exact digest-bound preview/u);
+  assert.match(stdout, /^Diff:$/mu);
+  assert.match(stdout, /^After content:$/mu);
   assert.match(stdout, /Apply exactly these local initialization changes\?/u);
   assert.match(stdout, /1\. Confirm/u);
   assert.match(stdout, /2\. Decline/u);
@@ -2565,6 +2570,9 @@ test("the Quickstart documents same-process Human Init and explicit Agent resume
   const quickstart = await readFile("docs/getting-started/quickstart.md", "utf8");
 
   assert.match(quickstart, /Init remains in the same process/iu);
+  assert.match(quickstart, /concise decision summary/iu);
+  assert.match(quickstart, /View full preview/u);
+  assert.match(quickstart, /same digest-bound preview/iu);
   assert.match(quickstart, /confirm or decline/iu);
   assert.match(quickstart, /Ctrl-C/iu);
   assert.match(quickstart, /Agent Mode[\s\S]*--resume <token>/iu);

@@ -1,10 +1,24 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { PassThrough } from "node:stream";
+import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 
 import { PromptCancelledError } from "../packages/cli/bin/human-audit.js";
 import { renderHumanInit, runHumanInit } from "../packages/cli/bin/human-init.js";
-import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
+import {
+  createClackPromptAdapter,
+  createPlainPromptAdapter,
+} from "../packages/cli/bin/prompt-adapters.js";
+
+function ttyStream(columns = 100) {
+  const stream = new PassThrough();
+  stream.isTTY = true;
+  stream.columns = columns;
+  stream.rows = 30;
+  stream.setRawMode = () => stream;
+  return stream;
+}
 
 test("the Human Init driver accepts permission and confirmation in one process", async () => {
   const results = [
@@ -25,16 +39,18 @@ test("the Human Init driver accepts permission and confirmation in one process",
     },
   ];
   const calls = [];
+  const contexts = [];
   const events = [];
   const outcome = await runHumanInit({
-    cwd: "/workspace",
+    cwd: "relative-workspace",
     version: "0.4.0",
     reportPackage: { report: { report_id: "report-1" } },
     prompt: {
       async start(operation) {
         events.push(`start:${operation}`);
       },
-      async respondInit(result) {
+      async respondInit(result, context) {
+        contexts.push(context);
         events.push(`respond:${result.status}`);
         return result.status === "needs_permission"
           ? { permission_decisions: { npm_registry_read: "approved" } }
@@ -54,12 +70,12 @@ test("the Human Init driver accepts permission and confirmation in one process",
   assert.equal(outcome.result.outcome, "initialized");
   assert.deepEqual(calls, [
     {
-      cwd: "/workspace",
+      cwd: "relative-workspace",
       version: "0.4.0",
       options: { report_package: { report: { report_id: "report-1" } } },
     },
     {
-      cwd: "/workspace",
+      cwd: "relative-workspace",
       version: "0.4.0",
       options: {
         resume_token: "permission-token",
@@ -67,7 +83,7 @@ test("the Human Init driver accepts permission and confirmation in one process",
       },
     },
     {
-      cwd: "/workspace",
+      cwd: "relative-workspace",
       version: "0.4.0",
       options: {
         resume_token: "confirmation-token",
@@ -80,6 +96,10 @@ test("the Human Init driver accepts permission and confirmation in one process",
     "respond:needs_permission",
     "respond:needs_confirmation",
     "close",
+  ]);
+  assert.deepEqual(contexts, [
+    { root: path.resolve("relative-workspace"), version: "0.4.0" },
+    { root: path.resolve("relative-workspace"), version: "0.4.0" },
   ]);
 });
 
@@ -125,6 +145,216 @@ test("the plain Human Init prompt reads a decision after rendering the exact pre
   assert.match(rendered, /1\. Confirm/u);
   assert.match(rendered, /2\. Decline/u);
   assert.doesNotMatch(rendered, /Resume token:/u);
+});
+
+test("Human Init summarizes large exact previews without embedding record bodies", () => {
+  const largeRecord = JSON.stringify({ payload: "record-body-sentinel".repeat(200) });
+  const rendered = renderHumanInit({
+    mode: "initialize",
+    source_report_id: "report-large",
+    manifest_action: {
+      action: "create",
+      supplied_source_report_id: "report-large",
+    },
+    preview: {
+      changes: [
+        {
+          operation: "create",
+          path: ".launchrally/manifest.yaml",
+          before_digest: null,
+          after_digest: `sha256:${"a".repeat(64)}`,
+          diff: "+schema_version: launchrally.dev/manifest/v2",
+          after: "schema_version: launchrally.dev/manifest/v2\n",
+        },
+        {
+          operation: "create",
+          path: ".launchrally/reports/report-large/record.json",
+          before_digest: null,
+          after_digest: `sha256:${"b".repeat(64)}`,
+          diff: `+${largeRecord}`,
+          after: largeRecord,
+        },
+        {
+          operation: "create",
+          path: `.launchrally/evidence/sha256/${"c".repeat(64)}.json`,
+          before_digest: null,
+          after_digest: `sha256:${"c".repeat(64)}`,
+          diff: `+${largeRecord}`,
+          after: largeRecord,
+        },
+        {
+          operation: "update",
+          path: ".launchrally/.gitignore",
+          before_digest: `sha256:${"d".repeat(64)}`,
+          after_digest: `sha256:${"e".repeat(64)}`,
+          diff: "+/reports/",
+          after: "/reports/\n",
+        },
+      ],
+      materialization: {
+        command: {
+          executable: "npm",
+          arguments: ["install", "@launchrally/cli@0.4.0"],
+        },
+        package_count: 42,
+        integrity_digest: `sha256:${"f".repeat(64)}`,
+        target: ".launchrally/toolchain/node_modules",
+        ignored: true,
+        authoritative: false,
+      },
+    },
+    request: { prompt: "Apply exactly these local initialization changes?" },
+  }, {
+    root: "/workspace/narrow-terminal-project",
+    version: "0.4.0",
+  });
+
+  assert.match(rendered, /Affected root: \/workspace\/narrow-terminal-project/u);
+  assert.match(rendered, /Changes: 3 create, 1 update, 0 delete/u);
+  assert.match(rendered, /CREATE \.launchrally\/reports\/report-large\/record\.json/u);
+  assert.match(rendered, /CREATE \.launchrally\/evidence\/sha256\/[c]{64}\.json/u);
+  assert.match(rendered, /Before digest: none/u);
+  assert.match(rendered, /After digest: sha256:b{64}/u);
+  assert.match(rendered, /Manifest action: create/u);
+  assert.match(rendered, /Project Toolchain: @launchrally\/cli@0\.4\.0/u);
+  assert.match(rendered, /Materialization: \.launchrally\/toolchain\/node_modules/u);
+  assert.match(rendered, /Write authority: exact listed \.launchrally paths only/u);
+  assert.match(rendered, /stale or altered previews fail closed/iu);
+  assert.match(rendered, /View full preview/u);
+  assert.doesNotMatch(rendered, /record-body-sentinel/u);
+  assert.doesNotMatch(rendered, /^Diff:$/mu);
+  assert.doesNotMatch(rendered, /^After content:$/mu);
+  assert.ok(rendered.split("\n").length < 50);
+});
+
+test("the plain Human Init prompt shows full details and returns to the same decision", async () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  let rendered = "";
+  let answeredPrompts = 0;
+  output.on("data", (chunk) => {
+    rendered += chunk;
+    const promptCount = rendered.match(/Choose 1-3:/gu)?.length ?? 0;
+    if (promptCount > answeredPrompts) {
+      answeredPrompts = promptCount;
+      setImmediate(() => {
+        if (promptCount === 1) input.write("3\n");
+        else input.end("1\n");
+      });
+    }
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+  const largeRecord = JSON.stringify({ payload: "full-preview-record-body".repeat(100) });
+
+  const responsePromise = prompt.respondInit({
+    status: "needs_confirmation",
+    operation: "init",
+    mode: "initialize",
+    source_report_id: "report-full-preview",
+    preview: {
+      changes: [{
+        operation: "create",
+        path: ".launchrally/reports/report-full-preview/record.json",
+        before_digest: null,
+        after_digest: `sha256:${"a".repeat(64)}`,
+        diff: `+${largeRecord}`,
+        after: largeRecord,
+      }],
+    },
+    request: {
+      prompt: "Apply exactly these local initialization changes?",
+      choices: ["confirm", "decline"],
+    },
+    interaction: { resume_token: "one-digest-bound-preview-token" },
+  }, {
+    root: "/workspace",
+    version: "0.4.0",
+  });
+  const response = await responsePromise;
+  await prompt.close();
+
+  const [summary, fullPreview] = rendered.split("Full exact digest-bound preview:");
+  assert.deepEqual(response, { confirmation: "confirm" });
+  assert.doesNotMatch(summary, /full-preview-record-body/u);
+  assert.match(fullPreview, /full-preview-record-body/u);
+  assert.match(fullPreview, /^Diff:$/mu);
+  assert.match(fullPreview, /^After content:$/mu);
+  assert.equal(rendered.match(/1\. Confirm/gu)?.length, 2);
+  assert.equal(rendered.match(/3\. View full preview/gu)?.length, 2);
+  assert.doesNotMatch(rendered, /Resume token:/u);
+});
+
+test("the styled Human Init prompt progressively discloses the same full preview", async () => {
+  const input = ttyStream(36);
+  const output = ttyStream(36);
+  let rendered = "";
+  let openedFullPreview = false;
+  let submittedDecision = false;
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+    const semanticOutput = stripVTControlCharacters(rendered);
+    if (!openedFullPreview && semanticOutput.includes("View full preview")) {
+      openedFullPreview = true;
+      setImmediate(() => input.write("\u001b[B\r"));
+    } else if (openedFullPreview && !submittedDecision) {
+      const fullPreviewIndex = semanticOutput.indexOf("Full exact initialization preview");
+      if (
+        fullPreviewIndex >= 0
+        && semanticOutput.lastIndexOf("View full preview") > fullPreviewIndex
+      ) {
+        submittedDecision = true;
+        setImmediate(() => input.write("\r"));
+      }
+    }
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+  const reportRecord = JSON.stringify({ payload: "styled-report-preview-body".repeat(80) });
+  const evidenceRecord = JSON.stringify({ payload: "styled-evidence-preview-body".repeat(80) });
+
+  const response = await prompt.respondInit({
+    status: "needs_confirmation",
+    operation: "init",
+    mode: "initialize",
+    source_report_id: "report-styled",
+    preview: {
+      changes: [
+        {
+          operation: "create",
+          path: ".launchrally/reports/report-styled/record.json",
+          before_digest: null,
+          after_digest: `sha256:${"a".repeat(64)}`,
+          diff: `+${reportRecord}`,
+          after: reportRecord,
+        },
+        {
+          operation: "create",
+          path: `.launchrally/evidence/sha256/${"b".repeat(64)}.json`,
+          before_digest: null,
+          after_digest: `sha256:${"b".repeat(64)}`,
+          diff: `+${evidenceRecord}`,
+          after: evidenceRecord,
+        },
+      ],
+    },
+    request: { prompt: "Apply exactly these local initialization changes?" },
+  }, {
+    root: "/workspace",
+    version: "0.4.0",
+  });
+  await prompt.close();
+
+  const semanticOutput = stripVTControlCharacters(rendered);
+  const [summary, fullPreview] = semanticOutput.split("Full exact initialization preview");
+  assert.deepEqual(response, { confirmation: "decline" });
+  assert.doesNotMatch(summary, /styled-report-preview-body/u);
+  assert.doesNotMatch(summary, /styled-evidence-preview-body/u);
+  assert.match(summary, /View full preview/u);
+  assert.match(summary, /CREATE \.launchrally\/reports\/re/u);
+  assert.match(summary, /CREATE \.launchrally\/evidence\/s/u);
+  assert.ok(summary.split("\n").length < 100);
+  assert.match(fullPreview, /styled-report-preview-body/u);
+  assert.match(fullPreview, /styled-evidence-preview-body/u);
+  assert.match(fullPreview, /Full exact digest-bound[\s\S]*preview:/u);
 });
 
 test("Human Init explains preserved Manifest intent and the explicit rebind action", () => {
