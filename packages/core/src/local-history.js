@@ -20,6 +20,7 @@ import { isSafeEvidenceArtifact } from "./evidence-artifact.js";
 
 const REPORT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const DIGEST = /^sha256:([a-f0-9]{64})$/u;
+const REPORT_RECORD_PATH = /^\.launchrally\/reports\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/record\.json$/u;
 
 export function canonicalJson(value) {
   function canonical(candidate) {
@@ -173,6 +174,22 @@ async function assertRepositoryRoot(root) {
     throw error;
   }
   return realpath(resolved);
+}
+
+function repositoryRelativePath(root, selectedPath) {
+  if (typeof selectedPath !== "string" || selectedPath.length === 0) return null;
+  const candidate = path.isAbsolute(selectedPath)
+    ? path.resolve(selectedPath)
+    : path.resolve(root, selectedPath);
+  const relative = path.relative(path.resolve(root), candidate);
+  if (relative === "" || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    return null;
+  }
+  return relative.split(path.sep).join("/");
+}
+
+export function isLocalHistoryReference(root, selectedPath) {
+  return repositoryRelativePath(root, selectedPath)?.startsWith(".launchrally/") ?? false;
 }
 
 async function assertNoSymlink(root, relativePath) {
@@ -354,6 +371,92 @@ async function committedLocalHistoryState(repositoryRoot, reportId, expectedDige
 export async function committedLocalHistoryStatus(root, reportId, expectedDigest) {
   const repositoryRoot = await assertRepositoryRoot(root);
   return committedLocalHistoryState(repositoryRoot, reportId, expectedDigest);
+}
+
+export async function loadLocalHistoryReportPackage(root, selectedPath) {
+  const repositoryRoot = await assertRepositoryRoot(root);
+  const relativePath = repositoryRelativePath(repositoryRoot, selectedPath);
+  const match = relativePath?.match(REPORT_RECORD_PATH);
+  if (!match) {
+    const error = new Error(
+      "Plan local history input must be a repository-bounded .launchrally/reports/<report-id>/record.json path.",
+    );
+    error.code = "invalid_local_history_report_path";
+    throw error;
+  }
+  const reportId = match[1];
+  const relativeDirectory = reportDirectory(reportId);
+  await Promise.all([
+    "record.json",
+    "record.sha256",
+    "view.md",
+    "evidence-index.json",
+  ].map((name) => assertNoSymlink(repositoryRoot, `${relativeDirectory}/${name}`)));
+  const directory = path.join(repositoryRoot, relativeDirectory);
+  let recordContent;
+  let expectedDigest;
+  let viewContent;
+  let evidenceIndex;
+  try {
+    [recordContent, expectedDigest, viewContent, evidenceIndex] = await Promise.all([
+      readFile(path.join(directory, "record.json"), "utf8"),
+      readFile(path.join(directory, "record.sha256"), "utf8").then((value) => value.trim()),
+      readFile(path.join(directory, "view.md"), "utf8"),
+      readFile(path.join(directory, "evidence-index.json"), "utf8").then(JSON.parse),
+    ]);
+  } catch (error) {
+    const invalid = new Error(
+      "The immutable Report package is missing, incomplete, or unreadable; run full Verify again.",
+    );
+    invalid.code = "invalid_local_history_report";
+    invalid.cause = error;
+    throw invalid;
+  }
+  if (!DIGEST.test(expectedDigest) || sha256(recordContent) !== expectedDigest) {
+    const error = new Error(
+      "The immutable Report Record digest does not match; restore history or run full Verify again.",
+    );
+    error.code = "invalid_local_history_report";
+    throw error;
+  }
+  let reportPackage;
+  try {
+    const report = JSON.parse(recordContent);
+    if (report.report_id !== reportId) throw new Error("Report ID does not match its directory.");
+    reportPackage = {
+      report,
+      report_view: {
+        schema_version: "launchrally.dev/report-view/v2",
+        report_id: report.report_id,
+        report_schema_version: report.schema_version,
+        generated_at: report.created_at,
+        format: "markdown",
+        content: viewContent,
+      },
+      evidence_index: evidenceIndex,
+    };
+    const derived = createHistoryFiles(reportPackage, { include_cache: false });
+    if (derived.record_digest !== expectedDigest) throw new Error("Record digest changed.");
+  } catch (error) {
+    const invalid = new Error(
+      "The immutable Report package is invalid or internally inconsistent; restore history or run full Verify again.",
+    );
+    invalid.code = "invalid_local_history_report";
+    invalid.cause = error;
+    throw invalid;
+  }
+  if (await committedLocalHistoryState(repositoryRoot, reportId, expectedDigest) !== "valid") {
+    const error = new Error(
+      "The immutable Report package or referenced Evidence is incomplete or tampered; restore history or run full Verify again.",
+    );
+    error.code = "invalid_local_history_report";
+    throw error;
+  }
+  return {
+    status: "completed",
+    operation: "audit",
+    ...reportPackage,
+  };
 }
 
 async function evidenceIsReferenced(repositoryRoot, digest) {

@@ -3148,11 +3148,12 @@ async function smokeCli(
     }
     const refreshedPath = path.join(reports, `${representative.id}-refreshed.json`);
     await writeFile(refreshedPath, JSON.stringify(refreshed));
+    const currentReportPath = `.launchrally/reports/${refreshed.report.report_id}/record.json`;
     const plan = await invoke([
-      "plan", "--json", "--cwd", repository, "--report", refreshedPath,
+      "plan", "--json", "--cwd", repository, "--report", currentReportPath,
     ]);
     const handoff = await invoke([
-      "plan", "--json", "--cwd", repository, "--report", refreshedPath, "--handoff",
+      "plan", "--json", "--cwd", repository, "--report", currentReportPath, "--handoff",
     ]);
     if (plan.status !== "completed" || handoff.status !== "completed") {
       throw new Error(`coverage_artifact_plan_failed: ${representative.id}`);
