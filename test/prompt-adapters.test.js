@@ -802,7 +802,7 @@ test("the Plain adapter preserves current Journeys and retries Other with detect
     { method: "GET", path: "/pricing", purpose: "pricing loads" },
   ];
 
-  ["2\n", "2\n", "POST /admin\n", "GET /extra — extra loads\n"].forEach(
+  ["2\n", "2\n", "POST /admin\n", "GET /extra — extra loads\n", "1\n"].forEach(
     (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
   );
   const response = await prompt.respond(interaction);
@@ -854,10 +854,10 @@ test("the Plain adapter preserves retained classifications while revising", asyn
   assert.match(rendered, /Enter route numbers separated by commas \[default 1,2\]/u);
   assert.match(rendered, /Choose 1-5 \[default 3\]/u);
   assert.match(rendered, /Staff — keep current: anonymous expect 404; authenticated expect 200/u);
-  assert.match(rendered, /Choose 1-2 \[default 1\]/u);
+  assert.match(rendered, /Continue with classified Journeys/u);
 });
 
-test("the Plain adapter does not offer unsupported protected access classes", async () => {
+test("the Plain adapter offers protected classification for application-specific static paths", async () => {
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -870,14 +870,79 @@ test("the Plain adapter does not offer unsupported protected access classes", as
     (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
   );
   const response = await prompt.respond(journeyInput([
-    "GET /leaderboard — leaderboard page loads",
+    "GET /me/notifications/settings — notification settings page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response.answers.core_journeys, [{
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/me/notifications/settings",
+    purpose: "authenticated Core Journey",
+    access: {
+      authentication_class: "user",
+      anonymous_status_codes: [401, 403, 404],
+      authenticated_status_codes: [200],
+    },
+  }]);
+  assert.match(rendered, /User — anonymous expect/u);
+  assert.doesNotMatch(rendered, /unsupported/u);
+});
+
+test("the Plain adapter explains why a parameterized candidate cannot be protected", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  ["1\n", "1\n", "2\n", "1\n"].forEach(
+    (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
+  );
+  const response = await prompt.respond(journeyInput([
+    "GET /users/:id — user page loads",
   ]));
   await prompt.close();
 
   assert.deepEqual(response.answers.core_journeys, []);
-  assert.match(rendered, /protected access is unsupported for this path/u);
+  assert.match(
+    rendered,
+    /protected access requires an explicitly supplied concrete path; dynamic placeholders must be excluded/u,
+  );
   assert.doesNotMatch(rendered, /User — anonymous expect/u);
-  assert.match(rendered, /Skip public Journey verification/u);
+});
+
+test("the Plain adapter classifies an explicitly supplied concrete path as protected", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  ["2\n", "2\n", "GET /users/profile — profile page loads\n", "2\n"].forEach(
+    (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
+  );
+  const response = await prompt.respond(journeyInput([
+    "GET /users/:id — user page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response.answers.core_journeys, [{
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/users/profile",
+    purpose: "authenticated Core Journey",
+    access: {
+      authentication_class: "user",
+      anonymous_status_codes: [401, 403, 404],
+      authenticated_status_codes: [200],
+    },
+  }]);
+  assert.match(rendered, /Explicitly supplied route does not establish access/u);
 });
 
 test("the Plain adapter rejects unsafe custom Journeys before submitting to Core", async () => {
@@ -891,7 +956,10 @@ test("the Plain adapter rejects unsafe custom Journeys before submitting to Core
 
   setTimeout(() => input.write("2\n"), 10);
   setTimeout(() => input.write("POST /admin — destructive action\n"), 30);
-  setTimeout(() => input.write("GET /checkout — checkout completes\n"), 50);
+  setTimeout(() => input.write("GET /control?view=private — control loads\n"), 50);
+  setTimeout(() => input.write("GET https://user:password@example.com/control — control loads\n"), 70);
+  setTimeout(() => input.write("GET /checkout — checkout completes\n"), 90);
+  setTimeout(() => input.write("1\n"), 110);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -923,6 +991,9 @@ test("the Plain adapter rejects unsafe custom Journeys before submitting to Core
     },
   });
   assert.match(rendered, /Use a safe GET Journey/u);
+  assert.match(rendered, /protected access supports only GET/u);
+  assert.match(rendered, /protected access rejects queries or fragments/u);
+  assert.match(rendered, /protected access rejects credentials/u);
 });
 
 test("the Plain adapter accepts a safe GET path without requiring a purpose", async () => {
@@ -936,7 +1007,7 @@ test("the Plain adapter accepts a safe GET path without requiring a purpose", as
 
   setTimeout(() => input.write("2\n"), 10);
   setTimeout(() => input.write("GET /\n"), 30);
-  setTimeout(() => input.write("GET /fallback — fallback loads\n"), 50);
+  setTimeout(() => input.write("1\n"), 50);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -1601,6 +1672,10 @@ test("the Clack adapter sanitizes detected route labels before terminal output",
 test("the Clack adapter public Skip preserves a protected classification", async () => {
   const input = ttyStream();
   const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
   const prompt = await createClackPromptAdapter({ input, output });
 
   setTimeout(() => input.write("\r"), 20);
@@ -1625,6 +1700,10 @@ test("the Clack adapter public Skip preserves a protected classification", async
       authenticated_status_codes: [200],
     },
   }]);
+  assert.match(
+    stripVTControlCharacters(rendered),
+    /protected access requires a non-root path/u,
+  );
 });
 
 test("the Clack adapter preserves retained classifications while revising", async () => {
@@ -1679,6 +1758,7 @@ test("the Clack adapter accepts a safe GET path without requiring a purpose", as
 
   setTimeout(() => input.write("\u001b[B \r"), 20);
   setTimeout(() => input.write("GET /\r"), 60);
+  setTimeout(() => input.write("\r"), 100);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",

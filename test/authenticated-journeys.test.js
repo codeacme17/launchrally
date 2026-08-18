@@ -6,6 +6,7 @@ import {
   createAuthenticatedJourneyPlan,
   normalizeAuthenticatedJourneyResults,
 } from "../packages/core/src/authenticated-journeys.js";
+import { isSafeEvidenceArtifact } from "../packages/core/src/evidence-artifact.js";
 import { parsePublicJourneyInput } from "../packages/core/src/public-journey.js";
 
 const ANSWERS = {
@@ -135,11 +136,41 @@ test("protected journeys may omit an anonymous boundary assertion", () => {
   assert.equal(parsed.value.purpose, "authenticated Core Journey");
 });
 
-test("protected journey declarations reject personal identifiers before persistence", () => {
+test("protected journeys accept application-specific static path segments", () => {
+  for (const journeyPath of [
+    "/control/moderation",
+    "/me/moderation",
+    "/me/notifications",
+    "/me/notifications/settings",
+    "/release-notes",
+    "/notification_settings",
+    "/oauth2/callback",
+    "/account-12345",
+    "/patients/john-smith",
+    "/users/alice",
+  ]) {
+    const parsed = parsePublicJourneyInput({
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: journeyPath,
+      purpose: `${journeyPath} loads`,
+      access: {
+        authentication_class: "user",
+        authenticated_status_codes: [200],
+      },
+    });
+
+    assert.equal(parsed.value?.path, journeyPath);
+    assert.equal(parsed.value?.purpose, "authenticated Core Journey");
+  }
+});
+
+test("protected journey declarations reject only defensible identifier shapes", () => {
   for (const candidate of [
     { path: "/users/alice@example.com", purpose: "account loads" },
-    { path: "/account-12345", purpose: "account loads" },
     { path: "/orders/12345678", purpose: "order loads" },
+    { path: "/orders/550e8400-e29b-41d4-a716-446655440000", purpose: "order loads" },
+    { path: "/sessions/0123456789abcdef0123456789abcdef", purpose: "session loads" },
     { path: "/", purpose: "account loads" },
     { path: "/account/", purpose: "account loads" },
   ]) {
@@ -165,6 +196,78 @@ test("protected journey declarations reject personal identifiers before persiste
     },
   });
   assert.equal(normalized.value.purpose, "authenticated Core Journey");
+});
+
+test("protected journeys report the exact rejected safety constraint", () => {
+  for (const [method, journeyPath, reasonCode, guidance] of [
+    ["POST", "/control/moderation", "non_get_method", /supports only GET/u],
+    ["GET", "/", "root_path", /non-root path/u],
+    ["GET", "//example.com/control", "protocol_relative_path", /protocol-relative paths/u],
+    ["GET", "/control/../moderation", "dot_or_traversal_segment", /dot and traversal segments/u],
+    ["GET", "/control//moderation", "empty_or_trailing_segment", /empty or trailing segments/u],
+    ["GET", "/control/", "empty_or_trailing_segment", /empty or trailing segments/u],
+    ["GET", "/control\\moderation", "backslash_path", /backslashes/u],
+    ["GET", "/control/moderation?view=queue", "query_or_fragment", /queries or fragments/u],
+    ["GET", "/control/moderation#queue", "query_or_fragment", /queries or fragments/u],
+    ["GET", "/control/%6doderation", "percent_encoded_path", /percent-encoded paths/u],
+    ["GET", "https://user:password@example.com/control", "credentialed_target", /credentials/u],
+    ["GET", "https://other.example/control", "absolute_or_out_of_origin_target", /absolute or out-of-origin targets/u],
+    ["GET", "/users/:id", "dynamic_segment", /dynamic placeholders/u],
+    ["GET", "/users/[id]", "dynamic_segment", /dynamic placeholders/u],
+    ["GET", "/users/{id}", "dynamic_segment", /dynamic placeholders/u],
+    ["GET", "/users/*", "dynamic_segment", /dynamic placeholders/u],
+    ["GET", "/orders/12345678", "opaque_segment_shape", /opaque identifier shapes/u],
+    ["GET", "/ReleaseNotes", "invalid_static_segment", /lowercase ASCII static segments/u],
+  ]) {
+    const parsed = parsePublicJourneyInput({
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method,
+      path: journeyPath,
+      purpose: "account loads",
+      access: {
+        authentication_class: "user",
+        authenticated_status_codes: [200],
+      },
+    });
+
+    assert.equal(parsed.error, "invalid_protected_journey", `${method} ${journeyPath}`);
+    assert.equal(parsed.reason_code, reasonCode, `${method} ${journeyPath}`);
+    assert.match(parsed.guidance, guidance, `${method} ${journeyPath}`);
+  }
+});
+
+test("authenticated plans preserve only exact validated protected targets", () => {
+  const protectedJourney = {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/me/notifications/settings",
+    purpose: "notification settings load",
+    access: {
+      authentication_class: "user",
+      authenticated_status_codes: [200],
+    },
+  };
+  const plan = createAuthenticatedJourneyPlan({
+    production_targets: ["https://example.com"],
+    core_journeys: [protectedJourney],
+  });
+
+  assert.equal(plan.journeys[0].target, "https://example.com/me/notifications/settings");
+  for (const journeyPath of [
+    "//other.example/control",
+    "/control/../moderation",
+    "/control\\moderation",
+    "/control/moderation?view=queue",
+    "/control/moderation#queue",
+    "/control/%6doderation",
+    "/users/:id",
+  ]) {
+    const unsafePlan = createAuthenticatedJourneyPlan({
+      production_targets: ["https://example.com"],
+      core_journeys: [{ ...protectedJourney, path: journeyPath }],
+    });
+    assert.deepEqual(unsafePlan.journeys, [], journeyPath);
+  }
 });
 
 test("every caller-supplied authenticated outcome remains unsupported without the host runner", () => {
@@ -275,4 +378,25 @@ test("authenticated observations require a fresh declared permission window", ()
     () => normalizeAuthenticatedJourneyResults(permissionBoundPlan(), supplied),
     { code: "invalid_authenticated_journey_results" },
   );
+});
+
+test("legacy authenticated Journey artifacts reject authority backslashes", () => {
+  const target = "https://example.com\\evil/control";
+  assert.equal(isSafeEvidenceArtifact({
+    kind: "authenticated_journey_observation",
+    journey_id: "target-1:journey-1:authenticated",
+    target,
+    method: "GET",
+    purpose: "authenticated Core Journey",
+    authentication_class: "user",
+    status: "unverified",
+    outcome: "runner_unavailable",
+    status_code: null,
+    collected_at: "2026-08-12T06:00:00.000Z",
+    provenance: {
+      collector: "host-agent-authenticated-journey/v1",
+      exact_target: target,
+      collected_at: "2026-08-12T06:00:00.000Z",
+    },
+  }), false);
 });

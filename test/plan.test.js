@@ -588,6 +588,13 @@ test("Plan preserves each protected declaration and its typed authenticated resu
       verification_gap: true,
     },
   }]);
+  const authorityBackslashPlan = structuredClone(result);
+  authorityBackslashPlan.authenticated_journeys[0].target =
+    "https://example.com\\evil/control";
+  assert.throws(
+    () => assertValidLaunchPlan(authorityBackslashPlan),
+    (error) => error.code === "invalid_launch_plan",
+  );
 });
 
 test("Human Mode explains Findings, investigation locations, Evidence, and Gaps separately", async () => {

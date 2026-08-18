@@ -383,12 +383,22 @@ function fieldInputError(field, value) {
     }
   }
   if (field.value_type !== "journey_array") return undefined;
-  const safe = entries.every((entry) =>
-    !parsePublicJourneyInput(entry, { allowDescription: false }).error,
+  const invalidEntry = entries.find((entry) =>
+    parsePublicJourneyInput(entry, { allowDescription: false }).error,
   );
-  return safe
-    ? undefined
-    : "Use a safe GET Journey, for example: GET / or GET /checkout — checkout completes.";
+  if (!invalidEntry) return undefined;
+  const declared = invalidEntry.match(/^([a-z]+)\s+(\S+)/iu);
+  const protectedResult = declared
+    ? parsePublicJourneyInput(classifiedJourney({
+      method: declared[1],
+      path: declared[2],
+      purpose: "authenticated Core Journey",
+    }, "user"), { allowDescription: false })
+    : null;
+  return [
+    "Use a safe GET Journey, for example: GET / or GET /checkout — checkout completes.",
+    protectedResult?.guidance,
+  ].filter(Boolean).join(" ");
 }
 
 function emptyFieldValue(value) {
@@ -467,6 +477,8 @@ const EXCLUDE_JOURNEY_ACCESS_CHOICE = Object.freeze({
   label: "Exclude — do not verify this route",
   value: "exclude",
 });
+const PROTECTED_PATH_SAFETY_GUIDANCE =
+  "protected access is unavailable for this Journey";
 
 function classifiedJourney(journey, accessClass) {
   if (accessClass === "exclude") return null;
@@ -485,24 +497,28 @@ function classifiedJourney(journey, accessClass) {
 }
 
 function journeyAccessChoices(journey, current) {
-  const protectedSupported = !parsePublicJourneyInput(
+  const protectedResult = parsePublicJourneyInput(
     classifiedJourney(journey, "user"),
     { allowDescription: false },
-  ).error;
+  );
   const choices = [
     PUBLIC_JOURNEY_ACCESS_CHOICE,
-    ...(protectedSupported ? PROTECTED_JOURNEY_ACCESS_CHOICES : []),
+    ...(!protectedResult.error ? PROTECTED_JOURNEY_ACCESS_CHOICES : []),
     EXCLUDE_JOURNEY_ACCESS_CHOICE,
   ];
-  if (!current?.access) return choices;
-  return choices.map((choice) => choice.value === current.access.authentication_class
-    ? {
-      ...choice,
-      label: `${choice.label.split(" — ")[0]} — keep current: anonymous expect ${
-        current.access.anonymous_status_codes?.join("/") ?? "not probed"
-      }; authenticated expect ${current.access.authenticated_status_codes.join("/")}`,
-    }
-    : choice);
+  return {
+    choices: !current?.access
+      ? choices
+      : choices.map((choice) => choice.value === current.access.authentication_class
+        ? {
+          ...choice,
+          label: `${choice.label.split(" — ")[0]} — keep current: anonymous expect ${
+            current.access.anonymous_status_codes?.join("/") ?? "not probed"
+          }; authenticated expect ${current.access.authenticated_status_codes.join("/")}`,
+        }
+        : choice),
+    rejection: protectedResult.error ? protectedResult : null,
+  };
 }
 
 function sameJourneyRoute(left, right) {
@@ -514,6 +530,24 @@ function sameJourneyRoute(left, right) {
 
 function journeyAccessClass(journey) {
   return journey.access?.authentication_class ?? "public";
+}
+
+async function classifyJourneyOptions(options, selectAccess, source) {
+  const classified = [];
+  for (const option of options) {
+    const { choices, rejection } = journeyAccessChoices(option.value, option.current);
+    const protectedSupported = !rejection;
+    const accessClass = await selectAccess(
+      `${source} does not establish access. Classify ${journeyLabel(option.value)} (classification required${protectedSupported ? "" : `; ${rejection.guidance ?? PROTECTED_PATH_SAFETY_GUIDANCE}`})`,
+      choices,
+      option.currentAccess,
+    );
+    const journey = option.current && accessClass === option.currentAccess
+      ? option.current
+      : classifiedJourney(option.value, accessClass);
+    if (journey) classified.push(journey);
+  }
+  return classified;
 }
 
 async function classifyDetectedJourneys(field, {
@@ -535,21 +569,22 @@ async function classifyDetectedJourneys(field, {
   });
   disclose(candidates);
   const retainedCandidates = await selectRetained(candidates);
-  const classified = [];
-  for (const option of retainedCandidates) {
-    const choices = journeyAccessChoices(option.value, option.current);
-    const protectedSupported = choices.length > 2;
-    const accessClass = await selectAccess(
-      `Route discovery does not establish access. Classify ${journeyLabel(option.value)} (classification required${protectedSupported ? "" : "; protected access is unsupported for this path"})`,
-      choices,
-      option.currentAccess,
-    );
-    const journey = option.current && accessClass === option.currentAccess
-      ? option.current
-      : classifiedJourney(option.value, accessClass);
-    if (journey) classified.push(journey);
-  }
-  return { classified, detected: detected.map((option) => option.value) };
+  return {
+    classified: await classifyJourneyOptions(
+      retainedCandidates,
+      selectAccess,
+      "Route discovery",
+    ),
+    detected: detected.map((option) => option.value),
+  };
+}
+
+function classifyExplicitJourneys(journeys, selectAccess) {
+  return classifyJourneyOptions(
+    journeys.map((value) => ({ value })),
+    selectAccess,
+    "Explicitly supplied route",
+  );
 }
 
 function retainedCurrentJourneys(field, detected) {
@@ -736,7 +771,11 @@ export function createPlainPromptAdapter({
           const error = fieldInputError({ ...field, required: true }, raw);
           const custom = parseFieldValue(field, raw);
           if (!error && !emptyFieldValue(custom)) {
-            return [...classification.classified, ...retained, ...custom];
+            return [
+              ...classification.classified,
+              ...retained,
+              ...await classifyExplicitJourneys(custom, choose),
+            ];
           }
           write(output, error ?? "Enter at least one custom value.");
         }
@@ -784,7 +823,9 @@ export function createPlainPromptAdapter({
         const error = fieldInputError({ ...field, required: true }, raw);
         const custom = parseFieldValue(field, raw);
         if (!error && !emptyFieldValue(custom)) {
-          return [...resolution.values, ...custom];
+          return field.field_id === "core_journeys"
+            ? [...resolution.values, ...await classifyExplicitJourneys(custom, choose)]
+            : [...resolution.values, ...custom];
         }
         write(output, error ?? "Enter at least one custom value.");
       }
@@ -929,6 +970,11 @@ export async function createClackPromptAdapter({
       ? { validate: (value) => fieldInputError(field, value) }
       : {}),
   }), clack, output);
+  const selectJourneyAccess = async (message, choices) => cancelled(await clack.select({
+    ...common,
+    message,
+    options: choices,
+  }), clack, output);
   const selectField = async (field) => {
     const customValue = "__launchrally_custom_value__";
     const skipValue = "__launchrally_skip_value__";
@@ -1005,7 +1051,11 @@ export async function createClackPromptAdapter({
           required: true,
         });
         const custom = parseFieldValue(field, raw);
-        return [...classification.classified, ...retained, ...custom];
+        return [
+          ...classification.classified,
+          ...retained,
+          ...await classifyExplicitJourneys(custom, selectJourneyAccess),
+        ];
       }
     }
     if (!field.value_type.endsWith("_array")) {
@@ -1054,7 +1104,12 @@ export async function createClackPromptAdapter({
         required: true,
       });
       const custom = parseFieldValue(field, raw);
-      return [...resolution.values, ...custom];
+      return field.field_id === "core_journeys"
+        ? [
+            ...resolution.values,
+            ...await classifyExplicitJourneys(custom, selectJourneyAccess),
+          ]
+        : [...resolution.values, ...custom];
     }
   };
 
