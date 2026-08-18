@@ -222,6 +222,12 @@ function list(values, render = String) {
   return values.length > 0 ? values.map((value) => `  - ${render(value)}`).join("\n") : "  - None";
 }
 
+function operationTitle(operation) {
+  if (operation === "init") return "LaunchRally Init";
+  if (operation === "verify") return "LaunchRally Verify";
+  return "LaunchRally Audit";
+}
+
 function terminalSafeText(value) {
   return stripVTControlCharacters(String(value))
     .replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ")
@@ -312,13 +318,23 @@ function protectedJourneyDeclaration(permissionJourney, auditBrief) {
     && journey.access?.authentication_class === permissionJourney.authentication_class);
 }
 
-function authenticatedPermissionText(permission, auditBrief) {
+function anonymousExpectedStatuses(permissionJourney, permissions = []) {
+  const publicPermission = permissions.find(({ boundary }) => boundary === "public_network");
+  const probe = publicPermission?.scope?.probes?.find((candidate) =>
+    candidate.verification_mode === "protected_anonymous_boundary"
+    && candidate.method === permissionJourney.method
+    && candidate.target === permissionJourney.target);
+  return probe?.expected_status_codes;
+}
+
+function authenticatedPermissionText(permission, auditBrief, permissions) {
   const scope = permission.scope ?? {};
   const journeys = Array.isArray(scope.journeys) ? scope.journeys : [];
   const journeyLines = journeys.length > 0
     ? journeys.flatMap((journey) => {
       const declaration = protectedJourneyDeclaration(journey, auditBrief);
-      const anonymousStatuses = declaration?.access?.anonymous_status_codes;
+      const anonymousStatuses = declaration?.access?.anonymous_status_codes
+        ?? anonymousExpectedStatuses(journey, permissions);
       const authenticatedStatuses = journey.expected_status_codes;
       return [
         `  - ${journey.method ?? "Method unavailable"} ${journey.target ?? "Target unavailable"}`,
@@ -345,16 +361,29 @@ function authenticatedPermissionText(permission, auditBrief) {
   ].join("\n");
 }
 
-function permissionText(permission, auditBrief) {
+function permissionText(permission, auditBrief, permissions) {
   if (permission.boundary === "public_network") {
+    const scope = permission.scope ?? {};
+    const probes = Array.isArray(scope.probes) ? scope.probes : [];
     return [
       "Public verification",
-      `Targets: ${permission.scope.targets.join(", ")}`,
+      `Collector: ${scope.collector_version ?? "unavailable"}`,
+      `Targets: ${Array.isArray(scope.targets) && scope.targets.length > 0
+        ? scope.targets.join(", ")
+        : "unavailable"}`,
+      "Probes:",
+      ...probes.flatMap((probe) => [
+        `  - ${probe.method ?? "Method unavailable"} ${probe.target ?? "Target unavailable"}`,
+        `    Purpose: ${probe.purpose ?? "unavailable"}`,
+        ...(Array.isArray(probe.expected_status_codes)
+          ? [`    Expected status: ${probe.expected_status_codes.join(", ")}`]
+          : []),
+      ]),
       "Allow this public network read?",
     ].join("\n");
   }
   if (permission.boundary === "authenticated_network_read") {
-    return authenticatedPermissionText(permission, auditBrief);
+    return authenticatedPermissionText(permission, auditBrief, permissions);
   }
   const provider = permission.scope?.provider ?? "unavailable";
   const target = permission.scope?.target ?? "unavailable";
@@ -891,7 +920,7 @@ export function createPlainPromptAdapter({
 
   return {
     async start(operation = "audit") {
-      write(output, operation === "init" ? "LaunchRally Init" : "LaunchRally Audit");
+      write(output, operationTitle(operation));
     },
     async activity(label, operation) {
       return runPromptActivity({
@@ -975,6 +1004,18 @@ export function createPlainPromptAdapter({
         return { permission_decisions: permissionDecisions };
       }
       return {};
+    },
+    async respondVerify(result) {
+      if (result.status !== "needs_permission") return {};
+      const permissionDecisions = {};
+      for (const permission of result.request.permissions) {
+        permissionDecisions[permission.permission_id] = await confirm(
+          permissionText(permission, undefined, result.request.permissions),
+        )
+          ? "approved"
+          : "denied";
+      }
+      return { permission_decisions: permissionDecisions };
     },
     async respondInit(result, context = {}) {
       if (result.status === "needs_permission") {
@@ -1174,7 +1215,7 @@ export async function createClackPromptAdapter({
 
   return {
     async start(operation = "audit") {
-      clack.intro(operation === "init" ? "LaunchRally Init" : "LaunchRally Audit", common);
+      clack.intro(operationTitle(operation), common);
     },
     async activity(label, operation) {
       const completionLabel = completedActivityLabel(label);
@@ -1298,6 +1339,31 @@ export async function createClackPromptAdapter({
         return { permission_decisions: permissionDecisions };
       }
       return {};
+    },
+    async respondVerify(result) {
+      if (result.status !== "needs_permission") return {};
+      const permissionDecisions = {};
+      for (const permission of result.request.permissions) {
+        clack.note(
+          permissionText(permission, undefined, result.request.permissions),
+          "Verify permission request",
+          common,
+        );
+        const approved = await clack.confirm({
+          ...common,
+          message: "Approve this permission?",
+          initialValue: false,
+        });
+        permissionDecisions[permission.permission_id] = cancelled(
+          approved,
+          clack,
+          output,
+          "Verify",
+        )
+          ? "approved"
+          : "denied";
+      }
+      return { permission_decisions: permissionDecisions };
     },
     async respondInit(result, context = {}) {
       if (result.status === "needs_permission") {

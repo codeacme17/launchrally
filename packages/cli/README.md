@@ -23,9 +23,12 @@ From the repository root, save the complete Human Audit Report, separately confi
 rally audit --plain --cwd . --output ./launchrally-audit-report.json
 rally init --plain --cwd . --report ./launchrally-audit-report.json
 rally --version --json --cwd .
+rally verify --plain --cwd . --report ./launchrally-audit-report.json --scope full
 ```
 
 Audit performs no repository write and does not create `.launchrally`. Public and Provider reads are independent and default-denied. Human Init first shows a concise summary of every affected path, operation, digest, source identity, toolchain materialization, and authority boundary. Choose `View full preview` to inspect every exact diff and after-content before returning to the same confirmation. Confirmed Init is the first project mutation, stays under LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
+
+TTY Human Verify keeps fresh Evidence review in the same process. It shows every public probe, Provider command sequence, and authenticated Core Journey separately; each approval defaults to denied. Approved authenticated reads use only the typed installed host runner, while denial completes with Verification Gaps. Cancellation performs no pending read, and Human prose never exposes resume tokens. `--json` retains the explicit `--resume`, `--permissions`, and `--journey-results` Agent/CI protocol unchanged.
 
 Ordinary Init preserves an existing Manifest while it may preview adoption of a newer Report into immutable history. To replace incorrect or outdated release intent with a current corrected Audit, run `rally init --cwd . --report ./corrected-audit-report.json --rebind`, review the old/new source identities and exact Manifest diff, and confirm that separate preview. Rebind preserves the exact Project Toolchain and all prior Reports and Evidence.
 

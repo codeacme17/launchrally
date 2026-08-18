@@ -909,7 +909,7 @@ async function runInstallationJourneys({
       humanRepository,
       { recursive: true },
     );
-    const [{ runHumanAudit }, packedCore] = await Promise.all([
+    const [{ runHumanAudit }, { runHumanVerify }, packedCore] = await Promise.all([
       import(pathToFileURL(path.join(
         cleanProject,
         "node_modules",
@@ -917,6 +917,14 @@ async function runInstallationJourneys({
         "cli",
         "bin",
         "human-audit.js",
+      )).href),
+      import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        "cli",
+        "bin",
+        "human-verify.js",
       )).href),
       import(pathToFileURL(path.join(
         cleanProject,
@@ -1049,6 +1057,91 @@ async function runInstallationJourneys({
         || sensitiveSentinels.test(JSON.stringify(effectObservations.package_manager))
       ) throw new Error("packed_human_authenticated_journey_failed");
       effectObservations.normalized_outputs.push(serialized);
+
+      const declared = (value) => ({ state: "declared", value });
+      const releaseIntent = outcome.result.report.scope.release_intent;
+      await mkdir(path.join(humanRepository, ".launchrally"), { recursive: true });
+      await writeFile(
+        path.join(humanRepository, ".launchrally", "manifest.yaml"),
+        `${JSON.stringify({
+          schema_version: "launchrally.dev/manifest/v2",
+          project: {
+            name: declared(outcome.result.report.scope.project.name),
+            type: declared(outcome.result.report.scope.project.type),
+            package_manager: declared(outcome.result.report.scope.project.package_manager),
+          },
+          release: {
+            intended_environment: declared(releaseIntent.intended_environment),
+            production_targets: declared(releaseIntent.production_targets),
+            core_journeys: declared(releaseIntent.core_journeys),
+          },
+          execution: {
+            source_report_id: declared(outcome.result.report.report_id),
+            assessment: declared(outcome.result.report.assessment),
+            public_verification: declared(outcome.result.report.scope.public_verification),
+          },
+          support: { layers: declared(releaseIntent.support_layers) },
+          providers: { roles: declared(releaseIntent.provider_roles) },
+        }, null, 2)}\n`,
+      );
+      const verifyPromptRequests = [];
+      const verifyOutcome = await runHumanVerify({
+        cwd: humanRepository,
+        version,
+        reportPackage: outcome.result,
+        scope: "full",
+        prompt: {
+          async start() {},
+          async respondVerify(result) {
+            verifyPromptRequests.push(result.status);
+            return {
+              permission_decisions: Object.fromEntries(
+                result.request.permissions.map(({ permission_id: permissionId }) => [
+                  permissionId,
+                  permissionId === "authenticated_journey_verification"
+                    ? "approved"
+                    : "denied",
+                ]),
+              ),
+            };
+          },
+          async close() {},
+        },
+        runVerify: packedCore.runVerify,
+        resumeAuthenticatedJourney: (options) =>
+          packedCore.resumeAuthenticatedJourneyFromHost({ ...options, host: "cli" }),
+      });
+      const serializedVerify = JSON.stringify(verifyOutcome.result);
+      const verifyRecord = JSON.stringify(JSON.parse(await readFile(path.join(
+        humanRepository,
+        ".launchrally",
+        "reports",
+        verifyOutcome.result.report?.report_id ?? "missing",
+        "record.json",
+      ), "utf8")));
+      const verifyHistory = JSON.stringify(await snapshotTree(path.join(
+        humanRepository,
+        ".launchrally",
+      )));
+      if (
+        verifyOutcome.exitCode !== 0
+        || verifyOutcome.result?.status !== "completed"
+        || verifyPromptRequests.length !== 1
+        || verifyPromptRequests[0] !== "needs_permission"
+        || (supportedPrivateReferences
+          ? verifyOutcome.result.report?.results.authenticated_journey_evidence_refs?.length !== 1
+            || verifyOutcome.result.report?.results.authenticated_journey_gaps?.length !== 0
+          : !verifyOutcome.result.report?.results.authenticated_journey_gaps?.some(
+            ({ outcome: gapOutcome }) => gapOutcome === "runner_unavailable",
+          ))
+        || sensitiveSentinels.test(serializedVerify)
+        || sensitiveSentinels.test(verifyRecord)
+        || sensitiveSentinels.test(verifyHistory)
+        || /bearer\s|"cookie"\s*:|"headers"\s*:|response_body|account_id|resume_token/iu.test(
+          verifyHistory,
+        )
+      ) throw new Error("packed_human_verify_authenticated_journey_failed");
+      effectObservations.normalized_outputs.push(serializedVerify);
     } finally {
       if (previousOrigin === undefined) delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
       else process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = previousOrigin;
@@ -2661,7 +2754,7 @@ async function runInstallationJourneys({
     || effectObservations.normalized_outputs.length === 0
     || effectObservations.guarded_process_sections < 3
     || (process.platform !== "win32"
-      && effectObservations.authenticated_network.length !== 7)
+      && effectObservations.authenticated_network.length !== 8)
   ) throw new Error("p1_clean_host_observation_incomplete");
   const cleanHost = {
     unauthorized_install: effectObservations.package_manager.some(

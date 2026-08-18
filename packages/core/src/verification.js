@@ -881,12 +881,13 @@ async function resumeVerify(cwd, options, dependencies) {
   );
   const collectPublic = dependencies.collect_public_evidence ?? collectPublicEvidence;
   const publicEvidence = publicPermission?.decision === "approved"
-    ? await collectPublic(brief.public_verification)
+    ? await collectPublic(brief.public_verification, { signal: dependencies.signal })
     : [];
   const providerResult = await executeProviderAdapters({
     cwd,
     plan: brief.provider_adapters,
     authorization_plan: permissions,
+    signal: dependencies.signal,
     ...(dependencies.provider_runner ? { runner: dependencies.provider_runner } : {}),
     ...(dependencies.now ? { now: dependencies.now } : {}),
   });

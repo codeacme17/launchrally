@@ -13,6 +13,7 @@ import {
   PROTECTED_JOURNEY_SCHEMA,
 } from "@launchrally/contracts";
 
+import { rethrowIfAborted, throwIfAborted } from "./cancellation.js";
 import { parsePublicJourneyInput } from "./public-journey.js";
 
 export { AUTHENTICATED_JOURNEY_RESULTS_SCHEMA };
@@ -244,7 +245,8 @@ function readHostSecretReference(reference) {
   return readRestrictedHostFile(reference, { maxSize: 8192, requirePrivate: true });
 }
 
-async function hostRequest(journey) {
+async function hostRequest(journey, { signal } = {}) {
+  throwIfAborted(signal);
   const target = new URL(journey.target);
   const configuredOrigin = process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
   const authorizationReference = process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
@@ -270,11 +272,13 @@ async function hostRequest(journey) {
   } catch {
     return { outcome: "runner_unavailable", statusCode: null };
   }
+  throwIfAborted(signal);
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const request = https.request(target, {
       method: "GET",
       rejectUnauthorized: true,
+      ...(signal ? { signal } : {}),
       ...(certificateAuthority ? { ca: certificateAuthority } : {}),
       headers: {
         accept: "*/*",
@@ -301,19 +305,27 @@ async function hostRequest(journey) {
       request.destroy();
       resolve({ outcome: "timeout", statusCode: null });
     });
-    request.on("error", () => resolve({ outcome: "execution_failure", statusCode: null }));
+    request.on("error", (error) => {
+      try {
+        rethrowIfAborted(error, signal);
+        resolve({ outcome: "execution_failure", statusCode: null });
+      } catch (abortError) {
+        reject(abortError);
+      }
+    });
     request.end();
   });
 }
 
-async function collectHostResults(plan) {
+async function collectHostResults(plan, { signal } = {}) {
   const results = [];
   for (const journey of plan.journeys) {
+    throwIfAborted(signal);
     const now = new Date();
     const observation = now < new Date(plan.collection_not_before)
       || now > new Date(plan.collection_not_after)
       ? { outcome: "runner_unavailable", statusCode: null }
-      : await hostRequest(journey);
+      : await hostRequest(journey, { signal });
     const status = observation.outcome === "completed"
       ? "passed"
       : UNVERIFIED_OUTCOMES.has(observation.outcome)
@@ -327,6 +339,7 @@ async function collectHostResults(plan) {
       collected_at: new Date().toISOString(),
     });
   }
+  throwIfAborted(signal);
   return results;
 }
 
@@ -337,7 +350,9 @@ export async function resumeAuthenticatedJourneyFromHost({
   operation,
   resume_token: resumeToken,
   request,
+  signal,
 }) {
+  throwIfAborted(signal);
   if (
     !["codex", "claude", "cli"].includes(host)
     || typeof version !== "string"
@@ -359,6 +374,7 @@ export async function resumeAuthenticatedJourneyFromHost({
   }
 
   const hostDependencies = {
+    signal,
     collect_authenticated_journey_results: async (boundPlan) => {
       if (digest(boundPlan) !== digest(request.plan)) {
         throw invalidHostBridge(
@@ -368,7 +384,7 @@ export async function resumeAuthenticatedJourneyFromHost({
       const supplied = {
         schema_version: AUTHENTICATED_JOURNEY_RESULTS_SCHEMA,
         adapter_version: AUTHENTICATED_JOURNEY_ADAPTER_VERSION,
-        results: await collectHostResults(boundPlan),
+        results: await collectHostResults(boundPlan, { signal }),
       };
       const issuedAt = supplied.results.reduce(
         (latest, result) => result.collected_at > latest ? result.collected_at : latest,
