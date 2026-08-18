@@ -1946,6 +1946,25 @@ test("Verification Result validation rejects malformed history and drift structu
   malformedDrift.manifest_drift = [{ field: "project.name" }];
   const malformedEvidence = structuredClone(result);
   malformedEvidence.targeted_result.evidence = [{ kind: "public_observation" }];
+  const authorityBackslashResult = structuredClone(result);
+  const authorityBackslashTarget = "https://example.com\\evil/control";
+  authorityBackslashResult.targeted_result.evidence = [{
+    kind: "authenticated_journey_observation",
+    journey_id: "target-1:journey-1:authenticated",
+    target: authorityBackslashTarget,
+    method: "GET",
+    purpose: "authenticated Core Journey",
+    authentication_class: "user",
+    status: "unverified",
+    outcome: "runner_unavailable",
+    status_code: null,
+    collected_at: "2026-08-12T06:00:00.000Z",
+    provenance: {
+      collector: "host-agent-authenticated-journey/v1",
+      exact_target: authorityBackslashTarget,
+      collected_at: "2026-08-12T06:00:00.000Z",
+    },
+  }];
 
   assert.throws(
     () => assertValidVerificationResult(malformedHistory),
@@ -1957,6 +1976,10 @@ test("Verification Result validation rejects malformed history and drift structu
   );
   assert.throws(
     () => assertValidVerificationResult(malformedEvidence),
+    /incomplete or invalid/u,
+  );
+  assert.throws(
+    () => assertValidVerificationResult(authorityBackslashResult),
     /incomplete or invalid/u,
   );
 
