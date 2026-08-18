@@ -12,9 +12,10 @@ import {
 } from "@launchrally/contracts";
 import {
   environmentTargetLabel,
+  persistArchitecturePackage,
   reviewedEnvironmentLabel,
   resolveExecutionAuthority,
-  persistArchitecturePackage,
+  resumeAuthenticatedJourneyFromHost,
   runAudit,
   runArchitectureJourney,
   runHandoff,
@@ -674,6 +675,10 @@ async function main() {
         version: VERSION,
         prompt,
         runAudit,
+        resumeAuthenticatedJourney: (options) => resumeAuthenticatedJourneyFromHost({
+          ...options,
+          host: "cli",
+        }),
         outputPath: optionValue("--output"),
         filePicker,
         inspectDestination: inspectReportDestination,
@@ -698,8 +703,14 @@ async function main() {
         },
       });
     } catch (error) {
-      if (error?.code !== "audit_output_failed") throw error;
-      process.stderr.write("The complete Audit JSON could not be written. Choose a new, writable --output path.\n");
+      if (error?.code === "audit_output_failed") {
+        process.stderr.write("The complete Audit JSON could not be written. Choose a new, writable --output path.\n");
+        return 2;
+      }
+      const localSafeScanFailed = error?.code === "local_safe_scan_failed";
+      process.stderr.write(localSafeScanFailed
+        ? "Local Safe Scan could not complete safely.\n"
+        : "Human Audit interaction could not complete safely.\n");
       return 2;
     }
     if (outcome.exitCode === 130) {

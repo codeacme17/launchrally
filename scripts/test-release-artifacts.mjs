@@ -902,6 +902,108 @@ async function runInstallationJourneys({
     ...process.env,
     PATH: [npmStub, path.dirname(launcher), process.env.PATH ?? ""].join(path.delimiter),
   };
+  const exercisePackedHumanAuthenticatedJourney = async () => {
+    const humanRepository = path.join(temporaryRoot, "packed human authenticated journey");
+    await cp(
+      path.join(root, "fixtures", "coverage", "typescript-astro"),
+      humanRepository,
+      { recursive: true },
+    );
+    const [{ runHumanAudit }, packedCore] = await Promise.all([
+      import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        "cli",
+        "bin",
+        "human-audit.js",
+      )).href),
+      import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        "core",
+        "src",
+        "index.js",
+      )).href),
+    ]);
+    const previousOrigin = process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+    const previousAuthorization = process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+    const previousCookie = process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
+    delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+    delete process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+    delete process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
+    const promptRequests = [];
+    try {
+      const outcome = await runHumanAudit({
+        cwd: humanRepository,
+        version,
+        prompt: {
+          async start() {},
+          async respond(result) {
+            promptRequests.push(result.request?.type ?? result.status);
+            if (result.status === "needs_input") {
+              return {
+                answers: {
+                  intended_environment: "staging",
+                  production_targets: ["https://example.com"],
+                  core_journeys: [{
+                    schema_version: "launchrally.dev/protected-journey/v1",
+                    method: "GET",
+                    path: "/control",
+                    purpose: "authenticated Core Journey",
+                    access: {
+                      authentication_class: "staff",
+                      anonymous_status_codes: [401, 403, 404],
+                      authenticated_status_codes: [200],
+                    },
+                  }],
+                  provider_roles: [],
+                  support_layers: [],
+                },
+              };
+            }
+            if (result.status === "needs_confirmation") return { confirmation: "confirm" };
+            if (result.status === "needs_permission") {
+              return {
+                permission_decisions: {
+                  public_verification: "denied",
+                  authenticated_journey_verification: "approved",
+                },
+              };
+            }
+            return {};
+          },
+          async close() {},
+        },
+        runAudit: packedCore.runAudit,
+        resumeAuthenticatedJourney: (options) =>
+          packedCore.resumeAuthenticatedJourneyFromHost({ ...options, host: "cli" }),
+      });
+      const serialized = JSON.stringify(outcome.result);
+      if (
+        outcome.exitCode !== 0
+        || outcome.result?.status !== "completed"
+        || !outcome.result.report?.results?.authenticated_journey_gaps?.some(
+          ({ outcome: gapOutcome }) => gapOutcome === "missing_authentication",
+        )
+        || promptRequests.includes("authenticated_journey_results")
+        || /bearer\s|"cookie"\s*:|"headers"\s*:|response_body|account_id/iu.test(serialized)
+      ) throw new Error("packed_human_authenticated_journey_failed");
+      effectObservations.normalized_outputs.push(serialized);
+    } finally {
+      if (previousOrigin === undefined) delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+      else process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = previousOrigin;
+      if (previousAuthorization === undefined) {
+        delete process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+      } else {
+        process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = previousAuthorization;
+      }
+      if (previousCookie === undefined) delete process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
+      else process.env.LAUNCHRALLY_HOST_COOKIE_FILE = previousCookie;
+    }
+  };
+  await exercisePackedHumanAuthenticatedJourney();
   const runProtectedSkillJourney = async (skillJourney, host) => {
     assertEqual(
       skillJourney.protected_journeys,

@@ -325,7 +325,7 @@ export async function resumeAuthenticatedJourneyFromHost({
   request,
 }) {
   if (
-    !["codex", "claude"].includes(host)
+    !["codex", "claude", "cli"].includes(host)
     || typeof version !== "string"
     || !/^\d+\.\d+\.\d+$/u.test(version)
   ) {

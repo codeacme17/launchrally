@@ -932,6 +932,75 @@ test("the Plain adapter discloses every command in a compound Provider read", as
   assert.match(rendered, /  - resend emails list --limit 10 --json/u);
 });
 
+test("the Plain adapter discloses the complete authenticated Core Journey permission", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\n"), 10);
+  const response = await prompt.respond({
+    status: "needs_permission",
+    operation: "audit",
+    audit_brief: {
+      core_journeys: {
+        values: [{
+          schema_version: "launchrally.dev/protected-journey/v1",
+          method: "GET",
+          path: "/control",
+          purpose: "authenticated Core Journey",
+          access: {
+            authentication_class: "staff",
+            anonymous_status_codes: [401, 403, 404],
+            authenticated_status_codes: [200],
+          },
+        }],
+      },
+    },
+    request: {
+      permissions: [{
+        permission_id: "authenticated_journey_verification",
+        boundary: "authenticated_network_read",
+        scope: {
+          adapter_version: "host-agent-authenticated-journey/v1",
+          operation: "read_only",
+          requested_fields: [
+            "journey_id",
+            "status",
+            "outcome",
+            "status_code",
+            "collected_at",
+          ],
+          journeys: [{
+            journey_id: "target-1:journey-1:authenticated",
+            target: "https://example.com/control",
+            method: "GET",
+            purpose: "authenticated Core Journey",
+            authentication_class: "staff",
+            expected_status_codes: [200],
+          }],
+        },
+      }],
+    },
+  });
+  await prompt.close();
+
+  assert.deepEqual(response, {
+    permission_decisions: { authenticated_journey_verification: "denied" },
+  });
+  assert.match(rendered, /Authenticated Core Journey verification/u);
+  assert.match(rendered, /GET https:\/\/example\.com\/control/u);
+  assert.match(rendered, /Authentication class: staff/u);
+  assert.match(rendered, /Anonymous expected status: 401, 403, 404/u);
+  assert.match(rendered, /Authenticated expected status: 200/u);
+  assert.match(rendered, /Runner\/adapter version: host-agent-authenticated-journey\/v1/u);
+  assert.match(rendered, /Retained normalized fields: journey_id, status, outcome, status_code, collected_at/u);
+  assert.doesNotMatch(rendered, /Provider read|undefined/u);
+});
+
 test("the Plain adapter labels targets with the intended staging environment", async () => {
   const input = ttyStream();
   const output = ttyStream();
@@ -1032,6 +1101,71 @@ test("the Clack adapter accepts injected TTY streams and keeps permission meanin
   assert.match(semanticOutput, /Public verification/u);
   assert.match(semanticOutput, /Targets: https:\/\/example\.com\//u);
   assert.match(semanticOutput, /Approve this permission\?/u);
+});
+
+test("the Clack adapter preserves authenticated Core Journey permission meaning in text", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  await prompt.start();
+  setTimeout(() => input.write("\r"), 20);
+  await prompt.respond({
+    status: "needs_permission",
+    operation: "audit",
+    audit_brief: {
+      core_journeys: {
+        values: [{
+          method: "GET",
+          path: "/account",
+          access: {
+            authentication_class: "user",
+            anonymous_status_codes: [401],
+            authenticated_status_codes: [200, 204],
+          },
+        }],
+      },
+    },
+    request: {
+      permissions: [{
+        permission_id: "authenticated_journey_verification",
+        boundary: "authenticated_network_read",
+        scope: {
+          adapter_version: "host-agent-authenticated-journey/v1",
+          operation: "read_only",
+          requested_fields: [
+            "journey_id",
+            "status",
+            "outcome",
+            "status_code",
+            "collected_at",
+          ],
+          journeys: [{
+            journey_id: "target-1:journey-1:authenticated",
+            target: "https://example.com/account",
+            method: "GET",
+            authentication_class: "user",
+            expected_status_codes: [200, 204],
+          }],
+        },
+      }],
+    },
+  });
+  await prompt.close();
+
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /Authenticated Core Journey verification/u);
+  assert.match(semanticOutput, /GET https:\/\/example\.com\/account/u);
+  assert.match(semanticOutput, /Authentication class: user/u);
+  assert.match(semanticOutput, /Anonymous expected status: 401/u);
+  assert.match(semanticOutput, /Authenticated expected status: 200, 204/u);
+  assert.match(semanticOutput, /Runner\/adapter version: host-agent-authenticated-journey\/v1/u);
+  assert.match(semanticOutput, /Retained normalized fields: journey_id, status, outcome, status_code, collected_at/u);
+  assert.doesNotMatch(semanticOutput, /Provider read|undefined/u);
 });
 
 test("the Clack adapter displays and completes active work", async () => {
