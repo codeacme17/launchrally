@@ -753,9 +753,13 @@ async function main() {
       report_package: reportPackage,
     };
     const rebindManifest = args.includes("--rebind");
+    const resolvedReportPath = reportPath ? path.resolve(reportPath) : undefined;
     const runInitWithActions = async (runCwd, version, options) => {
       const result = await runInit(runCwd, version, {
         ...options,
+        ...(options.report_package && resolvedReportPath
+          ? { report_path: resolvedReportPath }
+          : {}),
         ...(rebindManifest && options.report_package
           ? { rebind_manifest: true }
           : {}),

@@ -1174,6 +1174,7 @@ function registryPermissionStateIsValid(state, root, version) {
       "cleanup_path",
       "kind",
       "report_package",
+      "report_path",
       "root",
       "schema_version",
       "temporary_target",
@@ -1184,6 +1185,7 @@ function registryPermissionStateIsValid(state, root, version) {
       && state.version === version
       && typeof state.temporary_target === "string"
       && typeof state.cleanup_path === "string"
+      && (state.report_path === null || typeof state.report_path === "string")
       && state.schema_version === INIT_INTERACTION_SCHEMA
       && (assertValidReportPackage(state.report_package) ?? true);
   } catch {
@@ -1279,6 +1281,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       try {
         return await runInitLocked(cwd, version, {
           report_package: state.report_package,
+          ...(state.report_path ? { report_path: state.report_path } : {}),
           [REGISTRY_PERMISSION_CAPABILITY]: true,
           registry_staging_path: state.cleanup_path,
         }, dependencies);
@@ -1694,6 +1697,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
   const currentness = evaluateReportCurrentness(source, {
     cwd: root,
     allow_legacy_manifest: legacyManifest !== null,
+    ...(options.report_path ? { saved_report_path: options.report_path } : {}),
     ...(dependencies.now ? { now: dependencies.now } : {}),
   });
   if (!currentness.current) {
@@ -1775,6 +1779,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
         temporary_target: error.temporary_target,
         cleanup_path: error.cleanup_path ?? error.temporary_target,
         report_package: structuredClone(source),
+        report_path: options.report_path ?? null,
       };
       if (!permissionState.temporary_target || !permissionState.cleanup_path) {
         return initializationError(
