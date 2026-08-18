@@ -296,7 +296,56 @@ function inputStateText(result) {
   ].join("\n");
 }
 
-function permissionText(permission) {
+function protectedJourneyDeclaration(permissionJourney, auditBrief) {
+  const declarations = auditBrief?.core_journeys?.values ?? [];
+  let pathname;
+  try {
+    pathname = new URL(permissionJourney.target).pathname;
+  } catch {
+    return undefined;
+  }
+  return declarations.find((journey) =>
+    journey
+    && typeof journey === "object"
+    && journey.method === permissionJourney.method
+    && journey.path === pathname
+    && journey.access?.authentication_class === permissionJourney.authentication_class);
+}
+
+function authenticatedPermissionText(permission, auditBrief) {
+  const scope = permission.scope ?? {};
+  const journeys = Array.isArray(scope.journeys) ? scope.journeys : [];
+  const journeyLines = journeys.length > 0
+    ? journeys.flatMap((journey) => {
+      const declaration = protectedJourneyDeclaration(journey, auditBrief);
+      const anonymousStatuses = declaration?.access?.anonymous_status_codes;
+      const authenticatedStatuses = journey.expected_status_codes;
+      return [
+        `  - ${journey.method ?? "Method unavailable"} ${journey.target ?? "Target unavailable"}`,
+        `    Authentication class: ${journey.authentication_class ?? "unavailable"}`,
+        `    Anonymous expected status: ${Array.isArray(anonymousStatuses) && anonymousStatuses.length > 0
+          ? anonymousStatuses.join(", ")
+          : "not declared"}`,
+        `    Authenticated expected status: ${Array.isArray(authenticatedStatuses) && authenticatedStatuses.length > 0
+          ? authenticatedStatuses.join(", ")
+          : "unavailable"}`,
+      ];
+    })
+    : ["  - No authenticated Journey targets were supplied."];
+  return [
+    "Authenticated Core Journey verification",
+    "Safe read-only targets:",
+    ...journeyLines,
+    `Runner/adapter version: ${scope.adapter_version ?? "unavailable"}`,
+    `Retained normalized fields: ${Array.isArray(scope.requested_fields) && scope.requested_fields.length > 0
+      ? scope.requested_fields.join(", ")
+      : "unavailable"}`,
+    "Authentication remains user-managed; credentials, session material, response bodies, and account identifiers are not retained.",
+    "Allow these authenticated Core Journey reads?",
+  ].join("\n");
+}
+
+function permissionText(permission, auditBrief) {
   if (permission.boundary === "public_network") {
     return [
       "Public verification",
@@ -304,14 +353,22 @@ function permissionText(permission) {
       "Allow this public network read?",
     ].join("\n");
   }
+  if (permission.boundary === "authenticated_network_read") {
+    return authenticatedPermissionText(permission, auditBrief);
+  }
+  const provider = permission.scope?.provider ?? "unavailable";
+  const target = permission.scope?.target ?? "unavailable";
+  const requestedFields = Array.isArray(permission.scope?.requested_fields)
+    ? permission.scope.requested_fields
+    : [];
   return [
-    `Provider read: ${permission.scope.provider}`,
-    `Target: ${permission.scope.target}`,
-    `Fields: ${permission.scope.requested_fields.join(", ")}`,
+    `Provider read: ${provider}`,
+    `Target: ${target}`,
+    `Fields: ${requestedFields.length > 0 ? requestedFields.join(", ") : "unavailable"}`,
     "Commands:",
     list(
-      permission.scope.commands
-        ?? (permission.scope.command ? [permission.scope.command] : []),
+      permission.scope?.commands
+        ?? (permission.scope?.command ? [permission.scope.command] : []),
       (command) => [command.executable, ...command.arguments].join(" "),
     ),
     "Allow this Provider read?",
@@ -909,7 +966,9 @@ export function createPlainPromptAdapter({
       if (result.status === "needs_permission") {
         const permissionDecisions = {};
         for (const permission of result.request.permissions) {
-          permissionDecisions[permission.permission_id] = await confirm(permissionText(permission))
+          permissionDecisions[permission.permission_id] = await confirm(
+            permissionText(permission, result.audit_brief),
+          )
             ? "approved"
             : "denied";
         }
@@ -1222,7 +1281,11 @@ export async function createClackPromptAdapter({
       if (result.status === "needs_permission") {
         const permissionDecisions = {};
         for (const permission of result.request.permissions) {
-          clack.note(permissionText(permission), "Permission request", common);
+          clack.note(
+            permissionText(permission, result.audit_brief),
+            "Permission request",
+            common,
+          );
           const approved = await clack.confirm({
             ...common,
             message: "Approve this permission?",

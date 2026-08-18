@@ -145,9 +145,18 @@ function approvedAuditActivityLabel(result, permissionDecisions) {
     ({ permission_id: permissionId }) => permissionDecisions[permissionId] === "approved",
   );
   const publicApproved = approved.some(({ boundary }) => boundary === "public_network");
+  const authenticatedApproved = approved.some(
+    ({ boundary }) => boundary === "authenticated_network_read",
+  );
   const providers = approved
     .filter(({ boundary }) => boundary === "provider_read")
     .map(({ scope }) => scope.provider);
+  if (authenticatedApproved && (publicApproved || providers.length > 0)) {
+    return "Preparing approved reads and authenticated Core Journey verification…";
+  }
+  if (authenticatedApproved) {
+    return "Preparing authenticated Core Journey verification…";
+  }
   if (publicApproved && providers.length > 0) {
     return "Running public and Provider verification and generating Report…";
   }
@@ -159,6 +168,18 @@ function approvedAuditActivityLabel(result, permissionDecisions) {
   }
   if (providers.length > 1) return "Reading approved Provider data and generating Report…";
   return "Evaluating Audit and generating Report…";
+}
+
+function authenticatedRunnerError(error = "authenticated_journey_runner_unavailable") {
+  const invalid = error === "invalid_authenticated_journey_results";
+  return {
+    status: "execution_error",
+    operation: "audit",
+    error,
+    message: invalid
+      ? "The trusted authenticated Core Journey runner returned an invalid normalized result."
+      : "The trusted authenticated Core Journey runner could not complete safely.",
+  };
 }
 
 export function renderHumanAuditCompletion(result, {
@@ -265,8 +286,10 @@ export async function runHumanAudit({
   saveResult,
   inspectDestination = async () => ({ valid: true, collision: false }),
   filePicker,
+  resumeAuthenticatedJourney,
 }) {
   let result;
+  let initialRepositoryScanCompleted = false;
   const runActivity = (label, operation) => prompt.activity
     ? prompt.activity(label, operation)
     : operation();
@@ -276,8 +299,50 @@ export async function runHumanAudit({
       "Discovering project and scanning repository…",
       (signal) => runAudit(cwd, version, undefined, { signal }),
     );
+    initialRepositoryScanCompleted = true;
 
     while (["needs_input", "needs_confirmation", "needs_permission"].includes(result.status)) {
+      if (
+        result.status === "needs_input"
+        && result.request?.type === "authenticated_journey_results"
+      ) {
+        if (typeof resumeAuthenticatedJourney !== "function") {
+          result = authenticatedRunnerError();
+          break;
+        }
+        try {
+          const authenticatedRequest = result;
+          result = await runActivity(
+            "Verifying authenticated Core Journeys and generating Report…",
+            (signal) => resumeAuthenticatedJourney({
+              cwd,
+              version,
+              operation: "audit",
+              resume_token: authenticatedRequest.interaction.resume_token,
+              request: authenticatedRequest.request,
+              signal,
+            }),
+          );
+        } catch (error) {
+          if (error instanceof PromptCancelledError) throw error;
+          result = authenticatedRunnerError(error?.code);
+          break;
+        }
+        if (!result || typeof result !== "object") {
+          result = authenticatedRunnerError();
+          break;
+        }
+        if (result.status === "needs_input") {
+          const validationError = result.request?.validation_errors?.find(
+            ({ field_id: fieldId }) => fieldId === "journey_results",
+          );
+          result = authenticatedRunnerError(
+            validationError?.code ?? "invalid_authenticated_journey_results",
+          );
+          break;
+        }
+        continue;
+      }
       const response = await prompt.respond(result);
       if (result.status === "needs_input") {
         result = await runActivity(
@@ -410,6 +475,11 @@ export async function runHumanAudit({
   } catch (error) {
     if (error instanceof PromptCancelledError) {
       return { exitCode: 130, result: null, outputPath: undefined };
+    }
+    if (!initialRepositoryScanCompleted) {
+      error.code = "initial_repository_scan_failed";
+    } else if (!error.code) {
+      error.code = "human_audit_interaction_failed";
     }
     throw error;
   } finally {
