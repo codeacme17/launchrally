@@ -3132,8 +3132,8 @@ async function smokeCli(
     const refreshPermission = await invoke([
       "verify", "--json", "--cwd", repository, "--report", auditPath, "--scope", "full",
     ]);
-    const refreshed = await invoke([
-      "verify", "--json", "--cwd", repository,
+    const refreshedHuman = (await invokeRally([
+      "verify", "--plain", "--cwd", repository,
       "--resume", refreshPermission.interaction.resume_token,
       "--permissions", JSON.stringify({
         public_verification: "denied",
@@ -3142,17 +3142,26 @@ async function smokeCli(
           "denied",
         ])),
       }),
-    ]);
-    if (refreshed.status !== "completed") {
+    ], { cwd: cleanProject, env: coverageEnvironment })).stdout;
+    const escapedSourceId = completed.report.report_id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const currentReportPath = refreshedHuman.match(
+      /^Current Report input\n(\.launchrally\/reports\/[^\n]+\/record\.json)$/mu,
+    )?.[1];
+    if (
+      !new RegExp(`^Manifest Source Report\\n${escapedSourceId}$`, "mu").test(refreshedHuman)
+      || !/^Current Report\n.+$/mu.test(refreshedHuman)
+      || !/^Failed Checks \(\d+\)$/mu.test(refreshedHuman)
+      || !/^Verification Gaps \(\d+\)$/mu.test(refreshedHuman)
+      || !currentReportPath
+      || !/^Next command\n.+\bplan\b.+--report\b/mu.test(refreshedHuman)
+    ) {
       throw new Error(`coverage_artifact_refresh_failed: ${representative.id}`);
     }
-    const refreshedPath = path.join(reports, `${representative.id}-refreshed.json`);
-    await writeFile(refreshedPath, JSON.stringify(refreshed));
     const plan = await invoke([
-      "plan", "--json", "--cwd", repository, "--report", refreshedPath,
+      "plan", "--json", "--cwd", repository, "--report", currentReportPath,
     ]);
     const handoff = await invoke([
-      "plan", "--json", "--cwd", repository, "--report", refreshedPath, "--handoff",
+      "plan", "--json", "--cwd", repository, "--report", currentReportPath, "--handoff",
     ]);
     if (plan.status !== "completed" || handoff.status !== "completed") {
       throw new Error(`coverage_artifact_plan_failed: ${representative.id}`);
@@ -3164,7 +3173,7 @@ async function smokeCli(
     );
     const verifyPermission = await invoke([
       "verify", "--json", "--cwd", repository,
-      "--report", refreshedPath,
+      "--report", auditPath,
       "--scope", "full",
     ]);
     const verified = await invoke([
@@ -3180,6 +3189,9 @@ async function smokeCli(
     ]);
     if (
       verified.status !== "completed"
+      || verified.interaction?.source_report?.report_id !== completed.report.report_id
+      || verified.manifest_drift?.length !== 0
+      || verified.report?.policy?.current !== true
       || verified.comparison?.source_report_id === verified.comparison?.current_report_id
       || !verified.comparison?.invalidated_evidence?.some(
         ({ target }) => target === "repository:.env.example",
