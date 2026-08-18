@@ -1,6 +1,14 @@
 import { isDeepStrictEqual } from "node:util";
 import { isIP } from "node:net";
-import { assertValidAuthenticatedJourneyEvidence } from "@launchrally/contracts";
+import {
+  AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+  assertValidAuthenticatedJourneyEvidence,
+} from "@launchrally/contracts";
+
+const SAFE_AUTHENTICATED_JOURNEY_TARGET = new RegExp(
+  AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+  "u",
+);
 
 const EXCLUSION_KEYS = [
   "ignored",
@@ -429,6 +437,7 @@ export function isSafeEvidenceArtifact(artifact) {
     ])
       && /^target-[1-9][0-9]*:journey-[1-9][0-9]*:authenticated$/u.test(artifact.journey_id)
       && safeString(artifact.target, 2048)
+      && SAFE_AUTHENTICATED_JOURNEY_TARGET.test(artifact.target)
       && artifact.method === "GET"
       && safeString(artifact.purpose, 2048)
       && ["user", "staff", "signed_token"].includes(artifact.authentication_class)

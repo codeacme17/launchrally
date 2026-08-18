@@ -482,6 +482,22 @@ test("persisted protected Journey schemas share the static-path safety boundary"
       .properties.exact_target.pattern,
     AUTHENTICATED_JOURNEY_TARGET_PATTERN,
   );
+
+  const authorityBackslashTarget = "https://example.com\\evil/control";
+  for (const targetPattern of [
+    AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+    auditBrief.$defs.authenticatedJourneyPlan.properties.journeys.items
+      .properties.target.pattern,
+    launchPlan.$defs.authenticatedJourney.properties.target.pattern,
+    phase1.$defs.authenticatedJourneyEvidence.properties.target.pattern,
+    phase1.$defs.authenticatedJourneyEvidence.properties.provenance
+      .properties.exact_target.pattern,
+    verificationResult.$defs.authenticatedJourneyEvidence.properties.target.pattern,
+    verificationResult.$defs.authenticatedJourneyEvidence.properties.provenance
+      .properties.exact_target.pattern,
+  ]) {
+    assert.equal(new RegExp(targetPattern, "u").test(authorityBackslashTarget), false);
+  }
 });
 
 test("the legacy protected Journey segment export remains available for compatibility", () => {

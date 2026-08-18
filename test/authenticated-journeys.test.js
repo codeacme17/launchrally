@@ -6,6 +6,7 @@ import {
   createAuthenticatedJourneyPlan,
   normalizeAuthenticatedJourneyResults,
 } from "../packages/core/src/authenticated-journeys.js";
+import { isSafeEvidenceArtifact } from "../packages/core/src/evidence-artifact.js";
 import { parsePublicJourneyInput } from "../packages/core/src/public-journey.js";
 
 const ANSWERS = {
@@ -377,4 +378,25 @@ test("authenticated observations require a fresh declared permission window", ()
     () => normalizeAuthenticatedJourneyResults(permissionBoundPlan(), supplied),
     { code: "invalid_authenticated_journey_results" },
   );
+});
+
+test("legacy authenticated Journey artifacts reject authority backslashes", () => {
+  const target = "https://example.com\\evil/control";
+  assert.equal(isSafeEvidenceArtifact({
+    kind: "authenticated_journey_observation",
+    journey_id: "target-1:journey-1:authenticated",
+    target,
+    method: "GET",
+    purpose: "authenticated Core Journey",
+    authentication_class: "user",
+    status: "unverified",
+    outcome: "runner_unavailable",
+    status_code: null,
+    collected_at: "2026-08-12T06:00:00.000Z",
+    provenance: {
+      collector: "host-agent-authenticated-journey/v1",
+      exact_target: target,
+      collected_at: "2026-08-12T06:00:00.000Z",
+    },
+  }), false);
 });

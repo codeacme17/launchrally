@@ -184,7 +184,7 @@
             "required": ["journey_id", "target", "method", "purpose", "authentication_class", "expected_status_codes"],
             "properties": {
               "journey_id": { "type": "string", "pattern": "^target-[1-9][0-9]*:journey-[1-9][0-9]*:authenticated$" },
-              "target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+(?=.{2,512}$)/(?=[a-z0-9_-]{1,64}(?:/|$))(?!(?:[0-9]{8,64}|[a-f0-9]{32,64}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:/|$))[a-z0-9]+(?:[-_][a-z0-9]+)*(?:/(?=[a-z0-9_-]{1,64}(?:/|$))(?!(?:[0-9]{8,64}|[a-f0-9]{32,64}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:/|$))[a-z0-9]+(?:[-_][a-z0-9]+)*)*$" },
+              "target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#\\\\]+(?=.{2,512}$)/(?=[a-z0-9_-]{1,64}(?:/|$))(?!(?:[0-9]{8,64}|[a-f0-9]{32,64}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:/|$))[a-z0-9]+(?:[-_][a-z0-9]+)*(?:/(?=[a-z0-9_-]{1,64}(?:/|$))(?!(?:[0-9]{8,64}|[a-f0-9]{32,64}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:/|$))[a-z0-9]+(?:[-_][a-z0-9]+)*)*$" },
               "method": { "const": "GET" },
               "purpose": { "const": "authenticated Core Journey" },
               "authentication_class": { "enum": ["user", "staff", "signed_token"] },
