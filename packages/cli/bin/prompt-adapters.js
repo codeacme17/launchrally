@@ -1,7 +1,7 @@
 import { register } from "node:module";
 import { createInterface } from "node:readline/promises";
 import process from "node:process";
-import { styleText } from "node:util";
+import { stripVTControlCharacters, styleText } from "node:util";
 
 import {
   environmentTargetLabel,
@@ -222,10 +222,18 @@ function list(values, render = String) {
   return values.length > 0 ? values.map((value) => `  - ${render(value)}`).join("\n") : "  - None";
 }
 
+function terminalSafeText(value) {
+  return stripVTControlCharacters(String(value))
+    .replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ")
+    .replace(/[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 function journeyLabel(journey) {
-  return typeof journey === "string"
+  return terminalSafeText(typeof journey === "string"
     ? journey
-    : `${journey.method} ${journey.path} — ${journey.purpose}`;
+    : `${journey.method} ${journey.path} — ${journey.purpose}`);
 }
 
 function journeyAccessLabel(journey) {
@@ -488,41 +496,85 @@ function classifiedJourney(journey, accessClass) {
   };
 }
 
-function journeyAccessChoices(journey) {
+function journeyAccessChoices(journey, current) {
   const protectedResult = parsePublicJourneyInput(
     classifiedJourney(journey, "user"),
     { allowDescription: false },
   );
+  const choices = [
+    PUBLIC_JOURNEY_ACCESS_CHOICE,
+    ...(!protectedResult.error ? PROTECTED_JOURNEY_ACCESS_CHOICES : []),
+    EXCLUDE_JOURNEY_ACCESS_CHOICE,
+  ];
   return {
-    choices: [
-      PUBLIC_JOURNEY_ACCESS_CHOICE,
-      ...(!protectedResult.error ? PROTECTED_JOURNEY_ACCESS_CHOICES : []),
-      EXCLUDE_JOURNEY_ACCESS_CHOICE,
-    ],
+    choices: !current?.access
+      ? choices
+      : choices.map((choice) => choice.value === current.access.authentication_class
+        ? {
+          ...choice,
+          label: `${choice.label.split(" — ")[0]} — keep current: anonymous expect ${
+            current.access.anonymous_status_codes?.join("/") ?? "not probed"
+          }; authenticated expect ${current.access.authenticated_status_codes.join("/")}`,
+        }
+        : choice),
     rejection: protectedResult.error ? protectedResult : null,
   };
+}
+
+function sameJourneyRoute(left, right) {
+  return typeof left === "object"
+    && left !== null
+    && left.method === right.method
+    && left.path === right.path;
+}
+
+function journeyAccessClass(journey) {
+  return journey.access?.authentication_class ?? "public";
 }
 
 async function classifyJourneyOptions(options, selectAccess, source) {
   const classified = [];
   for (const option of options) {
-    const { choices, rejection } = journeyAccessChoices(option.value);
+    const { choices, rejection } = journeyAccessChoices(option.value, option.current);
     const protectedSupported = !rejection;
     const accessClass = await selectAccess(
       `${source} does not establish access. Classify ${journeyLabel(option.value)} (classification required${protectedSupported ? "" : `; ${rejection.guidance ?? PROTECTED_PATH_SAFETY_GUIDANCE}`})`,
       choices,
+      option.currentAccess,
     );
-    const journey = classifiedJourney(option.value, accessClass);
+    const journey = option.current && accessClass === option.currentAccess
+      ? option.current
+      : classifiedJourney(option.value, accessClass);
     if (journey) classified.push(journey);
   }
   return classified;
 }
 
-async function classifyDetectedJourneys(field, selectAccess) {
+async function classifyDetectedJourneys(field, {
+  disclose,
+  selectRetained,
+  selectAccess,
+}) {
   const detected = fieldOptions(field).filter((option) => option.detected);
   if (detected.length === 0) return null;
+  const candidates = detected.map((option) => {
+    const current = (field.current_value ?? []).find((journey) =>
+      sameJourneyRoute(journey, option.value),
+    );
+    return {
+      ...option,
+      current,
+      ...(current ? { currentAccess: journeyAccessClass(current) } : {}),
+    };
+  });
+  disclose(candidates);
+  const retainedCandidates = await selectRetained(candidates);
   return {
-    classified: await classifyJourneyOptions(detected, selectAccess, "Route discovery"),
+    classified: await classifyJourneyOptions(
+      retainedCandidates,
+      selectAccess,
+      "Route discovery",
+    ),
     detected: detected.map((option) => option.value),
   };
 }
@@ -537,12 +589,7 @@ function classifyExplicitJourneys(journeys, selectAccess) {
 
 function retainedCurrentJourneys(field, detected) {
   return (field.current_value ?? []).filter((current) =>
-    !detected.some((candidate) =>
-      typeof current === "object"
-      && current !== null
-      && current.method === candidate.method
-      && current.path === candidate.path,
-    ),
+    !detected.some((candidate) => sameJourneyRoute(current, candidate)),
   );
 }
 
@@ -636,11 +683,15 @@ export function createPlainPromptAdapter({
       throw error;
     }
   };
-  const choose = async (message, choices) => {
+  const choose = async (message, choices, initialValue) => {
     write(output, message);
     choices.forEach((choice, index) => write(output, `${index + 1}. ${choice.label}`));
+    const initialIndex = choices.findIndex((choice) => choice.value === initialValue);
     while (true) {
-      const value = (await ask(`Choose 1-${choices.length}:`)).trim();
+      const value = (await ask(
+        `Choose 1-${choices.length}${initialIndex >= 0 ? ` [default ${initialIndex + 1}]` : ""}:`,
+      )).trim();
+      if (!value && initialIndex >= 0) return choices[initialIndex].value;
       const selected = choices[Number(value) - 1];
       if (selected) return selected.value;
       write(output, `Enter a number from 1 to ${choices.length}.`);
@@ -662,7 +713,48 @@ export function createPlainPromptAdapter({
       skipValue,
     });
     if (field.field_id === "core_journeys") {
-      const classification = await classifyDetectedJourneys(field, choose);
+      const classification = await classifyDetectedJourneys(field, {
+        disclose: (candidates) => {
+          write(output, `Detected route candidates: ${candidates.length} (unclassified)`);
+          write(output, "Route discovery does not establish access.");
+          candidates.forEach((candidate, index) => {
+            const current = candidate.currentAccess
+              ? ` [current: ${candidate.currentAccess}]`
+              : "";
+            write(output, `${index + 1}. ${journeyLabel(candidate.value)}${current}`);
+          });
+        },
+        selectRetained: async (candidates) => {
+          const action = await choose(
+            "Choose a small set to retain for classification. Every unselected route will be excluded.",
+            [
+              { label: "Select routes to retain; exclude all remaining", value: "select" },
+              { label: "Exclude all detected routes", value: "exclude_all" },
+            ],
+          );
+          if (action === "exclude_all") return [];
+          const currentIndexes = candidates
+            .map((candidate, index) => candidate.current ? index + 1 : null)
+            .filter(Boolean);
+          while (true) {
+            const raw = (await ask(
+              `Enter route numbers separated by commas${
+                currentIndexes.length > 0 ? ` [default ${currentIndexes.join(",")}]` : ""
+              }:`,
+            )).trim();
+            const selectedInput = raw || currentIndexes.join(",");
+            const indexes = [...new Set(selectedInput
+              .split(",")
+              .filter(Boolean)
+              .map((value) => Number(value.trim()) - 1))];
+            if (indexes.length > 0 && indexes.every((index) => candidates[index])) {
+              return indexes.map((index) => candidates[index]);
+            }
+            write(output, `Enter one or more numbers from 1 to ${candidates.length}, separated by commas.`);
+          }
+        },
+        selectAccess: choose,
+      });
       if (classification) {
         const retained = retainedCurrentJourneys(field, classification.detected);
         const action = await choose("Continue, add another Journey, or explicitly skip public Journey verification", [
@@ -891,10 +983,53 @@ export async function createClackPromptAdapter({
       skipValue,
     });
     if (field.field_id === "core_journeys") {
-      const classification = await classifyDetectedJourneys(
-        field,
-        selectJourneyAccess,
-      );
+      const classification = await classifyDetectedJourneys(field, {
+        disclose: (candidates) => clack.note(
+          [
+            "Route discovery does not establish access.",
+            ...candidates.map((candidate, index) => {
+              const current = candidate.currentAccess
+                ? ` [current: ${candidate.currentAccess}]`
+                : "";
+              return `${index + 1}. ${journeyLabel(candidate.value)}${current}`;
+            }),
+          ].join("\n"),
+          `Detected route candidates: ${candidates.length}`,
+          common,
+        ),
+        selectRetained: async (candidates) => {
+          const action = cancelled(await clack.select({
+            ...common,
+            message: "Choose a small set to retain for classification. Every unselected route will be excluded.",
+            options: [
+              { label: "Select routes to retain; exclude all remaining", value: "select" },
+              { label: "Exclude all detected routes", value: "exclude_all" },
+            ],
+            initialValue: "select",
+          }), clack, output);
+          if (action === "exclude_all") return [];
+          const selected = cancelled(await clack.multiselect({
+            ...common,
+            message: "Select the routes to retain for classification",
+            options: candidates.map((candidate) => ({
+              label: `${journeyLabel(candidate.value)}${
+                candidate.currentAccess ? ` [current: ${candidate.currentAccess}]` : ""
+              }`,
+              value: candidate,
+            })),
+            initialValues: candidates.filter((candidate) => candidate.current),
+            required: true,
+            maxItems: Math.max(3, Math.min(8, (output.rows ?? 14) - 6)),
+          }), clack, output);
+          return selected;
+        },
+        selectAccess: async (message, choices, initialValue) => cancelled(await clack.select({
+          ...common,
+          message,
+          options: choices,
+          ...(initialValue ? { initialValue } : {}),
+        }), clack, output),
+      });
       if (classification) {
         const retained = retainedCurrentJourneys(field, classification.detected);
         const action = cancelled(await clack.select({
