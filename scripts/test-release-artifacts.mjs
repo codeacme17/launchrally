@@ -927,12 +927,56 @@ async function runInstallationJourneys({
         "index.js",
       )).href),
     ]);
+    const authenticationRoot = await mkdtemp(
+      path.join(os.tmpdir(), "launchrally-packed-human-auth-"),
+    );
+    const authorizationFile = path.join(authenticationRoot, "authorization");
+    const cookieFile = path.join(authenticationRoot, "cookie");
+    const authorizationSentinel = "Bearer packed-human-authorization-secret";
+    const sessionSentinel = "packed-human-session-secret";
+    const accountSentinel = "packed-human-account-identifier";
+    const responseSentinel = "packed-human-response-body-secret";
+    await writeFile(authorizationFile, authorizationSentinel, { mode: 0o600 });
+    await writeFile(
+      cookieFile,
+      `session=${sessionSentinel}; account_id=${accountSentinel}`,
+      { mode: 0o600 },
+    );
+    let authenticatedRequestObserved = false;
+    const server = createServer({
+      key: await readFile(path.join(root, "test", "fixtures", "self-signed-key.pem")),
+      cert: await readFile(path.join(root, "test", "fixtures", "self-signed-cert.pem")),
+    }, (request, response) => {
+      authenticatedRequestObserved = request.headers.authorization === authorizationSentinel
+        && request.headers.cookie?.includes(sessionSentinel)
+        && request.headers.cookie?.includes(accountSentinel);
+      effectObservations.authenticated_network.push({
+        effect: "authenticated_network_read",
+        method: request.method,
+        destination: "loopback_fixture",
+        authentication_source: "owner_private_reference",
+      });
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        body_secret: responseSentinel,
+        account_id: accountSentinel,
+      }));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const authenticatedOrigin = `https://localhost:${server.address().port}`;
     const previousOrigin = process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
     const previousAuthorization = process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
     const previousCookie = process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
-    delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
-    delete process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
-    delete process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
+    const previousCa = process.env.LAUNCHRALLY_HOST_CA_FILE;
+    process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = authenticatedOrigin;
+    process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = authorizationFile;
+    process.env.LAUNCHRALLY_HOST_COOKIE_FILE = cookieFile;
+    process.env.LAUNCHRALLY_HOST_CA_FILE = path.join(
+      root,
+      "test",
+      "fixtures",
+      "self-signed-cert.pem",
+    );
     const promptRequests = [];
     try {
       const outcome = await runHumanAudit({
@@ -946,7 +990,7 @@ async function runInstallationJourneys({
               return {
                 answers: {
                   intended_environment: "staging",
-                  production_targets: ["https://example.com"],
+                  production_targets: [authenticatedOrigin],
                   core_journeys: [{
                     schema_version: "launchrally.dev/protected-journey/v1",
                     method: "GET",
@@ -981,14 +1025,28 @@ async function runInstallationJourneys({
           packedCore.resumeAuthenticatedJourneyFromHost({ ...options, host: "cli" }),
       });
       const serialized = JSON.stringify(outcome.result);
+      const sensitiveSentinels = new RegExp([
+        authorizationSentinel.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"),
+        sessionSentinel,
+        accountSentinel,
+        responseSentinel,
+      ].join("|"), "iu");
+      const supportedPrivateReferences = process.platform !== "win32";
+      const authenticatedResults = outcome.result.report?.results;
       if (
         outcome.exitCode !== 0
         || outcome.result?.status !== "completed"
-        || !outcome.result.report?.results?.authenticated_journey_gaps?.some(
-          ({ outcome: gapOutcome }) => gapOutcome === "missing_authentication",
-        )
+        || (supportedPrivateReferences
+          ? authenticatedResults?.authenticated_journey_evidence_refs?.length !== 1
+            || authenticatedResults?.authenticated_journey_gaps?.length !== 0
+            || !authenticatedRequestObserved
+          : !authenticatedResults?.authenticated_journey_gaps?.some(
+            ({ outcome: gapOutcome }) => gapOutcome === "runner_unavailable",
+          ))
         || promptRequests.includes("authenticated_journey_results")
+        || sensitiveSentinels.test(serialized)
         || /bearer\s|"cookie"\s*:|"headers"\s*:|response_body|account_id/iu.test(serialized)
+        || sensitiveSentinels.test(JSON.stringify(effectObservations.package_manager))
       ) throw new Error("packed_human_authenticated_journey_failed");
       effectObservations.normalized_outputs.push(serialized);
     } finally {
@@ -1001,6 +1059,10 @@ async function runInstallationJourneys({
       }
       if (previousCookie === undefined) delete process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
       else process.env.LAUNCHRALLY_HOST_COOKIE_FILE = previousCookie;
+      if (previousCa === undefined) delete process.env.LAUNCHRALLY_HOST_CA_FILE;
+      else process.env.LAUNCHRALLY_HOST_CA_FILE = previousCa;
+      await rm(authenticationRoot, { recursive: true, force: true });
+      await new Promise((resolve) => server.close(resolve));
     }
   };
   await exercisePackedHumanAuthenticatedJourney();
@@ -2599,7 +2661,7 @@ async function runInstallationJourneys({
     || effectObservations.normalized_outputs.length === 0
     || effectObservations.guarded_process_sections < 3
     || (process.platform !== "win32"
-      && effectObservations.authenticated_network.length !== 6)
+      && effectObservations.authenticated_network.length !== 7)
   ) throw new Error("p1_clean_host_observation_incomplete");
   const cleanHost = {
     unauthorized_install: effectObservations.package_manager.some(

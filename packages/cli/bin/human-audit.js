@@ -324,6 +324,7 @@ export async function runHumanAudit({
             }),
           );
         } catch (error) {
+          if (error instanceof PromptCancelledError) throw error;
           result = authenticatedRunnerError(error?.code);
           break;
         }

@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 import test from "node:test";
 
 import {
@@ -17,7 +17,10 @@ import {
   runHumanAudit,
 } from "../packages/cli/bin/human-audit.js";
 import { createInvocationContext } from "../packages/cli/bin/invocation-context.js";
-import { createPlainPromptAdapter } from "../packages/cli/bin/prompt-adapters.js";
+import {
+  createClackPromptAdapter,
+  createPlainPromptAdapter,
+} from "../packages/cli/bin/prompt-adapters.js";
 import {
   resumeAuthenticatedJourneyFromHost,
   runAudit,
@@ -44,6 +47,141 @@ const VALID_ANSWERS = Object.freeze({
   provider_roles: [{ provider: "sentry", role: "observability" }],
   support_layers: ["monitoring"],
 });
+
+function ttyStream() {
+  const stream = new PassThrough();
+  stream.isTTY = true;
+  stream.columns = 100;
+  stream.rows = 30;
+  stream.setRawMode = () => stream;
+  return stream;
+}
+
+function authenticatedPermissionInteraction() {
+  return {
+    status: "needs_permission",
+    operation: "audit",
+    audit_brief: {
+      core_journeys: {
+        values: [{
+          schema_version: "launchrally.dev/protected-journey/v1",
+          method: "GET",
+          path: "/control",
+          purpose: "authenticated Core Journey",
+          access: {
+            authentication_class: "staff",
+            anonymous_status_codes: [401, 403, 404],
+            authenticated_status_codes: [200],
+          },
+        }],
+      },
+    },
+    interaction: { resume_token: "permission-token" },
+    request: {
+      permissions: [{
+        permission_id: "authenticated_journey_verification",
+        boundary: "authenticated_network_read",
+        scope: {
+          adapter_version: "host-agent-authenticated-journey/v1",
+          operation: "read_only",
+          requested_fields: [
+            "journey_id",
+            "status",
+            "outcome",
+            "status_code",
+            "collected_at",
+          ],
+          journeys: [{
+            journey_id: "target-1:journey-1:authenticated",
+            target: "https://example.com/control",
+            method: "GET",
+            purpose: "authenticated Core Journey",
+            authentication_class: "staff",
+            expected_status_codes: [200],
+          }],
+        },
+      }],
+    },
+  };
+}
+
+function authenticatedResultInteraction() {
+  return {
+    status: "needs_input",
+    operation: "audit",
+    interaction: { resume_token: "authenticated-token" },
+    request: {
+      type: "authenticated_journey_results",
+      result_schema: "launchrally.dev/authenticated-journey-results/v1",
+      plan: authenticatedPermissionInteraction().request.permissions[0].scope,
+    },
+  };
+}
+
+function assertAuthenticatedPermissionPresentation(rendered) {
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /Authenticated Core Journey verification/u);
+  assert.match(semanticOutput, /GET https:\/\/example\.com\/control/u);
+  assert.match(semanticOutput, /Authentication class: staff/u);
+  assert.match(semanticOutput, /Anonymous expected status: 401, 403, 404/u);
+  assert.match(semanticOutput, /Authenticated expected status: 200/u);
+  assert.match(
+    semanticOutput,
+    /Runner\/adapter version: host-agent-authenticated-journey\/v1/u,
+  );
+  assert.match(
+    semanticOutput,
+    /Retained normalized fields: journey_id, status, outcome, status_code, collected_at/u,
+  );
+  assert.doesNotMatch(semanticOutput, /Provider read|undefined/u);
+}
+
+async function runAuthenticatedAdapterLoop(createPrompt, approve) {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createPrompt({ input, output, activityDelayMs: 0 });
+  const permission = authenticatedPermissionInteraction();
+  const authenticatedInput = authenticatedResultInteraction();
+  const completed = {
+    status: "completed",
+    operation: "audit",
+    outcome: "audit_completed",
+    report: { report_id: "report-authenticated" },
+  };
+  const auditCalls = [];
+  const runnerCalls = [];
+  setTimeout(() => approve(input), 20);
+
+  const outcome = await runHumanAudit({
+    cwd: "/workspace",
+    version: "0.4.0",
+    outputPath: "/workspace/report.json",
+    prompt,
+    runAudit: async (cwd, version, options) => {
+      auditCalls.push(options);
+      return auditCalls.length === 1 ? permission : authenticatedInput;
+    },
+    resumeAuthenticatedJourney: async (request) => {
+      runnerCalls.push(request);
+      return completed;
+    },
+  });
+
+  assert.equal(outcome.exitCode, 0);
+  assert.equal(outcome.result, completed);
+  assert.deepEqual(auditCalls, [undefined, {
+    resume_token: "permission-token",
+    permission_decisions: { authenticated_journey_verification: "approved" },
+  }]);
+  assert.equal(runnerCalls.length, 1);
+  assert.equal(runnerCalls[0].resume_token, "authenticated-token");
+  assert.equal(runnerCalls[0].request.type, "authenticated_journey_results");
+  assertAuthenticatedPermissionPresentation(rendered);
+}
 
 test("the Human Audit completion separates its assessment, work, Report, and next command", () => {
   const summary = renderHumanAuditCompletion({
@@ -372,6 +510,20 @@ test("the Human Audit driver updates feedback across every resumable Audit phase
   ]);
 });
 
+test("the Plain adapter completes the protected Journey permission and runner loop", async () => {
+  await runAuthenticatedAdapterLoop(
+    (options) => createPlainPromptAdapter(options),
+    (input) => input.write("y\n"),
+  );
+});
+
+test("the Clack adapter completes the protected Journey permission and runner loop", async () => {
+  await runAuthenticatedAdapterLoop(
+    (options) => createClackPromptAdapter(options),
+    (input) => input.write("\u001b[D\r"),
+  );
+});
+
 test("the Human Audit driver routes authenticated result requests only to the trusted runner", async () => {
   const activityLabels = [];
   const authenticatedRequest = {
@@ -527,6 +679,38 @@ test("the Human Audit driver completes an unavailable trusted runner as a typed 
     error: "authenticated_journey_runner_unavailable",
     message: "The trusted authenticated Core Journey runner could not complete safely.",
   });
+});
+
+test("the Human Audit driver preserves cancellation from the authenticated runner", async () => {
+  let closed = false;
+  const outcome = await runHumanAudit({
+    cwd: "/workspace",
+    version: "0.4.0",
+    prompt: {
+      async start() {},
+      async respond() {
+        throw new Error("authenticated results must not be collected as release intent");
+      },
+      async close() {
+        closed = true;
+      },
+    },
+    runAudit: async () => ({
+      status: "needs_input",
+      interaction: { resume_token: "authenticated-token" },
+      request: {
+        type: "authenticated_journey_results",
+        result_schema: "launchrally.dev/authenticated-journey-results/v1",
+        plan: { adapter_version: "host-agent-authenticated-journey/v1", journeys: [] },
+      },
+    }),
+    resumeAuthenticatedJourney: async () => {
+      throw new PromptCancelledError();
+    },
+  });
+
+  assert.deepEqual(outcome, { exitCode: 130, result: null, outputPath: undefined });
+  assert.equal(closed, true);
 });
 
 test("the Human Audit driver distinguishes interaction failures from Local Safe Scan failures", async () => {
