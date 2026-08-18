@@ -34,7 +34,7 @@ import {
   runHumanAudit,
 } from "./human-audit.js";
 import { renderHumanInit, runHumanInit } from "./human-init.js";
-import { renderHumanVerify } from "./human-verify.js";
+import { renderHumanVerify, runHumanVerify } from "./human-verify.js";
 import {
   commandName,
   optionValue as argumentValue,
@@ -1225,16 +1225,79 @@ async function main() {
       });
       return 2;
     }
-    const result = await runVerify(cwd, VERSION, {
+    const initialOptions = {
       report_package: reportPackage,
       scope: optionValue("--scope"),
       check_ids: checks.value,
       resume_token: optionValue("--resume"),
       permission_decisions: permissionDecisions.value,
       journey_results: journeyResults.value,
+    };
+    if (json) {
+      const result = await runVerify(cwd, VERSION, initialOptions);
+      print(result);
+      return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+    }
+
+    if (["--resume", "--permissions", "--journey-results"].some(
+      (option) => args.includes(option),
+    )) {
+      process.stderr.write([
+        "Human Mode does not accept structured Verify decisions.",
+        "Use rally verify --json with --resume <token> and the requested decision option.",
+      ].join("\n") + "\n");
+      return 2;
+    }
+
+    if (process.stdin.isTTY !== true) {
+      const action = createNextAction(invocationContext, [
+        "verify",
+        "--json",
+        "--cwd",
+        path.resolve(cwd),
+        ...(reportPath ? ["--report", path.resolve(reportPath)] : []),
+        ...(optionValue("--scope") ? ["--scope", optionValue("--scope")] : []),
+        ...(checks.value ? ["--checks", JSON.stringify(checks.value)] : []),
+      ]);
+      process.stderr.write([
+        "Non-TTY Human Mode cannot prompt safely.",
+        "Use the resumable Agent/CI protocol:",
+        action.display,
+        ...(action.disclosure ? [action.disclosure] : []),
+      ].join("\n") + "\n");
+      return 2;
+    }
+
+    const { createClackPromptAdapter, createPlainPromptAdapter } = await import(
+      "./prompt-adapters.js"
+    );
+    const presentation = humanAuditPresentationOptions({
+      args,
+      env: process.env,
+      output: process.stdout,
     });
-    print(result);
-    return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+    const prompt = presentation.plain
+      ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
+      : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+    const outcome = await runHumanVerify({
+      cwd,
+      version: VERSION,
+      prompt,
+      runVerify,
+      reportPackage,
+      scope: optionValue("--scope"),
+      checkIds: checks.value,
+      resumeAuthenticatedJourney: (options) => resumeAuthenticatedJourneyFromHost({
+        ...options,
+        host: "cli",
+      }),
+    });
+    if (outcome.exitCode === 130) {
+      process.stderr.write("Verify cancelled. No pending network read was performed.\n");
+      return 130;
+    }
+    print(outcome.result);
+    return outcome.exitCode;
   }
 
   print({

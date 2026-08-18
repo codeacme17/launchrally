@@ -1,15 +1,14 @@
 import path from "node:path";
 
+import {
+  PromptCancelledError,
+  resumeHumanAuthenticatedJourney,
+} from "./human-authenticated-journey.js";
 import { isLaunchRallyDestination } from "./report-destination.js";
 import { DEFAULT_REPORT_FILENAME } from "./system-file-picker.js";
 import { createNextAction } from "./invocation-context.js";
 
-export class PromptCancelledError extends Error {
-  constructor() {
-    super("The prompt was cancelled.");
-    this.name = "PromptCancelledError";
-  }
-}
+export { PromptCancelledError } from "./human-authenticated-journey.js";
 
 const ASSESSMENT_PRESENTATION = Object.freeze({
   launch_ready: Object.freeze({ label: "Ready", style: "1;32" }),
@@ -170,18 +169,6 @@ function approvedAuditActivityLabel(result, permissionDecisions) {
   return "Evaluating Audit and generating Report…";
 }
 
-function authenticatedRunnerError(error = "authenticated_journey_runner_unavailable") {
-  const invalid = error === "invalid_authenticated_journey_results";
-  return {
-    status: "execution_error",
-    operation: "audit",
-    error,
-    message: invalid
-      ? "The trusted authenticated Core Journey runner returned an invalid normalized result."
-      : "The trusted authenticated Core Journey runner could not complete safely.",
-  };
-}
-
 export function renderHumanAuditCompletion(result, {
   cwd,
   outputPath,
@@ -306,41 +293,16 @@ export async function runHumanAudit({
         result.status === "needs_input"
         && result.request?.type === "authenticated_journey_results"
       ) {
-        if (typeof resumeAuthenticatedJourney !== "function") {
-          result = authenticatedRunnerError();
-          break;
-        }
-        try {
-          const authenticatedRequest = result;
-          result = await runActivity(
-            "Verifying authenticated Core Journeys and generating Report…",
-            (signal) => resumeAuthenticatedJourney({
-              cwd,
-              version,
-              operation: "audit",
-              resume_token: authenticatedRequest.interaction.resume_token,
-              request: authenticatedRequest.request,
-              signal,
-            }),
-          );
-        } catch (error) {
-          if (error instanceof PromptCancelledError) throw error;
-          result = authenticatedRunnerError(error?.code);
-          break;
-        }
-        if (!result || typeof result !== "object") {
-          result = authenticatedRunnerError();
-          break;
-        }
-        if (result.status === "needs_input") {
-          const validationError = result.request?.validation_errors?.find(
-            ({ field_id: fieldId }) => fieldId === "journey_results",
-          );
-          result = authenticatedRunnerError(
-            validationError?.code ?? "invalid_authenticated_journey_results",
-          );
-          break;
-        }
+        result = await resumeHumanAuthenticatedJourney({
+          cwd,
+          version,
+          operation: "audit",
+          result,
+          runActivity,
+          activityLabel: "Verifying authenticated Core Journeys and generating Report…",
+          resumeAuthenticatedJourney,
+        });
+        if (result.status === "execution_error") break;
         continue;
       }
       const response = await prompt.respond(result);

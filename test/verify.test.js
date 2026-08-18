@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { link, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { createServer as createSecureServer } from "node:https";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -15,6 +16,7 @@ import {
 import {
   evaluateReportCurrentness,
   loadLocalHistoryReportPackage,
+  resumeAuthenticatedJourneyFromHost,
   runAudit,
   runVerify,
 } from "../packages/core/src/index.js";
@@ -22,6 +24,10 @@ import {
   createAuthenticatedJourneyAttestation,
   createAuthenticatedJourneyPlan,
 } from "../packages/core/src/authenticated-journeys.js";
+import {
+  renderHumanVerify,
+  runHumanVerify,
+} from "../packages/cli/bin/human-verify.js";
 import { persistLocalHistory } from "../packages/core/src/local-history.js";
 import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
@@ -30,12 +36,19 @@ const cli = path.resolve("packages/cli/bin/engine.js");
 const pythonAvailable = process.platform !== "win32"
   && spawnSync("python3", ["--version"]).status === 0;
 const ptyRunner = [
-  "import errno, os, pty, subprocess, sys",
+  "import errno, fcntl, os, pty, select, struct, subprocess, sys, termios, time",
   "master, slave = pty.openpty()",
+  "fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 0, 0))",
   "child = subprocess.Popen(sys.argv[1:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)",
   "os.close(slave)",
   "chunks = []",
+  "answer = os.environ.get('LAUNCHRALLY_TEST_TTY_INPUT', '').encode()",
+  "answered = not answer",
   "while True:",
+  "    ready, _, _ = select.select([master], [], [], 10)",
+  "    if not ready:",
+  "        child.terminate()",
+  "        break",
   "    try:",
   "        chunk = os.read(master, 4096)",
   "    except OSError as error:",
@@ -45,6 +58,11 @@ const ptyRunner = [
   "    if not chunk:",
   "        break",
   "    chunks.append(chunk)",
+  "    output = b''.join(chunks)",
+  "    if not answered and (b'[y/N]' in output or b'Approve this permission?' in output):",
+  "        time.sleep(0.2)",
+  "        os.write(master, answer)",
+  "        answered = True",
   "os.close(master)",
   "sys.stdout.buffer.write(b''.join(chunks))",
   "raise SystemExit(child.wait())",
@@ -226,6 +244,82 @@ test("full Verify requests protected journey reads independently from public ver
   );
 });
 
+test("Human full Verify denial completes with canonical gaps and immutable Report history", async () => {
+  const directory = await fixture();
+  const protectedJourney = {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/control",
+    purpose: "authenticated Core Journey",
+    access: {
+      authentication_class: "staff",
+      anonymous_status_codes: [401, 403, 404],
+      authenticated_status_codes: [200],
+    },
+  };
+  const source = await completeAudit(
+    directory,
+    { ...ANSWERS, core_journeys: [protectedJourney] },
+    {
+      public_verification: "denied",
+      authenticated_journey_verification: "denied",
+    },
+  );
+  await writeManifest(directory, source);
+  const promptedPermissionIds = [];
+
+  const outcome = await runHumanVerify({
+    cwd: directory,
+    version: "0.4.0",
+    reportPackage: source,
+    scope: "full",
+    prompt: {
+      async start() {},
+      async respondVerify(result) {
+        promptedPermissionIds.push(
+          ...result.request.permissions.map(({ permission_id: permissionId }) => permissionId),
+        );
+        return {
+          permission_decisions: Object.fromEntries(
+            result.request.permissions.map(({ permission_id: permissionId }) => [
+              permissionId,
+              "denied",
+            ]),
+          ),
+        };
+      },
+      async close() {},
+    },
+    runVerify,
+  });
+
+  assert.equal(outcome.exitCode, 0);
+  assert.equal(outcome.result.status, "completed");
+  assert.deepEqual(promptedPermissionIds, [
+    "public_verification",
+    "authenticated_journey_verification",
+  ]);
+  assert.deepEqual(
+    outcome.result.authorization_plan
+      .filter(({ decision }) => decision === "denied")
+      .map(({ permission_id: permissionId }) => permissionId),
+    promptedPermissionIds,
+  );
+  assert.ok(outcome.result.report.results.verification_gaps.some(
+    ({ reason_code: reasonCode }) => reasonCode === "permission_denied",
+  ));
+  const recordPath = path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    outcome.result.report.report_id,
+    "record.json",
+  );
+  const persisted = JSON.parse(await readFile(recordPath, "utf8"));
+  assert.equal(persisted.report_id, outcome.result.report.report_id);
+  assert.doesNotMatch(JSON.stringify(persisted), /resume_token/u);
+});
+
 test("full Verify requests typed authenticated results before executing approved reads", async () => {
   const directory = await fixture();
   const protectedJourney = {
@@ -289,6 +383,121 @@ test("full Verify requests typed authenticated results before executing approved
   ]);
   assert.equal(publicCollections, 0);
   assert.ok(result.interaction.resume_token.length > 20);
+});
+
+test("Verify forwards cooperative cancellation to approved public Evidence collection", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const controller = new AbortController();
+  let observedSignal;
+
+  const result = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "approved" },
+  }, {
+    signal: controller.signal,
+    collect_public_evidence: async (plan, { signal } = {}) => {
+      observedSignal = signal;
+      return [];
+    },
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(observedSignal, controller.signal);
+});
+
+test("cancelling the authenticated Verify host request aborts the GET before history persistence", async () => {
+  const server = createSecureServer({
+    key: await readFile(path.resolve("test/fixtures/self-signed-key.pem")),
+    cert: await readFile(path.resolve("test/fixtures/self-signed-cert.pem")),
+  });
+  let requestStartedResolve;
+  const requestStarted = new Promise((resolve) => {
+    requestStartedResolve = resolve;
+  });
+  server.on("request", () => {
+    requestStartedResolve();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const target = `https://localhost:${server.address().port}`;
+  const directory = await fixture();
+  const authorizationFile = path.join(directory, "authorization");
+  await writeFile(authorizationFile, "Bearer cancellation-test-secret", { mode: 0o600 });
+  const previousEnvironment = {
+    LAUNCHRALLY_AUTHENTICATED_ORIGIN: process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN,
+    LAUNCHRALLY_HOST_AUTHORIZATION_FILE: process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE,
+    LAUNCHRALLY_HOST_CA_FILE: process.env.LAUNCHRALLY_HOST_CA_FILE,
+  };
+  process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = target;
+  process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = authorizationFile;
+  process.env.LAUNCHRALLY_HOST_CA_FILE = path.resolve("test/fixtures/self-signed-cert.pem");
+
+  try {
+    const protectedJourney = {
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/control",
+      purpose: "authenticated Core Journey",
+      access: {
+        authentication_class: "staff",
+        anonymous_status_codes: [401, 403, 404],
+        authenticated_status_codes: [200],
+      },
+    };
+    const source = await completeAudit(
+      directory,
+      {
+        ...ANSWERS,
+        production_targets: [target],
+        core_journeys: [protectedJourney],
+      },
+      {
+        public_verification: "denied",
+        authenticated_journey_verification: "denied",
+      },
+    );
+    await writeManifest(directory, source);
+    const permission = await runVerify(directory, "0.4.0", {
+      report_package: source,
+      scope: "full",
+    });
+    const input = await runVerify(directory, "0.4.0", {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: {
+        public_verification: "denied",
+        authenticated_journey_verification: "approved",
+      },
+    });
+    const controller = new AbortController();
+    const resumed = resumeAuthenticatedJourneyFromHost({
+      host: "cli",
+      cwd: directory,
+      version: "0.4.0",
+      operation: "verify",
+      resume_token: input.interaction.resume_token,
+      request: input.request,
+      signal: controller.signal,
+    });
+    await requestStarted;
+    controller.abort();
+
+    await assert.rejects(resumed, (error) => error?.name === "AbortError");
+    await assert.rejects(
+      readdir(path.join(directory, ".launchrally", "reports")),
+      (error) => error?.code === "ENOENT",
+    );
+  } finally {
+    for (const [name, value] of Object.entries(previousEnvironment)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test("full Verify cannot upgrade caller-attested authenticated success", async () => {
@@ -747,28 +956,20 @@ test("plain Human Verify completion provides an executable immutable-history Pla
     report_package: source,
     scope: "full",
   });
-  const invocationContext = JSON.stringify({
+  const verification = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const invocationContext = {
     schema_version: "launchrally.dev/invocation-context/v1",
     source: "user_path",
     launcher_version: "0.4.0",
+  };
+  const human = renderHumanVerify(verification, {
+    cwd: directory,
+    invocationContext,
+    styled: false,
   });
-
-  const human = (await execFileAsync(process.execPath, [
-    cli,
-    "verify",
-    "--plain",
-    "--cwd",
-    directory,
-    "--resume",
-    permission.interaction.resume_token,
-    "--permissions",
-    JSON.stringify({ public_verification: "denied" }),
-  ], {
-    env: {
-      ...process.env,
-      LAUNCHRALLY_INVOCATION_CONTEXT: invocationContext,
-    },
-  })).stdout;
 
   assert.match(human, /^Manifest Source Report\n.+$/mu);
   assert.match(human, /^Current Report\n.+$/mu);
@@ -810,10 +1011,8 @@ test("styled and plain TTY Verify completions preserve the executable Plan hando
         path.join(directory, ".launchrally", ".gitignore"),
         "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n",
       );
-      const permission = await runVerify(directory, "0.1.0", {
-        report_package: source,
-        scope: "full",
-      });
+      const reportPath = path.join(directory, "source-report.json");
+      await writeFile(reportPath, `${JSON.stringify(source)}\n`);
       const invocationContext = JSON.stringify({
         schema_version: "launchrally.dev/invocation-context/v1",
         source: "user_path",
@@ -823,6 +1022,7 @@ test("styled and plain TTY Verify completions preserve the executable Plan hando
         ...process.env,
         TERM: "xterm-256color",
         LAUNCHRALLY_INVOCATION_CONTEXT: invocationContext,
+        LAUNCHRALLY_TEST_TTY_INPUT: "\r",
       };
       delete environment.NO_COLOR;
 
@@ -835,19 +1035,17 @@ test("styled and plain TTY Verify completions preserve the executable Plan hando
         ...variant.arguments,
         "--cwd",
         directory,
-        "--resume",
-        permission.interaction.resume_token,
-        "--permissions",
-        JSON.stringify({ public_verification: "denied" }),
+        "--report",
+        reportPath,
       ], { env: environment })).stdout;
       const plain = stripVTControlCharacters(output).replaceAll("\r\n", "\n");
       assert.equal(/\u001B\[/u.test(output), variant.ansi);
       assert.match(plain, /^Manifest Source Report\n.+$/mu);
       assert.match(plain, /^Current Report\n.+$/mu);
-      const reportPath = plain.match(
+      const currentReportPath = plain.match(
         /^Current Report input\n(\.launchrally\/reports\/[^\n]+\/record\.json)$/mu,
       )?.[1];
-      assert.ok(reportPath);
+      assert.ok(currentReportPath);
       const plan = JSON.parse((await execFileAsync(process.execPath, [
         cli,
         "plan",
@@ -855,7 +1053,7 @@ test("styled and plain TTY Verify completions preserve the executable Plan hando
         "--cwd",
         directory,
         "--report",
-        reportPath,
+        currentReportPath,
       ])).stdout);
       assert.equal(plan.status, "completed");
     });
@@ -2241,7 +2439,7 @@ test("fresh collection cannot make stale live-state Evidence current or Ready", 
   );
 });
 
-test("Agent and Human CLI modes expose the same targeted Verify scope and permission boundary", async () => {
+test("targeted Agent Verify remains resumable while non-TTY Human Verify exits with guidance", async () => {
   const directory = await fixture();
   const source = await completeAudit(directory);
   await writeManifest(directory, source);
@@ -2263,14 +2461,21 @@ test("Agent and Human CLI modes expose the same targeted Verify scope and permis
     process.execPath,
     [cli, ...commonArgs, "--json"],
   )).stdout);
-  const human = (await execFileAsync(process.execPath, [cli, ...commonArgs])).stdout;
 
   assert.equal(agent.status, "needs_permission");
   assert.deepEqual(agent.verification_scope.check_ids, ["web.public.availability"]);
-  assert.match(human, /^LaunchRally Targeted Verification/mu);
-  assert.match(human, /Whole release: NO/u);
-  assert.match(human, /web\.public\.availability/u);
-  assert.match(human, /Public verification: https:\/\/example\.com\//u);
+  await assert.rejects(
+    execFileAsync(process.execPath, [cli, ...commonArgs]),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.equal(error.stdout, "");
+      assert.match(error.stderr, /Non-TTY Human Mode cannot prompt safely/u);
+      assert.match(error.stderr, /rally verify --json/u);
+      assert.match(error.stderr, /--scope targeted/u);
+      assert.doesNotMatch(error.stderr, /resume token/iu);
+      return true;
+    },
+  );
 
   const completed = JSON.parse((await execFileAsync(process.execPath, [
     cli,

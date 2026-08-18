@@ -21,13 +21,16 @@ Enter the repository root and run this continuous Human Mode path:
 rally audit --plain --cwd . --output ./launchrally-audit-report.json
 rally init --plain --cwd . --report ./launchrally-audit-report.json
 rally --version --json --cwd .
+rally verify --plain --cwd . --report ./launchrally-audit-report.json --scope full
 ```
 
 The Audit presents the complete Brief and Check plan before work begins. Local scan, public verification, and every Provider read are independent permissions and default-denied. A denial completes transparently with a Verification Gap; it is never reused as permission for another boundary. The complete Report and Evidence stay local.
 
 Audit does not create `.launchrally`; `--output` saves the complete Report at the explicit path shown above. Confirmed Init is the first project mutation. In TTY Human Mode, Init remains in the same process: approve or deny any separate `npm_registry_read` request, then review a concise decision summary with the affected root, operation counts, every affected path and digest, Manifest source identity, Project Toolchain materialization, and write-authority boundaries. Choose `View full preview` to inspect every exact diff and complete after-content, then return to the same digest-bound preview to confirm or decline it. Viewing details, declining, or pressing Ctrl-C leaves project-owned files unchanged. Init changes only LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
 
-Agent Mode, including CI use, retains the explicit structured protocol. Start with `rally init --json --cwd . --report ./launchrally-audit-report.json`, then use each returned `--resume <token>` with only the requested permission or confirmation option. Non-TTY Human Mode fails safely and points to this protocol instead of presenting an inactive choice.
+TTY Human Verify also remains in one process. It presents every fresh public, Provider, and authenticated-Journey permission independently, defaults each decision to denied, and sends approved authenticated reads only through the installed typed host runner. Denial completes with explicit Verification Gaps. Cancellation performs no pending read, and Human output never exposes a resume token. A full completion writes only the normal immutable Report and structurally allowlisted Evidence history under `.launchrally`.
+
+Agent Mode, including CI use, retains the explicit structured protocol. Start Init with `rally init --json --cwd . --report ./launchrally-audit-report.json` or Verify with `rally verify --json --cwd . --report ./launchrally-audit-report.json --scope full`, then use each returned `--resume <token>` with only the requested permission, confirmation, or typed Journey-result option. Non-TTY Human Mode fails safely and prints a complete shell-safe Agent command instead of presenting an inactive choice.
 
 Re-running ordinary Init preserves an existing Manifest and identifies the explicit replacement action. If a corrected current Audit should become the new source of project-owned release intent, run `rally init --plain --cwd . --report ./corrected-audit-report.json --rebind`. Confirm only after reviewing both source Report identities and the exact Manifest diff. Decline, abandonment, or a stale preview changes nothing, and rebind preserves the Project Toolchain and immutable history.
 
@@ -47,6 +50,7 @@ Exact-version npm-exec is a no-install trial and CI fallback. It is not the defa
 npm exec --package=@launchrally/cli@0.3.2 -- rally audit --plain --cwd . --output ./launchrally-audit-report.json
 npm exec --package=@launchrally/cli@0.3.2 -- rally init --plain --cwd . --report ./launchrally-audit-report.json
 npm exec --package=@launchrally/cli@0.3.2 -- rally --version --json --cwd .
+npm exec --package=@launchrally/cli@0.3.2 -- rally verify --plain --cwd . --report ./launchrally-audit-report.json --scope full
 ```
 
 npm may show its normal package-download confirmation. LaunchRally does not suppress it or add `--yes`.
