@@ -12,7 +12,7 @@ import {
 } from "@launchrally/core";
 
 import { PromptCancelledError } from "./human-audit.js";
-import { renderHumanInit } from "./human-init.js";
+import { renderHumanInit, renderHumanInitFullPreview } from "./human-init.js";
 
 function styleTextSupportsArrays() {
   try {
@@ -155,6 +155,20 @@ function write(output, value) {
 
 function completedActivityLabel(label) {
   return `${String(label).replace(/(?:…|\.\.\.)$/u, "").trim()}.`;
+}
+
+const INIT_CONFIRMATION_OPTIONS = Object.freeze([
+  Object.freeze({ label: "Confirm", value: "confirm" }),
+  Object.freeze({ label: "Decline", value: "decline" }),
+  Object.freeze({ label: "View full preview", value: "view_full_preview" }),
+]);
+
+async function collectInitConfirmation({ chooseDecision, showFullPreview }) {
+  while (true) {
+    const confirmation = await chooseDecision(INIT_CONFIRMATION_OPTIONS);
+    if (confirmation !== "view_full_preview") return { confirmation };
+    showFullPreview();
+  }
 }
 
 async function runPromptActivity({
@@ -775,7 +789,7 @@ export function createPlainPromptAdapter({
       }
       return {};
     },
-    async respondInit(result) {
+    async respondInit(result, context = {}) {
       if (result.status === "needs_permission") {
         const permissionDecisions = {};
         for (const permission of result.request.permissions) {
@@ -787,13 +801,11 @@ export function createPlainPromptAdapter({
         return { permission_decisions: permissionDecisions };
       }
       if (result.status === "needs_confirmation") {
-        write(output, renderHumanInit(result));
-        return {
-          confirmation: await choose(result.request.prompt, [
-            { label: "Confirm", value: "confirm" },
-            { label: "Decline", value: "decline" },
-          ]),
-        };
+        write(output, renderHumanInit(result, context));
+        return collectInitConfirmation({
+          chooseDecision: (options) => choose(result.request.prompt, options),
+          showFullPreview: () => write(output, renderHumanInitFullPreview(result, context)),
+        });
       }
       return {};
     },
@@ -1043,7 +1055,7 @@ export async function createClackPromptAdapter({
       }
       return {};
     },
-    async respondInit(result) {
+    async respondInit(result, context = {}) {
       if (result.status === "needs_permission") {
         const permissionDecisions = {};
         for (const permission of result.request.permissions) {
@@ -1060,17 +1072,20 @@ export async function createClackPromptAdapter({
         return { permission_decisions: permissionDecisions };
       }
       if (result.status === "needs_confirmation") {
-        clack.note(renderHumanInit(result), "Exact initialization preview", common);
-        const confirmation = await clack.select({
-          ...common,
-          message: result.request.prompt,
-          options: [
-            { label: "Confirm", value: "confirm" },
-            { label: "Decline", value: "decline" },
-          ],
-          initialValue: "decline",
+        clack.note(renderHumanInit(result, context), "Initialization decision summary", common);
+        return collectInitConfirmation({
+          chooseDecision: async (options) => cancelled(await clack.select({
+            ...common,
+            message: result.request.prompt,
+            options,
+            initialValue: "decline",
+          }), clack, output, "Init"),
+          showFullPreview: () => clack.note(
+            renderHumanInitFullPreview(result, context),
+            "Full exact initialization preview",
+            common,
+          ),
         });
-        return { confirmation: cancelled(confirmation, clack, output, "Init") };
       }
       return {};
     },

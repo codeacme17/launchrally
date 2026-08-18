@@ -40,7 +40,7 @@ const ptyRunner = [
   "chunks = []",
   "observed = b''",
   "permission_answered = False",
-  "confirmation_answered = False",
+  "decision_prompts = 0",
   "while True:",
   "    try:",
   "        chunk = os.read(master, 4096)",
@@ -55,9 +55,10 @@ const ptyRunner = [
   "    if not permission_answered and b'Approve npm_registry_read? [y/N]' in observed:",
   "        os.write(master, b'y\\n')",
   "        permission_answered = True",
-  "    if not confirmation_answered and b'Choose 1-2:' in observed:",
-  "        os.write(master, b'1\\n')",
-  "        confirmation_answered = True",
+  "    observed_prompts = observed.count(b'Choose 1-3:')",
+  "    if observed_prompts > decision_prompts:",
+  "        decision_prompts = observed_prompts",
+  "        os.write(master, b'3\\n' if decision_prompts == 1 else b'1\\n')",
   "os.close(master)",
   "sys.stdout.buffer.write(b''.join(chunks))",
   "raise SystemExit(child.wait())",
@@ -571,6 +572,41 @@ test("Init attempts offline toolchain resolution before disclosing registry perm
 
   assert.equal(preview.status, "needs_confirmation");
   assert.deepEqual(attempts, [false, false, true]);
+});
+
+test("registry permission resume preserves an exact in-root Report input", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const reportPath = path.join(directory, "launchrally-audit-report.json");
+  await writeFile(reportPath, `${JSON.stringify(audit, null, 2)}\n`);
+  const prepare = async (request) => {
+    if (!request.registry_allowed) {
+      const error = new Error("offline cache miss");
+      error.code = "registry_permission_required";
+      error.temporary_target = path.join(os.tmpdir(), "launchrally-in-root-report-permission");
+      throw error;
+    }
+    return prepareNpmChanges(request);
+  };
+
+  const permission = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit, report_path: reportPath },
+    { prepare_dependency_changes: prepare },
+  );
+  assert.equal(permission.status, "needs_permission");
+
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: { npm_registry_read: "approved" },
+    },
+    { prepare_dependency_changes: prepare },
+  );
+  assert.equal(preview.status, "needs_confirmation");
 });
 
 test("initialization is unavailable until a complete first Report is supplied", async () => {
@@ -2449,6 +2485,57 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
   assert.deepEqual(await readdir(directory), [".launchrally", "package-lock.json", "package.json"]);
 });
 
+test("the CLI accepts its exact saved Audit Report inside the audited root", async () => {
+  const directory = await fixtureWithCliDependency("0.3.2");
+  const audit = await completeAudit(directory);
+  const reportPath = path.join(directory, "launchrally-audit-report.json");
+  await writeFile(reportPath, `${JSON.stringify(audit, null, 2)}\n`);
+
+  const preview = JSON.parse((await execFileAsync(process.execPath, [
+    engine,
+    "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ])).stdout);
+
+  assert.equal(preview.status, "needs_confirmation");
+  assert.equal(preview.source_report_id, audit.report.report_id);
+  const declined = JSON.parse((await execFileAsync(process.execPath, [
+    engine,
+    "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--resume",
+    preview.interaction.resume_token,
+    "--confirm",
+    "decline",
+  ])).stdout);
+  assert.equal(declined.outcome, "initialization_declined");
+  assert.equal(
+    JSON.parse(await readFile(reportPath, "utf8")).report.report_id,
+    audit.report.report_id,
+  );
+
+  await writeFile(
+    path.join(directory, "copied-audit-report.json"),
+    `${JSON.stringify(audit, null, 2)}\n`,
+  );
+  const drifted = JSON.parse((await execFileAsync(process.execPath, [
+    engine,
+    "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ])).stdout);
+  assert.equal(drifted.status, "needs_refresh");
+});
+
 test("non-TTY Human Init fails safely and points to the structured protocol", async () => {
   const directory = await fixtureWithCliDependency("0.3.2");
   const audit = await completeAudit(directory);
@@ -2550,6 +2637,10 @@ test("TTY Human Init renders and confirms the exact preview in one process", {
 
   assert.match(stdout, /LaunchRally Initialization Preview/u);
   assert.match(stdout, /CREATE \.launchrally\/manifest\.yaml/u);
+  assert.match(stdout, /3\. View full preview/u);
+  assert.match(stdout, /Full exact digest-bound preview/u);
+  assert.match(stdout, /^Diff:$/mu);
+  assert.match(stdout, /^After content:$/mu);
   assert.match(stdout, /Apply exactly these local initialization changes\?/u);
   assert.match(stdout, /1\. Confirm/u);
   assert.match(stdout, /2\. Decline/u);
@@ -2565,6 +2656,9 @@ test("the Quickstart documents same-process Human Init and explicit Agent resume
   const quickstart = await readFile("docs/getting-started/quickstart.md", "utf8");
 
   assert.match(quickstart, /Init remains in the same process/iu);
+  assert.match(quickstart, /concise decision summary/iu);
+  assert.match(quickstart, /View full preview/u);
+  assert.match(quickstart, /same digest-bound preview/iu);
   assert.match(quickstart, /confirm or decline/iu);
   assert.match(quickstart, /Ctrl-C/iu);
   assert.match(quickstart, /Agent Mode[\s\S]*--resume <token>/iu);
