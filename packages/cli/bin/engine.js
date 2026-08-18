@@ -707,9 +707,9 @@ async function main() {
         process.stderr.write("The complete Audit JSON could not be written. Choose a new, writable --output path.\n");
         return 2;
       }
-      const localSafeScanFailed = error?.code === "local_safe_scan_failed";
-      process.stderr.write(localSafeScanFailed
-        ? "Local Safe Scan could not complete safely.\n"
+      const initialRepositoryScanFailed = error?.code === "initial_repository_scan_failed";
+      process.stderr.write(initialRepositoryScanFailed
+        ? "The initial repository scan could not complete safely.\n"
         : "Human Audit interaction could not complete safely.\n");
       return 2;
     }

@@ -289,7 +289,7 @@ export async function runHumanAudit({
   resumeAuthenticatedJourney,
 }) {
   let result;
-  let localSafeScanCompleted = false;
+  let initialRepositoryScanCompleted = false;
   const runActivity = (label, operation) => prompt.activity
     ? prompt.activity(label, operation)
     : operation();
@@ -299,7 +299,7 @@ export async function runHumanAudit({
       "Discovering project and scanning repository…",
       (signal) => runAudit(cwd, version, undefined, { signal }),
     );
-    localSafeScanCompleted = true;
+    initialRepositoryScanCompleted = true;
 
     while (["needs_input", "needs_confirmation", "needs_permission"].includes(result.status)) {
       if (
@@ -476,8 +476,8 @@ export async function runHumanAudit({
     if (error instanceof PromptCancelledError) {
       return { exitCode: 130, result: null, outputPath: undefined };
     }
-    if (!localSafeScanCompleted) {
-      error.code = "local_safe_scan_failed";
+    if (!initialRepositoryScanCompleted) {
+      error.code = "initial_repository_scan_failed";
     } else if (!error.code) {
       error.code = "human_audit_interaction_failed";
     }

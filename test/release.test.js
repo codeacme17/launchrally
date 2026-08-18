@@ -1449,6 +1449,9 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       full_journey: "plan_handoff_verify_completed",
       packaged_skill_fixtures: "codex_and_claude_executed",
       protected_journeys: "codex_and_claude_audit_verify_normalized",
+      human_authenticated_journey: process.platform === "win32"
+        ? "typed_runner_unavailable_restricted_file_boundary"
+        : "normalized_success_without_sensitive_persistence",
       launcher_removal: "project_data_preserved",
       plugin_removal: "project_data_preserved",
       fixture_invocations: [

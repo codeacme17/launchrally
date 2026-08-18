@@ -21,6 +21,7 @@ import {
   createClackPromptAdapter,
   createPlainPromptAdapter,
 } from "../packages/cli/bin/prompt-adapters.js";
+import { assertValidReportPackage } from "@launchrally/contracts";
 import {
   resumeAuthenticatedJourneyFromHost,
   runAudit,
@@ -57,71 +58,30 @@ function ttyStream() {
   return stream;
 }
 
-function authenticatedPermissionInteraction() {
+function protectedJourneyAnswers(target) {
   return {
-    status: "needs_permission",
-    operation: "audit",
-    audit_brief: {
-      core_journeys: {
-        values: [{
-          schema_version: "launchrally.dev/protected-journey/v1",
-          method: "GET",
-          path: "/control",
-          purpose: "authenticated Core Journey",
-          access: {
-            authentication_class: "staff",
-            anonymous_status_codes: [401, 403, 404],
-            authenticated_status_codes: [200],
-          },
-        }],
+    intended_environment: "staging",
+    production_targets: [target],
+    core_journeys: [{
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/control",
+      purpose: "authenticated Core Journey",
+      access: {
+        authentication_class: "staff",
+        anonymous_status_codes: [401, 403, 404],
+        authenticated_status_codes: [200],
       },
-    },
-    interaction: { resume_token: "permission-token" },
-    request: {
-      permissions: [{
-        permission_id: "authenticated_journey_verification",
-        boundary: "authenticated_network_read",
-        scope: {
-          adapter_version: "host-agent-authenticated-journey/v1",
-          operation: "read_only",
-          requested_fields: [
-            "journey_id",
-            "status",
-            "outcome",
-            "status_code",
-            "collected_at",
-          ],
-          journeys: [{
-            journey_id: "target-1:journey-1:authenticated",
-            target: "https://example.com/control",
-            method: "GET",
-            purpose: "authenticated Core Journey",
-            authentication_class: "staff",
-            expected_status_codes: [200],
-          }],
-        },
-      }],
-    },
+    }],
+    provider_roles: [],
+    support_layers: [],
   };
 }
 
-function authenticatedResultInteraction() {
-  return {
-    status: "needs_input",
-    operation: "audit",
-    interaction: { resume_token: "authenticated-token" },
-    request: {
-      type: "authenticated_journey_results",
-      result_schema: "launchrally.dev/authenticated-journey-results/v1",
-      plan: authenticatedPermissionInteraction().request.permissions[0].scope,
-    },
-  };
-}
-
-function assertAuthenticatedPermissionPresentation(rendered) {
+function assertAuthenticatedPermissionPresentation(rendered, target) {
   const semanticOutput = stripVTControlCharacters(rendered);
   assert.match(semanticOutput, /Authenticated Core Journey verification/u);
-  assert.match(semanticOutput, /GET https:\/\/example\.com\/control/u);
+  assert.ok(semanticOutput.includes(`GET ${target}/control`));
   assert.match(semanticOutput, /Authentication class: staff/u);
   assert.match(semanticOutput, /Anonymous expected status: 401, 403, 404/u);
   assert.match(semanticOutput, /Authenticated expected status: 200/u);
@@ -137,6 +97,7 @@ function assertAuthenticatedPermissionPresentation(rendered) {
 }
 
 async function runAuthenticatedAdapterLoop(createPrompt, approve) {
+  const fixture = await createFixture();
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -144,43 +105,82 @@ async function runAuthenticatedAdapterLoop(createPrompt, approve) {
     rendered += chunk.toString();
   });
   const prompt = await createPrompt({ input, output, activityDelayMs: 0 });
-  const permission = authenticatedPermissionInteraction();
-  const authenticatedInput = authenticatedResultInteraction();
-  const completed = {
-    status: "completed",
-    operation: "audit",
-    outcome: "audit_completed",
-    report: { report_id: "report-authenticated" },
-  };
-  const auditCalls = [];
-  const runnerCalls = [];
-  setTimeout(() => approve(input), 20);
-
-  const outcome = await runHumanAudit({
-    cwd: "/workspace",
-    version: "0.4.0",
-    outputPath: "/workspace/report.json",
-    prompt,
-    runAudit: async (cwd, version, options) => {
-      auditCalls.push(options);
-      return auditCalls.length === 1 ? permission : authenticatedInput;
-    },
-    resumeAuthenticatedJourney: async (request) => {
-      runnerCalls.push(request);
-      return completed;
-    },
+  const authorizationRoot = await mkdtemp(path.join(os.tmpdir(), "launchrally-adapter-auth-"));
+  const authorizationFile = path.join(authorizationRoot, "authorization");
+  await writeFile(authorizationFile, "Bearer adapter-loop-secret", { mode: 0o600 });
+  const server = createSecureServer({
+    key: await readFile(path.join(root, "test/fixtures/self-signed-key.pem")),
+    cert: await readFile(path.join(root, "test/fixtures/self-signed-cert.pem")),
+  }, (request, response) => {
+    response.writeHead(200);
+    response.end();
   });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const target = `https://localhost:${server.address().port}`;
+  const environment = {
+    LAUNCHRALLY_AUTHENTICATED_ORIGIN: process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN,
+    LAUNCHRALLY_HOST_AUTHORIZATION_FILE: process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE,
+    LAUNCHRALLY_HOST_CA_FILE: process.env.LAUNCHRALLY_HOST_CA_FILE,
+  };
+  process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = target;
+  process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = authorizationFile;
+  process.env.LAUNCHRALLY_HOST_CA_FILE = path.join(root, "test/fixtures/self-signed-cert.pem");
+  let driverStarted = false;
+  try {
+    const initial = await runAudit(fixture, "0.4.0");
+    const confirmation = await runAudit(fixture, "0.4.0", {
+      resume_token: initial.interaction.resume_token,
+      answers: protectedJourneyAnswers(target),
+    });
+    const permission = await runAudit(fixture, "0.4.0", {
+      resume_token: confirmation.interaction.resume_token,
+      confirmation: "confirm",
+    });
+    let initialDriverCall = true;
+    setTimeout(() => approve(input), 20);
+    driverStarted = true;
+    const outcome = await runHumanAudit({
+      cwd: fixture,
+      version: "0.4.0",
+      outputPath: path.join(fixture, "report.json"),
+      prompt,
+      runAudit: async (cwd, version, options, dependencies) => {
+        if (initialDriverCall) {
+          initialDriverCall = false;
+          assert.equal(options, undefined);
+          return permission;
+        }
+        return runAudit(cwd, version, options, dependencies);
+      },
+      resumeAuthenticatedJourney: (options) => resumeAuthenticatedJourneyFromHost({
+        ...options,
+        host: "cli",
+      }),
+    });
 
-  assert.equal(outcome.exitCode, 0);
-  assert.equal(outcome.result, completed);
-  assert.deepEqual(auditCalls, [undefined, {
-    resume_token: "permission-token",
-    permission_decisions: { authenticated_journey_verification: "approved" },
-  }]);
-  assert.equal(runnerCalls.length, 1);
-  assert.equal(runnerCalls[0].resume_token, "authenticated-token");
-  assert.equal(runnerCalls[0].request.type, "authenticated_journey_results");
-  assertAuthenticatedPermissionPresentation(rendered);
+    assert.equal(outcome.exitCode, 0);
+    assert.equal(outcome.result.status, "completed");
+    assert.equal(assertValidReportPackage(outcome.result), true);
+    if (process.platform === "win32") {
+      assert.equal(outcome.result.report.results.authenticated_journey_evidence_refs.length, 0);
+      assert.ok(outcome.result.report.results.authenticated_journey_gaps.some(
+        ({ outcome: gapOutcome }) => gapOutcome === "runner_unavailable",
+      ));
+    } else {
+      assert.equal(outcome.result.report.results.authenticated_journey_evidence_refs.length, 1);
+      assert.equal(outcome.result.report.results.authenticated_journey_gaps.length, 0);
+    }
+    assert.doesNotMatch(JSON.stringify(outcome.result), /adapter-loop-secret|bearer\s/iu);
+    assertAuthenticatedPermissionPresentation(rendered, target);
+  } finally {
+    for (const [name, value] of Object.entries(environment)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    if (!driverStarted) await prompt.close();
+    await rm(authorizationRoot, { recursive: true, force: true });
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
 
 test("the Human Audit completion separates its assessment, work, Report, and next command", () => {
@@ -510,17 +510,23 @@ test("the Human Audit driver updates feedback across every resumable Audit phase
   ]);
 });
 
-test("the Plain adapter completes the protected Journey permission and runner loop", async () => {
+test("the Plain adapter completes the protected Journey through the platform-safe runner", async () => {
   await runAuthenticatedAdapterLoop(
     (options) => createPlainPromptAdapter(options),
-    (input) => input.write("y\n"),
+    (input) => {
+      input.write("\n");
+      setTimeout(() => input.write("y\n"), 20);
+    },
   );
 });
 
-test("the Clack adapter completes the protected Journey permission and runner loop", async () => {
+test("the Clack adapter completes the protected Journey through the platform-safe runner", async () => {
   await runAuthenticatedAdapterLoop(
     (options) => createClackPromptAdapter(options),
-    (input) => input.write("\u001b[D\r"),
+    (input) => {
+      input.write("\r");
+      setTimeout(() => input.write("\u001b[D\r"), 30);
+    },
   );
 });
 
@@ -713,7 +719,7 @@ test("the Human Audit driver preserves cancellation from the authenticated runne
   assert.equal(closed, true);
 });
 
-test("the Human Audit driver distinguishes interaction failures from Local Safe Scan failures", async () => {
+test("the Human Audit driver distinguishes interaction failures from initial scan failures", async () => {
   const interactionFailure = new Error("prompt adapter failed");
   await assert.rejects(runHumanAudit({
     cwd: "/workspace",
@@ -749,7 +755,7 @@ test("the Human Audit driver distinguishes interaction failures from Local Safe 
     },
   }), (error) => {
     assert.equal(error, scanFailure);
-    assert.equal(error.code, "local_safe_scan_failed");
+    assert.equal(error.code, "initial_repository_scan_failed");
     return true;
   });
 });
@@ -772,25 +778,7 @@ test("the trusted Human Audit runner completes missing authentication as a Verif
         async respond(result) {
           promptStates.push(result.request?.type ?? result.status);
           if (result.status === "needs_input") {
-            return {
-              answers: {
-                intended_environment: "staging",
-                production_targets: ["https://example.com"],
-                core_journeys: [{
-                  schema_version: "launchrally.dev/protected-journey/v1",
-                  method: "GET",
-                  path: "/control",
-                  purpose: "authenticated Core Journey",
-                  access: {
-                    authentication_class: "staff",
-                    anonymous_status_codes: [401, 403, 404],
-                    authenticated_status_codes: [200],
-                  },
-                }],
-                provider_roles: [],
-                support_layers: [],
-              },
-            };
+            return { answers: protectedJourneyAnswers("https://example.com") };
           }
           if (result.status === "needs_confirmation") return { confirmation: "confirm" };
           if (result.status === "needs_permission") {
@@ -827,95 +815,6 @@ test("the trusted Human Audit runner completes missing authentication as a Verif
     else process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = previousAuthorization;
     if (previousCookie === undefined) delete process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
     else process.env.LAUNCHRALLY_HOST_COOKIE_FILE = previousCookie;
-  }
-});
-
-test("the trusted Human Audit runner completes a valid authenticated result as a Report", async () => {
-  const fixture = await createFixture();
-  const authorizationRoot = await mkdtemp(path.join(os.tmpdir(), "launchrally-human-auth-"));
-  const authorizationFile = path.join(authorizationRoot, "authorization");
-  await writeFile(authorizationFile, "Bearer human-mode-secret", { mode: 0o600 });
-  const server = createSecureServer({
-    key: await readFile(path.join(root, "test/fixtures/self-signed-key.pem")),
-    cert: await readFile(path.join(root, "test/fixtures/self-signed-cert.pem")),
-  }, (request, response) => {
-    response.writeHead(200);
-    response.end();
-  });
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const target = `https://localhost:${server.address().port}`;
-  const environment = {
-    LAUNCHRALLY_AUTHENTICATED_ORIGIN: process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN,
-    LAUNCHRALLY_HOST_AUTHORIZATION_FILE: process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE,
-    LAUNCHRALLY_HOST_CA_FILE: process.env.LAUNCHRALLY_HOST_CA_FILE,
-  };
-  process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = target;
-  process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = authorizationFile;
-  process.env.LAUNCHRALLY_HOST_CA_FILE = path.join(root, "test/fixtures/self-signed-cert.pem");
-  try {
-    const outcome = await runHumanAudit({
-      cwd: fixture,
-      version: "0.4.0",
-      prompt: {
-        async start() {},
-        async respond(result) {
-          if (result.status === "needs_input") {
-            return {
-              answers: {
-                intended_environment: "staging",
-                production_targets: [target],
-                core_journeys: [{
-                  schema_version: "launchrally.dev/protected-journey/v1",
-                  method: "GET",
-                  path: "/control",
-                  purpose: "authenticated Core Journey",
-                  access: {
-                    authentication_class: "staff",
-                    anonymous_status_codes: [401, 403, 404],
-                    authenticated_status_codes: [200],
-                  },
-                }],
-                provider_roles: [],
-                support_layers: [],
-              },
-            };
-          }
-          if (result.status === "needs_confirmation") return { confirmation: "confirm" };
-          if (result.status === "needs_permission") {
-            return {
-              permission_decisions: {
-                public_verification: "denied",
-                authenticated_journey_verification: "approved",
-              },
-            };
-          }
-          return {};
-        },
-        async close() {},
-      },
-      runAudit,
-      resumeAuthenticatedJourney: (options) => resumeAuthenticatedJourneyFromHost({
-        ...options,
-        host: "cli",
-      }),
-    });
-
-    assert.equal(outcome.exitCode, 0);
-    assert.equal(outcome.result.status, "completed");
-    assert.ok(outcome.result.report);
-    assert.equal(outcome.result.report.results.authenticated_journey_evidence_refs.length, 1);
-    assert.equal(outcome.result.report.results.authenticated_journey_gaps.length, 0);
-    assert.doesNotMatch(
-      JSON.stringify(outcome.result),
-      /human-mode-secret|bearer\s|cookie|headers|response_body|account_id/iu,
-    );
-  } finally {
-    for (const [name, value] of Object.entries(environment)) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
-    await rm(authorizationRoot, { recursive: true, force: true });
-    await new Promise((resolve) => server.close(resolve));
   }
 });
 

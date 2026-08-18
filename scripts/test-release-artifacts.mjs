@@ -902,7 +902,7 @@ async function runInstallationJourneys({
     ...process.env,
     PATH: [npmStub, path.dirname(launcher), process.env.PATH ?? ""].join(path.delimiter),
   };
-  const exercisePackedHumanAuthenticatedJourney = async () => {
+  const exercisePackedHumanAuthenticatedJourneyPlatformBoundary = async () => {
     const humanRepository = path.join(temporaryRoot, "packed human authenticated journey");
     await cp(
       path.join(root, "fixtures", "coverage", "typescript-astro"),
@@ -1065,7 +1065,7 @@ async function runInstallationJourneys({
       await new Promise((resolve) => server.close(resolve));
     }
   };
-  await exercisePackedHumanAuthenticatedJourney();
+  await exercisePackedHumanAuthenticatedJourneyPlatformBoundary();
   const runProtectedSkillJourney = async (skillJourney, host) => {
     assertEqual(
       skillJourney.protected_journeys,
@@ -2727,6 +2727,9 @@ async function runInstallationJourneys({
       full_journey: "plan_handoff_verify_completed",
       packaged_skill_fixtures: "codex_and_claude_executed",
       protected_journeys: "codex_and_claude_audit_verify_normalized",
+      human_authenticated_journey: process.platform === "win32"
+        ? "typed_runner_unavailable_restricted_file_boundary"
+        : "normalized_success_without_sensitive_persistence",
       launcher_removal: "project_data_preserved",
       fixture_invocations: fixtureInvocations,
     },
