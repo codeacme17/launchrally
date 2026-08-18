@@ -186,7 +186,7 @@
       "required": ["journey_id", "target", "method", "purpose", "authentication_class", "expected_status_codes", "result"],
       "properties": {
         "journey_id": { "type": "string", "minLength": 1 },
-        "target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+/(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2})(?:/(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2}))*$" },
+        "target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+/(?:[a-z]+|v[1-9][0-9]{0,2})(?:/(?:[a-z]+|v[1-9][0-9]{0,2}))*$" },
         "method": { "const": "GET" },
         "purpose": { "const": "authenticated Core Journey" },
         "authentication_class": { "enum": ["user", "staff", "signed_token"] },

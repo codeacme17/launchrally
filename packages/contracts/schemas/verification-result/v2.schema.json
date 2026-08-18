@@ -380,7 +380,7 @@
       "properties": {
         "kind": { "const": "authenticated_journey_observation" },
         "journey_id": { "type": "string", "pattern": "^target-[1-9][0-9]*:journey-[1-9][0-9]*:authenticated$" },
-        "target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+/(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2})(?:/(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2}))*$" },
+        "target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+/(?:[a-z]+|v[1-9][0-9]{0,2})(?:/(?:[a-z]+|v[1-9][0-9]{0,2}))*$" },
         "method": { "const": "GET" },
         "purpose": { "const": "authenticated Core Journey" },
         "authentication_class": { "enum": ["user", "staff", "signed_token"] },
@@ -393,7 +393,7 @@
           "required": ["collector", "exact_target", "collected_at"],
           "properties": {
             "collector": { "const": "host-agent-authenticated-journey/v1" },
-            "exact_target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+/(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2})(?:/(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2}))*$" },
+            "exact_target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+/(?:[a-z]+|v[1-9][0-9]{0,2})(?:/(?:[a-z]+|v[1-9][0-9]{0,2}))*$" },
             "collected_at": { "type": "string", "format": "date-time" }
           },
           "additionalProperties": false

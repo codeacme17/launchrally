@@ -776,7 +776,7 @@ test("the Plain adapter explains why a parameterized candidate cannot be protect
   assert.deepEqual(response.answers.core_journeys, []);
   assert.match(
     rendered,
-    /protected access requires an exact non-root static path without parameters, traversal, encoding, query, or fragment/u,
+    /protected access requires an exact non-root static path without identifier-like or dynamic segments, traversal, encoding, query, or fragment/u,
   );
   assert.doesNotMatch(rendered, /User — anonymous expect/u);
 });

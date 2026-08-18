@@ -134,7 +134,7 @@
       "properties": {
         "schema_version": { "const": "launchrally.dev/protected-journey/v1" },
         "purpose": { "const": "authenticated Core Journey" },
-        "path": { "type": "string", "pattern": "^/(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2})(?:/(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2}))*$" },
+        "path": { "type": "string", "pattern": "^/(?:[a-z]+|v[1-9][0-9]{0,2})(?:/(?:[a-z]+|v[1-9][0-9]{0,2}))*$" },
         "method": { "const": "GET" },
         "access": {
           "type": "object",
@@ -184,7 +184,7 @@
             "required": ["journey_id", "target", "method", "purpose", "authentication_class", "expected_status_codes"],
             "properties": {
               "journey_id": { "type": "string", "pattern": "^target-[1-9][0-9]*:journey-[1-9][0-9]*:authenticated$" },
-              "target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+/(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2})(?:/(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2}))*$" },
+              "target": { "type": "string", "format": "uri", "pattern": "^https://[^@/?#]+/(?:[a-z]+|v[1-9][0-9]{0,2})(?:/(?:[a-z]+|v[1-9][0-9]{0,2}))*$" },
               "method": { "const": "GET" },
               "purpose": { "const": "authenticated Core Journey" },
               "authentication_class": { "enum": ["user", "staff", "signed_token"] },

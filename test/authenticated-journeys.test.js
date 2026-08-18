@@ -163,6 +163,7 @@ test("protected journey declarations reject personal identifiers before persiste
     { path: "/users/alice@example.com", purpose: "account loads" },
     { path: "/account-12345", purpose: "account loads" },
     { path: "/orders/12345678", purpose: "order loads" },
+    { path: "/patients/john-smith", purpose: "authenticated Core Journey" },
     { path: "/", purpose: "account loads" },
     { path: "/account/", purpose: "account loads" },
   ]) {

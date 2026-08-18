@@ -11,6 +11,7 @@ import {
   CLI_INTERACTION_CONTRACT,
   INIT_INTERACTION_SCHEMA,
   MANIFEST_SCHEMA,
+  PROTECTED_JOURNEY_PATH_SEGMENTS,
   PROTECTED_JOURNEY_PATH_PATTERN,
   REPORT_SCHEMA,
   assertValidCliInteraction,
@@ -403,7 +404,6 @@ test("public v2 records persist static protected paths and reject PII-bearing de
 
   const piiJourney = {
     ...validProtected,
-    purpose: "John Smith patient profile loads",
     path: "/patients/john-smith",
   };
   const invalidManifest = structuredClone(manifest);
@@ -470,6 +470,16 @@ test("persisted protected Journey schemas share the static-path safety boundary"
       .properties.exact_target.pattern,
     AUTHENTICATED_JOURNEY_TARGET_PATTERN,
   );
+});
+
+test("the legacy protected Journey segment export remains available for compatibility", () => {
+  assert.deepEqual(PROTECTED_JOURNEY_PATH_SEGMENTS, [
+    "account", "accounts", "admin", "api", "app", "authorize", "billing", "checkout",
+    "control", "dashboard", "files", "guardian", "health", "home", "inbox", "me",
+    "orders", "organization", "organizations", "portal", "private", "profile",
+    "protected", "session", "settings", "staff", "status", "team", "teams",
+    "uploads", "user", "users", "v1", "v2", "v3", "workspace", "workspaces",
+  ]);
 });
 
 test("CLI help classifies providers as a supporting advisory operation", async () => {

@@ -460,7 +460,7 @@ const EXCLUDE_JOURNEY_ACCESS_CHOICE = Object.freeze({
   value: "exclude",
 });
 const PROTECTED_PATH_SAFETY_GUIDANCE =
-  "protected access requires an exact non-root static path without parameters, traversal, encoding, query, or fragment";
+  "protected access requires an exact non-root static path without identifier-like or dynamic segments, traversal, encoding, query, or fragment";
 
 function classifiedJourney(journey, accessClass) {
   if (accessClass === "exclude") return null;
@@ -865,6 +865,11 @@ export async function createClackPromptAdapter({
       ? { validate: (value) => fieldInputError(field, value) }
       : {}),
   }), clack, output);
+  const selectJourneyAccess = async (message, choices) => cancelled(await clack.select({
+    ...common,
+    message,
+    options: choices,
+  }), clack, output);
   const selectField = async (field) => {
     const customValue = "__launchrally_custom_value__";
     const skipValue = "__launchrally_skip_value__";
@@ -875,11 +880,7 @@ export async function createClackPromptAdapter({
     if (field.field_id === "core_journeys") {
       const classification = await classifyDetectedJourneys(
         field,
-        async (message, choices) => cancelled(await clack.select({
-          ...common,
-          message,
-          options: choices,
-        }), clack, output),
+        selectJourneyAccess,
       );
       if (classification) {
         const retained = retainedCurrentJourneys(field, classification.detected);
@@ -905,14 +906,7 @@ export async function createClackPromptAdapter({
         return [
           ...classification.classified,
           ...retained,
-          ...await classifyExplicitJourneys(
-            custom,
-            async (message, choices) => cancelled(await clack.select({
-              ...common,
-              message,
-              options: choices,
-            }), clack, output),
-          ),
+          ...await classifyExplicitJourneys(custom, selectJourneyAccess),
         ];
       }
     }
@@ -965,14 +959,7 @@ export async function createClackPromptAdapter({
       return field.field_id === "core_journeys"
         ? [
             ...resolution.values,
-            ...await classifyExplicitJourneys(
-              custom,
-              async (message, choices) => cancelled(await clack.select({
-                ...common,
-                message,
-                options: choices,
-              }), clack, output),
-            ),
+            ...await classifyExplicitJourneys(custom, selectJourneyAccess),
           ]
         : [...resolution.values, ...custom];
     }

@@ -280,6 +280,20 @@ test("authenticated Journey success and failure are normative Phase 1 Machine Ev
     },
   };
   assert.equal(assertValidAuthenticatedJourneyEvidence(applicationSpecificJourney), true);
+  for (const historicalTarget of [
+    "https://EXAMPLE.com/control",
+    "https://example.com:443/control",
+  ]) {
+    const historicalAuthoritySpelling = {
+      ...structuredClone(success),
+      target: historicalTarget,
+      provenance: {
+        ...success.provenance,
+        exact_target: historicalTarget,
+      },
+    };
+    assert.equal(assertValidAuthenticatedJourneyEvidence(historicalAuthoritySpelling), true);
+  }
   assert.throws(
     () => assertValidAuthenticatedJourneyEvidence({
       ...failure,
@@ -336,7 +350,7 @@ test("authenticated Journey success and failure are normative Phase 1 Machine Ev
     {
       ...failure,
       target: "https://example.com/patients/john-smith",
-      purpose: "John Smith patient profile loads",
+      purpose: "authenticated Core Journey",
       provenance: {
         ...failure.provenance,
         exact_target: "https://example.com/patients/john-smith",
@@ -360,18 +374,10 @@ test("authenticated Journey success and failure are normative Phase 1 Machine Ev
     },
     {
       ...failure,
-      target: "https://EXAMPLE.com/control",
+      target: "https://example.com\\evil/control",
       provenance: {
         ...failure.provenance,
-        exact_target: "https://EXAMPLE.com/control",
-      },
-    },
-    {
-      ...failure,
-      target: "https://example.com:443/control",
-      provenance: {
-        ...failure.provenance,
-        exact_target: "https://example.com:443/control",
+        exact_target: "https://example.com\\evil/control",
       },
     },
   ]) {
