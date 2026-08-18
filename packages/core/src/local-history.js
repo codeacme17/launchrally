@@ -189,7 +189,9 @@ function repositoryRelativePath(root, selectedPath) {
 }
 
 export function isLocalHistoryReference(root, selectedPath) {
-  return repositoryRelativePath(root, selectedPath)?.startsWith(".launchrally/") ?? false;
+  const relativePath = repositoryRelativePath(root, selectedPath);
+  return REPORT_RECORD_PATH.test(relativePath ?? "")
+    || relativePath === ".launchrally/cache/current-report.json";
 }
 
 async function assertNoSymlink(root, relativePath) {

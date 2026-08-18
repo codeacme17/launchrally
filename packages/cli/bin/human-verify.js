@@ -82,7 +82,7 @@ export function renderHumanVerify(value, {
     `Manifest Drift: ${value.manifest_drift.length}`,
     "",
     styledText("Manifest Source Report", "1", styled),
-    value.history.source_report_id,
+    value.interaction?.source_report?.report_id ?? value.history.source_report_id,
   );
   if (targeted || !value.report || !value.history.current_report_id) {
     return lines.join("\n");

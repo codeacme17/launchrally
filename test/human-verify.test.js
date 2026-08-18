@@ -23,8 +23,14 @@ function completedVerification() {
     assessment: "no_go",
     manifest_drift: [],
     history: {
-      source_report_id: "report_source",
+      source_report_id: "report_supplied_current",
       current_report_id: "report_current",
+    },
+    interaction: {
+      source_report: {
+        report_id: "report_source",
+        role: "manifest_source",
+      },
     },
     report: {
       results: {
