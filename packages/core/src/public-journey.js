@@ -1,12 +1,12 @@
 import {
-  PROTECTED_JOURNEY_PATH_SEGMENTS,
+  PROTECTED_JOURNEY_PATH_PATTERN,
   PROTECTED_JOURNEY_SCHEMA,
 } from "@launchrally/contracts";
 
 const DECLARED_JOURNEY = /^([a-z]+)\s+(\/\S*)(?:\s+(?:—|-)\s+(.+))?$/iu;
 const AUTHENTICATION_CLASSES = new Set(["user", "staff", "signed_token"]);
 const PROTECTED_JOURNEY_PURPOSE = "authenticated Core Journey";
-const SAFE_PROTECTED_PATH_SEGMENTS = new Set(PROTECTED_JOURNEY_PATH_SEGMENTS);
+const SAFE_PROTECTED_JOURNEY_PATH = new RegExp(PROTECTED_JOURNEY_PATH_PATTERN, "u");
 
 function exactKeys(value, expected) {
   return value
@@ -70,14 +70,7 @@ function parseProtectedJourney(input) {
 }
 
 function safeProtectedJourneyPath(value) {
-  if (
-    !safeJourneyPath(value)
-    || value === "/"
-    || value.endsWith("/")
-    || value.includes("%")
-  ) return false;
-  return value.split("/").filter(Boolean).every((segment) =>
-    SAFE_PROTECTED_PATH_SEGMENTS.has(segment));
+  return SAFE_PROTECTED_JOURNEY_PATH.test(value);
 }
 
 function safeJourneyPath(journeyPath) {

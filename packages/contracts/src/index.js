@@ -290,16 +290,12 @@ function hasPersistedSensitivePayload(value) {
 }
 
 const SECRET_VALUE_PATTERN = /(?:\bsk_(?:live|test)_[A-Za-z0-9]{16,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|https?:\/\/[^\s/@:]+:[^\s/@]+@)/u;
-export const PROTECTED_JOURNEY_PATH_SEGMENTS = Object.freeze([
-  "account", "accounts", "admin", "api", "app", "authorize", "billing", "checkout",
-  "control", "dashboard", "files", "guardian", "health", "home", "inbox", "me",
-  "orders", "organization", "organizations", "portal", "private", "profile",
-  "protected", "session", "settings", "staff", "status", "team", "teams",
-  "uploads", "user", "users", "v1", "v2", "v3", "workspace", "workspaces",
-]);
-const AUTHENTICATED_JOURNEY_PATH_SEGMENT_PATTERN = PROTECTED_JOURNEY_PATH_SEGMENTS.join("|");
-const AUTHENTICATED_JOURNEY_TARGET_PATTERN = new RegExp(
-  `^https:\\/\\/[^@/?#]+\\/(?:${AUTHENTICATED_JOURNEY_PATH_SEGMENT_PATTERN})(?:\\/(?:${AUTHENTICATED_JOURNEY_PATH_SEGMENT_PATTERN}))*$`,
+const STATIC_JOURNEY_PATH_SEGMENT_PATTERN = "(?:[a-z]+(?:[-_][a-z]+)*|v[1-9][0-9]{0,2})";
+export const PROTECTED_JOURNEY_PATH_PATTERN = `^/${STATIC_JOURNEY_PATH_SEGMENT_PATTERN}(?:/${STATIC_JOURNEY_PATH_SEGMENT_PATTERN})*$`;
+export const AUTHENTICATED_JOURNEY_TARGET_PATTERN =
+  `^https://[^@/?#]+${PROTECTED_JOURNEY_PATH_PATTERN.slice(1)}`;
+const SAFE_AUTHENTICATED_JOURNEY_TARGET = new RegExp(
+  AUTHENTICATED_JOURNEY_TARGET_PATTERN,
   "u",
 );
 
@@ -330,11 +326,12 @@ function safeEvidenceTarget(value) {
   try {
     const target = new URL(value);
     return target.protocol === "https:"
+      && target.href === value
       && !target.username
       && !target.password
       && !target.search
       && !target.hash
-      && AUTHENTICATED_JOURNEY_TARGET_PATTERN.test(value);
+      && SAFE_AUTHENTICATED_JOURNEY_TARGET.test(value);
   } catch {
     return false;
   }

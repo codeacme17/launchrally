@@ -459,6 +459,8 @@ const EXCLUDE_JOURNEY_ACCESS_CHOICE = Object.freeze({
   label: "Exclude — do not verify this route",
   value: "exclude",
 });
+const PROTECTED_PATH_SAFETY_GUIDANCE =
+  "protected access requires an exact non-root static path without parameters, traversal, encoding, query, or fragment";
 
 function classifiedJourney(journey, accessClass) {
   if (accessClass === "exclude") return null;
@@ -488,21 +490,36 @@ function journeyAccessChoices(journey) {
   ];
 }
 
-async function classifyDetectedJourneys(field, selectAccess) {
-  const detected = fieldOptions(field).filter((option) => option.detected);
-  if (detected.length === 0) return null;
+async function classifyJourneyOptions(options, selectAccess, source) {
   const classified = [];
-  for (const option of detected) {
+  for (const option of options) {
     const choices = journeyAccessChoices(option.value);
     const protectedSupported = choices.length > 2;
     const accessClass = await selectAccess(
-      `Route discovery does not establish access. Classify ${journeyLabel(option.value)} (classification required${protectedSupported ? "" : "; protected access is unsupported for this path"})`,
+      `${source} does not establish access. Classify ${journeyLabel(option.value)} (classification required${protectedSupported ? "" : `; ${PROTECTED_PATH_SAFETY_GUIDANCE}`})`,
       choices,
     );
     const journey = classifiedJourney(option.value, accessClass);
     if (journey) classified.push(journey);
   }
-  return { classified, detected: detected.map((option) => option.value) };
+  return classified;
+}
+
+async function classifyDetectedJourneys(field, selectAccess) {
+  const detected = fieldOptions(field).filter((option) => option.detected);
+  if (detected.length === 0) return null;
+  return {
+    classified: await classifyJourneyOptions(detected, selectAccess, "Route discovery"),
+    detected: detected.map((option) => option.value),
+  };
+}
+
+function classifyExplicitJourneys(journeys, selectAccess) {
+  return classifyJourneyOptions(
+    journeys.map((value) => ({ value })),
+    selectAccess,
+    "Explicitly supplied route",
+  );
 }
 
 function retainedCurrentJourneys(field, detected) {
@@ -649,7 +666,11 @@ export function createPlainPromptAdapter({
           const error = fieldInputError({ ...field, required: true }, raw);
           const custom = parseFieldValue(field, raw);
           if (!error && !emptyFieldValue(custom)) {
-            return [...classification.classified, ...retained, ...custom];
+            return [
+              ...classification.classified,
+              ...retained,
+              ...await classifyExplicitJourneys(custom, choose),
+            ];
           }
           write(output, error ?? "Enter at least one custom value.");
         }
@@ -697,7 +718,9 @@ export function createPlainPromptAdapter({
         const error = fieldInputError({ ...field, required: true }, raw);
         const custom = parseFieldValue(field, raw);
         if (!error && !emptyFieldValue(custom)) {
-          return [...resolution.values, ...custom];
+          return field.field_id === "core_journeys"
+            ? [...resolution.values, ...await classifyExplicitJourneys(custom, choose)]
+            : [...resolution.values, ...custom];
         }
         write(output, error ?? "Enter at least one custom value.");
       }
@@ -879,7 +902,18 @@ export async function createClackPromptAdapter({
           required: true,
         });
         const custom = parseFieldValue(field, raw);
-        return [...classification.classified, ...retained, ...custom];
+        return [
+          ...classification.classified,
+          ...retained,
+          ...await classifyExplicitJourneys(
+            custom,
+            async (message, choices) => cancelled(await clack.select({
+              ...common,
+              message,
+              options: choices,
+            }), clack, output),
+          ),
+        ];
       }
     }
     if (!field.value_type.endsWith("_array")) {
@@ -928,7 +962,19 @@ export async function createClackPromptAdapter({
         required: true,
       });
       const custom = parseFieldValue(field, raw);
-      return [...resolution.values, ...custom];
+      return field.field_id === "core_journeys"
+        ? [
+            ...resolution.values,
+            ...await classifyExplicitJourneys(
+              custom,
+              async (message, choices) => cancelled(await clack.select({
+                ...common,
+                message,
+                options: choices,
+              }), clack, output),
+            ),
+          ]
+        : [...resolution.values, ...custom];
     }
   };
 

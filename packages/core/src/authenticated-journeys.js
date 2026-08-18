@@ -13,6 +13,8 @@ import {
   PROTECTED_JOURNEY_SCHEMA,
 } from "@launchrally/contracts";
 
+import { parsePublicJourneyInput } from "./public-journey.js";
+
 export { AUTHENTICATED_JOURNEY_RESULTS_SCHEMA };
 export const AUTHENTICATED_JOURNEY_OUTCOMES = Object.freeze([
   "completed",
@@ -121,13 +123,25 @@ export function createAuthenticatedJourneyPlan(answers) {
     const origin = new URL(target).origin;
     journeys.forEach((journey, journeyIndex) => {
       if (!isProtectedJourney(journey)) return;
+      const parsed = parsePublicJourneyInput(journey, { allowDescription: false });
+      if (parsed.error) return;
+      const protectedJourney = parsed.value;
+      const exactTarget = new URL(protectedJourney.path, origin);
+      if (
+        exactTarget.origin !== origin
+        || exactTarget.pathname !== protectedJourney.path
+        || exactTarget.search
+        || exactTarget.hash
+      ) return;
       protectedJourneys.push({
         journey_id: `target-${targetIndex + 1}:journey-${journeyIndex + 1}:authenticated`,
-        target: new URL(journey.path, origin).toString(),
-        method: journey.method,
-        purpose: journey.purpose,
-        authentication_class: journey.access.authentication_class,
-        expected_status_codes: structuredClone(journey.access.authenticated_status_codes),
+        target: exactTarget.toString(),
+        method: protectedJourney.method,
+        purpose: protectedJourney.purpose,
+        authentication_class: protectedJourney.access.authentication_class,
+        expected_status_codes: structuredClone(
+          protectedJourney.access.authenticated_status_codes,
+        ),
       });
     });
   });

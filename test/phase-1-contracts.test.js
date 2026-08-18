@@ -271,6 +271,15 @@ test("authenticated Journey success and failure are normative Phase 1 Machine Ev
     },
   };
   assert.equal(assertValidAuthenticatedJourneyEvidence(signedTokenJourney), true);
+  const applicationSpecificJourney = {
+    ...structuredClone(success),
+    target: "https://example.com/me/notifications/settings",
+    provenance: {
+      ...success.provenance,
+      exact_target: "https://example.com/me/notifications/settings",
+    },
+  };
+  assert.equal(assertValidAuthenticatedJourneyEvidence(applicationSpecificJourney), true);
   assert.throws(
     () => assertValidAuthenticatedJourneyEvidence({
       ...failure,
@@ -339,6 +348,30 @@ test("authenticated Journey success and failure are normative Phase 1 Machine Ev
       provenance: {
         ...failure.provenance,
         exact_target: "https://example.com/account%2D12345",
+      },
+    },
+    {
+      ...failure,
+      target: "https://example.com/control/../moderation",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://example.com/control/../moderation",
+      },
+    },
+    {
+      ...failure,
+      target: "https://EXAMPLE.com/control",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://EXAMPLE.com/control",
+      },
+    },
+    {
+      ...failure,
+      target: "https://example.com:443/control",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://example.com:443/control",
       },
     },
   ]) {

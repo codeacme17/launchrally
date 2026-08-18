@@ -135,6 +135,29 @@ test("protected journeys may omit an anonymous boundary assertion", () => {
   assert.equal(parsed.value.purpose, "authenticated Core Journey");
 });
 
+test("protected journeys accept application-specific static path segments", () => {
+  for (const journeyPath of [
+    "/control/moderation",
+    "/me/moderation",
+    "/me/notifications",
+    "/me/notifications/settings",
+  ]) {
+    const parsed = parsePublicJourneyInput({
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: journeyPath,
+      purpose: `${journeyPath} loads`,
+      access: {
+        authentication_class: "user",
+        authenticated_status_codes: [200],
+      },
+    });
+
+    assert.equal(parsed.value?.path, journeyPath);
+    assert.equal(parsed.value?.purpose, "authenticated Core Journey");
+  }
+});
+
 test("protected journey declarations reject personal identifiers before persistence", () => {
   for (const candidate of [
     { path: "/users/alice@example.com", purpose: "account loads" },
@@ -165,6 +188,72 @@ test("protected journey declarations reject personal identifiers before persiste
     },
   });
   assert.equal(normalized.value.purpose, "authenticated Core Journey");
+});
+
+test("protected journeys reject unsafe and parameterized targets", () => {
+  for (const [method, journeyPath] of [
+    ["POST", "/control/moderation"],
+    ["GET", "/"],
+    ["GET", "//example.com/control"],
+    ["GET", "/control/../moderation"],
+    ["GET", "/control\\moderation"],
+    ["GET", "/control/moderation?view=queue"],
+    ["GET", "/control/moderation#queue"],
+    ["GET", "/control/%6doderation"],
+    ["GET", "https://user:password@example.com/control"],
+    ["GET", "https://other.example/control"],
+    ["GET", "/users/:id"],
+    ["GET", "/users/[id]"],
+    ["GET", "/users/{id}"],
+    ["GET", "/users/*"],
+  ]) {
+    const parsed = parsePublicJourneyInput({
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method,
+      path: journeyPath,
+      purpose: "account loads",
+      access: {
+        authentication_class: "user",
+        authenticated_status_codes: [200],
+      },
+    });
+
+    assert.equal(parsed.error, "invalid_protected_journey", `${method} ${journeyPath}`);
+  }
+});
+
+test("authenticated plans preserve only exact validated protected targets", () => {
+  const protectedJourney = {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/me/notifications/settings",
+    purpose: "notification settings load",
+    access: {
+      authentication_class: "user",
+      authenticated_status_codes: [200],
+    },
+  };
+  const plan = createAuthenticatedJourneyPlan({
+    production_targets: ["https://example.com"],
+    core_journeys: [protectedJourney],
+  });
+
+  assert.equal(plan.journeys[0].target, "https://example.com/me/notifications/settings");
+  for (const journeyPath of [
+    "//other.example/control",
+    "/control/../moderation",
+    "/control\\moderation",
+    "/control/moderation?view=queue",
+    "/control/moderation#queue",
+    "/control/%6doderation",
+    "/users/:id",
+  ]) {
+    const unsafePlan = createAuthenticatedJourneyPlan({
+      production_targets: ["https://example.com"],
+      core_journeys: [{ ...protectedJourney, path: journeyPath }],
+    });
+    assert.deepEqual(unsafePlan.journeys, [], journeyPath);
+  }
 });
 
 test("every caller-supplied authenticated outcome remains unsupported without the host runner", () => {

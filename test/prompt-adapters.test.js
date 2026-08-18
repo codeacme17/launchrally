@@ -441,7 +441,7 @@ test("the Plain adapter requires access classification for every detected route"
   });
   const prompt = createPlainPromptAdapter({ input, output });
 
-  ["2\n", "1\n", "2\n", "2\n", "1\n"].forEach((answer, index) => {
+  ["2\n", "1\n", "5\n", "5\n", "1\n"].forEach((answer, index) => {
     setTimeout(() => input.write(answer), 10 + (index * 20));
   });
   const response = await prompt.respond({
@@ -624,7 +624,7 @@ test("the Plain adapter can include public and exclude detected routes independe
   const prompt = createPlainPromptAdapter({ input, output });
 
   setTimeout(() => input.write("1\n"), 10);
-  setTimeout(() => input.write("2\n"), 30);
+  setTimeout(() => input.write("5\n"), 30);
   setTimeout(() => input.write("1\n"), 50);
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
@@ -650,7 +650,7 @@ test("the Plain adapter creates a protected classification for a detected route"
   const prompt = createPlainPromptAdapter({ input, output });
 
   setTimeout(() => input.write("3\n"), 10);
-  setTimeout(() => input.write("2\n"), 30);
+  setTimeout(() => input.write("5\n"), 30);
   setTimeout(() => input.write("1\n"), 50);
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
@@ -687,7 +687,7 @@ test("the Plain adapter permits explicitly excluding every detected route", asyn
   const prompt = createPlainPromptAdapter({ input, output });
 
   setTimeout(() => input.write("5\n"), 10);
-  setTimeout(() => input.write("2\n"), 30);
+  setTimeout(() => input.write("5\n"), 30);
   setTimeout(() => input.write("1\n"), 50);
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
@@ -712,7 +712,7 @@ test("the Plain adapter preserves current Journeys and retries Other with detect
     { method: "GET", path: "/pricing", purpose: "pricing loads" },
   ];
 
-  ["5\n", "2\n", "POST /admin\n", "GET /extra — extra loads\n"].forEach(
+  ["5\n", "2\n", "POST /admin\n", "GET /extra — extra loads\n", "1\n"].forEach(
     (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
   );
   const response = await prompt.respond(interaction);
@@ -726,7 +726,7 @@ test("the Plain adapter preserves current Journeys and retries Other with detect
   assert.match(rendered, /Use a safe GET Journey/u);
 });
 
-test("the Plain adapter does not offer unsupported protected access classes", async () => {
+test("the Plain adapter offers protected classification for application-specific static paths", async () => {
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -736,16 +736,80 @@ test("the Plain adapter does not offer unsupported protected access classes", as
   const prompt = createPlainPromptAdapter({ input, output });
 
   setTimeout(() => input.write("2\n"), 10);
-  setTimeout(() => input.write("3\n"), 30);
+  setTimeout(() => input.write("1\n"), 30);
   const response = await prompt.respond(journeyInput([
-    "GET /leaderboard — leaderboard page loads",
+    "GET /me/notifications/settings — notification settings page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response.answers.core_journeys, [{
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/me/notifications/settings",
+    purpose: "authenticated Core Journey",
+    access: {
+      authentication_class: "user",
+      anonymous_status_codes: [401, 403, 404],
+      authenticated_status_codes: [200],
+    },
+  }]);
+  assert.match(rendered, /User — anonymous expect/u);
+  assert.doesNotMatch(rendered, /unsupported/u);
+});
+
+test("the Plain adapter explains why a parameterized candidate cannot be protected", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("2\n"), 10);
+  setTimeout(() => input.write("1\n"), 30);
+  const response = await prompt.respond(journeyInput([
+    "GET /users/:id — user page loads",
   ]));
   await prompt.close();
 
   assert.deepEqual(response.answers.core_journeys, []);
-  assert.match(rendered, /protected access is unsupported for this path/u);
+  assert.match(
+    rendered,
+    /protected access requires an exact non-root static path without parameters, traversal, encoding, query, or fragment/u,
+  );
   assert.doesNotMatch(rendered, /User — anonymous expect/u);
-  assert.match(rendered, /Skip public Journey verification/u);
+});
+
+test("the Plain adapter classifies an explicitly supplied concrete path as protected", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  ["2\n", "2\n", "GET /users/profile — profile page loads\n", "2\n"].forEach(
+    (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
+  );
+  const response = await prompt.respond(journeyInput([
+    "GET /users/:id — user page loads",
+  ]));
+  await prompt.close();
+
+  assert.deepEqual(response.answers.core_journeys, [{
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: "GET",
+    path: "/users/profile",
+    purpose: "authenticated Core Journey",
+    access: {
+      authentication_class: "user",
+      anonymous_status_codes: [401, 403, 404],
+      authenticated_status_codes: [200],
+    },
+  }]);
+  assert.match(rendered, /Explicitly supplied route does not establish access/u);
 });
 
 test("the Plain adapter rejects unsafe custom Journeys before submitting to Core", async () => {
@@ -760,6 +824,7 @@ test("the Plain adapter rejects unsafe custom Journeys before submitting to Core
   setTimeout(() => input.write("2\n"), 10);
   setTimeout(() => input.write("POST /admin — destructive action\n"), 30);
   setTimeout(() => input.write("GET /checkout — checkout completes\n"), 50);
+  setTimeout(() => input.write("1\n"), 70);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -804,7 +869,7 @@ test("the Plain adapter accepts a safe GET path without requiring a purpose", as
 
   setTimeout(() => input.write("2\n"), 10);
   setTimeout(() => input.write("GET /\n"), 30);
-  setTimeout(() => input.write("GET /fallback — fallback loads\n"), 50);
+  setTimeout(() => input.write("1\n"), 50);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -1388,7 +1453,7 @@ test("the Clack adapter classifies detected routes without a bulk public action"
   const prompt = await createClackPromptAdapter({ input, output });
 
   setTimeout(() => input.write("\r"), 20);
-  setTimeout(() => input.write("\u001b[B\r"), 50);
+  setTimeout(() => input.write("\u001b[B\u001b[B\u001b[B\u001b[B\r"), 50);
   setTimeout(() => input.write("\r"), 80);
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
@@ -1448,6 +1513,7 @@ test("the Clack adapter accepts a safe GET path without requiring a purpose", as
 
   setTimeout(() => input.write("\u001b[B \r"), 20);
   setTimeout(() => input.write("GET /\r"), 60);
+  setTimeout(() => input.write("\r"), 100);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
