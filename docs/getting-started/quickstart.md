@@ -40,6 +40,8 @@ After obtaining a current full Report, continue with the [Phase 1 Agent and Huma
 
 Init makes the saved Manifest-bound Audit Report historical. Follow the typed `needs_refresh` response with a full Verify, use the new current Report for Plan and Handoff, and retain the original saved Report for future whole-release Verify input. The [Agent reference journey](../../skills/launchrally/references/reference-journey.md) shows that complete typed flow.
 
+After a whole-release Human Verify commits immutable history, its completion summary separately labels the Manifest-bound source Report and the new current Report, explains failed Checks and Verification Gaps, and prints the current input as `.launchrally/reports/<current-report-id>/record.json`. Run the exact displayed `rally plan --cwd ... --report ...` command; Plan reconstructs the complete package from the Record, View, and Evidence Index, validates their digests and currentness, and fails closed if local history is missing, incomplete, tampered, stale, symlinked, or ambiguous. Continue using the original saved Audit JSON—not this current Plan input—for later whole-release Verify runs.
+
 ## No-install trial and CI fallback
 
 Exact-version npm-exec is a no-install trial and CI fallback. It is not the default Agent prerequisite. Use complete npm-exec follow-ups because the first ephemeral process does not leave `rally` on PATH:

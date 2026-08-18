@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { link, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer as createSecureServer } from "node:https";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 
 import {
   VERIFY_INTERACTION_SCHEMA,
@@ -15,6 +15,7 @@ import {
 } from "../packages/contracts/src/index.js";
 import {
   evaluateReportCurrentness,
+  loadLocalHistoryReportPackage,
   resumeAuthenticatedJourneyFromHost,
   runAudit,
   runVerify,
@@ -23,11 +24,49 @@ import {
   createAuthenticatedJourneyAttestation,
   createAuthenticatedJourneyPlan,
 } from "../packages/core/src/authenticated-journeys.js";
-import { runHumanVerify } from "../packages/cli/bin/human-verify.js";
+import {
+  renderHumanVerify,
+  runHumanVerify,
+} from "../packages/cli/bin/human-verify.js";
+import { persistLocalHistory } from "../packages/core/src/local-history.js";
 import { simulateExtendedMkdtempSuffix } from "./helpers/temporary-state-token.js";
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/engine.js");
+const pythonAvailable = process.platform !== "win32"
+  && spawnSync("python3", ["--version"]).status === 0;
+const ptyRunner = [
+  "import errno, fcntl, os, pty, select, struct, subprocess, sys, termios, time",
+  "master, slave = pty.openpty()",
+  "fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 0, 0))",
+  "child = subprocess.Popen(sys.argv[1:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)",
+  "os.close(slave)",
+  "chunks = []",
+  "answer = os.environ.get('LAUNCHRALLY_TEST_TTY_INPUT', '').encode()",
+  "answered = not answer",
+  "while True:",
+  "    ready, _, _ = select.select([master], [], [], 10)",
+  "    if not ready:",
+  "        child.terminate()",
+  "        break",
+  "    try:",
+  "        chunk = os.read(master, 4096)",
+  "    except OSError as error:",
+  "        if error.errno == errno.EIO:",
+  "            break",
+  "        raise",
+  "    if not chunk:",
+  "        break",
+  "    chunks.append(chunk)",
+  "    output = b''.join(chunks)",
+  "    if not answered and (b'[y/N]' in output or b'Approve this permission?' in output):",
+  "        time.sleep(0.2)",
+  "        os.write(master, answer)",
+  "        answered = True",
+  "os.close(master)",
+  "sys.stdout.buffer.write(b''.join(chunks))",
+  "raise SystemExit(child.wait())",
+].join("\n");
 
 const ANSWERS = Object.freeze({
   intended_environment: "production",
@@ -867,6 +906,328 @@ test("completed full Verify atomically persists its new immutable Report history
       record_digest: (await readFile(path.join(reportDirectory, "record.sha256"), "utf8")).trim(),
     },
   );
+});
+
+test("Plan accepts the repository-relative immutable Report path produced by full Verify", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  await writeFile(
+    path.join(directory, ".launchrally", ".gitignore"),
+    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n",
+  );
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const verification = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const reportPath = `.launchrally/reports/${verification.report.report_id}/record.json`;
+  const loaded = await loadLocalHistoryReportPackage(directory, reportPath);
+  const currentness = evaluateReportCurrentness(loaded, { cwd: directory });
+  assert.equal(currentness.current, true, JSON.stringify(currentness, null, 2));
+
+  const processResult = await execFileAsync(process.execPath, [
+    cli,
+    "plan",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ]);
+  const plan = JSON.parse(processResult.stdout);
+
+  assert.equal(plan.status, "completed", JSON.stringify(plan, null, 2));
+  assert.equal(plan.source_report_id, verification.report.report_id);
+});
+
+test("plain Human Verify completion provides an executable immutable-history Plan handoff", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  await writeFile(
+    path.join(directory, ".launchrally", ".gitignore"),
+    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n",
+  );
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const verification = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const invocationContext = {
+    schema_version: "launchrally.dev/invocation-context/v1",
+    source: "user_path",
+    launcher_version: "0.4.0",
+  };
+  const human = renderHumanVerify(verification, {
+    cwd: directory,
+    invocationContext,
+    styled: false,
+  });
+
+  assert.match(human, /^Manifest Source Report\n.+$/mu);
+  assert.match(human, /^Current Report\n.+$/mu);
+  assert.match(human, /^Failed Checks \(\d+\)$/mu);
+  assert.match(human, /^Verification Gaps \(\d+\)$/mu);
+  const reportPath = human.match(
+    /^Current Report input\n(\.launchrally\/reports\/[^\n]+\/record\.json)$/mu,
+  )?.[1];
+  assert.ok(reportPath);
+  assert.match(
+    human,
+    new RegExp(`^Next command\\nrally plan --cwd '[^']+' --report '${reportPath.replaceAll(".", "\\.")}'$`, "mu"),
+  );
+
+  const plan = JSON.parse((await execFileAsync(process.execPath, [
+    cli,
+    "plan",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ])).stdout);
+  assert.equal(plan.status, "completed");
+});
+
+test("styled and plain TTY Verify completions preserve the executable Plan handoff", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async (t) => {
+  for (const variant of [
+    { name: "styled", arguments: [], ansi: true },
+    { name: "plain", arguments: ["--plain"], ansi: false },
+  ]) {
+    await t.test(variant.name, async () => {
+      const directory = await fixture();
+      const source = await completeAudit(directory);
+      await writeManifest(directory, source);
+      await writeFile(
+        path.join(directory, ".launchrally", ".gitignore"),
+        "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n",
+      );
+      const reportPath = path.join(directory, "source-report.json");
+      await writeFile(reportPath, `${JSON.stringify(source)}\n`);
+      const invocationContext = JSON.stringify({
+        schema_version: "launchrally.dev/invocation-context/v1",
+        source: "user_path",
+        launcher_version: "0.4.0",
+      });
+      const environment = {
+        ...process.env,
+        TERM: "xterm-256color",
+        LAUNCHRALLY_INVOCATION_CONTEXT: invocationContext,
+        LAUNCHRALLY_TEST_TTY_INPUT: "\r",
+      };
+      delete environment.NO_COLOR;
+
+      const output = (await execFileAsync("python3", [
+        "-c",
+        ptyRunner,
+        process.execPath,
+        cli,
+        "verify",
+        ...variant.arguments,
+        "--cwd",
+        directory,
+        "--report",
+        reportPath,
+      ], { env: environment })).stdout;
+      const plain = stripVTControlCharacters(output).replaceAll("\r\n", "\n");
+      assert.equal(/\u001B\[/u.test(output), variant.ansi);
+      assert.match(plain, /^Manifest Source Report\n.+$/mu);
+      assert.match(plain, /^Current Report\n.+$/mu);
+      const currentReportPath = plain.match(
+        /^Current Report input\n(\.launchrally\/reports\/[^\n]+\/record\.json)$/mu,
+      )?.[1];
+      assert.ok(currentReportPath);
+      const plan = JSON.parse((await execFileAsync(process.execPath, [
+        cli,
+        "plan",
+        "--json",
+        "--cwd",
+        directory,
+        "--report",
+        currentReportPath,
+      ])).stdout);
+      assert.equal(plan.status, "completed");
+    });
+  }
+});
+
+test("Plan rejects a symlinked immutable Report Record before reading it", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const verification = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const relativeReportPath = `.launchrally/reports/${verification.report.report_id}/record.json`;
+  const reportPath = path.join(directory, relativeReportPath);
+  const outside = await mkdtemp(path.join(os.tmpdir(), "launchrally-plan-record-outside-"));
+  const outsideRecord = path.join(outside, "record.json");
+  await writeFile(outsideRecord, await readFile(reportPath, "utf8"));
+  await rm(reportPath);
+  await symlink(outsideRecord, reportPath);
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      cli,
+      "plan",
+      "--json",
+      "--cwd",
+      directory,
+      "--report",
+      relativeReportPath,
+    ]),
+    (error) => {
+      const result = JSON.parse(error.stdout);
+      assert.equal(result.error, "unsafe_history_path");
+      assert.match(result.message, /refuses symlinked path/u);
+      return true;
+    },
+  );
+});
+
+test("Plan never treats the Manifest-bound source Report as the current remediation Report", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await writeManifest(directory, source);
+  await writeFile(
+    path.join(directory, ".launchrally", ".gitignore"),
+    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n",
+  );
+  await persistLocalHistory(directory, source);
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const verification = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+
+  const sourcePlan = JSON.parse((await execFileAsync(process.execPath, [
+    cli,
+    "plan",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    `.launchrally/reports/${source.report.report_id}/record.json`,
+  ])).stdout);
+  const currentPlan = JSON.parse((await execFileAsync(process.execPath, [
+    cli,
+    "plan",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    `.launchrally/reports/${verification.report.report_id}/record.json`,
+  ])).stdout);
+
+  assert.equal(sourcePlan.status, "needs_refresh");
+  assert.equal(sourcePlan.source_report_id, source.report.report_id);
+  assert.equal(currentPlan.status, "completed");
+  assert.equal(currentPlan.source_report_id, verification.report.report_id);
+});
+
+test("Plan fails closed with actionable guidance for invalid immutable Report inputs", async (t) => {
+  const setup = async () => {
+    const directory = await fixture();
+    const source = await completeAudit(directory);
+    await persistLocalHistory(directory, source);
+    return {
+      directory,
+      reportId: source.report.report_id,
+      reportPath: `.launchrally/reports/${source.report.report_id}/record.json`,
+    };
+  };
+  const run = async ({ directory, reportPath }) => {
+    try {
+      await execFileAsync(process.execPath, [
+        cli,
+        "plan",
+        "--json",
+        "--cwd",
+        directory,
+        "--report",
+        reportPath,
+      ]);
+      assert.fail("Plan unexpectedly accepted invalid immutable history.");
+    } catch (error) {
+      return JSON.parse(error.stdout);
+    }
+  };
+
+  await t.test("missing bundle", async () => {
+    const state = await setup();
+    await rm(path.join(
+      state.directory,
+      ".launchrally",
+      "reports",
+      state.reportId,
+      "view.md",
+    ));
+    const result = await run(state);
+    assert.equal(result.error, "invalid_local_history_report");
+    assert.match(result.message, /missing|incomplete|run full Verify/iu);
+  });
+
+  await t.test("tampered bundle", async () => {
+    const state = await setup();
+    await writeFile(path.join(
+      state.directory,
+      ".launchrally",
+      "reports",
+      state.reportId,
+      "view.md",
+    ), "tampered\n");
+    const result = await run(state);
+    assert.equal(result.error, "invalid_local_history_report");
+    assert.match(result.message, /invalid|inconsistent|run full Verify/iu);
+  });
+
+  await t.test("ambiguous cache pointer", async () => {
+    const state = await setup();
+    const result = await run({
+      ...state,
+      reportPath: ".launchrally/cache/current-report.json",
+    });
+    assert.equal(result.error, "invalid_local_history_report_path");
+    assert.match(result.message, /<report-id>\/record\.json/u);
+  });
+});
+
+test("Plan preserves ordinary complete JSON inputs stored under .launchrally", async () => {
+  const directory = await fixture();
+  const source = await completeAudit(directory);
+  await mkdir(path.join(directory, ".launchrally"));
+  const reportPath = path.join(directory, ".launchrally", "current.json");
+  await writeFile(reportPath, JSON.stringify(source));
+
+  const result = JSON.parse((await execFileAsync(process.execPath, [
+    cli,
+    "plan",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ])).stdout);
+
+  assert.equal(result.status, "needs_refresh");
+  assert.equal(result.source_report_id, source.report.report_id);
 });
 
 test("a partial Verify history write returns recoverable output without visible half-history", async () => {

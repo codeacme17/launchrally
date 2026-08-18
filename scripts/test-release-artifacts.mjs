@@ -2920,11 +2920,47 @@ async function smokeCli(
     "bin",
     "rally.js",
   );
+  const humanVerifyModule = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "cli",
+    "bin",
+    "human-verify.js",
+  );
   const invokeRally = (arguments_, options = {}) => run(
     process.execPath,
     [rally, ...arguments_],
     options,
   );
+  const renderPackedHumanVerify = async (result, cwd, environment) => (await run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      [
+        "import { pathToFileURL } from 'node:url';",
+        "const { renderHumanVerify } = await import(pathToFileURL(process.env.LAUNCHRALLY_TEST_HUMAN_VERIFY_MODULE));",
+        "const result = JSON.parse(process.env.LAUNCHRALLY_TEST_VERIFY_RESULT);",
+        "const invocationContext = JSON.parse(process.env.LAUNCHRALLY_TEST_INVOCATION_CONTEXT);",
+        "process.stdout.write(renderHumanVerify(result, { cwd: process.env.LAUNCHRALLY_TEST_CWD, invocationContext, styled: false }));",
+      ].join("\n"),
+    ],
+    {
+      cwd: cleanProject,
+      env: {
+        ...environment,
+        LAUNCHRALLY_TEST_HUMAN_VERIFY_MODULE: humanVerifyModule,
+        LAUNCHRALLY_TEST_VERIFY_RESULT: JSON.stringify(result),
+        LAUNCHRALLY_TEST_INVOCATION_CONTEXT: JSON.stringify({
+          schema_version: "launchrally.dev/invocation-context/v1",
+          source: "user_path",
+          launcher_version: version,
+        }),
+        LAUNCHRALLY_TEST_CWD: cwd,
+      },
+    },
+  )).stdout;
   const versionResult = JSON.parse((await invokeRally(["--version", "--json"], {
     cwd: cleanProject,
   })).stdout);
@@ -3236,16 +3272,30 @@ async function smokeCli(
         ])),
       }),
     ]);
-    if (refreshed.status !== "completed") {
+    const refreshedHuman = await renderPackedHumanVerify(
+      refreshed,
+      repository,
+      coverageEnvironment,
+    );
+    const escapedSourceId = completed.report.report_id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const currentReportPath = refreshedHuman.match(
+      /^Current Report input\n(\.launchrally\/reports\/[^\n]+\/record\.json)$/mu,
+    )?.[1];
+    if (
+      !new RegExp(`^Manifest Source Report\\n${escapedSourceId}$`, "mu").test(refreshedHuman)
+      || !/^Current Report\n.+$/mu.test(refreshedHuman)
+      || !/^Failed Checks \(\d+\)$/mu.test(refreshedHuman)
+      || !/^Verification Gaps \(\d+\)$/mu.test(refreshedHuman)
+      || !currentReportPath
+      || !/^Next command\n.+\bplan\b.+--report\b/mu.test(refreshedHuman)
+    ) {
       throw new Error(`coverage_artifact_refresh_failed: ${representative.id}`);
     }
-    const refreshedPath = path.join(reports, `${representative.id}-refreshed.json`);
-    await writeFile(refreshedPath, JSON.stringify(refreshed));
     const plan = await invoke([
-      "plan", "--json", "--cwd", repository, "--report", refreshedPath,
+      "plan", "--json", "--cwd", repository, "--report", currentReportPath,
     ]);
     const handoff = await invoke([
-      "plan", "--json", "--cwd", repository, "--report", refreshedPath, "--handoff",
+      "plan", "--json", "--cwd", repository, "--report", currentReportPath, "--handoff",
     ]);
     if (plan.status !== "completed" || handoff.status !== "completed") {
       throw new Error(`coverage_artifact_plan_failed: ${representative.id}`);
@@ -3257,7 +3307,7 @@ async function smokeCli(
     );
     const verifyPermission = await invoke([
       "verify", "--json", "--cwd", repository,
-      "--report", refreshedPath,
+      "--report", auditPath,
       "--scope", "full",
     ]);
     const verified = await invoke([
@@ -3273,6 +3323,9 @@ async function smokeCli(
     ]);
     if (
       verified.status !== "completed"
+      || verified.interaction?.source_report?.report_id !== completed.report.report_id
+      || verified.manifest_drift?.length !== 0
+      || verified.report?.policy?.current !== true
       || verified.comparison?.source_report_id === verified.comparison?.current_report_id
       || !verified.comparison?.invalidated_evidence?.some(
         ({ target }) => target === "repository:.env.example",

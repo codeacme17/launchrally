@@ -12,6 +12,8 @@ import {
 } from "@launchrally/contracts";
 import {
   environmentTargetLabel,
+  isLocalHistoryReference,
+  loadLocalHistoryReportPackage,
   persistArchitecturePackage,
   reviewedEnvironmentLabel,
   resolveExecutionAuthority,
@@ -32,7 +34,7 @@ import {
   runHumanAudit,
 } from "./human-audit.js";
 import { renderHumanInit, runHumanInit } from "./human-init.js";
-import { runHumanVerify } from "./human-verify.js";
+import { renderHumanVerify, runHumanVerify } from "./human-verify.js";
 import {
   commandName,
   optionValue as argumentValue,
@@ -412,45 +414,6 @@ function renderHumanProviders(value) {
   return lines.join("\n");
 }
 
-function renderHumanVerify(value) {
-  const targeted = value.verification_scope.mode === "targeted";
-  const lines = [
-    `LaunchRally ${targeted ? "Targeted" : "Full"} Verification`,
-    `Whole release: ${value.verification_scope.whole_release ? "YES" : "NO"}`,
-    "Checks:",
-    ...value.verification_scope.check_ids.map((checkId) => `  - ${checkId}`),
-  ];
-  if (value.status === "needs_permission") {
-    lines.push("Fresh Evidence permission boundary:");
-    for (const permission of value.request.permissions) {
-      if (permission.boundary === "public_network") {
-        lines.push(
-          `  - Public verification: ${permission.scope.targets.join(", ")}`,
-          ...permission.scope.probes.map(
-            (probe) => `    ${probe.method} ${probe.target} — ${probe.purpose}`,
-          ),
-        );
-      } else {
-        lines.push(
-          `  - Provider read ${permission.scope.provider}: ${permission.scope.target}`,
-        );
-      }
-    }
-    lines.push(
-      "Choose approved or denied independently for each permission ID.",
-      `Resume token: ${value.interaction.resume_token}`,
-    );
-  } else {
-    lines.push(
-      `Assessment scope: ${value.assessment_scope}`,
-      `Launch Assessment: ${value.assessment ?? "not available"}`,
-      `Manifest Drift: ${value.manifest_drift.length}`,
-      `Source Report: ${value.history.source_report_id}`,
-    );
-  }
-  return lines.join("\n");
-}
-
 function print(value) {
   if (json) {
     process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -517,7 +480,16 @@ function print(value) {
     value.operation === "verify"
     && ["needs_permission", "completed"].includes(value.status)
   ) {
-    process.stdout.write(`${renderHumanVerify(value)}\n`);
+    const presentation = humanAuditPresentationOptions({
+      args,
+      env: process.env,
+      output: process.stdout,
+    });
+    process.stdout.write(`${renderHumanVerify(value, {
+      cwd: path.resolve(optionValue("--cwd") ?? process.cwd()),
+      invocationContext,
+      styled: presentation.styled,
+    })}\n`);
     return;
   }
 
@@ -1000,14 +972,24 @@ async function main() {
     const reportPath = optionValue("--report");
     if (reportPath) {
       try {
-        reportPackage = JSON.parse(await readFile(reportPath, "utf8"));
-      } catch {
+        reportPackage = isLocalHistoryReference(cwd, reportPath)
+          ? await loadLocalHistoryReportPackage(cwd, reportPath)
+          : JSON.parse(await readFile(reportPath, "utf8"));
+      } catch (error) {
+        const localHistoryError = [
+          "invalid_local_history_report",
+          "invalid_local_history_report_path",
+          "repository_scope_mismatch",
+          "unsafe_history_path",
+        ].includes(error?.code);
         const result = {
           contract: CLI_INTERACTION_CONTRACT,
           status: "execution_error",
           operation: "plan",
-          error: "invalid_report_file",
-          message: "The saved Audit JSON could not be read and parsed.",
+          error: localHistoryError ? error.code : "invalid_report_file",
+          message: localHistoryError
+            ? error.message
+            : "The saved Report JSON could not be read and parsed.",
         };
         print(result);
         return 2;
