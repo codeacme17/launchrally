@@ -300,8 +300,13 @@ export const PROTECTED_JOURNEY_PATH_SEGMENTS = Object.freeze([
   "protected", "session", "settings", "staff", "status", "team", "teams",
   "uploads", "user", "users", "v1", "v2", "v3", "workspace", "workspaces",
 ]);
-const STATIC_JOURNEY_PATH_SEGMENT_PATTERN = "(?:[a-z]+|v[1-9][0-9]{0,2})";
-export const PROTECTED_JOURNEY_PATH_PATTERN = `^/${STATIC_JOURNEY_PATH_SEGMENT_PATTERN}(?:/${STATIC_JOURNEY_PATH_SEGMENT_PATTERN})*$`;
+const OPAQUE_JOURNEY_PATH_SEGMENT_PATTERN =
+  "(?:[0-9]{8,64}|[a-f0-9]{32,64}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})";
+const STATIC_JOURNEY_PATH_SEGMENT_PATTERN =
+  `(?=[a-z0-9_-]{1,64}(?:/|$))(?!${OPAQUE_JOURNEY_PATH_SEGMENT_PATTERN}(?:/|$))`
+  + "[a-z0-9]+(?:[-_][a-z0-9]+)*";
+export const PROTECTED_JOURNEY_PATH_PATTERN =
+  `^(?=.{2,512}$)/${STATIC_JOURNEY_PATH_SEGMENT_PATTERN}(?:/${STATIC_JOURNEY_PATH_SEGMENT_PATTERN})*$`;
 export const AUTHENTICATED_JOURNEY_TARGET_PATTERN =
   `^https://[^@/?#]+${PROTECTED_JOURNEY_PATH_PATTERN.slice(1)}`;
 const SAFE_AUTHENTICATED_JOURNEY_TARGET = new RegExp(

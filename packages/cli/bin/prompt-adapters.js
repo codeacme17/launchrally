@@ -375,12 +375,22 @@ function fieldInputError(field, value) {
     }
   }
   if (field.value_type !== "journey_array") return undefined;
-  const safe = entries.every((entry) =>
-    !parsePublicJourneyInput(entry, { allowDescription: false }).error,
+  const invalidEntry = entries.find((entry) =>
+    parsePublicJourneyInput(entry, { allowDescription: false }).error,
   );
-  return safe
-    ? undefined
-    : "Use a safe GET Journey, for example: GET / or GET /checkout — checkout completes.";
+  if (!invalidEntry) return undefined;
+  const declared = invalidEntry.match(/^([a-z]+)\s+(\S+)/iu);
+  const protectedResult = declared
+    ? parsePublicJourneyInput(classifiedJourney({
+      method: declared[1],
+      path: declared[2],
+      purpose: "authenticated Core Journey",
+    }, "user"), { allowDescription: false })
+    : null;
+  return [
+    "Use a safe GET Journey, for example: GET / or GET /checkout — checkout completes.",
+    protectedResult?.guidance,
+  ].filter(Boolean).join(" ");
 }
 
 function emptyFieldValue(value) {
@@ -460,7 +470,7 @@ const EXCLUDE_JOURNEY_ACCESS_CHOICE = Object.freeze({
   value: "exclude",
 });
 const PROTECTED_PATH_SAFETY_GUIDANCE =
-  "protected access requires an exact non-root static path without identifier-like or dynamic segments, traversal, encoding, query, or fragment";
+  "protected access is unavailable for this Journey";
 
 function classifiedJourney(journey, accessClass) {
   if (accessClass === "exclude") return null;
@@ -479,24 +489,27 @@ function classifiedJourney(journey, accessClass) {
 }
 
 function journeyAccessChoices(journey) {
-  const protectedSupported = !parsePublicJourneyInput(
+  const protectedResult = parsePublicJourneyInput(
     classifiedJourney(journey, "user"),
     { allowDescription: false },
-  ).error;
-  return [
-    PUBLIC_JOURNEY_ACCESS_CHOICE,
-    ...(protectedSupported ? PROTECTED_JOURNEY_ACCESS_CHOICES : []),
-    EXCLUDE_JOURNEY_ACCESS_CHOICE,
-  ];
+  );
+  return {
+    choices: [
+      PUBLIC_JOURNEY_ACCESS_CHOICE,
+      ...(!protectedResult.error ? PROTECTED_JOURNEY_ACCESS_CHOICES : []),
+      EXCLUDE_JOURNEY_ACCESS_CHOICE,
+    ],
+    rejection: protectedResult.error ? protectedResult : null,
+  };
 }
 
 async function classifyJourneyOptions(options, selectAccess, source) {
   const classified = [];
   for (const option of options) {
-    const choices = journeyAccessChoices(option.value);
-    const protectedSupported = choices.length > 2;
+    const { choices, rejection } = journeyAccessChoices(option.value);
+    const protectedSupported = !rejection;
     const accessClass = await selectAccess(
-      `${source} does not establish access. Classify ${journeyLabel(option.value)} (classification required${protectedSupported ? "" : `; ${PROTECTED_PATH_SAFETY_GUIDANCE}`})`,
+      `${source} does not establish access. Classify ${journeyLabel(option.value)} (classification required${protectedSupported ? "" : `; ${rejection.guidance ?? PROTECTED_PATH_SAFETY_GUIDANCE}`})`,
       choices,
     );
     const journey = classifiedJourney(option.value, accessClass);

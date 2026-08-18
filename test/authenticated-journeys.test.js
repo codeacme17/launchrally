@@ -141,6 +141,12 @@ test("protected journeys accept application-specific static path segments", () =
     "/me/moderation",
     "/me/notifications",
     "/me/notifications/settings",
+    "/release-notes",
+    "/notification_settings",
+    "/oauth2/callback",
+    "/account-12345",
+    "/patients/john-smith",
+    "/users/alice",
   ]) {
     const parsed = parsePublicJourneyInput({
       schema_version: "launchrally.dev/protected-journey/v1",
@@ -158,12 +164,12 @@ test("protected journeys accept application-specific static path segments", () =
   }
 });
 
-test("protected journey declarations reject personal identifiers before persistence", () => {
+test("protected journey declarations reject only defensible identifier shapes", () => {
   for (const candidate of [
     { path: "/users/alice@example.com", purpose: "account loads" },
-    { path: "/account-12345", purpose: "account loads" },
     { path: "/orders/12345678", purpose: "order loads" },
-    { path: "/patients/john-smith", purpose: "authenticated Core Journey" },
+    { path: "/orders/550e8400-e29b-41d4-a716-446655440000", purpose: "order loads" },
+    { path: "/sessions/0123456789abcdef0123456789abcdef", purpose: "session loads" },
     { path: "/", purpose: "account loads" },
     { path: "/account/", purpose: "account loads" },
   ]) {
@@ -191,22 +197,26 @@ test("protected journey declarations reject personal identifiers before persiste
   assert.equal(normalized.value.purpose, "authenticated Core Journey");
 });
 
-test("protected journeys reject unsafe and parameterized targets", () => {
-  for (const [method, journeyPath] of [
-    ["POST", "/control/moderation"],
-    ["GET", "/"],
-    ["GET", "//example.com/control"],
-    ["GET", "/control/../moderation"],
-    ["GET", "/control\\moderation"],
-    ["GET", "/control/moderation?view=queue"],
-    ["GET", "/control/moderation#queue"],
-    ["GET", "/control/%6doderation"],
-    ["GET", "https://user:password@example.com/control"],
-    ["GET", "https://other.example/control"],
-    ["GET", "/users/:id"],
-    ["GET", "/users/[id]"],
-    ["GET", "/users/{id}"],
-    ["GET", "/users/*"],
+test("protected journeys report the exact rejected safety constraint", () => {
+  for (const [method, journeyPath, reasonCode, guidance] of [
+    ["POST", "/control/moderation", "non_get_method", /supports only GET/u],
+    ["GET", "/", "root_path", /non-root path/u],
+    ["GET", "//example.com/control", "protocol_relative_path", /protocol-relative paths/u],
+    ["GET", "/control/../moderation", "dot_or_traversal_segment", /dot and traversal segments/u],
+    ["GET", "/control//moderation", "empty_or_trailing_segment", /empty or trailing segments/u],
+    ["GET", "/control/", "empty_or_trailing_segment", /empty or trailing segments/u],
+    ["GET", "/control\\moderation", "backslash_path", /backslashes/u],
+    ["GET", "/control/moderation?view=queue", "query_or_fragment", /queries or fragments/u],
+    ["GET", "/control/moderation#queue", "query_or_fragment", /queries or fragments/u],
+    ["GET", "/control/%6doderation", "percent_encoded_path", /percent-encoded paths/u],
+    ["GET", "https://user:password@example.com/control", "credentialed_target", /credentials/u],
+    ["GET", "https://other.example/control", "absolute_or_out_of_origin_target", /absolute or out-of-origin targets/u],
+    ["GET", "/users/:id", "dynamic_segment", /dynamic placeholders/u],
+    ["GET", "/users/[id]", "dynamic_segment", /dynamic placeholders/u],
+    ["GET", "/users/{id}", "dynamic_segment", /dynamic placeholders/u],
+    ["GET", "/users/*", "dynamic_segment", /dynamic placeholders/u],
+    ["GET", "/orders/12345678", "opaque_segment_shape", /opaque identifier shapes/u],
+    ["GET", "/ReleaseNotes", "invalid_static_segment", /lowercase ASCII static segments/u],
   ]) {
     const parsed = parsePublicJourneyInput({
       schema_version: "launchrally.dev/protected-journey/v1",
@@ -220,6 +230,8 @@ test("protected journeys reject unsafe and parameterized targets", () => {
     });
 
     assert.equal(parsed.error, "invalid_protected_journey", `${method} ${journeyPath}`);
+    assert.equal(parsed.reason_code, reasonCode, `${method} ${journeyPath}`);
+    assert.match(parsed.guidance, guidance, `${method} ${journeyPath}`);
   }
 });
 

@@ -285,7 +285,7 @@
       "properties": {
         "schema_version": { "const": "launchrally.dev/protected-journey/v1" },
         "purpose": { "const": "authenticated Core Journey" },
-        "path": { "type": "string", "pattern": "^/(?:[a-z]+|v[1-9][0-9]{0,2})(?:/(?:[a-z]+|v[1-9][0-9]{0,2}))*$" },
+        "path": { "type": "string", "pattern": "^(?=.{2,512}$)/(?=[a-z0-9_-]{1,64}(?:/|$))(?!(?:[0-9]{8,64}|[a-f0-9]{32,64}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:/|$))[a-z0-9]+(?:[-_][a-z0-9]+)*(?:/(?=[a-z0-9_-]{1,64}(?:/|$))(?!(?:[0-9]{8,64}|[a-f0-9]{32,64}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})(?:/|$))[a-z0-9]+(?:[-_][a-z0-9]+)*)*$" },
         "method": { "const": "GET" },
         "access": {
           "type": "object",

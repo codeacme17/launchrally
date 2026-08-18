@@ -364,7 +364,7 @@ test("new Reports bind Check Catalog v2 while historical Report v1 remains reada
   assert.equal(assertValidReportPackage(historical), true);
 });
 
-test("public v2 records persist static protected paths and reject PII-bearing declarations", async () => {
+test("public v2 records persist structurally safe protected paths", async () => {
   const directory = await fixture();
   const current = await completeAudit(directory);
   const validProtected = {
@@ -402,19 +402,31 @@ test("public v2 records persist static protected paths and reject PII-bearing de
   validReport.report.scope.release_intent.core_journeys = [validProtected];
   assert.equal(assertValidReportPackage(validReport), true);
 
-  const piiJourney = {
+  const compoundStaticJourney = {
     ...validProtected,
     path: "/patients/john-smith",
   };
+  const compoundManifest = structuredClone(manifest);
+  compoundManifest.release.core_journeys.value = [compoundStaticJourney];
+  assert.equal(assertValidManifest(compoundManifest), true);
+
+  const compoundReport = structuredClone(current);
+  compoundReport.report.scope.release_intent.core_journeys = [compoundStaticJourney];
+  assert.equal(assertValidReportPackage(compoundReport), true);
+
+  const opaqueJourney = {
+    ...validProtected,
+    path: "/orders/12345678",
+  };
   const invalidManifest = structuredClone(manifest);
-  invalidManifest.release.core_journeys.value = [piiJourney];
+  invalidManifest.release.core_journeys.value = [opaqueJourney];
   assert.throws(
     () => assertValidManifest(invalidManifest),
     (error) => error.code === "invalid_manifest",
   );
 
   const invalidReport = structuredClone(current);
-  invalidReport.report.scope.release_intent.core_journeys = [piiJourney];
+  invalidReport.report.scope.release_intent.core_journeys = [opaqueJourney];
   assert.throws(
     () => assertValidReportPackage(invalidReport),
     (error) => error.code === "invalid_report_package",

@@ -476,6 +476,7 @@ test("the Plain adapter requires access classification for every detected route"
     },
   });
   assert.match(rendered, /Classify GET \/ — homepage loads \(classification required/u);
+  assert.match(rendered, /protected access requires a non-root path/u);
   assert.match(rendered, /Classify GET \/dashboard — dashboard page loads \(classification required\)/u);
   assert.match(rendered, /Exclude — do not verify this route/u);
   assert.doesNotMatch(rendered, /\(detected\)/u);
@@ -776,7 +777,7 @@ test("the Plain adapter explains why a parameterized candidate cannot be protect
   assert.deepEqual(response.answers.core_journeys, []);
   assert.match(
     rendered,
-    /protected access requires an exact non-root static path without identifier-like or dynamic segments, traversal, encoding, query, or fragment/u,
+    /protected access requires an explicitly supplied concrete path; dynamic placeholders must be excluded/u,
   );
   assert.doesNotMatch(rendered, /User — anonymous expect/u);
 });
@@ -823,8 +824,10 @@ test("the Plain adapter rejects unsafe custom Journeys before submitting to Core
 
   setTimeout(() => input.write("2\n"), 10);
   setTimeout(() => input.write("POST /admin — destructive action\n"), 30);
-  setTimeout(() => input.write("GET /checkout — checkout completes\n"), 50);
-  setTimeout(() => input.write("1\n"), 70);
+  setTimeout(() => input.write("GET /control?view=private — control loads\n"), 50);
+  setTimeout(() => input.write("GET https://user:password@example.com/control — control loads\n"), 70);
+  setTimeout(() => input.write("GET /checkout — checkout completes\n"), 90);
+  setTimeout(() => input.write("1\n"), 110);
   const response = await prompt.respond({
     status: "needs_input",
     operation: "audit",
@@ -856,6 +859,9 @@ test("the Plain adapter rejects unsafe custom Journeys before submitting to Core
     },
   });
   assert.match(rendered, /Use a safe GET Journey/u);
+  assert.match(rendered, /protected access supports only GET/u);
+  assert.match(rendered, /protected access rejects queries or fragments/u);
+  assert.match(rendered, /protected access rejects credentials/u);
 });
 
 test("the Plain adapter accepts a safe GET path without requiring a purpose", async () => {
@@ -1478,6 +1484,10 @@ test("the Clack adapter classifies detected routes without a bulk public action"
 test("the Clack adapter public Skip preserves a protected classification", async () => {
   const input = ttyStream();
   const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
   const prompt = await createClackPromptAdapter({ input, output });
 
   setTimeout(() => input.write("\r"), 20);
@@ -1500,6 +1510,10 @@ test("the Clack adapter public Skip preserves a protected classification", async
       authenticated_status_codes: [200],
     },
   }]);
+  assert.match(
+    stripVTControlCharacters(rendered),
+    /protected access requires a non-root path/u,
+  );
 });
 
 test("the Clack adapter accepts a safe GET path without requiring a purpose", async () => {
