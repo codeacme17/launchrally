@@ -432,7 +432,7 @@ test("the Plain adapter offers a recommended Journey and an explicit Skip choice
   );
 });
 
-test("the Plain adapter requires access classification for every detected route", async () => {
+test("the Plain adapter explicitly excludes unretained detected routes", async () => {
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -441,7 +441,7 @@ test("the Plain adapter requires access classification for every detected route"
   });
   const prompt = createPlainPromptAdapter({ input, output });
 
-  ["2\n", "1\n", "2\n", "2\n", "1\n"].forEach((answer, index) => {
+  ["1\n", "2\n", "1\n", "1\n"].forEach((answer, index) => {
     setTimeout(() => input.write(answer), 10 + (index * 20));
   });
   const response = await prompt.respond({
@@ -475,8 +475,8 @@ test("the Plain adapter requires access classification for every detected route"
       core_journeys: [{ method: "GET", path: "/dashboard", purpose: "dashboard page loads" }],
     },
   });
-  assert.match(rendered, /Classify GET \/ — homepage loads \(classification required/u);
   assert.match(rendered, /Classify GET \/dashboard — dashboard page loads \(classification required\)/u);
+  assert.doesNotMatch(rendered, /Classify GET \/docs/u);
   assert.match(rendered, /Exclude — do not verify this route/u);
   assert.doesNotMatch(rendered, /\(detected\)/u);
 });
@@ -490,7 +490,7 @@ test("the Plain adapter classifies mixed detected routes before verification", a
   });
   const prompt = createPlainPromptAdapter({ input, output });
 
-  ["1\n", "3\n", "4\n", "2\n", "1\n"].forEach((answer, index) => {
+  ["1\n", "1,2,3,4\n", "1\n", "3\n", "4\n", "2\n", "1\n"].forEach((answer, index) => {
     setTimeout(() => input.write(answer), 10 + (index * 20));
   });
   const response = await prompt.respond(journeyInput([
@@ -543,12 +543,82 @@ test("the Plain adapter classifies mixed detected routes before verification", a
   assert.doesNotMatch(rendered, /Select all detected journeys/u);
 });
 
+test("the Plain adapter discloses a large candidate set and classifies only retained routes", async () => {
+  const input = ttyStream();
+  input.columns = 40;
+  const output = ttyStream();
+  output.columns = 40;
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+  const candidates = [
+    "GET / — homepage loads",
+    "GET /account — account page loads",
+    "GET /admin — admin page loads",
+    "GET /dashboard — dashboard page loads",
+    ...Array.from({ length: 10 }, (_, index) => {
+      const route = `route-${String(index + 1).padStart(2, "0")}`;
+      return `GET /${route} — ${route.replace("-", " ")} page loads`;
+    }),
+  ];
+
+  ["1\n", "1,2,3,4\n", "1\n", "2\n", "3\n", "4\n", "1\n"].forEach(
+    (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
+  );
+  const response = await prompt.respond(journeyInput(candidates));
+  await prompt.close();
+
+  assert.deepEqual(response.answers.core_journeys, [
+    { method: "GET", path: "/", purpose: "homepage loads" },
+    {
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/account",
+      purpose: "authenticated Core Journey",
+      access: {
+        authentication_class: "user",
+        anonymous_status_codes: [401, 403, 404],
+        authenticated_status_codes: [200],
+      },
+    },
+    {
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/admin",
+      purpose: "authenticated Core Journey",
+      access: {
+        authentication_class: "staff",
+        anonymous_status_codes: [401, 403, 404],
+        authenticated_status_codes: [200],
+      },
+    },
+    {
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/dashboard",
+      purpose: "authenticated Core Journey",
+      access: {
+        authentication_class: "signed_token",
+        anonymous_status_codes: [401, 403, 404],
+        authenticated_status_codes: [200],
+      },
+    },
+  ]);
+  assert.match(rendered, /Detected route candidates: 14/u);
+  for (const candidate of candidates) assert.match(rendered, new RegExp(candidate, "u"));
+  assert.match(rendered, /Every unselected route will be excluded/u);
+  assert.equal(rendered.match(/classification required/gu)?.length, 4);
+  assert.doesNotMatch(rendered, /Select all detected journeys/u);
+});
+
 test("the Plain adapter public Skip preserves a protected classification", async () => {
   const input = ttyStream();
   const output = ttyStream();
   const prompt = createPlainPromptAdapter({ input, output });
 
-  ["1\n", "3\n", "3\n"].forEach((answer, index) => {
+  ["1\n", "1,2\n", "1\n", "3\n", "3\n"].forEach((answer, index) => {
     setTimeout(() => input.write(answer), 10 + (index * 20));
   });
   const response = await prompt.respond(journeyInput([
@@ -623,9 +693,9 @@ test("the Plain adapter can include public and exclude detected routes independe
   });
   const prompt = createPlainPromptAdapter({ input, output });
 
-  setTimeout(() => input.write("1\n"), 10);
-  setTimeout(() => input.write("2\n"), 30);
-  setTimeout(() => input.write("1\n"), 50);
+  ["1\n", "1\n", "1\n", "1\n"].forEach(
+    (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
+  );
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
     "GET /docs — docs page loads",
@@ -649,9 +719,9 @@ test("the Plain adapter creates a protected classification for a detected route"
   const output = ttyStream();
   const prompt = createPlainPromptAdapter({ input, output });
 
-  setTimeout(() => input.write("3\n"), 10);
-  setTimeout(() => input.write("2\n"), 30);
-  setTimeout(() => input.write("1\n"), 50);
+  ["1\n", "1\n", "3\n", "1\n"].forEach(
+    (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
+  );
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
     "GET /docs — docs page loads",
@@ -686,9 +756,8 @@ test("the Plain adapter permits explicitly excluding every detected route", asyn
   });
   const prompt = createPlainPromptAdapter({ input, output });
 
-  setTimeout(() => input.write("5\n"), 10);
-  setTimeout(() => input.write("2\n"), 30);
-  setTimeout(() => input.write("1\n"), 50);
+  setTimeout(() => input.write("2\n"), 10);
+  setTimeout(() => input.write("1\n"), 30);
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
     "GET /docs — docs page loads",
@@ -696,7 +765,28 @@ test("the Plain adapter permits explicitly excluding every detected route", asyn
   await prompt.close();
 
   assert.deepEqual(response, { answers: { core_journeys: [] } });
-  assert.equal(rendered.match(/Exclude — do not verify this route/gu)?.length, 2);
+  assert.match(rendered, /Exclude all detected routes/u);
+  assert.doesNotMatch(rendered, /Classify GET/u);
+});
+
+test("the Plain adapter sanitizes detected route labels before terminal output", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("2\n"), 10);
+  setTimeout(() => input.write("1\n"), 30);
+  await prompt.respond(journeyInput([
+    "GET /dashboard\u001b[31m\u202etxt — dashboard\u0007 page loads",
+  ]));
+  await prompt.close();
+
+  assert.doesNotMatch(rendered, /\u001b|\u0007|\u202e/u);
+  assert.match(rendered, /GET \/dashboardtxt — dashboard page loads/u);
 });
 
 test("the Plain adapter preserves current Journeys and retries Other with detected candidates", async () => {
@@ -712,7 +802,7 @@ test("the Plain adapter preserves current Journeys and retries Other with detect
     { method: "GET", path: "/pricing", purpose: "pricing loads" },
   ];
 
-  ["5\n", "2\n", "POST /admin\n", "GET /extra — extra loads\n"].forEach(
+  ["2\n", "2\n", "POST /admin\n", "GET /extra — extra loads\n"].forEach(
     (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
   );
   const response = await prompt.respond(interaction);
@@ -726,6 +816,47 @@ test("the Plain adapter preserves current Journeys and retries Other with detect
   assert.match(rendered, /Use a safe GET Journey/u);
 });
 
+test("the Plain adapter preserves retained classifications while revising", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = createPlainPromptAdapter({ input, output });
+  const interaction = journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+  ]);
+  interaction.request.fields[0].current_value = [
+    {
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/dashboard",
+      purpose: "authenticated Core Journey",
+      access: {
+        authentication_class: "staff",
+        anonymous_status_codes: [404],
+        authenticated_status_codes: [200],
+      },
+    },
+    { method: "GET", path: "/docs", purpose: "docs page loads" },
+  ];
+
+  ["1\n", "\n", "\n", "\n", "1\n"].forEach(
+    (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
+  );
+  const response = await prompt.respond(interaction);
+  await prompt.close();
+
+  assert.deepEqual(response.answers.core_journeys, interaction.request.fields[0].current_value);
+  assert.match(rendered, /GET \/dashboard — dashboard page loads \[current: staff\]/u);
+  assert.match(rendered, /Enter route numbers separated by commas \[default 1,2\]/u);
+  assert.match(rendered, /Choose 1-5 \[default 3\]/u);
+  assert.match(rendered, /Staff — keep current: anonymous expect 404; authenticated expect 200/u);
+  assert.match(rendered, /Choose 1-2 \[default 1\]/u);
+});
+
 test("the Plain adapter does not offer unsupported protected access classes", async () => {
   const input = ttyStream();
   const output = ttyStream();
@@ -735,8 +866,9 @@ test("the Plain adapter does not offer unsupported protected access classes", as
   });
   const prompt = createPlainPromptAdapter({ input, output });
 
-  setTimeout(() => input.write("2\n"), 10);
-  setTimeout(() => input.write("3\n"), 30);
+  ["1\n", "1\n", "2\n", "1\n"].forEach(
+    (answer, index) => setTimeout(() => input.write(answer), 10 + (index * 20)),
+  );
   const response = await prompt.respond(journeyInput([
     "GET /leaderboard — leaderboard page loads",
   ]));
@@ -1388,8 +1520,9 @@ test("the Clack adapter classifies detected routes without a bulk public action"
   const prompt = await createClackPromptAdapter({ input, output });
 
   setTimeout(() => input.write("\r"), 20);
-  setTimeout(() => input.write("\u001b[B\r"), 50);
+  setTimeout(() => input.write(" \r"), 50);
   setTimeout(() => input.write("\r"), 80);
+  setTimeout(() => input.write("\r"), 110);
   const response = await prompt.respond(journeyInput([
     "GET /dashboard — dashboard page loads",
     "GET /docs — docs page loads",
@@ -1410,14 +1543,71 @@ test("the Clack adapter classifies detected routes without a bulk public action"
   assert.doesNotMatch(semanticOutput, /Select all detected journeys/u);
 });
 
+test("the Clack adapter discloses a large candidate set before excluding all", async () => {
+  const input = ttyStream();
+  input.columns = 36;
+  input.rows = 10;
+  const output = ttyStream();
+  output.columns = 36;
+  output.rows = 10;
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+  const candidates = Array.from({ length: 14 }, (_, index) => {
+    const route = `route-${String(index + 1).padStart(2, "0")}`;
+    return `GET /${route} — ${route.replace("-", " ")} page loads`;
+  });
+
+  setTimeout(() => input.write("\u001b[B\r"), 20);
+  setTimeout(() => input.write("\r"), 50);
+  const response = await prompt.respond(journeyInput(candidates));
+  await prompt.close();
+
+  assert.deepEqual(response, { answers: { core_journeys: [] } });
+  const semanticOutput = stripVTControlCharacters(rendered);
+  const compactOutput = semanticOutput
+    .replace(/[│╭╮╰╯─◇◆●○↑↓•]/gu, " ")
+    .replace(/\s+/gu, " ");
+  assert.match(semanticOutput, /Detected route candidates: 14/u);
+  for (const candidate of candidates) {
+    assert.match(compactOutput, new RegExp(candidate, "u"));
+  }
+  assert.match(semanticOutput, /Exclude all detected routes/u);
+  assert.doesNotMatch(semanticOutput, /Classify GET/u);
+});
+
+test("the Clack adapter sanitizes detected route labels before terminal output", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+
+  setTimeout(() => input.write("\u001b[B\r"), 20);
+  setTimeout(() => input.write("\r"), 50);
+  await prompt.respond(journeyInput([
+    "GET /dashboard\u001b[31m\u202etxt — dashboard\u0007 page loads",
+  ]));
+  await prompt.close();
+
+  assert.doesNotMatch(rendered, /\u0007|\u202e/u);
+  assert.match(stripVTControlCharacters(rendered), /GET \/dashboardtxt — dashboard page loads/u);
+});
+
 test("the Clack adapter public Skip preserves a protected classification", async () => {
   const input = ttyStream();
   const output = ttyStream();
   const prompt = await createClackPromptAdapter({ input, output });
 
   setTimeout(() => input.write("\r"), 20);
-  setTimeout(() => input.write("\u001b[B\u001b[B\r"), 50);
-  setTimeout(() => input.write("\u001b[B\u001b[B\r"), 80);
+  setTimeout(() => input.write(" \u001b[B \r"), 50);
+  setTimeout(() => input.write("\r"), 80);
+  setTimeout(() => input.write("\u001b[B\u001b[B\r"), 110);
+  setTimeout(() => input.write("\u001b[B\u001b[B\r"), 140);
   const response = await prompt.respond(journeyInput([
     "GET / — homepage loads",
     "GET /control — control page loads",
@@ -1435,6 +1625,47 @@ test("the Clack adapter public Skip preserves a protected classification", async
       authenticated_status_codes: [200],
     },
   }]);
+});
+
+test("the Clack adapter preserves retained classifications while revising", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+  const interaction = journeyInput([
+    "GET /dashboard — dashboard page loads",
+    "GET /docs — docs page loads",
+    "GET /pricing — pricing page loads",
+  ]);
+  interaction.request.fields[0].current_value = [
+    {
+      schema_version: "launchrally.dev/protected-journey/v1",
+      method: "GET",
+      path: "/dashboard",
+      purpose: "authenticated Core Journey",
+      access: {
+        authentication_class: "staff",
+        anonymous_status_codes: [401, 403, 404],
+        authenticated_status_codes: [200],
+      },
+    },
+    { method: "GET", path: "/docs", purpose: "docs page loads" },
+  ];
+
+  ["\r", "\r", "\r", "\r", "\r"].forEach(
+    (answer, index) => setTimeout(() => input.write(answer), 20 + (index * 30)),
+  );
+  const response = await prompt.respond(interaction);
+  await prompt.close();
+
+  assert.deepEqual(response.answers.core_journeys, interaction.request.fields[0].current_value);
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /dashboard page loads \[current: staff\]/u);
+  assert.match(semanticOutput, /docs page loads \[current: public\]/u);
+  assert.doesNotMatch(semanticOutput, /Classify GET \/pricing/u);
 });
 
 test("the Clack adapter accepts a safe GET path without requiring a purpose", async () => {

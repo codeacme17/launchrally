@@ -183,6 +183,9 @@ test("Core offers only safely detected static routes as Journey candidates", asy
     "app/dashboard/page.tsx",
     "app/feed/(.)photo/page.tsx",
     "app/users/[id]/page.tsx",
+    "app/terminal\u001b[31m/page.tsx",
+    "app/bell\u0007/page.tsx",
+    "app/bidi\u202etxt/page.tsx",
     "src/routes/pricing/+page.svelte",
     "app/routes/docs._index.tsx",
   ]) {
@@ -205,6 +208,27 @@ test("Core offers only safely detected static routes as Journey candidates", asy
   ]);
   assert.doesNotMatch(JSON.stringify(field.candidates), /\[id\]/u);
   assert.doesNotMatch(JSON.stringify(field.candidates), /\(\.\)photo/u);
+  assert.doesNotMatch(JSON.stringify(field.candidates), /terminal|bell|bidi/u);
+});
+
+test("Core discloses every safely detected Journey candidate beyond twelve routes", async () => {
+  const fixture = await createInteractionFixture();
+  const routes = Array.from({ length: 15 }, (_, index) =>
+    `route-${String(index + 1).padStart(2, "0")}`,
+  );
+  for (const route of routes) {
+    const absolutePath = path.join(fixture, "app", route, "page.tsx");
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, "export default function Page() {}\n");
+  }
+
+  const result = await runAudit(fixture);
+  const field = result.request.fields.find(({ field_id }) => field_id === "core_journeys");
+
+  assert.equal(field.candidates.length, 15);
+  assert.deepEqual(field.candidates, routes.map((route) =>
+    `GET /${route} — ${route.replace("-", " ")} page loads`,
+  ));
 });
 
 test("Agent Mode previews the complete unconfirmed plan before permission", async () => {

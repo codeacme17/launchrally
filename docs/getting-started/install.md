@@ -49,7 +49,7 @@ rally --version --json --cwd .
 
 Review the complete Audit Brief, confirmed scope, planned Checks, and authorization plan. Local scan, public verification, and every Provider read are independent and default-denied. Reports and Evidence remain local. CLI or Plugin installation grants no Provider, deployment, production, credential, or application-source write authority.
 
-Detected route files are unclassified candidates, not confirmed public Journeys. Human Mode requires an explicit `public`, `user`, `staff`, `signed_token`, or exclude decision for each detected route. The final Audit Brief shows the resulting access class and anonymous/authenticated status expectations before it requests the separate public and authenticated-read permissions.
+Detected route files are unclassified candidates, not confirmed public Journeys. Human Mode first shows the complete candidate count and safe labels. Retain an explicit subset and exclude the remainder, or exclude the complete set; then classify only retained routes as `public`, `user`, `staff`, `signed_token`, or excluded. The final Audit Brief shows every retained Journey's access class and anonymous/authenticated status expectations, and supports revision before it requests the separate public and authenticated-read permissions.
 
 Audit does not create `.launchrally`. The saved Report is an explicit output at `./launchrally-audit-report.json`. Confirmed Init is the first project mutation: it previews only LaunchRally-owned `.launchrally` paths, materializes the exact Engine, and leaves application dependency files unchanged. A registry read, when needed after an offline miss, is a separate decision from the file preview and confirmation.
 
