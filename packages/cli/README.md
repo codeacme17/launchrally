@@ -4,7 +4,7 @@ The LaunchRally CLI provides the `rally` Launcher and deterministic Engine for a
 
 ## Status
 
-LaunchRally 0.4.0 is an **Experimental Phase 1** release. Phase 1 adds Product Intent, Provider-neutral Architecture, bounded Executor coordination, and fresh assurance without relabeling Phase 0 Stable 0.3.2 on npm `latest`. Phase 1 publication does not imply Validated or Stable. Review every disclosed permission and preview before continuing.
+LaunchRally 0.4.1 is an **Experimental Phase 1** release. Phase 1 adds Product Intent, Provider-neutral Architecture, bounded Executor coordination, and fresh assurance without relabeling Phase 0 Stable 0.3.2 on npm `latest`. Phase 1 publication does not imply Validated or Stable. Review every disclosed permission and preview before continuing.
 
 Phase 0 0.3.2 remains a **Stable** release. P0 is Product Complete and P0 Validated with the Quality Floor satisfied.
 
@@ -13,7 +13,7 @@ Phase 0 0.3.2 remains a **Stable** release. P0 is Product Complete and P0 Valida
 Install the exact Launcher through your current user-writable npm prefix and verify it before entering a repository:
 
 ```sh
-npm install --global @launchrally/cli@0.4.0
+npm install --global @launchrally/cli@0.4.1
 rally --version --json
 ```
 
