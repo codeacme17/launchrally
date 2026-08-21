@@ -1114,6 +1114,9 @@ async function runInstallationJourneys({
         "--cwd",
         humanRepository,
       ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+      const humanInitAuthorityCommand = process.platform === "win32"
+        ? /^& 'rally' '--version' '--json' '--cwd' '.+'$/mu
+        : /^rally --version --json --cwd .+$/mu;
       if (
         initOutcome.exitCode !== 0
         || initOutcome.result?.status !== "completed"
@@ -1125,7 +1128,7 @@ async function runInstallationJourneys({
         || !new RegExp(`^Project Toolchain: @launchrally/cli@${version}$`, "mu")
           .test(humanInitCompletion)
         || !/^Applied changes: [1-9][0-9]*$/mu.test(humanInitCompletion)
-        || !/^rally --version --json --cwd .+$/mu.test(humanInitCompletion)
+        || !humanInitAuthorityCommand.test(humanInitCompletion)
         || !/authority\.state: "ready"/u.test(humanInitCompletion)
         || !/authority\.source: "project_toolchain"/u.test(humanInitCompletion)
         || /"changes_applied"/u.test(humanInitCompletion)
