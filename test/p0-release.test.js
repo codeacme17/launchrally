@@ -9,6 +9,10 @@ import { copyRepositoryFixture } from "./helpers/repository-fixture.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const execFileAsync = promisify(execFile);
+const currentVersion = JSON.parse(await readFile(
+  path.join(root, "package.json"),
+  "utf8",
+)).version;
 const COMPLETION_CLAIMS = [
   {
     path: "README.md",
@@ -115,7 +119,7 @@ test("P0 Stable remains valid only when a later Experimental P1 candidate preser
     (error) => {
       assert.match(error.stderr, /stable_promotion_tag_drift/u);
       assert.match(error.stderr, /v0\.3\.2/u);
-      assert.match(error.stderr, /v0\.4\.0/u);
+      assert.match(error.stderr, new RegExp(`v${currentVersion.replaceAll(".", "\\.")}`, "u"));
       return true;
     },
   );

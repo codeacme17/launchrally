@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.1 — Phase 1 Experimental
+
+LaunchRally 0.4.1 is a corrective Experimental Phase 1 release that improves
+the complete Human Mode workflow while preserving the separately supported
+Phase 0 Stable 0.3.2 line on npm `latest`.
+
+### Improved
+
+- Reduced public-route classification fatigue and preserved protected-journey
+  safety when public verification is skipped.
+- Made Human Init previews easier to review and completion output directly
+  actionable across POSIX and PowerShell.
+- Completed Human Audit and Human Verify interaction loops, including
+  authenticated journeys and Plan-compatible Verify handoff data.
+- Preserved report identity and currentness when rebinding a manifest to an
+  updated source Report.
+
+### Release boundary
+
+- 0.4.1 publishes only on npm `experimental` and as a GitHub prerelease.
+- Exact 0.4.1 external CLI, Codex, and Claude verification remains a separate
+  post-publication gate; publication does not make Phase 1 Validated or Stable.
+- Phase 0 Stable 0.3.2 remains on npm `latest`.
+
+See [the Phase 1 migration notes](docs/maintainers/p1-migration-notes.md) for
+adoption, retained-data, and recovery details.
+
 ## 0.4.0 — Phase 1 Experimental
 
 LaunchRally 0.4.0 adds the Experimental Phase 1 Launch Doctor and

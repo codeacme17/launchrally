@@ -88,9 +88,9 @@ test("the independent P1 governance contract maps every canonical requirement", 
 
   assert.equal(result.status, "completed");
   assert.equal(result.schema_version, "launchrally.dev/p1-release/v1");
-  assert.equal(result.product_status, "complete");
+  assert.equal(result.product_status, "incomplete");
   assert.equal(result.release_status, "experimental");
-  assert.deepEqual(result.requirements, { complete: 38, open: 0, total: 38 });
+  assert.deepEqual(result.requirements, { complete: 37, open: 1, total: 38 });
   assert.deepEqual(result.suspended_authorities, []);
   assert.equal(result.p0_release_status, "stable");
 });
@@ -234,8 +234,8 @@ test("a reviewed P1 fix remains suspended until a distinct restoration entry", a
   condition.regressions[0].status = "restored";
   condition.regressions[0].restoration = "review:quality-floor-restored";
   contract.quality_floor_status = "satisfied";
-  contract.product_status = "complete";
-  matrix.product_status = "complete";
+  contract.product_status = "incomplete";
+  matrix.product_status = "incomplete";
   await Promise.all([
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
