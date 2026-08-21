@@ -1,6 +1,57 @@
 import path from "node:path";
 
 import { PromptCancelledError } from "./human-audit.js";
+import { createNextAction } from "./invocation-context.js";
+
+const COMPLETION_PRESENTATION = Object.freeze({
+  initialization: {
+    manifestAction: "create",
+    manifestLabel: "created",
+    title: "LaunchRally Initialization Complete",
+    outcome: "initialized",
+  },
+  migration: {
+    manifestAction: "create",
+    manifestLabel: "migrated",
+    title: "LaunchRally Migration Complete",
+    outcome: "migrated",
+  },
+  rebind: {
+    manifestAction: "replace",
+    manifestLabel: "replaced",
+    title: "LaunchRally Manifest Rebind Complete",
+    outcome: "rebound",
+  },
+  update: {
+    manifestAction: "preserve",
+    manifestLabel: "preserved",
+    title: "LaunchRally Update Complete",
+    outcome: "updated",
+  },
+});
+
+const MANIFEST_ACTION_PRESENTATION = Object.freeze({
+  create: "created",
+  preserve: "preserved",
+  replace: "replaced",
+});
+
+function styledText(value, style, enabled) {
+  return enabled ? `\u001B[${style}m${value}\u001B[0m` : value;
+}
+
+function inferredCompletionMode(value) {
+  if (value.outcome === "migrated") return "migration";
+  if (value.outcome === "rebound") return "rebind";
+  return undefined;
+}
+
+function manifestActionLabel(completion, action) {
+  if (completion.manifestLabel && action === completion.manifestAction) {
+    return completion.manifestLabel;
+  }
+  return MANIFEST_ACTION_PRESENTATION[action] ?? "unchanged";
+}
 
 function changeCounts(changes) {
   const counts = { create: 0, update: 0, delete: 0 };
@@ -109,6 +160,55 @@ export function renderHumanInitFullPreview(value, context = {}) {
   return lines.join("\n");
 }
 
+export function renderHumanInitCompletion(value, {
+  invocationContext,
+  presentation = {},
+  root,
+  styled = false,
+  version = "unknown",
+} = {}) {
+  const mode = presentation.mode ?? value.mode ?? inferredCompletionMode(value);
+  const completion = COMPLETION_PRESENTATION[mode] ?? {
+    title: "LaunchRally Init Complete",
+    outcome: value.outcome,
+  };
+  const manifestAction = presentation.manifest_action ?? value.manifest_action;
+  const manifestActionValue = manifestAction?.action ?? completion.manifestAction;
+  const nextAction = createNextAction(invocationContext, [
+    "--version",
+    "--json",
+    "--cwd",
+    path.resolve(root),
+  ]);
+  const lines = [
+    styledText(completion.title, "1;36", styled),
+    `Outcome: ${completion.outcome}`,
+    `Manifest action: ${manifestActionLabel(completion, manifestActionValue)}`,
+    `Manifest source Report: ${value.source_report_id}`,
+  ];
+  if (
+    manifestAction?.action === "preserve"
+    && manifestAction.supplied_source_report_id !== value.source_report_id
+  ) {
+    lines.push(
+      `Supplied Report adopted into immutable history: ${manifestAction.supplied_source_report_id}`,
+    );
+  }
+  lines.push(
+    `Project Toolchain: @launchrally/cli@${version}`,
+    `Applied changes: ${value.changes_applied.length}`,
+    "Detailed paths remain available in the structured Init result from Agent/JSON Mode.",
+    "",
+    styledText("Required Execution Authority check", "1", styled),
+    styledText(nextAction.display, "36", styled),
+    "Continue only when authority.state: \"ready\" and authority.source: \"project_toolchain\".",
+  );
+  if (nextAction.disclosure) {
+    lines.push("", styledText("Launcher entry", "1", styled), nextAction.disclosure);
+  }
+  return lines.join("\n");
+}
+
 export async function runHumanInit({
   cwd,
   version,
@@ -117,11 +217,22 @@ export async function runHumanInit({
   reportPackage,
 }) {
   let result;
+  let presentation = {};
   try {
     await prompt.start("init");
     result = await runInit(cwd, version, { report_package: reportPackage });
+    presentation = {
+      manifest_action: result.manifest_action,
+      mode: result.mode,
+    };
 
     while (["needs_confirmation", "needs_permission"].includes(result.status)) {
+      if (result.mode || result.manifest_action) {
+        presentation = {
+          manifest_action: result.manifest_action ?? presentation.manifest_action,
+          mode: result.mode ?? presentation.mode,
+        };
+      }
       const response = await prompt.respondInit(result, { root: path.resolve(cwd), version });
       if (result.status === "needs_permission") {
         result = await runInit(cwd, version, {
@@ -138,6 +249,7 @@ export async function runHumanInit({
 
     return {
       exitCode: ["unavailable", "execution_error"].includes(result.status) ? 2 : 0,
+      presentation,
       result,
     };
   } catch (error) {

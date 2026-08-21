@@ -18,6 +18,7 @@ import {
   isOfflineResolutionMiss,
   npmExecFileCommand,
 } from "../packages/core/src/initialization.js";
+import { VERSION } from "../packages/cli/bin/version.js";
 import { createHistoryFiles, persistLocalHistory } from "../packages/core/src/local-history.js";
 import {
   materializeExactToolchain,
@@ -1649,6 +1650,9 @@ test("Init crash recovery preserves already committed immutable history", async 
   assert.equal(recovered.status, "completed");
   assert.equal(recovered.outcome, "initialized");
   assert.equal(recovered.recovery, "committed_history_finalized");
+  assert.equal(recovered.mode, "initialization");
+  assert.equal(Object.getOwnPropertyDescriptor(recovered, "mode").enumerable, false);
+  assert.doesNotMatch(JSON.stringify(recovered), /"mode"/u);
   assert.deepEqual(
     JSON.parse(await readFile(path.join(
       directory,
@@ -2645,7 +2649,16 @@ test("TTY Human Init renders and confirms the exact preview in one process", {
   assert.match(stdout, /1\. Confirm/u);
   assert.match(stdout, /2\. Decline/u);
   assert.doesNotMatch(stdout, /Resume token:/u);
-  assert.match(stdout, /"outcome": "initialized"/u);
+  assert.match(stdout, /LaunchRally Initialization Complete/u);
+  assert.match(stdout, /Outcome: initialized/u);
+  assert.match(stdout, /Manifest action: created/u);
+  assert.match(stdout, new RegExp(`Manifest source Report: ${audit.report.report_id}`, "u"));
+  assert.match(stdout, new RegExp(`Project Toolchain: @launchrally/cli@${VERSION}`, "u"));
+  assert.match(stdout, /Applied changes: \d+/u);
+  assert.match(stdout, /rally --version --json --cwd/u);
+  assert.match(stdout, /authority\.state: "ready"/u);
+  assert.match(stdout, /authority\.source: "project_toolchain"/u);
+  assert.doesNotMatch(stdout, /"changes_applied"/u);
   assert.match(
     await readFile(path.join(directory, ".launchrally", "manifest.yaml"), "utf8"),
     /schema_version: "launchrally\.dev\/manifest\/v2"/u,
@@ -2661,6 +2674,10 @@ test("the Quickstart documents same-process Human Init and explicit Agent resume
   assert.match(quickstart, /same digest-bound preview/iu);
   assert.match(quickstart, /confirm or decline/iu);
   assert.match(quickstart, /Ctrl-C/iu);
+  assert.match(quickstart, /After confirmation, Human Init prints a concise completion/iu);
+  assert.match(quickstart, /rally --version --json --cwd <repository-root>/u);
+  assert.match(quickstart, /authority\.state: "ready"/u);
+  assert.match(quickstart, /authority\.source: "project_toolchain"/u);
   assert.match(quickstart, /Agent Mode[\s\S]*--resume <token>/iu);
 });
 

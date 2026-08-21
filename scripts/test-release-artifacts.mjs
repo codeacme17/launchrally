@@ -909,7 +909,12 @@ async function runInstallationJourneys({
       humanRepository,
       { recursive: true },
     );
-    const [{ runHumanAudit }, { runHumanVerify }, packedCore] = await Promise.all([
+    const [
+      { runHumanAudit },
+      { renderHumanInitCompletion, runHumanInit },
+      { runHumanVerify },
+      packedCore,
+    ] = await Promise.all([
       import(pathToFileURL(path.join(
         cleanProject,
         "node_modules",
@@ -917,6 +922,14 @@ async function runInstallationJourneys({
         "cli",
         "bin",
         "human-audit.js",
+      )).href),
+      import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        "cli",
+        "bin",
+        "human-init.js",
       )).href),
       import(pathToFileURL(path.join(
         cleanProject,
@@ -976,6 +989,7 @@ async function runInstallationJourneys({
     const previousAuthorization = process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
     const previousCookie = process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
     const previousCa = process.env.LAUNCHRALLY_HOST_CA_FILE;
+    const previousPath = process.env.PATH;
     process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = authenticatedOrigin;
     process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = authorizationFile;
     process.env.LAUNCHRALLY_HOST_COOKIE_FILE = cookieFile;
@@ -985,6 +999,7 @@ async function runInstallationJourneys({
       "fixtures",
       "self-signed-cert.pem",
     );
+    process.env.PATH = launcherEnvironment.PATH;
     const promptRequests = [];
     try {
       const outcome = await runHumanAudit({
@@ -1058,32 +1073,65 @@ async function runInstallationJourneys({
       ) throw new Error("packed_human_authenticated_journey_failed");
       effectObservations.normalized_outputs.push(serialized);
 
-      const declared = (value) => ({ state: "declared", value });
-      const releaseIntent = outcome.result.report.scope.release_intent;
-      await mkdir(path.join(humanRepository, ".launchrally"), { recursive: true });
-      await writeFile(
-        path.join(humanRepository, ".launchrally", "manifest.yaml"),
-        `${JSON.stringify({
-          schema_version: "launchrally.dev/manifest/v2",
-          project: {
-            name: declared(outcome.result.report.scope.project.name),
-            type: declared(outcome.result.report.scope.project.type),
-            package_manager: declared(outcome.result.report.scope.project.package_manager),
+      const initPromptRequests = [];
+      const initOutcome = await runHumanInit({
+        cwd: humanRepository,
+        version,
+        reportPackage: outcome.result,
+        prompt: {
+          async start() {},
+          async respondInit(result) {
+            initPromptRequests.push(result.status);
+            if (result.status === "needs_permission") {
+              return {
+                permission_decisions: Object.fromEntries(
+                  result.request.permissions.map(({ id }) => [id, "approved"]),
+                ),
+              };
+            }
+            return result.status === "needs_confirmation"
+              ? { confirmation: "confirm" }
+              : {};
           },
-          release: {
-            intended_environment: declared(releaseIntent.intended_environment),
-            production_targets: declared(releaseIntent.production_targets),
-            core_journeys: declared(releaseIntent.core_journeys),
-          },
-          execution: {
-            source_report_id: declared(outcome.result.report.report_id),
-            assessment: declared(outcome.result.report.assessment),
-            public_verification: declared(outcome.result.report.scope.public_verification),
-          },
-          support: { layers: declared(releaseIntent.support_layers) },
-          providers: { roles: declared(releaseIntent.provider_roles) },
-        }, null, 2)}\n`,
-      );
+          async close() {},
+        },
+        runInit: packedCore.runInit,
+      });
+      const humanInitCompletion = renderHumanInitCompletion(initOutcome.result, {
+        root: humanRepository,
+        version,
+        invocationContext: {
+          schema_version: "launchrally.dev/invocation-context/v1",
+          source: "user_path",
+          launcher_version: version,
+        },
+        presentation: initOutcome.presentation,
+        styled: false,
+      });
+      const humanInitAuthority = JSON.parse((await invokeLauncher("rally", [
+        "--version",
+        "--json",
+        "--cwd",
+        humanRepository,
+      ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+      if (
+        initOutcome.exitCode !== 0
+        || initOutcome.result?.status !== "completed"
+        || initPromptRequests.at(-1) !== "needs_confirmation"
+        || !/^LaunchRally Initialization Complete$/mu.test(humanInitCompletion)
+        || !/^Outcome: initialized$/mu.test(humanInitCompletion)
+        || !/^Manifest action: created$/mu.test(humanInitCompletion)
+        || !/^Manifest source Report: report_/mu.test(humanInitCompletion)
+        || !new RegExp(`^Project Toolchain: @launchrally/cli@${version}$`, "mu")
+          .test(humanInitCompletion)
+        || !/^Applied changes: [1-9][0-9]*$/mu.test(humanInitCompletion)
+        || !/^rally --version --json --cwd .+$/mu.test(humanInitCompletion)
+        || !/authority\.state: "ready"/u.test(humanInitCompletion)
+        || !/authority\.source: "project_toolchain"/u.test(humanInitCompletion)
+        || /"changes_applied"/u.test(humanInitCompletion)
+        || humanInitAuthority.authority?.state !== "ready"
+        || humanInitAuthority.authority?.source !== "project_toolchain"
+      ) throw new Error("packed_human_init_authority_handoff_failed");
       const verifyPromptRequests = [];
       const verifyOutcome = await runHumanVerify({
         cwd: humanRepository,
@@ -1122,7 +1170,7 @@ async function runInstallationJourneys({
       const verifyHistory = JSON.stringify(await snapshotTree(path.join(
         humanRepository,
         ".launchrally",
-      )));
+      ), "", new Set(["toolchain"])));
       if (
         verifyOutcome.exitCode !== 0
         || verifyOutcome.result?.status !== "completed"
@@ -1154,6 +1202,8 @@ async function runInstallationJourneys({
       else process.env.LAUNCHRALLY_HOST_COOKIE_FILE = previousCookie;
       if (previousCa === undefined) delete process.env.LAUNCHRALLY_HOST_CA_FILE;
       else process.env.LAUNCHRALLY_HOST_CA_FILE = previousCa;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
       await rm(authenticationRoot, { recursive: true, force: true });
       await new Promise((resolve) => server.close(resolve));
     }

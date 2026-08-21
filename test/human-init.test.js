@@ -5,7 +5,11 @@ import { stripVTControlCharacters } from "node:util";
 import test from "node:test";
 
 import { PromptCancelledError } from "../packages/cli/bin/human-audit.js";
-import { renderHumanInit, runHumanInit } from "../packages/cli/bin/human-init.js";
+import {
+  renderHumanInit,
+  renderHumanInitCompletion,
+  runHumanInit,
+} from "../packages/cli/bin/human-init.js";
 import {
   createClackPromptAdapter,
   createPlainPromptAdapter,
@@ -30,6 +34,11 @@ test("the Human Init driver accepts permission and confirmation in one process",
     {
       status: "needs_confirmation",
       operation: "init",
+      mode: "initialization",
+      manifest_action: {
+        action: "create",
+        supplied_source_report_id: "report-1",
+      },
       interaction: { resume_token: "confirmation-token" },
     },
     {
@@ -68,6 +77,13 @@ test("the Human Init driver accepts permission and confirmation in one process",
 
   assert.equal(outcome.exitCode, 0);
   assert.equal(outcome.result.outcome, "initialized");
+  assert.deepEqual(outcome.presentation, {
+    manifest_action: {
+      action: "create",
+      supplied_source_report_id: "report-1",
+    },
+    mode: "initialization",
+  });
   assert.deepEqual(calls, [
     {
       cwd: "relative-workspace",
@@ -101,6 +117,198 @@ test("the Human Init driver accepts permission and confirmation in one process",
     { root: path.resolve("relative-workspace"), version: "0.4.0" },
     { root: path.resolve("relative-workspace"), version: "0.4.0" },
   ]);
+});
+
+test("Human Init renders a concise plain completion and mandatory authority handoff", () => {
+  const rendered = renderHumanInitCompletion({
+    status: "completed",
+    operation: "init",
+    outcome: "initialized",
+    source_report_id: "report-adopted",
+    changes_applied: Array.from({ length: 24 }, (_, index) =>
+      `.launchrally/reports/report-adopted/evidence-${index}.json`),
+  }, {
+    root: "/workspace/project with quote's name",
+    version: "0.4.0",
+    invocationContext: {
+      schema_version: "launchrally.dev/invocation-context/v1",
+      source: "user_path",
+      launcher_version: "0.4.0",
+    },
+    presentation: {
+      mode: "initialization",
+      manifest_action: {
+        action: "create",
+        supplied_source_report_id: "report-adopted",
+      },
+    },
+  });
+
+  assert.match(rendered, /^LaunchRally Initialization Complete$/mu);
+  assert.match(rendered, /^Outcome: initialized$/mu);
+  assert.match(rendered, /^Manifest action: created$/mu);
+  assert.match(rendered, /^Manifest source Report: report-adopted$/mu);
+  assert.match(rendered, /^Project Toolchain: @launchrally\/cli@0\.4\.0$/mu);
+  assert.match(rendered, /^Applied changes: 24$/mu);
+  assert.match(rendered, /Detailed paths remain available in the structured Init result/u);
+  assert.match(
+    rendered,
+    /^rally --version --json --cwd '\/workspace\/project with quote'\\''s name'$/mu,
+  );
+  assert.match(rendered, /authority\.state: "ready"/u);
+  assert.match(rendered, /authority\.source: "project_toolchain"/u);
+  assert.ok(rendered.split("\n").length < 24);
+  assert.doesNotMatch(rendered, /evidence-23\.json/u);
+  assert.doesNotMatch(rendered, /\u001B\[/u);
+});
+
+test("styled TTY Human Init completion preserves semantics for update, migration, and rebind", () => {
+  const output = ttyStream();
+  const cases = [
+    {
+      mode: "initialization",
+      outcome: "initialized",
+      action: "create",
+      title: "LaunchRally Initialization Complete",
+      outcomeLabel: "initialized",
+      manifestLabel: "created",
+    },
+    {
+      mode: "update",
+      outcome: "initialized",
+      action: "preserve",
+      title: "LaunchRally Update Complete",
+      outcomeLabel: "updated",
+      manifestLabel: "preserved",
+    },
+    {
+      mode: "migration",
+      outcome: "migrated",
+      action: "create",
+      title: "LaunchRally Migration Complete",
+      outcomeLabel: "migrated",
+      manifestLabel: "migrated",
+    },
+    {
+      mode: "rebind",
+      outcome: "rebound",
+      action: "replace",
+      title: "LaunchRally Manifest Rebind Complete",
+      outcomeLabel: "rebound",
+      manifestLabel: "replaced",
+    },
+  ];
+
+  for (const item of cases) {
+    const rendered = stripVTControlCharacters(renderHumanInitCompletion({
+      status: "completed",
+      operation: "init",
+      outcome: item.outcome,
+      source_report_id: "report-current",
+      changes_applied: [".launchrally/manifest.yaml"],
+    }, {
+      root: "/workspace",
+      version: "0.4.0",
+      styled: output.isTTY,
+      invocationContext: {
+        schema_version: "launchrally.dev/invocation-context/v1",
+        source: "user_path",
+        launcher_version: "0.4.0",
+      },
+      presentation: {
+        mode: item.mode,
+        manifest_action: {
+          action: item.action,
+          existing_source_report_id: "report-previous",
+          supplied_source_report_id: "report-current",
+        },
+      },
+    }));
+
+    assert.match(rendered, new RegExp(`^${item.title}$`, "mu"));
+    assert.match(rendered, new RegExp(`^Outcome: ${item.outcomeLabel}$`, "mu"));
+    assert.match(rendered, new RegExp(`^Manifest action: ${item.manifestLabel}$`, "mu"));
+    assert.match(rendered, /^Manifest source Report: report-current$/mu);
+    assert.match(rendered, /^rally --version --json --cwd '\/workspace'$/mu);
+    assert.match(rendered, /authority\.state: "ready"/u);
+    assert.match(rendered, /authority\.source: "project_toolchain"/u);
+  }
+});
+
+test("Human Init recovers accurate completion semantics without changing its structured result", () => {
+  const cases = [
+    {
+      mode: "initialization",
+      value: {
+        outcome: "initialized",
+        changes_applied: [".launchrally/manifest.yaml"],
+      },
+      title: "LaunchRally Initialization Complete",
+      action: "created",
+      outcome: "initialized",
+    },
+    {
+      mode: "update",
+      value: {
+        outcome: "initialized",
+        changes_applied: [
+          ".launchrally/manifest.yaml",
+          ".launchrally/reports/report-new/record.json",
+        ],
+      },
+      title: "LaunchRally Update Complete",
+      action: "preserved",
+      outcome: "updated",
+    },
+    {
+      mode: "migration",
+      value: {
+        outcome: "migrated",
+        changes_applied: [".launchrally/manifest.yaml"],
+      },
+      title: "LaunchRally Migration Complete",
+      action: "migrated",
+      outcome: "migrated",
+    },
+    {
+      mode: "rebind",
+      value: {
+        outcome: "rebound",
+        changes_applied: [".launchrally/manifest.yaml"],
+      },
+      title: "LaunchRally Manifest Rebind Complete",
+      action: "replaced",
+      outcome: "rebound",
+    },
+  ];
+
+  for (const item of cases) {
+    const structuredResult = {
+      contract: "launchrally.dev/cli/v2",
+      status: "completed",
+      operation: "init",
+      source_report_id: "report-source",
+      recovery: "committed_history_finalized",
+      ...item.value,
+    };
+    const before = structuredClone(structuredResult);
+    Object.defineProperty(structuredResult, "mode", { value: item.mode });
+    const rendered = renderHumanInitCompletion(structuredResult, {
+      root: "/workspace",
+      version: "0.4.0",
+      invocationContext: {
+        schema_version: "launchrally.dev/invocation-context/v1",
+        source: "user_path",
+        launcher_version: "0.4.0",
+      },
+    });
+
+    assert.match(rendered, new RegExp(`^${item.title}$`, "mu"));
+    assert.match(rendered, new RegExp(`^Outcome: ${item.outcome}$`, "mu"));
+    assert.match(rendered, new RegExp(`^Manifest action: ${item.action}$`, "mu"));
+    assert.doesNotMatch(JSON.stringify(structuredResult), /"mode"/u);
+    assert.deepEqual(structuredResult, before);
+  }
 });
 
 test("the plain Human Init prompt reads a decision after rendering the exact preview", async () => {
