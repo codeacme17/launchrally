@@ -1206,7 +1206,7 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
     };
   }
   if (recovered?.action === "finalized") {
-    return {
+    const result = {
       contract: CLI_INTERACTION_CONTRACT,
       status: "completed",
       operation: "init",
@@ -1216,6 +1216,8 @@ async function runInitLocked(cwd, version, options = {}, dependencies = {}) {
       source_report_id: recovered.source_report_id,
       changes_applied: recovered.changes_applied,
     };
+    Object.defineProperty(result, "mode", { value: recovered.mode });
+    return result;
   }
   if (recovered === false) {
     return {

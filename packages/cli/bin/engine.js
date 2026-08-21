@@ -33,7 +33,11 @@ import {
   renderHumanAuditCompletion,
   runHumanAudit,
 } from "./human-audit.js";
-import { renderHumanInit, runHumanInit } from "./human-init.js";
+import {
+  renderHumanInit,
+  renderHumanInitCompletion,
+  runHumanInit,
+} from "./human-init.js";
 import { renderHumanVerify, runHumanVerify } from "./human-verify.js";
 import {
   commandName,
@@ -806,7 +810,22 @@ async function main() {
       process.stderr.write("Init cancelled. Project-owned files were not changed.\n");
       return 130;
     }
-    print(outcome.result);
+    if (
+      outcome.result.status === "completed"
+      && ["already_initialized", "initialized", "migrated", "rebound"].includes(
+        outcome.result.outcome,
+      )
+    ) {
+      process.stdout.write(renderHumanInitCompletion(outcome.result, {
+        invocationContext,
+        presentation: outcome.presentation,
+        root: cwd,
+        styled: presentation.styled,
+        version: VERSION,
+      }) + "\n");
+    } else {
+      print(outcome.result);
+    }
     return outcome.exitCode;
   }
 
