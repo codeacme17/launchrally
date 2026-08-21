@@ -540,7 +540,7 @@ export async function previewArchitecturePackagePersistence(root, bundle, option
   const resolvedRoot = await repositoryRoot(root);
   const initialized = await initializedProject(
     resolvedRoot,
-    options.launcher_version ?? "0.4.0",
+    options.launcher_version ?? "0.4.1",
   );
   if (!initialized && !options.output_path) {
     return { mode: "output_only", requires_confirmation: false, files: [] };
@@ -748,7 +748,7 @@ async function persistInitializedArchitecturePackage(
   preview,
   options,
 ) {
-  if (!await initializedProject(resolvedRoot, options.launcher_version ?? "0.4.0")) {
+  if (!await initializedProject(resolvedRoot, options.launcher_version ?? "0.4.1")) {
     const error = new Error("The repository was no longer initialized at confirmation time.");
     error.code = "architecture_persistence_scope_changed";
     throw error;

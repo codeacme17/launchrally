@@ -902,6 +902,316 @@ async function runInstallationJourneys({
     ...process.env,
     PATH: [npmStub, path.dirname(launcher), process.env.PATH ?? ""].join(path.delimiter),
   };
+  const exercisePackedHumanAuthenticatedJourneyPlatformBoundary = async () => {
+    const humanRepository = path.join(temporaryRoot, "packed human authenticated journey");
+    await cp(
+      path.join(root, "fixtures", "coverage", "typescript-astro"),
+      humanRepository,
+      { recursive: true },
+    );
+    const [
+      { runHumanAudit },
+      { renderHumanInitCompletion, runHumanInit },
+      { runHumanVerify },
+      packedCore,
+    ] = await Promise.all([
+      import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        "cli",
+        "bin",
+        "human-audit.js",
+      )).href),
+      import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        "cli",
+        "bin",
+        "human-init.js",
+      )).href),
+      import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        "cli",
+        "bin",
+        "human-verify.js",
+      )).href),
+      import(pathToFileURL(path.join(
+        cleanProject,
+        "node_modules",
+        "@launchrally",
+        "core",
+        "src",
+        "index.js",
+      )).href),
+    ]);
+    const authenticationRoot = await mkdtemp(
+      path.join(os.tmpdir(), "launchrally-packed-human-auth-"),
+    );
+    const authorizationFile = path.join(authenticationRoot, "authorization");
+    const cookieFile = path.join(authenticationRoot, "cookie");
+    const authorizationSentinel = "Bearer packed-human-authorization-secret";
+    const sessionSentinel = "packed-human-session-secret";
+    const accountSentinel = "packed-human-account-identifier";
+    const responseSentinel = "packed-human-response-body-secret";
+    await writeFile(authorizationFile, authorizationSentinel, { mode: 0o600 });
+    await writeFile(
+      cookieFile,
+      `session=${sessionSentinel}; account_id=${accountSentinel}`,
+      { mode: 0o600 },
+    );
+    let authenticatedRequestObserved = false;
+    const server = createServer({
+      key: await readFile(path.join(root, "test", "fixtures", "self-signed-key.pem")),
+      cert: await readFile(path.join(root, "test", "fixtures", "self-signed-cert.pem")),
+    }, (request, response) => {
+      authenticatedRequestObserved = request.headers.authorization === authorizationSentinel
+        && request.headers.cookie?.includes(sessionSentinel)
+        && request.headers.cookie?.includes(accountSentinel);
+      effectObservations.authenticated_network.push({
+        effect: "authenticated_network_read",
+        method: request.method,
+        destination: "loopback_fixture",
+        authentication_source: "owner_private_reference",
+      });
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({
+        body_secret: responseSentinel,
+        account_id: accountSentinel,
+      }));
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const authenticatedOrigin = `https://localhost:${server.address().port}`;
+    const previousOrigin = process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+    const previousAuthorization = process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+    const previousCookie = process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
+    const previousCa = process.env.LAUNCHRALLY_HOST_CA_FILE;
+    const previousPath = process.env.PATH;
+    process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = authenticatedOrigin;
+    process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = authorizationFile;
+    process.env.LAUNCHRALLY_HOST_COOKIE_FILE = cookieFile;
+    process.env.LAUNCHRALLY_HOST_CA_FILE = path.join(
+      root,
+      "test",
+      "fixtures",
+      "self-signed-cert.pem",
+    );
+    process.env.PATH = launcherEnvironment.PATH;
+    const promptRequests = [];
+    try {
+      const outcome = await runHumanAudit({
+        cwd: humanRepository,
+        version,
+        prompt: {
+          async start() {},
+          async respond(result) {
+            promptRequests.push(result.request?.type ?? result.status);
+            if (result.status === "needs_input") {
+              return {
+                answers: {
+                  intended_environment: "staging",
+                  production_targets: [authenticatedOrigin],
+                  core_journeys: [{
+                    schema_version: "launchrally.dev/protected-journey/v1",
+                    method: "GET",
+                    path: "/control",
+                    purpose: "authenticated Core Journey",
+                    access: {
+                      authentication_class: "staff",
+                      anonymous_status_codes: [401, 403, 404],
+                      authenticated_status_codes: [200],
+                    },
+                  }],
+                  provider_roles: [],
+                  support_layers: [],
+                },
+              };
+            }
+            if (result.status === "needs_confirmation") return { confirmation: "confirm" };
+            if (result.status === "needs_permission") {
+              return {
+                permission_decisions: {
+                  public_verification: "denied",
+                  authenticated_journey_verification: "approved",
+                },
+              };
+            }
+            return {};
+          },
+          async close() {},
+        },
+        runAudit: packedCore.runAudit,
+        resumeAuthenticatedJourney: (options) =>
+          packedCore.resumeAuthenticatedJourneyFromHost({ ...options, host: "cli" }),
+      });
+      const serialized = JSON.stringify(outcome.result);
+      const sensitiveSentinels = new RegExp([
+        authorizationSentinel.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"),
+        sessionSentinel,
+        accountSentinel,
+        responseSentinel,
+      ].join("|"), "iu");
+      const supportedPrivateReferences = process.platform !== "win32";
+      const authenticatedResults = outcome.result.report?.results;
+      if (
+        outcome.exitCode !== 0
+        || outcome.result?.status !== "completed"
+        || (supportedPrivateReferences
+          ? authenticatedResults?.authenticated_journey_evidence_refs?.length !== 1
+            || authenticatedResults?.authenticated_journey_gaps?.length !== 0
+            || !authenticatedRequestObserved
+          : !authenticatedResults?.authenticated_journey_gaps?.some(
+            ({ outcome: gapOutcome }) => gapOutcome === "runner_unavailable",
+          ))
+        || promptRequests.includes("authenticated_journey_results")
+        || sensitiveSentinels.test(serialized)
+        || /bearer\s|"cookie"\s*:|"headers"\s*:|response_body|account_id/iu.test(serialized)
+        || sensitiveSentinels.test(JSON.stringify(effectObservations.package_manager))
+      ) throw new Error("packed_human_authenticated_journey_failed");
+      effectObservations.normalized_outputs.push(serialized);
+
+      const initPromptRequests = [];
+      const initOutcome = await runHumanInit({
+        cwd: humanRepository,
+        version,
+        reportPackage: outcome.result,
+        prompt: {
+          async start() {},
+          async respondInit(result) {
+            initPromptRequests.push(result.status);
+            if (result.status === "needs_permission") {
+              return {
+                permission_decisions: Object.fromEntries(
+                  result.request.permissions.map(({ id }) => [id, "approved"]),
+                ),
+              };
+            }
+            return result.status === "needs_confirmation"
+              ? { confirmation: "confirm" }
+              : {};
+          },
+          async close() {},
+        },
+        runInit: packedCore.runInit,
+      });
+      const humanInitCompletion = renderHumanInitCompletion(initOutcome.result, {
+        root: humanRepository,
+        version,
+        invocationContext: {
+          schema_version: "launchrally.dev/invocation-context/v1",
+          source: "user_path",
+          launcher_version: version,
+        },
+        presentation: initOutcome.presentation,
+        styled: false,
+      });
+      const humanInitAuthority = JSON.parse((await invokeLauncher("rally", [
+        "--version",
+        "--json",
+        "--cwd",
+        humanRepository,
+      ], { cwd: temporaryRoot, env: launcherEnvironment })).stdout);
+      const humanInitAuthorityCommand = process.platform === "win32"
+        ? /^& 'rally' '--version' '--json' '--cwd' '.+'$/mu
+        : /^rally --version --json --cwd .+$/mu;
+      if (
+        initOutcome.exitCode !== 0
+        || initOutcome.result?.status !== "completed"
+        || initPromptRequests.at(-1) !== "needs_confirmation"
+        || !/^LaunchRally Initialization Complete$/mu.test(humanInitCompletion)
+        || !/^Outcome: initialized$/mu.test(humanInitCompletion)
+        || !/^Manifest action: created$/mu.test(humanInitCompletion)
+        || !/^Manifest source Report: report_/mu.test(humanInitCompletion)
+        || !new RegExp(`^Project Toolchain: @launchrally/cli@${version}$`, "mu")
+          .test(humanInitCompletion)
+        || !/^Applied changes: [1-9][0-9]*$/mu.test(humanInitCompletion)
+        || !humanInitAuthorityCommand.test(humanInitCompletion)
+        || !/authority\.state: "ready"/u.test(humanInitCompletion)
+        || !/authority\.source: "project_toolchain"/u.test(humanInitCompletion)
+        || /"changes_applied"/u.test(humanInitCompletion)
+        || humanInitAuthority.authority?.state !== "ready"
+        || humanInitAuthority.authority?.source !== "project_toolchain"
+      ) throw new Error("packed_human_init_authority_handoff_failed");
+      const verifyPromptRequests = [];
+      const verifyOutcome = await runHumanVerify({
+        cwd: humanRepository,
+        version,
+        reportPackage: outcome.result,
+        scope: "full",
+        prompt: {
+          async start() {},
+          async respondVerify(result) {
+            verifyPromptRequests.push(result.status);
+            return {
+              permission_decisions: Object.fromEntries(
+                result.request.permissions.map(({ permission_id: permissionId }) => [
+                  permissionId,
+                  permissionId === "authenticated_journey_verification"
+                    ? "approved"
+                    : "denied",
+                ]),
+              ),
+            };
+          },
+          async close() {},
+        },
+        runVerify: packedCore.runVerify,
+        resumeAuthenticatedJourney: (options) =>
+          packedCore.resumeAuthenticatedJourneyFromHost({ ...options, host: "cli" }),
+      });
+      const serializedVerify = JSON.stringify(verifyOutcome.result);
+      const verifyRecord = JSON.stringify(JSON.parse(await readFile(path.join(
+        humanRepository,
+        ".launchrally",
+        "reports",
+        verifyOutcome.result.report?.report_id ?? "missing",
+        "record.json",
+      ), "utf8")));
+      const verifyHistory = JSON.stringify(await snapshotTree(path.join(
+        humanRepository,
+        ".launchrally",
+      ), "", new Set(["toolchain"])));
+      if (
+        verifyOutcome.exitCode !== 0
+        || verifyOutcome.result?.status !== "completed"
+        || verifyPromptRequests.length !== 1
+        || verifyPromptRequests[0] !== "needs_permission"
+        || (supportedPrivateReferences
+          ? verifyOutcome.result.report?.results.authenticated_journey_evidence_refs?.length !== 1
+            || verifyOutcome.result.report?.results.authenticated_journey_gaps?.length !== 0
+          : !verifyOutcome.result.report?.results.authenticated_journey_gaps?.some(
+            ({ outcome: gapOutcome }) => gapOutcome === "runner_unavailable",
+          ))
+        || sensitiveSentinels.test(serializedVerify)
+        || sensitiveSentinels.test(verifyRecord)
+        || sensitiveSentinels.test(verifyHistory)
+        || /bearer\s|"cookie"\s*:|"headers"\s*:|response_body|account_id|resume_token/iu.test(
+          verifyHistory,
+        )
+      ) throw new Error("packed_human_verify_authenticated_journey_failed");
+      effectObservations.normalized_outputs.push(serializedVerify);
+    } finally {
+      if (previousOrigin === undefined) delete process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN;
+      else process.env.LAUNCHRALLY_AUTHENTICATED_ORIGIN = previousOrigin;
+      if (previousAuthorization === undefined) {
+        delete process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE;
+      } else {
+        process.env.LAUNCHRALLY_HOST_AUTHORIZATION_FILE = previousAuthorization;
+      }
+      if (previousCookie === undefined) delete process.env.LAUNCHRALLY_HOST_COOKIE_FILE;
+      else process.env.LAUNCHRALLY_HOST_COOKIE_FILE = previousCookie;
+      if (previousCa === undefined) delete process.env.LAUNCHRALLY_HOST_CA_FILE;
+      else process.env.LAUNCHRALLY_HOST_CA_FILE = previousCa;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      await rm(authenticationRoot, { recursive: true, force: true });
+      await new Promise((resolve) => server.close(resolve));
+    }
+  };
+  await exercisePackedHumanAuthenticatedJourneyPlatformBoundary();
   const runProtectedSkillJourney = async (skillJourney, host) => {
     assertEqual(
       skillJourney.protected_journeys,
@@ -2497,7 +2807,7 @@ async function runInstallationJourneys({
     || effectObservations.normalized_outputs.length === 0
     || effectObservations.guarded_process_sections < 3
     || (process.platform !== "win32"
-      && effectObservations.authenticated_network.length !== 6)
+      && effectObservations.authenticated_network.length !== 8)
   ) throw new Error("p1_clean_host_observation_incomplete");
   const cleanHost = {
     unauthorized_install: effectObservations.package_manager.some(
@@ -2563,6 +2873,9 @@ async function runInstallationJourneys({
       full_journey: "plan_handoff_verify_completed",
       packaged_skill_fixtures: "codex_and_claude_executed",
       protected_journeys: "codex_and_claude_audit_verify_normalized",
+      human_authenticated_journey: process.platform === "win32"
+        ? "typed_runner_unavailable_restricted_file_boundary"
+        : "normalized_success_without_sensitive_persistence",
       launcher_removal: "project_data_preserved",
       fixture_invocations: fixtureInvocations,
     },
@@ -2660,11 +2973,47 @@ async function smokeCli(
     "bin",
     "rally.js",
   );
+  const humanVerifyModule = path.join(
+    cleanProject,
+    "node_modules",
+    "@launchrally",
+    "cli",
+    "bin",
+    "human-verify.js",
+  );
   const invokeRally = (arguments_, options = {}) => run(
     process.execPath,
     [rally, ...arguments_],
     options,
   );
+  const renderPackedHumanVerify = async (result, cwd, environment) => (await run(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      [
+        "import { pathToFileURL } from 'node:url';",
+        "const { renderHumanVerify } = await import(pathToFileURL(process.env.LAUNCHRALLY_TEST_HUMAN_VERIFY_MODULE));",
+        "const result = JSON.parse(process.env.LAUNCHRALLY_TEST_VERIFY_RESULT);",
+        "const invocationContext = JSON.parse(process.env.LAUNCHRALLY_TEST_INVOCATION_CONTEXT);",
+        "process.stdout.write(renderHumanVerify(result, { cwd: process.env.LAUNCHRALLY_TEST_CWD, invocationContext, styled: false }));",
+      ].join("\n"),
+    ],
+    {
+      cwd: cleanProject,
+      env: {
+        ...environment,
+        LAUNCHRALLY_TEST_HUMAN_VERIFY_MODULE: humanVerifyModule,
+        LAUNCHRALLY_TEST_VERIFY_RESULT: JSON.stringify(result),
+        LAUNCHRALLY_TEST_INVOCATION_CONTEXT: JSON.stringify({
+          schema_version: "launchrally.dev/invocation-context/v1",
+          source: "user_path",
+          launcher_version: version,
+        }),
+        LAUNCHRALLY_TEST_CWD: cwd,
+      },
+    },
+  )).stdout;
   const versionResult = JSON.parse((await invokeRally(["--version", "--json"], {
     cwd: cleanProject,
   })).stdout);
@@ -2976,16 +3325,30 @@ async function smokeCli(
         ])),
       }),
     ]);
-    if (refreshed.status !== "completed") {
+    const refreshedHuman = await renderPackedHumanVerify(
+      refreshed,
+      repository,
+      coverageEnvironment,
+    );
+    const escapedSourceId = completed.report.report_id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const currentReportPath = refreshedHuman.match(
+      /^Current Report input\n(\.launchrally\/reports\/[^\n]+\/record\.json)$/mu,
+    )?.[1];
+    if (
+      !new RegExp(`^Manifest Source Report\\n${escapedSourceId}$`, "mu").test(refreshedHuman)
+      || !/^Current Report\n.+$/mu.test(refreshedHuman)
+      || !/^Failed Checks \(\d+\)$/mu.test(refreshedHuman)
+      || !/^Verification Gaps \(\d+\)$/mu.test(refreshedHuman)
+      || !currentReportPath
+      || !/^Next command\n.+\bplan\b.+--report\b/mu.test(refreshedHuman)
+    ) {
       throw new Error(`coverage_artifact_refresh_failed: ${representative.id}`);
     }
-    const refreshedPath = path.join(reports, `${representative.id}-refreshed.json`);
-    await writeFile(refreshedPath, JSON.stringify(refreshed));
     const plan = await invoke([
-      "plan", "--json", "--cwd", repository, "--report", refreshedPath,
+      "plan", "--json", "--cwd", repository, "--report", currentReportPath,
     ]);
     const handoff = await invoke([
-      "plan", "--json", "--cwd", repository, "--report", refreshedPath, "--handoff",
+      "plan", "--json", "--cwd", repository, "--report", currentReportPath, "--handoff",
     ]);
     if (plan.status !== "completed" || handoff.status !== "completed") {
       throw new Error(`coverage_artifact_plan_failed: ${representative.id}`);
@@ -2997,7 +3360,7 @@ async function smokeCli(
     );
     const verifyPermission = await invoke([
       "verify", "--json", "--cwd", repository,
-      "--report", refreshedPath,
+      "--report", auditPath,
       "--scope", "full",
     ]);
     const verified = await invoke([
@@ -3013,6 +3376,9 @@ async function smokeCli(
     ]);
     if (
       verified.status !== "completed"
+      || verified.interaction?.source_report?.report_id !== completed.report.report_id
+      || verified.manifest_drift?.length !== 0
+      || verified.report?.policy?.current !== true
       || verified.comparison?.source_report_id === verified.comparison?.current_report_id
       || !verified.comparison?.invalidated_evidence?.some(
         ({ target }) => target === "repository:.env.example",

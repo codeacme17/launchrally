@@ -4,7 +4,7 @@ The LaunchRally CLI provides the `rally` Launcher and deterministic Engine for a
 
 ## Status
 
-LaunchRally 0.4.0 is an **Experimental Phase 1** release. Phase 1 adds Product Intent, Provider-neutral Architecture, bounded Executor coordination, and fresh assurance without relabeling Phase 0 Stable 0.3.2 on npm `latest`. Phase 1 publication does not imply Validated or Stable. Review every disclosed permission and preview before continuing.
+LaunchRally 0.4.1 is an **Experimental Phase 1** release. Phase 1 adds Product Intent, Provider-neutral Architecture, bounded Executor coordination, and fresh assurance without relabeling Phase 0 Stable 0.3.2 on npm `latest`. Phase 1 publication does not imply Validated or Stable. Review every disclosed permission and preview before continuing.
 
 Phase 0 0.3.2 remains a **Stable** release. P0 is Product Complete and P0 Validated with the Quality Floor satisfied.
 
@@ -13,7 +13,7 @@ Phase 0 0.3.2 remains a **Stable** release. P0 is Product Complete and P0 Valida
 Install the exact Launcher through your current user-writable npm prefix and verify it before entering a repository:
 
 ```sh
-npm install --global @launchrally/cli@0.4.0
+npm install --global @launchrally/cli@0.4.1
 rally --version --json
 ```
 
@@ -23,9 +23,14 @@ From the repository root, save the complete Human Audit Report, separately confi
 rally audit --plain --cwd . --output ./launchrally-audit-report.json
 rally init --plain --cwd . --report ./launchrally-audit-report.json
 rally --version --json --cwd .
+rally verify --plain --cwd . --report ./launchrally-audit-report.json --scope full
 ```
 
-Audit performs no repository write and does not create `.launchrally`. Public and Provider reads are independent and default-denied. Confirmed Init is the first project mutation, stays under LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
+Audit performs no repository write and does not create `.launchrally`. Public and Provider reads are independent and default-denied. Human Init first shows a concise summary of every affected path, operation, digest, source identity, toolchain materialization, and authority boundary. Choose `View full preview` to inspect every exact diff and after-content before returning to the same confirmation. Confirmed Init is the first project mutation, stays under LaunchRally-owned `.launchrally` paths, materializes the exact Project Toolchain, and leaves application dependency files unchanged.
+
+TTY Human Verify keeps fresh Evidence review in the same process. It shows every public probe, Provider command sequence, and authenticated Core Journey separately; each approval defaults to denied. Approved authenticated reads use only the typed installed host runner, while denial completes with Verification Gaps. Cancellation performs no pending read, and Human prose never exposes resume tokens. `--json` retains the explicit `--resume`, `--permissions`, and `--journey-results` Agent/CI protocol unchanged.
+
+Ordinary Init preserves an existing Manifest while it may preview adoption of a newer Report into immutable history. To replace incorrect or outdated release intent with a current corrected Audit, run `rally init --cwd . --report ./corrected-audit-report.json --rebind`, review the old/new source identities and exact Manifest diff, and confirm that separate preview. Rebind preserves the exact Project Toolchain and all prior Reports and Evidence.
 
 `rally architect` is the read-only Phase 1 whole-product decision flow. It consumes a current full Report plus confirmed Product Intent, Capability Catalog, and Capability Graph files, returns a typed Blueprint before confirmation, and then accepts independent decision responses. A completed confirmed set includes an immutable Architecture Package bundle. Use `rally architecture-package --package <bundle.json> --output <path>` to write only an explicitly selected pre-Init output. After Init, omit `--output` to inspect the exact local-history preview, then repeat with its exact `--resume <token> --confirm confirm` to append the digest-bound package transactionally. Neither command performs Provider writes, stages files, commits files, or turns the Manifest into reasoning history.
 

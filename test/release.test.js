@@ -1302,7 +1302,7 @@ test("P1 governance binds the completed exact-artifact gate to runtime evidence"
     id: "p1_external_verification",
     command: "test:p1-external",
     mandatory: true,
-    status: "complete",
+    status: "pending",
     evidence: {
       type: "script",
       path: "scripts/verify-p1-external-results.mjs",
@@ -1449,6 +1449,9 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       full_journey: "plan_handoff_verify_completed",
       packaged_skill_fixtures: "codex_and_claude_executed",
       protected_journeys: "codex_and_claude_audit_verify_normalized",
+      human_authenticated_journey: process.platform === "win32"
+        ? "typed_runner_unavailable_restricted_file_boundary"
+        : "normalized_success_without_sensitive_persistence",
       launcher_removal: "project_data_preserved",
       plugin_removal: "project_data_preserved",
       fixture_invocations: [
@@ -1599,24 +1602,27 @@ test("release docs define the guarded Experimental publication runbook", async (
 test("the P1 announcement and external Agent procedure preserve every lifecycle boundary", async () => {
   const [announcement, procedure] = await Promise.all([
     readFile(
-      path.join(root, "docs/maintainers/experimental-0.4.0-announcement.md"),
+      path.join(root, `docs/maintainers/experimental-${currentVersion}-announcement.md`),
       "utf8",
     ),
     readFile(path.join(root, "docs/maintainers/p1-external-verification.md"), "utf8"),
   ]);
 
-  assert.match(announcement, /Product Complete/u);
+  assert.match(announcement, /Product Incomplete/u);
   assert.match(announcement, /Experimental/u);
   assert.match(announcement, /not P1 Validated/u);
   assert.match(announcement, /not Stable/u);
   assert.match(announcement, /independent external verification/u);
   assert.match(announcement, /Phase 0[\s\S]*0\.3\.2[\s\S]*npm `latest`/u);
   assert.match(procedure, /verify-experimental-release\.mjs --phase published/u);
-  assert.match(procedure, /codex plugin marketplace add[\s\S]*--ref v0\.4\.0/u);
+  assert.match(
+    procedure,
+    new RegExp(`codex plugin marketplace add[\\s\\S]*--ref v${currentVersion.replaceAll(".", "\\.")}`, "u"),
+  );
   assert.match(procedure, /codex -C "\$PHASE1_RELEASE"/u);
   assert.match(
     procedure,
-    /claude plugin marketplace add codeacme17\/launchrally@v0\.4\.0 --scope user/u,
+    new RegExp(`claude plugin marketplace add codeacme17/launchrally@v${currentVersion.replaceAll(".", "\\.")} --scope user`, "u"),
   );
   assert.match(procedure, /claude plugin install[\s\S]*--scope user/u);
   assert.match(procedure, /claude "Use the installed LaunchRally Skill/u);
@@ -1900,7 +1906,7 @@ test("Experimental P1 publication is gated independently from the P0 Stable chan
   assert.match(release, /npm run test:public-release -- --dist-tag experimental/u);
   assert.match(
     release,
-    /--notes-file docs\/maintainers\/experimental-0\.4\.0-announcement\.md/u,
+    new RegExp(`--notes-file docs/maintainers/experimental-${currentVersion.replaceAll(".", "\\.")}-announcement\\.md`, "u"),
   );
   assert.doesNotMatch(release, /npm dist-tag add|--tag latest/u);
 });
@@ -1912,19 +1918,19 @@ test("the P1 Experimental candidate advances coherently without moving P0 latest
     readFile(path.join(root, "release/p1.json"), "utf8").then(JSON.parse),
   ]);
 
-  assert.equal(rootPackage.version, "0.4.0");
+  assert.equal(rootPackage.version, currentVersion);
   assert.equal(p0.release_status, "stable");
   assert.equal(p0.stable_promotion.approved_tag, "v0.3.2");
   assert.deepEqual(p1.experimental_publication, {
-    announcement: "docs/maintainers/experimental-0.4.0-announcement.md",
-    candidate_tag: "v0.4.0",
+    announcement: `docs/maintainers/experimental-${currentVersion}-announcement.md`,
+    candidate_tag: `v${currentVersion}`,
     channel: "experimental",
     stable_channel: "latest",
     p0_stable_tag: "v0.3.2",
     candidate_manifest: "release/p1-release-candidate.json",
     changelog: "CHANGELOG.md",
     migration_notes: "docs/maintainers/p1-migration-notes.md",
-    evidence_record: "docs/maintainers/experimental-0.4.0-p1-evidence.md",
+    evidence_record: `docs/maintainers/experimental-${currentVersion}-p1-evidence.md`,
   });
 
   for (const { path: packagePath } of releaseManifest.packages) {

@@ -1,15 +1,14 @@
 import path from "node:path";
 
+import {
+  PromptCancelledError,
+  resumeHumanAuthenticatedJourney,
+} from "./human-authenticated-journey.js";
 import { isLaunchRallyDestination } from "./report-destination.js";
 import { DEFAULT_REPORT_FILENAME } from "./system-file-picker.js";
 import { createNextAction } from "./invocation-context.js";
 
-export class PromptCancelledError extends Error {
-  constructor() {
-    super("The prompt was cancelled.");
-    this.name = "PromptCancelledError";
-  }
-}
+export { PromptCancelledError } from "./human-authenticated-journey.js";
 
 const ASSESSMENT_PRESENTATION = Object.freeze({
   launch_ready: Object.freeze({ label: "Ready", style: "1;32" }),
@@ -145,9 +144,18 @@ function approvedAuditActivityLabel(result, permissionDecisions) {
     ({ permission_id: permissionId }) => permissionDecisions[permissionId] === "approved",
   );
   const publicApproved = approved.some(({ boundary }) => boundary === "public_network");
+  const authenticatedApproved = approved.some(
+    ({ boundary }) => boundary === "authenticated_network_read",
+  );
   const providers = approved
     .filter(({ boundary }) => boundary === "provider_read")
     .map(({ scope }) => scope.provider);
+  if (authenticatedApproved && (publicApproved || providers.length > 0)) {
+    return "Preparing approved reads and authenticated Core Journey verification…";
+  }
+  if (authenticatedApproved) {
+    return "Preparing authenticated Core Journey verification…";
+  }
   if (publicApproved && providers.length > 0) {
     return "Running public and Provider verification and generating Report…";
   }
@@ -265,8 +273,10 @@ export async function runHumanAudit({
   saveResult,
   inspectDestination = async () => ({ valid: true, collision: false }),
   filePicker,
+  resumeAuthenticatedJourney,
 }) {
   let result;
+  let initialRepositoryScanCompleted = false;
   const runActivity = (label, operation) => prompt.activity
     ? prompt.activity(label, operation)
     : operation();
@@ -276,8 +286,25 @@ export async function runHumanAudit({
       "Discovering project and scanning repository…",
       (signal) => runAudit(cwd, version, undefined, { signal }),
     );
+    initialRepositoryScanCompleted = true;
 
     while (["needs_input", "needs_confirmation", "needs_permission"].includes(result.status)) {
+      if (
+        result.status === "needs_input"
+        && result.request?.type === "authenticated_journey_results"
+      ) {
+        result = await resumeHumanAuthenticatedJourney({
+          cwd,
+          version,
+          operation: "audit",
+          result,
+          runActivity,
+          activityLabel: "Verifying authenticated Core Journeys and generating Report…",
+          resumeAuthenticatedJourney,
+        });
+        if (result.status === "execution_error") break;
+        continue;
+      }
       const response = await prompt.respond(result);
       if (result.status === "needs_input") {
         result = await runActivity(
@@ -410,6 +437,11 @@ export async function runHumanAudit({
   } catch (error) {
     if (error instanceof PromptCancelledError) {
       return { exitCode: 130, result: null, outputPath: undefined };
+    }
+    if (!initialRepositoryScanCompleted) {
+      error.code = "initial_repository_scan_failed";
+    } else if (!error.code) {
+      error.code = "human_audit_interaction_failed";
     }
     throw error;
   } finally {

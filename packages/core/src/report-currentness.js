@@ -68,7 +68,30 @@ function readDigest(filePath) {
   }
 }
 
-function repositoryDigests(root) {
+function exactSavedReportRelativePath(root, reportPackage, reportPath) {
+  if (typeof reportPath !== "string") return null;
+  try {
+    const canonicalRoot = realpathSync(path.resolve(root));
+    const selectedReport = path.resolve(reportPath);
+    const stat = lstatSync(selectedReport);
+    if (!stat.isFile() || stat.isSymbolicLink()) return null;
+    const canonicalReport = realpathSync(selectedReport);
+    const relativePath = path.relative(canonicalRoot, canonicalReport);
+    if (
+      relativePath === ""
+      || relativePath === ".."
+      || relativePath.startsWith(`..${path.sep}`)
+      || path.isAbsolute(relativePath)
+    ) return null;
+    const saved = JSON.parse(readFileSync(canonicalReport, "utf8"));
+    if (!isDeepStrictEqual(saved, reportPackage)) return null;
+    return relativePath.split(path.sep).join("/");
+  } catch {
+    return null;
+  }
+}
+
+function repositoryDigests(root, ignoredPath = null) {
   const selected = path.resolve(root);
   const canonicalRoot = realpathSync(selected);
   const values = new Map();
@@ -93,6 +116,7 @@ function repositoryDigests(root) {
         ? `${relativeDirectory}/${entry.name}`
         : entry.name;
       const absolutePath = path.join(directory, entry.name);
+      if (relativePath === ignoredPath) continue;
       if (entry.name === ".gitignore" || entry.isSymbolicLink()) continue;
       if (entry.isDirectory()) {
         if (
@@ -338,7 +362,15 @@ export function evaluateReportCurrentness(reportPackage, options = {}) {
 
   if (verificationContext) {
     try {
-      const currentDigests = repositoryDigests(root);
+      const savedReportPath = exactSavedReportRelativePath(
+        root,
+        reportPackage,
+        options.saved_report_path,
+      );
+      const currentDigests = repositoryDigests(
+        root,
+        savedReportPath,
+      );
       const recordedDigests = new Map(
         verificationContext.repository_digests.map(
           ({ path: file, digest: value }) => [file, value],

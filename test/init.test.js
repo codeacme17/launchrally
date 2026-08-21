@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -18,6 +18,7 @@ import {
   isOfflineResolutionMiss,
   npmExecFileCommand,
 } from "../packages/core/src/initialization.js";
+import { VERSION } from "../packages/cli/bin/version.js";
 import { createHistoryFiles, persistLocalHistory } from "../packages/core/src/local-history.js";
 import {
   materializeExactToolchain,
@@ -30,6 +31,39 @@ const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
 const engine = path.resolve("packages/cli/bin/engine.js");
 const SECRET_SENTINEL = "manifest-secret-must-not-survive";
+const pythonAvailable = process.platform !== "win32"
+  && spawnSync("python3", ["--version"]).status === 0;
+const ptyRunner = [
+  "import errno, os, pty, subprocess, sys",
+  "master, slave = pty.openpty()",
+  "child = subprocess.Popen(sys.argv[1:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)",
+  "os.close(slave)",
+  "chunks = []",
+  "observed = b''",
+  "permission_answered = False",
+  "decision_prompts = 0",
+  "while True:",
+  "    try:",
+  "        chunk = os.read(master, 4096)",
+  "    except OSError as error:",
+  "        if error.errno == errno.EIO:",
+  "            break",
+  "        raise",
+  "    if not chunk:",
+  "        break",
+  "    chunks.append(chunk)",
+  "    observed += chunk",
+  "    if not permission_answered and b'Approve npm_registry_read? [y/N]' in observed:",
+  "        os.write(master, b'y\\n')",
+  "        permission_answered = True",
+  "    observed_prompts = observed.count(b'Choose 1-3:')",
+  "    if observed_prompts > decision_prompts:",
+  "        decision_prompts = observed_prompts",
+  "        os.write(master, b'3\\n' if decision_prompts == 1 else b'1\\n')",
+  "os.close(master)",
+  "sys.stdout.buffer.write(b''.join(chunks))",
+  "raise SystemExit(child.wait())",
+].join("\n");
 
 test("Windows npm execution uses an explicit command interpreter without shell mode", () => {
   assert.deepEqual(
@@ -68,6 +102,36 @@ async function fixture() {
     JSON.stringify({ name: "init-web", lockfileVersion: 3, packages: { "": {} } }, null, 2),
   );
   return directory;
+}
+
+async function fileTreeSnapshot(directory) {
+  const files = {};
+  const visit = async (current, relative = "") => {
+    const entries = await readdir(current, { withFileTypes: true });
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+      const entryRelative = relative ? `${relative}/${entry.name}` : entry.name;
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        await visit(entryPath, entryRelative);
+      } else if (entry.isFile()) {
+        files[entryRelative] = (await readFile(entryPath)).toString("base64");
+      } else {
+        assert.fail(`Unexpected non-file entry in byte snapshot: ${entryRelative}`);
+      }
+    }
+  };
+  await visit(directory);
+  return files;
+}
+
+async function assertSnapshotFilesUnchanged(directory, snapshot) {
+  for (const [relative, expected] of Object.entries(snapshot)) {
+    assert.equal(
+      (await readFile(path.join(directory, relative))).toString("base64"),
+      expected,
+      relative,
+    );
+  }
 }
 
 async function fixtureWithCliDependency(version = "0.1.0") {
@@ -509,6 +573,41 @@ test("Init attempts offline toolchain resolution before disclosing registry perm
 
   assert.equal(preview.status, "needs_confirmation");
   assert.deepEqual(attempts, [false, false, true]);
+});
+
+test("registry permission resume preserves an exact in-root Report input", async () => {
+  const directory = await fixture();
+  const audit = await completeAudit(directory);
+  const reportPath = path.join(directory, "launchrally-audit-report.json");
+  await writeFile(reportPath, `${JSON.stringify(audit, null, 2)}\n`);
+  const prepare = async (request) => {
+    if (!request.registry_allowed) {
+      const error = new Error("offline cache miss");
+      error.code = "registry_permission_required";
+      error.temporary_target = path.join(os.tmpdir(), "launchrally-in-root-report-permission");
+      throw error;
+    }
+    return prepareNpmChanges(request);
+  };
+
+  const permission = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: audit, report_path: reportPath },
+    { prepare_dependency_changes: prepare },
+  );
+  assert.equal(permission.status, "needs_permission");
+
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    {
+      resume_token: permission.interaction.resume_token,
+      permission_decisions: { npm_registry_read: "approved" },
+    },
+    { prepare_dependency_changes: prepare },
+  );
+  assert.equal(preview.status, "needs_confirmation");
 });
 
 test("initialization is unavailable until a complete first Report is supplied", async () => {
@@ -1183,6 +1282,242 @@ test("re-running Init preserves the established project Engine pin", async () =>
   );
 });
 
+test("ordinary Init preserves an existing Manifest and identifies explicit rebind", async () => {
+  const directory = await fixture();
+  const original = await completeAudit(directory);
+  const initialPreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: original },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(directory, "0.1.0", {
+    resume_token: initialPreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
+  const manifestBefore = await readFile(manifestPath, "utf8");
+  const corrected = await completeAudit(directory, {
+    ...ANSWERS,
+    core_journeys: ["corrected public journey"],
+  });
+
+  const result = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+
+  assert.equal(result.status, "needs_confirmation");
+  assert.equal(result.source_report_id, original.report.report_id);
+  assert.deepEqual(result.interaction.source_report, {
+    report_id: original.report.report_id,
+    role: "manifest_source",
+  });
+  assert.deepEqual(result.manifest_action, {
+    action: "preserve",
+    existing_source_report_id: original.report.report_id,
+    supplied_source_report_id: corrected.report.report_id,
+    rebind_option: "--rebind",
+    next_action: {
+      operation: "init",
+      action: "rebind_manifest",
+      required_option: "--rebind",
+    },
+  });
+  assert.ok(result.preview.history_adoption.changes.length > 0);
+  assert.deepEqual(result.preview.release_intent_replacement, {
+    requested: false,
+    changes: [],
+  });
+  assert.ok(!result.preview.changes.some(({ path: changedPath }) =>
+    changedPath === ".launchrally/manifest.yaml"));
+  assert.equal(await readFile(manifestPath, "utf8"), manifestBefore);
+});
+
+test("explicit rebind replaces Report-derived Manifest intent only after confirmation", async () => {
+  const directory = await fixture();
+  const original = await completeAudit(directory);
+  const initialPreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: original },
+    { prepare_dependency_changes: prepareMaterializedToolchain },
+  );
+  await runInit(directory, "0.1.0", {
+    resume_token: initialPreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
+  const toolchainRoot = path.join(directory, ".launchrally", "toolchain");
+  const toolchainPath = path.join(toolchainRoot, "package.json");
+  const toolchainLockPath = path.join(toolchainRoot, "package-lock.json");
+  const toolchainAuthorityPath = path.join(toolchainRoot, "authority.json");
+  const materializationPath = path.join(toolchainRoot, "node_modules");
+  const manifestBefore = await readFile(manifestPath, "utf8");
+  const toolchainBefore = await readFile(toolchainPath, "utf8");
+  const toolchainLockBefore = await readFile(toolchainLockPath);
+  const toolchainAuthorityBefore = await readFile(toolchainAuthorityPath);
+  const materializationBefore = await fileTreeSnapshot(materializationPath);
+  const originalReportPath = path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    original.report.report_id,
+  );
+  const originalReportBefore = await fileTreeSnapshot(originalReportPath);
+  const evidencePath = path.join(directory, ".launchrally", "evidence");
+  const evidenceBefore = await fileTreeSnapshot(evidencePath);
+  const corrected = await completeAudit(directory, {
+    ...ANSWERS,
+    core_journeys: ["corrected public journey"],
+    support_layers: ["monitoring"],
+  });
+
+  const declinedPreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected, rebind_manifest: true },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  assert.equal(declinedPreview.mode, "rebind", JSON.stringify(declinedPreview));
+  assert.deepEqual(declinedPreview.manifest_action, {
+    action: "replace",
+    existing_source_report_id: original.report.report_id,
+    supplied_source_report_id: corrected.report.report_id,
+    rebind_option: "--rebind",
+    next_action: {
+      operation: "init",
+      action: "rebind_manifest",
+      required_option: "--rebind",
+    },
+  });
+  assert.ok(declinedPreview.preview.history_adoption.changes.length > 0);
+  assert.deepEqual(
+    declinedPreview.preview.release_intent_replacement.changes.map(({ path: changedPath }) =>
+      changedPath),
+    [".launchrally/manifest.yaml"],
+  );
+  const declined = await runInit(directory, "0.1.0", {
+    resume_token: declinedPreview.interaction.resume_token,
+    confirmation: "decline",
+  });
+  assert.equal(declined.outcome, "rebind_declined");
+  assert.equal(await readFile(manifestPath, "utf8"), manifestBefore);
+
+  const stalePreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected, rebind_manifest: true },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await writeFile(manifestPath, `${manifestBefore}# changed after preview\n`);
+  const stale = await runInit(directory, "0.1.0", {
+    resume_token: stalePreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  assert.equal(stale.error, "preview_stale");
+  assert.equal(await readFile(toolchainPath, "utf8"), toolchainBefore);
+  await writeFile(manifestPath, manifestBefore);
+
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected, rebind_manifest: true },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  const result = await runInit(directory, "0.1.0", {
+    resume_token: preview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  assert.equal(result.outcome, "rebound");
+  assert.equal(result.source_report_id, corrected.report.report_id);
+  assert.equal(await readFile(toolchainPath, "utf8"), toolchainBefore);
+  assert.deepEqual(await readFile(toolchainLockPath), toolchainLockBefore);
+  assert.deepEqual(await readFile(toolchainAuthorityPath), toolchainAuthorityBefore);
+  assert.deepEqual(await fileTreeSnapshot(materializationPath), materializationBefore);
+  assert.deepEqual(await fileTreeSnapshot(originalReportPath), originalReportBefore);
+  await assertSnapshotFilesUnchanged(evidencePath, evidenceBefore);
+  assert.equal(preview.manifest.execution.source_report_id.value, corrected.report.report_id);
+  assert.deepEqual(preview.manifest.release.core_journeys.value, ["corrected public journey"]);
+  assert.deepEqual(preview.manifest.support.layers.value, ["observability"]);
+  assert.ok(await readFile(path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    original.report.report_id,
+    "record.json",
+  ), "utf8"));
+  assert.ok(await readFile(path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    corrected.report.report_id,
+    "record.json",
+  ), "utf8"));
+
+  const permission = await runVerify(directory, "0.1.0", {
+    report_package: corrected,
+    scope: "full",
+  });
+  const verified = await runVerify(directory, "0.1.0", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  assert.equal(verified.status, "completed");
+  assert.equal(verified.report.policy.current, true);
+  assert.deepEqual(verified.manifest_drift, []);
+  assert.equal(verified.history.source_report_id, corrected.report.report_id);
+  assert.deepEqual(
+    verified.report.scope.release_intent.core_journeys,
+    ["corrected public journey"],
+  );
+  assert.deepEqual(
+    verified.report.scope.release_intent.support_layers,
+    ["observability"],
+  );
+});
+
+test("explicit rebind rejects a stale corrected Report before preview or write", async () => {
+  const directory = await fixture();
+  const original = await completeAudit(directory);
+  const initialPreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: original },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(directory, "0.1.0", {
+    resume_token: initialPreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const manifestPath = path.join(directory, ".launchrally", "manifest.yaml");
+  const manifestBefore = await readFile(manifestPath, "utf8");
+  const corrected = await completeAudit(directory, {
+    ...ANSWERS,
+    core_journeys: ["corrected public journey"],
+  });
+  await writeFile(path.join(directory, "package.json"), "{\"name\":\"changed\"}\n");
+
+  const result = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected, rebind_manifest: true },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+
+  assert.equal(result.status, "needs_refresh");
+  assert.equal(await readFile(manifestPath, "utf8"), manifestBefore);
+  await assert.rejects(readFile(path.join(
+    directory,
+    ".launchrally",
+    "reports",
+    corrected.report.report_id,
+    "record.json",
+  )), { code: "ENOENT" });
+});
+
 test("confirmed Init persists the complete source Audit as immutable local history", async () => {
   const directory = await fixture();
   const audit = await completeAudit(directory);
@@ -1315,6 +1650,9 @@ test("Init crash recovery preserves already committed immutable history", async 
   assert.equal(recovered.status, "completed");
   assert.equal(recovered.outcome, "initialized");
   assert.equal(recovered.recovery, "committed_history_finalized");
+  assert.equal(recovered.mode, "initialization");
+  assert.equal(Object.getOwnPropertyDescriptor(recovered, "mode").enumerable, false);
+  assert.doesNotMatch(JSON.stringify(recovered), /"mode"/u);
   assert.deepEqual(
     JSON.parse(await readFile(path.join(
       directory,
@@ -2151,31 +2489,301 @@ test("the CLI previews a saved complete Audit and decline applies nothing", asyn
   assert.deepEqual(await readdir(directory), [".launchrally", "package-lock.json", "package.json"]);
 });
 
-test("Human Mode renders every exact initialization change before confirmation", async () => {
+test("the CLI accepts its exact saved Audit Report inside the audited root", async () => {
+  const directory = await fixtureWithCliDependency("0.3.2");
+  const audit = await completeAudit(directory);
+  const reportPath = path.join(directory, "launchrally-audit-report.json");
+  await writeFile(reportPath, `${JSON.stringify(audit, null, 2)}\n`);
+
+  const preview = JSON.parse((await execFileAsync(process.execPath, [
+    engine,
+    "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ])).stdout);
+
+  assert.equal(preview.status, "needs_confirmation");
+  assert.equal(preview.source_report_id, audit.report.report_id);
+  const declined = JSON.parse((await execFileAsync(process.execPath, [
+    engine,
+    "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--resume",
+    preview.interaction.resume_token,
+    "--confirm",
+    "decline",
+  ])).stdout);
+  assert.equal(declined.outcome, "initialization_declined");
+  assert.equal(
+    JSON.parse(await readFile(reportPath, "utf8")).report.report_id,
+    audit.report.report_id,
+  );
+
+  await writeFile(
+    path.join(directory, "copied-audit-report.json"),
+    `${JSON.stringify(audit, null, 2)}\n`,
+  );
+  const drifted = JSON.parse((await execFileAsync(process.execPath, [
+    engine,
+    "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ])).stdout);
+  assert.equal(drifted.status, "needs_refresh");
+});
+
+test("non-TTY Human Init fails safely and points to the structured protocol", async () => {
   const directory = await fixtureWithCliDependency("0.3.2");
   const audit = await completeAudit(directory);
   const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-human-report-"));
   const reportPath = path.join(reportDirectory, "audit.json");
   await writeFile(reportPath, JSON.stringify(audit));
 
-  const processResult = await execFileAsync(process.execPath, [
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      engine,
+      "init",
+      "--cwd",
+      directory,
+      "--report",
+      reportPath,
+    ]),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stderr, /Non-TTY Human Mode cannot prompt safely/u);
+      assert.match(error.stderr, /rally init --json --cwd <path>/u);
+      assert.match(error.stderr, /--resume <token>/u);
+      assert.equal(error.stdout, "");
+      return true;
+    },
+  );
+  assert.deepEqual(
+    await readdir(directory),
+    [".launchrally", "package-lock.json", "package.json"],
+  );
+});
+
+test("TTY Human Init rejects structured resume decisions that bypass its prompt", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const directory = await fixtureWithCliDependency("0.3.2");
+  const audit = await completeAudit(directory);
+  const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-tty-report-"));
+  const reportPath = path.join(reportDirectory, "audit.json");
+  await writeFile(reportPath, JSON.stringify(audit));
+  const preview = JSON.parse((await execFileAsync(process.execPath, [
     engine,
     "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ])).stdout);
+
+  await assert.rejects(
+    execFileAsync("python3", [
+      "-c",
+      ptyRunner,
+      process.execPath,
+      engine,
+      "init",
+      "--plain",
+      "--cwd",
+      directory,
+      "--resume",
+      preview.interaction.resume_token,
+      "--confirm",
+      "confirm",
+    ]),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stdout, /Human Mode does not accept structured Init decisions/u);
+      assert.match(error.stdout, /Use rally init --json/u);
+      return true;
+    },
+  );
+  assert.deepEqual(
+    await readdir(directory),
+    [".launchrally", "package-lock.json", "package.json"],
+  );
+});
+
+test("TTY Human Init renders and confirms the exact preview in one process", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const directory = await fixtureWithCliDependency("0.3.2");
+  const audit = await completeAudit(directory);
+  const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-tty-report-"));
+  const reportPath = path.join(reportDirectory, "audit.json");
+  await writeFile(reportPath, JSON.stringify(audit));
+
+  const { stdout } = await execFileAsync("python3", [
+    "-c",
+    ptyRunner,
+    process.execPath,
+    engine,
+    "init",
+    "--plain",
     "--cwd",
     directory,
     "--report",
     reportPath,
   ]);
 
-  assert.match(processResult.stdout, /^LaunchRally Initialization Preview/mu);
-  assert.match(processResult.stdout, /CREATE \.launchrally\/\.gitignore/u);
+  assert.match(stdout, /LaunchRally Initialization Preview/u);
+  assert.match(stdout, /CREATE \.launchrally\/manifest\.yaml/u);
+  assert.match(stdout, /3\. View full preview/u);
+  assert.match(stdout, /Full exact digest-bound preview/u);
+  assert.match(stdout, /^Diff:$/mu);
+  assert.match(stdout, /^After content:$/mu);
+  assert.match(stdout, /Apply exactly these local initialization changes\?/u);
+  assert.match(stdout, /1\. Confirm/u);
+  assert.match(stdout, /2\. Decline/u);
+  assert.doesNotMatch(stdout, /Resume token:/u);
+  assert.match(stdout, /LaunchRally Initialization Complete/u);
+  assert.match(stdout, /Outcome: initialized/u);
+  assert.match(stdout, /Manifest action: created/u);
+  assert.match(stdout, new RegExp(`Manifest source Report: ${audit.report.report_id}`, "u"));
+  assert.match(stdout, new RegExp(`Project Toolchain: @launchrally/cli@${VERSION}`, "u"));
+  assert.match(stdout, /Applied changes: \d+/u);
+  assert.match(stdout, /rally --version --json --cwd/u);
+  assert.match(stdout, /authority\.state: "ready"/u);
+  assert.match(stdout, /authority\.source: "project_toolchain"/u);
+  assert.doesNotMatch(stdout, /"changes_applied"/u);
   assert.match(
-    processResult.stdout,
-    /\/reports\/\n\/evidence\/\n\/cache\/\n\/transactions\/\n\/locks\/\n\/toolchain\/node_modules\/\n\/\.init-transaction\/\n\/\.toolchain-transaction\//u,
+    await readFile(path.join(directory, ".launchrally", "manifest.yaml"), "utf8"),
+    /schema_version: "launchrally\.dev\/manifest\/v2"/u,
   );
-  assert.match(processResult.stdout, /CREATE \.launchrally\/manifest\.yaml/u);
-  assert.match(processResult.stdout, /Apply exactly these local initialization changes\?/u);
-  assert.match(processResult.stdout, /Resume token: .{20,}/u);
+});
+
+test("the Quickstart documents same-process Human Init and explicit Agent resumes", async () => {
+  const quickstart = await readFile("docs/getting-started/quickstart.md", "utf8");
+
+  assert.match(quickstart, /Init remains in the same process/iu);
+  assert.match(quickstart, /concise decision summary/iu);
+  assert.match(quickstart, /View full preview/u);
+  assert.match(quickstart, /same digest-bound preview/iu);
+  assert.match(quickstart, /confirm or decline/iu);
+  assert.match(quickstart, /Ctrl-C/iu);
+  assert.match(quickstart, /After confirmation, Human Init prints a concise completion/iu);
+  assert.match(quickstart, /rally --version --json --cwd <repository-root>/u);
+  assert.match(quickstart, /authority\.state: "ready"/u);
+  assert.match(quickstart, /authority\.source: "project_toolchain"/u);
+  assert.match(quickstart, /Agent Mode[\s\S]*--resume <token>/iu);
+});
+
+test("JSON Init preserves Manifest intent and exposes the explicit rebind action", async () => {
+  const directory = await fixtureWithCliDependency("0.3.2");
+  const original = await completeAudit(directory);
+  const initialPreview = await runInit(
+    directory,
+    "0.3.2",
+    { report_package: original },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(directory, "0.3.2", {
+    resume_token: initialPreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const corrected = await completeAudit(directory, {
+    ...ANSWERS,
+    core_journeys: ["corrected public journey"],
+  });
+  const reportDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-rebind-report-"));
+  const reportPath = path.join(reportDirectory, "corrected-audit.json");
+  await writeFile(reportPath, JSON.stringify(corrected));
+
+  const preserved = JSON.parse((await execFileAsync(process.execPath, [
+    engine,
+    "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+  ])).stdout);
+  assert.equal(preserved.manifest_action.action, "preserve");
+  assert.equal(
+    preserved.manifest_action.existing_source_report_id,
+    original.report.report_id,
+  );
+  assert.equal(
+    preserved.manifest_action.supplied_source_report_id,
+    corrected.report.report_id,
+  );
+  assert.match(preserved.replacement_action.display, /init .*--rebind/u);
+
+  const json = JSON.parse((await execFileAsync(process.execPath, [
+    engine,
+    "init",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+    "--rebind",
+  ])).stdout);
+  assert.equal(json.status, "needs_confirmation");
+  assert.equal(json.mode, "rebind");
+  assert.equal(json.manifest_action.action, "replace");
+  assert.equal(json.manifest_action.existing_source_report_id, original.report.report_id);
+  assert.equal(json.manifest_action.supplied_source_report_id, corrected.report.report_id);
+  assert.ok(json.preview.release_intent_replacement.changes.some(
+    ({ path: changedPath }) => changedPath === ".launchrally/manifest.yaml",
+  ));
+});
+
+test("interrupted rebind recovery finalizes the new Manifest and immutable history", async () => {
+  const directory = await fixture();
+  const original = await completeAudit(directory);
+  const initialPreview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: original },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  await runInit(directory, "0.1.0", {
+    resume_token: initialPreview.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const corrected = await completeAudit(directory, {
+    ...ANSWERS,
+    core_journeys: ["corrected public journey"],
+  });
+  const preview = await runInit(
+    directory,
+    "0.1.0",
+    { report_package: corrected, rebind_manifest: true },
+    { prepare_dependency_changes: prepareNpmChanges },
+  );
+  const interrupted = await runInit(
+    directory,
+    "0.1.0",
+    { resume_token: preview.interaction.resume_token, confirmation: "confirm" },
+    {
+      mark_history_committed: async () => {
+        const error = new Error("simulated crash after rebind Report commit");
+        error.code = "EIO";
+        throw error;
+      },
+    },
+  );
+  assert.equal(interrupted.error, "initialization_recovery_required");
+
+  const recovered = await runInit(directory, "0.1.0");
+  assert.equal(recovered.status, "completed");
+  assert.equal(recovered.outcome, "rebound");
+  assert.equal(recovered.source_report_id, corrected.report.report_id);
+  assert.equal(recovered.recovery, "committed_history_finalized");
 });
 
 test("initialization never stages or commits its project-owned files", async () => {

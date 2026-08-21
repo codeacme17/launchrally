@@ -66,8 +66,8 @@ Create a protected annotated tag on that exact `main` commit and push only the
 tag:
 
 ```bash
-git tag --annotate v0.4.0 <approved-main-sha> --message "LaunchRally 0.4.0 Phase 1 Experimental"
-git push origin v0.4.0
+git tag --annotate v0.4.1 <approved-main-sha> --message "LaunchRally 0.4.1 Phase 1 Experimental"
+git push origin v0.4.1
 ```
 
 The release workflow independently rejects a lightweight tag, a tag whose
@@ -93,7 +93,7 @@ that every new page shows its package-specific README and keywords during the
 public smoke check; source changes alone do not update the registry pages.
 
 Attach the successful workflow URL, five public package URLs, attestation
-result, exact CLI result, and both Plugin results to issue #141. Keep Phase 1
+result, exact CLI result, and both Plugin results to issue #183. Keep Phase 1
 Incomplete, Experimental, and Not Validated until those external results have
 been independently reviewed and merged into the P1 evidence and governance
 records. Publication never moves npm `latest`; Phase 0 Stable 0.3.2 remains

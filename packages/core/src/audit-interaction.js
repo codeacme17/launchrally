@@ -94,6 +94,9 @@ function routeFromFile(filePath) {
 
   if (!segments && /(?:^|\/)index\.html$/u.test(normalized)) segments = [];
   if (!segments) return null;
+  if (segments.some((segment) =>
+    /[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/u.test(segment),
+  )) return null;
 
   const publicSegments = segments
     .filter((segment) => !/^\(.+\)$/u.test(segment) && !segment.startsWith("@"));
@@ -120,8 +123,7 @@ function journeyCandidates(project) {
     ...(project.detected_files ?? []),
   ].filter(Boolean);
   const routes = [...new Set(files.map(routeFromFile).filter(Boolean))]
-    .sort((left, right) => left === "/" ? -1 : right === "/" ? 1 : left.localeCompare(right))
-    .slice(0, 12);
+    .sort((left, right) => left === "/" ? -1 : right === "/" ? 1 : left.localeCompare(right));
   return routes.map((route) => `GET ${route} — ${routePurpose(route)}`);
 }
 
@@ -355,7 +357,7 @@ function inputFields(auditBrief) {
     {
       field_id: "core_journeys",
       value_type: "journey_array",
-      prompt: "Which GET paths and user journeys must work for this release?",
+      prompt: "Which unclassified detected routes should be public, protected, or excluded for this release?",
       candidates: auditBrief.core_journeys.candidates,
       current_value: auditBrief.core_journeys.values,
     },

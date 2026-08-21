@@ -261,6 +261,47 @@ test("authenticated Journey success and failure are normative Phase 1 Machine Ev
     "launchrally.dev/authenticated-journey-evidence/v1");
   assert.equal(assertValidAuthenticatedJourneyEvidence(failure), true);
   assert.equal(assertValidAuthenticatedJourneyEvidence(success), true);
+  const signedTokenJourney = {
+    ...structuredClone(success),
+    target: "https://example.com/guardian/authorize",
+    authentication_class: "signed_token",
+    provenance: {
+      ...success.provenance,
+      exact_target: "https://example.com/guardian/authorize",
+    },
+  };
+  assert.equal(assertValidAuthenticatedJourneyEvidence(signedTokenJourney), true);
+  for (const applicationSpecificTarget of [
+    "https://example.com/me/notifications/settings",
+    "https://example.com/release-notes",
+    "https://example.com/notification_settings",
+    "https://example.com/oauth2/callback",
+    "https://example.com/patients/john-smith",
+  ]) {
+    const applicationSpecificJourney = {
+      ...structuredClone(success),
+      target: applicationSpecificTarget,
+      provenance: {
+        ...success.provenance,
+        exact_target: applicationSpecificTarget,
+      },
+    };
+    assert.equal(assertValidAuthenticatedJourneyEvidence(applicationSpecificJourney), true);
+  }
+  for (const historicalTarget of [
+    "https://EXAMPLE.com/control",
+    "https://example.com:443/control",
+  ]) {
+    const historicalAuthoritySpelling = {
+      ...structuredClone(success),
+      target: historicalTarget,
+      provenance: {
+        ...success.provenance,
+        exact_target: historicalTarget,
+      },
+    };
+    assert.equal(assertValidAuthenticatedJourneyEvidence(historicalAuthoritySpelling), true);
+  }
   assert.throws(
     () => assertValidAuthenticatedJourneyEvidence({
       ...failure,
@@ -316,19 +357,26 @@ test("authenticated Journey success and failure are normative Phase 1 Machine Ev
     },
     {
       ...failure,
-      target: "https://example.com/patients/john-smith",
-      purpose: "John Smith patient profile loads",
-      provenance: {
-        ...failure.provenance,
-        exact_target: "https://example.com/patients/john-smith",
-      },
-    },
-    {
-      ...failure,
       target: "https://example.com/account%2D12345",
       provenance: {
         ...failure.provenance,
         exact_target: "https://example.com/account%2D12345",
+      },
+    },
+    {
+      ...failure,
+      target: "https://example.com/control/../moderation",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://example.com/control/../moderation",
+      },
+    },
+    {
+      ...failure,
+      target: "https://example.com\\evil/control",
+      provenance: {
+        ...failure.provenance,
+        exact_target: "https://example.com\\evil/control",
       },
     },
   ]) {

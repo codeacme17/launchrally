@@ -12,9 +12,12 @@ import {
 } from "@launchrally/contracts";
 import {
   environmentTargetLabel,
+  isLocalHistoryReference,
+  loadLocalHistoryReportPackage,
+  persistArchitecturePackage,
   reviewedEnvironmentLabel,
   resolveExecutionAuthority,
-  persistArchitecturePackage,
+  resumeAuthenticatedJourneyFromHost,
   runAudit,
   runArchitectureJourney,
   runHandoff,
@@ -31,13 +34,23 @@ import {
   runHumanAudit,
 } from "./human-audit.js";
 import {
+  renderHumanInit,
+  renderHumanInitCompletion,
+  runHumanInit,
+} from "./human-init.js";
+import { renderHumanVerify, runHumanVerify } from "./human-verify.js";
+import {
   commandName,
   optionValue as argumentValue,
 } from "./cli-arguments.js";
 import { inspectReportDestination } from "./report-destination.js";
 import { normalizeArchitectAnswer, runHumanArchitect } from "./human-architect.js";
 import { createSystemFilePicker } from "./system-file-picker.js";
-import { consumeInvocationContext, renderCommand } from "./invocation-context.js";
+import {
+  consumeInvocationContext,
+  createNextAction,
+  renderCommand,
+} from "./invocation-context.js";
 import { VERSION } from "./version.js";
 
 const invocationContext = consumeInvocationContext({
@@ -178,44 +191,6 @@ function renderHumanInteraction(value) {
     );
   }
   lines.push(`Resume token: ${value.interaction.resume_token}`);
-  return lines.join("\n");
-}
-
-function renderHumanInit(value) {
-  const lines = [
-    "LaunchRally Initialization Preview",
-    `Mode: ${value.mode}`,
-    `Source Report: ${value.source_report_id}`,
-    "",
-  ];
-  for (const change of value.preview.changes) {
-    lines.push(
-      `${change.operation.toUpperCase()} ${change.path}`,
-      `Before digest: ${change.before_digest ?? "none"}`,
-      `After digest: ${change.after_digest}`,
-      "Diff:",
-      change.diff,
-      "After content:",
-      change.after,
-    );
-  }
-  if (value.preview.materialization) {
-    const materialization = value.preview.materialization;
-    lines.push(
-      "Rebuildable Project Engine materialization:",
-      `Command: ${[materialization.command.executable, ...materialization.command.arguments].join(" ")}`,
-      `Package closure: ${materialization.package_count} packages`,
-      `Integrity summary: ${materialization.integrity_digest}`,
-      `Target: ${materialization.target}`,
-      `Ignored: ${materialization.ignored ? "yes" : "no"}`,
-      `Authoritative: ${materialization.authoritative ? "yes" : "no"}`,
-    );
-  }
-  lines.push(
-    value.request.prompt,
-    "Choose: confirm or decline.",
-    `Resume token: ${value.interaction.resume_token}`,
-  );
   return lines.join("\n");
 }
 
@@ -443,45 +418,6 @@ function renderHumanProviders(value) {
   return lines.join("\n");
 }
 
-function renderHumanVerify(value) {
-  const targeted = value.verification_scope.mode === "targeted";
-  const lines = [
-    `LaunchRally ${targeted ? "Targeted" : "Full"} Verification`,
-    `Whole release: ${value.verification_scope.whole_release ? "YES" : "NO"}`,
-    "Checks:",
-    ...value.verification_scope.check_ids.map((checkId) => `  - ${checkId}`),
-  ];
-  if (value.status === "needs_permission") {
-    lines.push("Fresh Evidence permission boundary:");
-    for (const permission of value.request.permissions) {
-      if (permission.boundary === "public_network") {
-        lines.push(
-          `  - Public verification: ${permission.scope.targets.join(", ")}`,
-          ...permission.scope.probes.map(
-            (probe) => `    ${probe.method} ${probe.target} — ${probe.purpose}`,
-          ),
-        );
-      } else {
-        lines.push(
-          `  - Provider read ${permission.scope.provider}: ${permission.scope.target}`,
-        );
-      }
-    }
-    lines.push(
-      "Choose approved or denied independently for each permission ID.",
-      `Resume token: ${value.interaction.resume_token}`,
-    );
-  } else {
-    lines.push(
-      `Assessment scope: ${value.assessment_scope}`,
-      `Launch Assessment: ${value.assessment ?? "not available"}`,
-      `Manifest Drift: ${value.manifest_drift.length}`,
-      `Source Report: ${value.history.source_report_id}`,
-    );
-  }
-  return lines.join("\n");
-}
-
 function print(value) {
   if (json) {
     process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
@@ -515,6 +451,15 @@ function print(value) {
       ].join("\n") + "\n");
       return;
     }
+    if (value.status === "completed" && value.manifest_action?.action === "preserve") {
+      process.stdout.write([
+        "LaunchRally preserved the existing Manifest and project-owned release intent.",
+        `Existing Manifest source Report: ${value.manifest_action.existing_source_report_id}`,
+        `Supplied Report: ${value.manifest_action.supplied_source_report_id}`,
+        `Replace command: ${value.replacement_action.display}`,
+      ].join("\n") + "\n");
+      return;
+    }
   }
 
   if (value.operation === "plan" && value.status === "completed") {
@@ -539,7 +484,16 @@ function print(value) {
     value.operation === "verify"
     && ["needs_permission", "completed"].includes(value.status)
   ) {
-    process.stdout.write(`${renderHumanVerify(value)}\n`);
+    const presentation = humanAuditPresentationOptions({
+      args,
+      env: process.env,
+      output: process.stdout,
+    });
+    process.stdout.write(`${renderHumanVerify(value, {
+      cwd: path.resolve(optionValue("--cwd") ?? process.cwd()),
+      invocationContext,
+      styled: presentation.styled,
+    })}\n`);
     return;
   }
 
@@ -595,6 +549,7 @@ function help() {
       "  architecture-package Preview or persist a confirmed immutable Architecture Package",
       "  handoff  Discover, preview, and confirm bounded external Executor authority",
       "  init     Preview and confirm local adoption after a complete Audit Report",
+      "           --rebind explicitly replaces an existing Manifest after its own preview",
       "  plan     Build a deterministic read-only Launch Plan and optional Task Graph",
       "  verify   Recollect fresh Evidence for full or targeted verification",
       "",
@@ -697,6 +652,10 @@ async function main() {
         version: VERSION,
         prompt,
         runAudit,
+        resumeAuthenticatedJourney: (options) => resumeAuthenticatedJourneyFromHost({
+          ...options,
+          host: "cli",
+        }),
         outputPath: optionValue("--output"),
         filePicker,
         inspectDestination: inspectReportDestination,
@@ -721,8 +680,14 @@ async function main() {
         },
       });
     } catch (error) {
-      if (error?.code !== "audit_output_failed") throw error;
-      process.stderr.write("The complete Audit JSON could not be written. Choose a new, writable --output path.\n");
+      if (error?.code === "audit_output_failed") {
+        process.stderr.write("The complete Audit JSON could not be written. Choose a new, writable --output path.\n");
+        return 2;
+      }
+      const initialRepositoryScanFailed = error?.code === "initial_repository_scan_failed";
+      process.stderr.write(initialRepositoryScanFailed
+        ? "The initial repository scan could not complete safely.\n"
+        : "Human Audit interaction could not complete safely.\n");
       return 2;
     }
     if (outcome.exitCode === 130) {
@@ -769,14 +734,99 @@ async function main() {
         return 2;
       }
     }
-    const result = await runInit(cwd, VERSION, {
+    const initialOptions = {
       resume_token: optionValue("--resume"),
       confirmation: optionValue("--confirm"),
       permission_decisions: permissionDecisions.value,
       report_package: reportPackage,
+    };
+    const rebindManifest = args.includes("--rebind");
+    const resolvedReportPath = reportPath ? path.resolve(reportPath) : undefined;
+    const runInitWithActions = async (runCwd, version, options) => {
+      const result = await runInit(runCwd, version, {
+        ...options,
+        ...(options.report_package && resolvedReportPath
+          ? { report_path: resolvedReportPath }
+          : {}),
+        ...(rebindManifest && options.report_package
+          ? { rebind_manifest: true }
+          : {}),
+      });
+      if (result.manifest_action?.next_action && !rebindManifest) {
+        result.replacement_action = createNextAction(invocationContext, [
+          "init",
+          ...(json ? ["--json"] : []),
+          "--cwd",
+          path.resolve(cwd),
+          "--report",
+          reportPath ?? "<saved-report-path>",
+          "--rebind",
+        ]);
+      }
+      return result;
+    };
+    if (json) {
+      const result = await runInitWithActions(cwd, VERSION, initialOptions);
+      print(result);
+      return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+    }
+
+    if (["--resume", "--confirm", "--permissions"].some((option) => args.includes(option))) {
+      process.stderr.write([
+        "Human Mode does not accept structured Init decisions.",
+        "Use rally init --json with --resume <token> and the requested decision option.",
+      ].join("\n") + "\n");
+      return 2;
+    }
+
+    if (process.stdin.isTTY !== true) {
+      process.stderr.write([
+        "Non-TTY Human Mode cannot prompt safely.",
+        "Use rally init --json --cwd <path> --report <saved-report-path> for the resumable Agent Mode protocol, including CI use.",
+        "Resume each returned state explicitly with --resume <token> and its requested --permissions or --confirm option.",
+      ].join("\n") + "\n");
+      return 2;
+    }
+
+    const { createClackPromptAdapter, createPlainPromptAdapter } = await import(
+      "./prompt-adapters.js"
+    );
+    const presentation = humanAuditPresentationOptions({
+      args,
+      env: process.env,
+      output: process.stdout,
     });
-    print(result);
-    return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+    const prompt = presentation.plain
+      ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
+      : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+    const outcome = await runHumanInit({
+      cwd,
+      version: VERSION,
+      prompt,
+      runInit: runInitWithActions,
+      reportPackage,
+    });
+    if (outcome.exitCode === 130) {
+      process.stderr.write("Init cancelled. Project-owned files were not changed.\n");
+      return 130;
+    }
+    if (
+      outcome.result.status === "completed"
+      && ["already_initialized", "initialized", "migrated", "rebound"].includes(
+        outcome.result.outcome,
+      )
+    ) {
+      process.stdout.write(renderHumanInitCompletion(outcome.result, {
+        invocationContext,
+        presentation: outcome.presentation,
+        root: cwd,
+        styled: presentation.styled,
+        version: VERSION,
+      }) + "\n");
+    } else {
+      print(outcome.result);
+    }
+    return outcome.exitCode;
   }
 
   if (command === "architect") {
@@ -941,14 +991,24 @@ async function main() {
     const reportPath = optionValue("--report");
     if (reportPath) {
       try {
-        reportPackage = JSON.parse(await readFile(reportPath, "utf8"));
-      } catch {
+        reportPackage = isLocalHistoryReference(cwd, reportPath)
+          ? await loadLocalHistoryReportPackage(cwd, reportPath)
+          : JSON.parse(await readFile(reportPath, "utf8"));
+      } catch (error) {
+        const localHistoryError = [
+          "invalid_local_history_report",
+          "invalid_local_history_report_path",
+          "repository_scope_mismatch",
+          "unsafe_history_path",
+        ].includes(error?.code);
         const result = {
           contract: CLI_INTERACTION_CONTRACT,
           status: "execution_error",
           operation: "plan",
-          error: "invalid_report_file",
-          message: "The saved Audit JSON could not be read and parsed.",
+          error: localHistoryError ? error.code : "invalid_report_file",
+          message: localHistoryError
+            ? error.message
+            : "The saved Report JSON could not be read and parsed.",
         };
         print(result);
         return 2;
@@ -1184,16 +1244,79 @@ async function main() {
       });
       return 2;
     }
-    const result = await runVerify(cwd, VERSION, {
+    const initialOptions = {
       report_package: reportPackage,
       scope: optionValue("--scope"),
       check_ids: checks.value,
       resume_token: optionValue("--resume"),
       permission_decisions: permissionDecisions.value,
       journey_results: journeyResults.value,
+    };
+    if (json) {
+      const result = await runVerify(cwd, VERSION, initialOptions);
+      print(result);
+      return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+    }
+
+    if (["--resume", "--permissions", "--journey-results"].some(
+      (option) => args.includes(option),
+    )) {
+      process.stderr.write([
+        "Human Mode does not accept structured Verify decisions.",
+        "Use rally verify --json with --resume <token> and the requested decision option.",
+      ].join("\n") + "\n");
+      return 2;
+    }
+
+    if (process.stdin.isTTY !== true) {
+      const action = createNextAction(invocationContext, [
+        "verify",
+        "--json",
+        "--cwd",
+        path.resolve(cwd),
+        ...(reportPath ? ["--report", path.resolve(reportPath)] : []),
+        ...(optionValue("--scope") ? ["--scope", optionValue("--scope")] : []),
+        ...(checks.value ? ["--checks", JSON.stringify(checks.value)] : []),
+      ]);
+      process.stderr.write([
+        "Non-TTY Human Mode cannot prompt safely.",
+        "Use the resumable Agent/CI protocol:",
+        action.display,
+        ...(action.disclosure ? [action.disclosure] : []),
+      ].join("\n") + "\n");
+      return 2;
+    }
+
+    const { createClackPromptAdapter, createPlainPromptAdapter } = await import(
+      "./prompt-adapters.js"
+    );
+    const presentation = humanAuditPresentationOptions({
+      args,
+      env: process.env,
+      output: process.stdout,
     });
-    print(result);
-    return ["unavailable", "execution_error"].includes(result.status) ? 2 : 0;
+    const prompt = presentation.plain
+      ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
+      : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+    const outcome = await runHumanVerify({
+      cwd,
+      version: VERSION,
+      prompt,
+      runVerify,
+      reportPackage,
+      scope: optionValue("--scope"),
+      checkIds: checks.value,
+      resumeAuthenticatedJourney: (options) => resumeAuthenticatedJourneyFromHost({
+        ...options,
+        host: "cli",
+      }),
+    });
+    if (outcome.exitCode === 130) {
+      process.stderr.write("Verify cancelled. No pending network read was performed.\n");
+      return 130;
+    }
+    print(outcome.result);
+    return outcome.exitCode;
   }
 
   print({

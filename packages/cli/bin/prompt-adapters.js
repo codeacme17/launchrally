@@ -1,7 +1,7 @@
 import { register } from "node:module";
 import { createInterface } from "node:readline/promises";
 import process from "node:process";
-import { styleText } from "node:util";
+import { stripVTControlCharacters, styleText } from "node:util";
 
 import {
   environmentTargetLabel,
@@ -12,6 +12,7 @@ import {
 } from "@launchrally/core";
 
 import { PromptCancelledError } from "./human-audit.js";
+import { renderHumanInit, renderHumanInitFullPreview } from "./human-init.js";
 
 function styleTextSupportsArrays() {
   try {
@@ -53,8 +54,8 @@ const FIELD_PRESENTATION = Object.freeze({
   }),
   core_journeys: Object.freeze({
     required: true,
-    display_prompt: "Which public Journeys should LaunchRally verify?",
-    requirement: "Select one or more Journeys. Select all detected journeys includes only detected choices; you can then deselect individual Journeys.",
+    display_prompt: "Classify detected routes before LaunchRally verifies them",
+    requirement: "Route discovery does not establish access. Public authorizes an anonymous GET and asserts a 200-299 response; protected access keeps anonymous and authenticated verification separate.",
     example: "GET /, GET /checkout — checkout completes",
     allow_custom: true,
     allow_skip: true,
@@ -156,6 +157,20 @@ function completedActivityLabel(label) {
   return `${String(label).replace(/(?:…|\.\.\.)$/u, "").trim()}.`;
 }
 
+const INIT_CONFIRMATION_OPTIONS = Object.freeze([
+  Object.freeze({ label: "Confirm", value: "confirm" }),
+  Object.freeze({ label: "Decline", value: "decline" }),
+  Object.freeze({ label: "View full preview", value: "view_full_preview" }),
+]);
+
+async function collectInitConfirmation({ chooseDecision, showFullPreview }) {
+  while (true) {
+    const confirmation = await chooseDecision(INIT_CONFIRMATION_OPTIONS);
+    if (confirmation !== "view_full_preview") return { confirmation };
+    showFullPreview();
+  }
+}
+
 async function runPromptActivity({
   label,
   operation,
@@ -207,10 +222,36 @@ function list(values, render = String) {
   return values.length > 0 ? values.map((value) => `  - ${render(value)}`).join("\n") : "  - None";
 }
 
+function operationTitle(operation) {
+  if (operation === "init") return "LaunchRally Init";
+  if (operation === "verify") return "LaunchRally Verify";
+  return "LaunchRally Audit";
+}
+
+function terminalSafeText(value) {
+  return stripVTControlCharacters(String(value))
+    .replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ")
+    .replace(/[\u061c\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 function journeyLabel(journey) {
-  return typeof journey === "string"
+  return terminalSafeText(typeof journey === "string"
     ? journey
-    : `${journey.method} ${journey.path} — ${journey.purpose}`;
+    : `${journey.method} ${journey.path} — ${journey.purpose}`);
+}
+
+function journeyAccessLabel(journey) {
+  if (typeof journey === "string") {
+    return `${journey} [access: descriptive; anonymous: not executable; authenticated: not applicable]`;
+  }
+  if (!journey.access) {
+    return `${journeyLabel(journey)} [access: public; anonymous: 200-299; authenticated: not applicable]`;
+  }
+  const anonymous = journey.access.anonymous_status_codes?.join("/") ?? "not probed";
+  const authenticated = journey.access.authenticated_status_codes.join("/");
+  return `${journeyLabel(journey)} [access: ${journey.access.authentication_class}; anonymous: ${anonymous}; authenticated: ${authenticated}]`;
 }
 
 function providerLabel(role) {
@@ -227,7 +268,7 @@ function auditBriefText(result) {
     `${environmentTargetLabel(brief.intended_environment.value, { capitalize: true, plural: true })}:`,
     list(brief.production_targets.values),
     "Core journeys:",
-    list(brief.core_journeys.values, journeyLabel),
+    list(brief.core_journeys.values, journeyAccessLabel),
     "Provider roles:",
     list(brief.provider_roles.values, providerLabel),
     "Support layers:",
@@ -261,25 +302,117 @@ function inputStateText(result) {
   ].join("\n");
 }
 
-function permissionText(permission) {
+function protectedJourneyDeclaration(permissionJourney, auditBrief) {
+  const declarations = auditBrief?.core_journeys?.values ?? [];
+  let pathname;
+  try {
+    pathname = new URL(permissionJourney.target).pathname;
+  } catch {
+    return undefined;
+  }
+  return declarations.find((journey) =>
+    journey
+    && typeof journey === "object"
+    && journey.method === permissionJourney.method
+    && journey.path === pathname
+    && journey.access?.authentication_class === permissionJourney.authentication_class);
+}
+
+function anonymousExpectedStatuses(permissionJourney, permissions = []) {
+  const publicPermission = permissions.find(({ boundary }) => boundary === "public_network");
+  const probe = publicPermission?.scope?.probes?.find((candidate) =>
+    candidate.verification_mode === "protected_anonymous_boundary"
+    && candidate.method === permissionJourney.method
+    && candidate.target === permissionJourney.target);
+  return probe?.expected_status_codes;
+}
+
+function authenticatedPermissionText(permission, auditBrief, permissions) {
+  const scope = permission.scope ?? {};
+  const journeys = Array.isArray(scope.journeys) ? scope.journeys : [];
+  const journeyLines = journeys.length > 0
+    ? journeys.flatMap((journey) => {
+      const declaration = protectedJourneyDeclaration(journey, auditBrief);
+      const anonymousStatuses = declaration?.access?.anonymous_status_codes
+        ?? anonymousExpectedStatuses(journey, permissions);
+      const authenticatedStatuses = journey.expected_status_codes;
+      return [
+        `  - ${journey.method ?? "Method unavailable"} ${journey.target ?? "Target unavailable"}`,
+        `    Authentication class: ${journey.authentication_class ?? "unavailable"}`,
+        `    Anonymous expected status: ${Array.isArray(anonymousStatuses) && anonymousStatuses.length > 0
+          ? anonymousStatuses.join(", ")
+          : "not declared"}`,
+        `    Authenticated expected status: ${Array.isArray(authenticatedStatuses) && authenticatedStatuses.length > 0
+          ? authenticatedStatuses.join(", ")
+          : "unavailable"}`,
+      ];
+    })
+    : ["  - No authenticated Journey targets were supplied."];
+  return [
+    "Authenticated Core Journey verification",
+    "Safe read-only targets:",
+    ...journeyLines,
+    `Runner/adapter version: ${scope.adapter_version ?? "unavailable"}`,
+    `Retained normalized fields: ${Array.isArray(scope.requested_fields) && scope.requested_fields.length > 0
+      ? scope.requested_fields.join(", ")
+      : "unavailable"}`,
+    "Authentication remains user-managed; credentials, session material, response bodies, and account identifiers are not retained.",
+    "Allow these authenticated Core Journey reads?",
+  ].join("\n");
+}
+
+function permissionText(permission, auditBrief, permissions) {
   if (permission.boundary === "public_network") {
+    const scope = permission.scope ?? {};
+    const probes = Array.isArray(scope.probes) ? scope.probes : [];
     return [
       "Public verification",
-      `Targets: ${permission.scope.targets.join(", ")}`,
+      `Collector: ${scope.collector_version ?? "unavailable"}`,
+      `Targets: ${Array.isArray(scope.targets) && scope.targets.length > 0
+        ? scope.targets.join(", ")
+        : "unavailable"}`,
+      "Probes:",
+      ...probes.flatMap((probe) => [
+        `  - ${probe.method ?? "Method unavailable"} ${probe.target ?? "Target unavailable"}`,
+        `    Purpose: ${probe.purpose ?? "unavailable"}`,
+        ...(Array.isArray(probe.expected_status_codes)
+          ? [`    Expected status: ${probe.expected_status_codes.join(", ")}`]
+          : []),
+      ]),
       "Allow this public network read?",
     ].join("\n");
   }
+  if (permission.boundary === "authenticated_network_read") {
+    return authenticatedPermissionText(permission, auditBrief, permissions);
+  }
+  const provider = permission.scope?.provider ?? "unavailable";
+  const target = permission.scope?.target ?? "unavailable";
+  const requestedFields = Array.isArray(permission.scope?.requested_fields)
+    ? permission.scope.requested_fields
+    : [];
   return [
-    `Provider read: ${permission.scope.provider}`,
-    `Target: ${permission.scope.target}`,
-    `Fields: ${permission.scope.requested_fields.join(", ")}`,
+    `Provider read: ${provider}`,
+    `Target: ${target}`,
+    `Fields: ${requestedFields.length > 0 ? requestedFields.join(", ") : "unavailable"}`,
     "Commands:",
     list(
-      permission.scope.commands
-        ?? (permission.scope.command ? [permission.scope.command] : []),
+      permission.scope?.commands
+        ?? (permission.scope?.command ? [permission.scope.command] : []),
       (command) => [command.executable, ...command.arguments].join(" "),
     ),
     "Allow this Provider read?",
+  ].join("\n");
+}
+
+function initPermissionText(permission) {
+  const command = permission.commands[0];
+  return [
+    "LaunchRally Init requires an npm registry read after the offline cache attempt failed.",
+    `Source: ${permission.source}`,
+    `Package: ${permission.package}@${permission.version}`,
+    `Temporary target: ${permission.temporary_target}`,
+    `Command: ${[command.executable, ...command.arguments].join(" ")}`,
+    "Lifecycle scripts remain disabled.",
   ].join("\n");
 }
 
@@ -336,12 +469,22 @@ function fieldInputError(field, value) {
     }
   }
   if (field.value_type !== "journey_array") return undefined;
-  const safe = entries.every((entry) =>
-    !parsePublicJourneyInput(entry, { allowDescription: false }).error,
+  const invalidEntry = entries.find((entry) =>
+    parsePublicJourneyInput(entry, { allowDescription: false }).error,
   );
-  return safe
-    ? undefined
-    : "Use a safe GET Journey, for example: GET / or GET /checkout — checkout completes.";
+  if (!invalidEntry) return undefined;
+  const declared = invalidEntry.match(/^([a-z]+)\s+(\S+)/iu);
+  const protectedResult = declared
+    ? parsePublicJourneyInput(classifiedJourney({
+      method: declared[1],
+      path: declared[2],
+      purpose: "authenticated Core Journey",
+    }, "user"), { allowDescription: false })
+    : null;
+  return [
+    "Use a safe GET Journey, for example: GET / or GET /checkout — checkout completes.",
+    protectedResult?.guidance,
+  ].filter(Boolean).join(" ");
 }
 
 function emptyFieldValue(value) {
@@ -387,18 +530,161 @@ function fieldOptions(field) {
   }));
 }
 
-function selectionOptions(field, { customValue, selectAllValue, skipValue }) {
+function selectionOptions(field, { customValue, skipValue }) {
   const options = fieldOptions(field);
   return [
-    ...(selectAllValue && options.some((option) => option.detected)
-      ? [{ label: "Select all detected journeys", value: selectAllValue }]
-      : []),
     ...options,
     ...(field.allow_custom
       ? [{ label: "Other — enter a custom value", value: customValue }]
       : []),
     ...(field.allow_skip ? [{ label: field.skip_label, value: skipValue }] : []),
   ];
+}
+
+const PUBLIC_JOURNEY_ACCESS_CHOICE = Object.freeze({
+  label: "Public — authorize anonymous GET; expect 200-299",
+  value: "public",
+});
+const PROTECTED_JOURNEY_ACCESS_CHOICES = Object.freeze([
+  Object.freeze({
+    label: "User — anonymous expect 401/403/404; authenticated expect 200",
+    value: "user",
+  }),
+  Object.freeze({
+    label: "Staff — anonymous expect 401/403/404; authenticated expect 200",
+    value: "staff",
+  }),
+  Object.freeze({
+    label: "Signed token — anonymous expect 401/403/404; authenticated expect 200",
+    value: "signed_token",
+  }),
+]);
+const EXCLUDE_JOURNEY_ACCESS_CHOICE = Object.freeze({
+  label: "Exclude — do not verify this route",
+  value: "exclude",
+});
+const PROTECTED_PATH_SAFETY_GUIDANCE =
+  "protected access is unavailable for this Journey";
+
+function classifiedJourney(journey, accessClass) {
+  if (accessClass === "exclude") return null;
+  if (accessClass === "public") return journey;
+  return {
+    schema_version: "launchrally.dev/protected-journey/v1",
+    method: journey.method,
+    path: journey.path,
+    purpose: "authenticated Core Journey",
+    access: {
+      authentication_class: accessClass,
+      anonymous_status_codes: [401, 403, 404],
+      authenticated_status_codes: [200],
+    },
+  };
+}
+
+function journeyAccessChoices(journey, current) {
+  const protectedResult = parsePublicJourneyInput(
+    classifiedJourney(journey, "user"),
+    { allowDescription: false },
+  );
+  const choices = [
+    PUBLIC_JOURNEY_ACCESS_CHOICE,
+    ...(!protectedResult.error ? PROTECTED_JOURNEY_ACCESS_CHOICES : []),
+    EXCLUDE_JOURNEY_ACCESS_CHOICE,
+  ];
+  return {
+    choices: !current?.access
+      ? choices
+      : choices.map((choice) => choice.value === current.access.authentication_class
+        ? {
+          ...choice,
+          label: `${choice.label.split(" — ")[0]} — keep current: anonymous expect ${
+            current.access.anonymous_status_codes?.join("/") ?? "not probed"
+          }; authenticated expect ${current.access.authenticated_status_codes.join("/")}`,
+        }
+        : choice),
+    rejection: protectedResult.error ? protectedResult : null,
+  };
+}
+
+function sameJourneyRoute(left, right) {
+  return typeof left === "object"
+    && left !== null
+    && left.method === right.method
+    && left.path === right.path;
+}
+
+function journeyAccessClass(journey) {
+  return journey.access?.authentication_class ?? "public";
+}
+
+async function classifyJourneyOptions(options, selectAccess, source) {
+  const classified = [];
+  for (const option of options) {
+    const { choices, rejection } = journeyAccessChoices(option.value, option.current);
+    const protectedSupported = !rejection;
+    const accessClass = await selectAccess(
+      `${source} does not establish access. Classify ${journeyLabel(option.value)} (classification required${protectedSupported ? "" : `; ${rejection.guidance ?? PROTECTED_PATH_SAFETY_GUIDANCE}`})`,
+      choices,
+      option.currentAccess,
+    );
+    const journey = option.current && accessClass === option.currentAccess
+      ? option.current
+      : classifiedJourney(option.value, accessClass);
+    if (journey) classified.push(journey);
+  }
+  return classified;
+}
+
+async function classifyDetectedJourneys(field, {
+  disclose,
+  selectRetained,
+  selectAccess,
+}) {
+  const detected = fieldOptions(field).filter((option) => option.detected);
+  if (detected.length === 0) return null;
+  const candidates = detected.map((option) => {
+    const current = (field.current_value ?? []).find((journey) =>
+      sameJourneyRoute(journey, option.value),
+    );
+    return {
+      ...option,
+      current,
+      ...(current ? { currentAccess: journeyAccessClass(current) } : {}),
+    };
+  });
+  disclose(candidates);
+  const retainedCandidates = await selectRetained(candidates);
+  return {
+    classified: await classifyJourneyOptions(
+      retainedCandidates,
+      selectAccess,
+      "Route discovery",
+    ),
+    detected: detected.map((option) => option.value),
+  };
+}
+
+function classifyExplicitJourneys(journeys, selectAccess) {
+  return classifyJourneyOptions(
+    journeys.map((value) => ({ value })),
+    selectAccess,
+    "Explicitly supplied route",
+  );
+}
+
+function retainedCurrentJourneys(field, detected) {
+  return (field.current_value ?? []).filter((current) =>
+    !detected.some((candidate) => sameJourneyRoute(current, candidate)),
+  );
+}
+
+function protectedJourneys(journeys) {
+  return journeys.filter((journey) =>
+    typeof journey === "object"
+    && journey !== null
+    && typeof journey.access?.authentication_class === "string",
+  );
 }
 
 function resolveMultiSelection(selected, { customValue, skipValue }) {
@@ -483,11 +769,15 @@ export function createPlainPromptAdapter({
       throw error;
     }
   };
-  const choose = async (message, choices) => {
+  const choose = async (message, choices, initialValue) => {
     write(output, message);
     choices.forEach((choice, index) => write(output, `${index + 1}. ${choice.label}`));
+    const initialIndex = choices.findIndex((choice) => choice.value === initialValue);
     while (true) {
-      const value = (await ask(`Choose 1-${choices.length}:`)).trim();
+      const value = (await ask(
+        `Choose 1-${choices.length}${initialIndex >= 0 ? ` [default ${initialIndex + 1}]` : ""}:`,
+      )).trim();
+      if (!value && initialIndex >= 0) return choices[initialIndex].value;
       const selected = choices[Number(value) - 1];
       if (selected) return selected.value;
       write(output, `Enter a number from 1 to ${choices.length}.`);
@@ -503,13 +793,80 @@ export function createPlainPromptAdapter({
   };
   const selectField = async (field) => {
     const customValue = Symbol("custom-value");
-    const selectAllValue = Symbol("select-all-value");
     const skipValue = Symbol("skip-value");
     const choices = selectionOptions(field, {
       customValue,
-      selectAllValue,
       skipValue,
     });
+    if (field.field_id === "core_journeys") {
+      const classification = await classifyDetectedJourneys(field, {
+        disclose: (candidates) => {
+          write(output, `Detected route candidates: ${candidates.length} (unclassified)`);
+          write(output, "Route discovery does not establish access.");
+          candidates.forEach((candidate, index) => {
+            const current = candidate.currentAccess
+              ? ` [current: ${candidate.currentAccess}]`
+              : "";
+            write(output, `${index + 1}. ${journeyLabel(candidate.value)}${current}`);
+          });
+        },
+        selectRetained: async (candidates) => {
+          const action = await choose(
+            "Choose a small set to retain for classification. Every unselected route will be excluded.",
+            [
+              { label: "Select routes to retain; exclude all remaining", value: "select" },
+              { label: "Exclude all detected routes", value: "exclude_all" },
+            ],
+          );
+          if (action === "exclude_all") return [];
+          const currentIndexes = candidates
+            .map((candidate, index) => candidate.current ? index + 1 : null)
+            .filter(Boolean);
+          while (true) {
+            const raw = (await ask(
+              `Enter route numbers separated by commas${
+                currentIndexes.length > 0 ? ` [default ${currentIndexes.join(",")}]` : ""
+              }:`,
+            )).trim();
+            const selectedInput = raw || currentIndexes.join(",");
+            const indexes = [...new Set(selectedInput
+              .split(",")
+              .filter(Boolean)
+              .map((value) => Number(value.trim()) - 1))];
+            if (indexes.length > 0 && indexes.every((index) => candidates[index])) {
+              return indexes.map((index) => candidates[index]);
+            }
+            write(output, `Enter one or more numbers from 1 to ${candidates.length}, separated by commas.`);
+          }
+        },
+        selectAccess: choose,
+      });
+      if (classification) {
+        const retained = retainedCurrentJourneys(field, classification.detected);
+        const action = await choose("Continue, add another Journey, or explicitly skip public Journey verification", [
+          { label: "Continue with classified Journeys", value: "continue" },
+          { label: "Other — enter a custom value", value: "custom" },
+          { label: field.skip_label, value: "skip" },
+        ]);
+        if (action === "skip") {
+          return protectedJourneys([...classification.classified, ...retained]);
+        }
+        if (action === "continue") return [...classification.classified, ...retained];
+        while (true) {
+          const raw = await ask(`Enter other values separated by commas\nExample: ${field.example}`);
+          const error = fieldInputError({ ...field, required: true }, raw);
+          const custom = parseFieldValue(field, raw);
+          if (!error && !emptyFieldValue(custom)) {
+            return [
+              ...classification.classified,
+              ...retained,
+              ...await classifyExplicitJourneys(custom, choose),
+            ];
+          }
+          write(output, error ?? "Enter at least one custom value.");
+        }
+      }
+    }
     if (!field.value_type.endsWith("_array")) {
       const value = await choose(fieldMessage(field), choices);
       if (value !== customValue) return value;
@@ -537,38 +894,6 @@ export function createPlainPromptAdapter({
         continue;
       }
       const selected = indexes.map((index) => choices[index].value);
-      if (selected.includes(selectAllValue)) {
-        if (selected.length > 1) {
-          write(output, "Select all detected journeys by itself, then deselect any you do not want.");
-          continue;
-        }
-        const detected = fieldOptions(field).filter((option) => option.detected);
-        write(output, "All detected Journeys selected:");
-        detected.forEach((option, index) => write(output, `${index + 1}. ${option.label}`));
-        while (true) {
-          const deselected = (await ask(
-            "Deselect detected Journeys by number, or press Enter to keep all:",
-          )).trim();
-          if (!deselected) return detected.map((option) => option.value);
-          const deselectedIndexes = [...new Set(
-            deselected.split(",").map((value) => Number(value.trim()) - 1),
-          )];
-          if (deselectedIndexes.some((index) => !detected[index])) {
-            write(output, `Enter numbers from 1 to ${detected.length}, separated by commas.`);
-            continue;
-          }
-          const remaining = detected
-            .filter((_, index) => !deselectedIndexes.includes(index))
-            .map((option) => option.value);
-          if (remaining.length > 0) return remaining;
-          write(
-            output,
-            "Select at least one detected Journey, or return to the picker and explicitly choose Skip.",
-          );
-          break;
-        }
-        continue;
-      }
       const resolution = resolveMultiSelection(selected, {
         customValue,
         skipValue,
@@ -584,7 +909,9 @@ export function createPlainPromptAdapter({
         const error = fieldInputError({ ...field, required: true }, raw);
         const custom = parseFieldValue(field, raw);
         if (!error && !emptyFieldValue(custom)) {
-          return [...resolution.values, ...custom];
+          return field.field_id === "core_journeys"
+            ? [...resolution.values, ...await classifyExplicitJourneys(custom, choose)]
+            : [...resolution.values, ...custom];
         }
         write(output, error ?? "Enter at least one custom value.");
       }
@@ -592,8 +919,8 @@ export function createPlainPromptAdapter({
   };
 
   return {
-    async start() {
-      write(output, "LaunchRally Audit");
+    async start(operation = "audit") {
+      write(output, operationTitle(operation));
     },
     async activity(label, operation) {
       return runPromptActivity({
@@ -668,11 +995,45 @@ export function createPlainPromptAdapter({
       if (result.status === "needs_permission") {
         const permissionDecisions = {};
         for (const permission of result.request.permissions) {
-          permissionDecisions[permission.permission_id] = await confirm(permissionText(permission))
+          permissionDecisions[permission.permission_id] = await confirm(
+            permissionText(permission, result.audit_brief),
+          )
             ? "approved"
             : "denied";
         }
         return { permission_decisions: permissionDecisions };
+      }
+      return {};
+    },
+    async respondVerify(result) {
+      if (result.status !== "needs_permission") return {};
+      const permissionDecisions = {};
+      for (const permission of result.request.permissions) {
+        permissionDecisions[permission.permission_id] = await confirm(
+          permissionText(permission, undefined, result.request.permissions),
+        )
+          ? "approved"
+          : "denied";
+      }
+      return { permission_decisions: permissionDecisions };
+    },
+    async respondInit(result, context = {}) {
+      if (result.status === "needs_permission") {
+        const permissionDecisions = {};
+        for (const permission of result.request.permissions) {
+          write(output, initPermissionText(permission));
+          permissionDecisions[permission.id] = await confirm(
+            `Approve ${permission.id}?`,
+          ) ? "approved" : "denied";
+        }
+        return { permission_decisions: permissionDecisions };
+      }
+      if (result.status === "needs_confirmation") {
+        write(output, renderHumanInit(result, context));
+        return collectInitConfirmation({
+          chooseDecision: (options) => choose(result.request.prompt, options),
+          showFullPreview: () => write(output, renderHumanInitFullPreview(result, context)),
+        });
       }
       return {};
     },
@@ -683,86 +1044,10 @@ export function createPlainPromptAdapter({
   };
 }
 
-function cancelled(value, clack, output) {
+function cancelled(value, clack, output, operation = "Audit") {
   if (!clack.isCancel(value)) return value;
-  clack.cancel("Audit cancelled.", { output });
+  clack.cancel(`${operation} cancelled.`, { output });
   throw new PromptCancelledError();
-}
-
-async function journeyMultiselect({
-  clack,
-  common,
-  detectedValues,
-  initialValues,
-  message,
-  options,
-  required,
-  selectAllValue,
-}) {
-  const { MultiSelectPrompt } = await import("@clack/core");
-  class JourneyMultiSelectPrompt extends MultiSelectPrompt {
-    constructor(promptOptions) {
-      super(promptOptions);
-      this.on("cursor", (action) => {
-        if (action !== "space" || !this.value?.includes(selectAllValue)) return;
-        this.value = [...detectedValues];
-      });
-      this.on("key", (_character, key) => {
-        if (key.name === "a") this.value = [...detectedValues];
-      });
-    }
-  }
-
-  return new JourneyMultiSelectPrompt({
-    ...common,
-    options,
-    initialValues,
-    required,
-    validate(values) {
-      if (required && (!values || values.length === 0)) {
-        return "Select at least one Journey or Skip public Journey verification.";
-      }
-      return undefined;
-    },
-    render() {
-      const selected = this.value ?? [];
-      const selectedLabels = options
-        .filter((option) => selected.includes(option.value))
-        .map((option) => option.label);
-      if (this.state === "submit") {
-        return `${clack.symbol(this.state)}  ${message}\n  ${selectedLabels.join(", ") || "none"}`;
-      }
-      const choices = clack.limitOptions({
-        cursor: this.cursor,
-        options,
-        output: common.output,
-        rowPadding: 3,
-        style: (option, active) => {
-          const checked = selected.includes(option.value);
-          const cursor = active ? "› " : "  ";
-          const marker = checked
-            ? styleText("green", "◼")
-            : styleText(active ? "cyan" : "dim", "◻");
-          const label = active
-            ? option.label
-            : styleText("dim", option.label);
-          return `${cursor}${marker} ${label}`;
-        },
-      });
-      const instructions = [
-        `${styleText("dim", "Up/Down:")} navigate`,
-        `${styleText("dim", "Space:")} toggle`,
-        `${styleText("dim", "Enter:")} confirm`,
-        `${styleText("dim", "A:")} select all detected`,
-      ].join("  ");
-      return [
-        `${clack.symbol(this.state)}  ${message}`,
-        ...choices,
-        ...(this.state === "error" ? [this.error] : []),
-        instructions,
-      ].join("\n");
-    },
-  }).prompt();
 }
 
 export async function createClackPromptAdapter({
@@ -785,18 +1070,94 @@ export async function createClackPromptAdapter({
       ? { validate: (value) => fieldInputError(field, value) }
       : {}),
   }), clack, output);
+  const selectJourneyAccess = async (message, choices) => cancelled(await clack.select({
+    ...common,
+    message,
+    options: choices,
+  }), clack, output);
   const selectField = async (field) => {
     const customValue = "__launchrally_custom_value__";
-    const selectAllValue = "__launchrally_select_all_detected_value__";
     const skipValue = "__launchrally_skip_value__";
-    const detectedValues = fieldOptions(field)
-      .filter((option) => option.detected)
-      .map((option) => option.value);
     const options = selectionOptions(field, {
       customValue,
-      selectAllValue: detectedValues.length > 0 ? selectAllValue : undefined,
       skipValue,
     });
+    if (field.field_id === "core_journeys") {
+      const classification = await classifyDetectedJourneys(field, {
+        disclose: (candidates) => clack.note(
+          [
+            "Route discovery does not establish access.",
+            ...candidates.map((candidate, index) => {
+              const current = candidate.currentAccess
+                ? ` [current: ${candidate.currentAccess}]`
+                : "";
+              return `${index + 1}. ${journeyLabel(candidate.value)}${current}`;
+            }),
+          ].join("\n"),
+          `Detected route candidates: ${candidates.length}`,
+          common,
+        ),
+        selectRetained: async (candidates) => {
+          const action = cancelled(await clack.select({
+            ...common,
+            message: "Choose a small set to retain for classification. Every unselected route will be excluded.",
+            options: [
+              { label: "Select routes to retain; exclude all remaining", value: "select" },
+              { label: "Exclude all detected routes", value: "exclude_all" },
+            ],
+            initialValue: "select",
+          }), clack, output);
+          if (action === "exclude_all") return [];
+          const selected = cancelled(await clack.multiselect({
+            ...common,
+            message: "Select the routes to retain for classification",
+            options: candidates.map((candidate) => ({
+              label: `${journeyLabel(candidate.value)}${
+                candidate.currentAccess ? ` [current: ${candidate.currentAccess}]` : ""
+              }`,
+              value: candidate,
+            })),
+            initialValues: candidates.filter((candidate) => candidate.current),
+            required: true,
+            maxItems: Math.max(3, Math.min(8, (output.rows ?? 14) - 6)),
+          }), clack, output);
+          return selected;
+        },
+        selectAccess: async (message, choices, initialValue) => cancelled(await clack.select({
+          ...common,
+          message,
+          options: choices,
+          ...(initialValue ? { initialValue } : {}),
+        }), clack, output),
+      });
+      if (classification) {
+        const retained = retainedCurrentJourneys(field, classification.detected);
+        const action = cancelled(await clack.select({
+          ...common,
+          message: "Continue, add another Journey, or explicitly skip public Journey verification",
+          options: [
+            { label: "Continue with classified Journeys", value: "continue" },
+            { label: "Other — enter a custom value", value: "custom" },
+            { label: field.skip_label, value: "skip" },
+          ],
+        }), clack, output);
+        if (action === "skip") {
+          return protectedJourneys([...classification.classified, ...retained]);
+        }
+        if (action === "continue") return [...classification.classified, ...retained];
+        const raw = await ask("Enter other values separated by commas", {
+          ...field,
+          current_value: [],
+          required: true,
+        });
+        const custom = parseFieldValue(field, raw);
+        return [
+          ...classification.classified,
+          ...retained,
+          ...await classifyExplicitJourneys(custom, selectJourneyAccess),
+        ];
+      }
+    }
     if (!field.value_type.endsWith("_array")) {
       const selected = cancelled(await clack.select({
         ...common,
@@ -819,24 +1180,13 @@ export async function createClackPromptAdapter({
       field.options.find((option) => sameOptionValue(option.value, current))?.value ?? current,
     );
     while (true) {
-      const selected = cancelled(await (detectedValues.length > 0
-        ? journeyMultiselect({
-          clack,
-          common,
-          detectedValues,
-          initialValues,
-          message: fieldMessage({ ...field, requirement: "Select one or more Journeys" }),
-          options,
-          required: field.required,
-          selectAllValue,
-        })
-        : clack.multiselect({
-          ...common,
-          message: fieldMessage(field),
-          options,
-          initialValues,
-          required: field.required,
-        })), clack, output);
+      const selected = cancelled(await clack.multiselect({
+        ...common,
+        message: fieldMessage(field),
+        options,
+        initialValues,
+        required: field.required,
+      }), clack, output);
       const resolution = resolveMultiSelection(selected, {
         customValue,
         skipValue,
@@ -854,13 +1204,18 @@ export async function createClackPromptAdapter({
         required: true,
       });
       const custom = parseFieldValue(field, raw);
-      return [...resolution.values, ...custom];
+      return field.field_id === "core_journeys"
+        ? [
+            ...resolution.values,
+            ...await classifyExplicitJourneys(custom, selectJourneyAccess),
+          ]
+        : [...resolution.values, ...custom];
     }
   };
 
   return {
-    async start() {
-      clack.intro("LaunchRally Audit", common);
+    async start(operation = "audit") {
+      clack.intro(operationTitle(operation), common);
     },
     async activity(label, operation) {
       const completionLabel = completedActivityLabel(label);
@@ -967,7 +1322,11 @@ export async function createClackPromptAdapter({
       if (result.status === "needs_permission") {
         const permissionDecisions = {};
         for (const permission of result.request.permissions) {
-          clack.note(permissionText(permission), "Permission request", common);
+          clack.note(
+            permissionText(permission, result.audit_brief),
+            "Permission request",
+            common,
+          );
           const approved = await clack.confirm({
             ...common,
             message: "Approve this permission?",
@@ -978,6 +1337,65 @@ export async function createClackPromptAdapter({
             : "denied";
         }
         return { permission_decisions: permissionDecisions };
+      }
+      return {};
+    },
+    async respondVerify(result) {
+      if (result.status !== "needs_permission") return {};
+      const permissionDecisions = {};
+      for (const permission of result.request.permissions) {
+        clack.note(
+          permissionText(permission, undefined, result.request.permissions),
+          "Verify permission request",
+          common,
+        );
+        const approved = await clack.confirm({
+          ...common,
+          message: "Approve this permission?",
+          initialValue: false,
+        });
+        permissionDecisions[permission.permission_id] = cancelled(
+          approved,
+          clack,
+          output,
+          "Verify",
+        )
+          ? "approved"
+          : "denied";
+      }
+      return { permission_decisions: permissionDecisions };
+    },
+    async respondInit(result, context = {}) {
+      if (result.status === "needs_permission") {
+        const permissionDecisions = {};
+        for (const permission of result.request.permissions) {
+          clack.note(initPermissionText(permission), "Permission request", common);
+          const approved = await clack.confirm({
+            ...common,
+            message: `Approve ${permission.id}?`,
+            initialValue: false,
+          });
+          permissionDecisions[permission.id] = cancelled(approved, clack, output, "Init")
+            ? "approved"
+            : "denied";
+        }
+        return { permission_decisions: permissionDecisions };
+      }
+      if (result.status === "needs_confirmation") {
+        clack.note(renderHumanInit(result, context), "Initialization decision summary", common);
+        return collectInitConfirmation({
+          chooseDecision: async (options) => cancelled(await clack.select({
+            ...common,
+            message: result.request.prompt,
+            options,
+            initialValue: "decline",
+          }), clack, output, "Init"),
+          showFullPreview: () => clack.note(
+            renderHumanInitFullPreview(result, context),
+            "Full exact initialization preview",
+            common,
+          ),
+        });
       }
       return {};
     },

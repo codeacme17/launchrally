@@ -290,7 +290,29 @@ function hasPersistedSensitivePayload(value) {
 }
 
 const SECRET_VALUE_PATTERN = /(?:\bsk_(?:live|test)_[A-Za-z0-9]{16,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|https?:\/\/[^\s/@:]+:[^\s/@]+@)/u;
-const AUTHENTICATED_JOURNEY_TARGET_PATTERN = /^https:\/\/[^@/?#]+\/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces)(?:\/(?:account|accounts|admin|api|app|billing|checkout|control|dashboard|files|health|home|inbox|me|orders|organization|organizations|portal|private|profile|protected|session|settings|staff|status|team|teams|uploads|user|users|v1|v2|v3|workspace|workspaces))*$/u;
+/**
+ * @deprecated Use PROTECTED_JOURNEY_PATH_PATTERN for current validation.
+ */
+export const PROTECTED_JOURNEY_PATH_SEGMENTS = Object.freeze([
+  "account", "accounts", "admin", "api", "app", "authorize", "billing", "checkout",
+  "control", "dashboard", "files", "guardian", "health", "home", "inbox", "me",
+  "orders", "organization", "organizations", "portal", "private", "profile",
+  "protected", "session", "settings", "staff", "status", "team", "teams",
+  "uploads", "user", "users", "v1", "v2", "v3", "workspace", "workspaces",
+]);
+const OPAQUE_JOURNEY_PATH_SEGMENT_PATTERN =
+  "(?:[0-9]{8,64}|[a-f0-9]{32,64}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})";
+const STATIC_JOURNEY_PATH_SEGMENT_PATTERN =
+  `(?=[a-z0-9_-]{1,64}(?:/|$))(?!${OPAQUE_JOURNEY_PATH_SEGMENT_PATTERN}(?:/|$))`
+  + "[a-z0-9]+(?:[-_][a-z0-9]+)*";
+export const PROTECTED_JOURNEY_PATH_PATTERN =
+  `^(?=.{2,512}$)/${STATIC_JOURNEY_PATH_SEGMENT_PATTERN}(?:/${STATIC_JOURNEY_PATH_SEGMENT_PATTERN})*$`;
+export const AUTHENTICATED_JOURNEY_TARGET_PATTERN =
+  `^https://[^@/?#\\\\]+${PROTECTED_JOURNEY_PATH_PATTERN.slice(1)}`;
+const SAFE_AUTHENTICATED_JOURNEY_TARGET = new RegExp(
+  AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+  "u",
+);
 
 function hasPersistedSecretValue(value) {
   if (typeof value === "string") return SECRET_VALUE_PATTERN.test(value);
@@ -318,12 +340,14 @@ function assertPhase1Schema(value, definition, message, errorCode, predicates = 
 function safeEvidenceTarget(value) {
   try {
     const target = new URL(value);
+    const rawPath = value.slice(value.indexOf("/", "https://".length));
     return target.protocol === "https:"
       && !target.username
       && !target.password
       && !target.search
       && !target.hash
-      && AUTHENTICATED_JOURNEY_TARGET_PATTERN.test(value);
+      && target.pathname === rawPath
+      && SAFE_AUTHENTICATED_JOURNEY_TARGET.test(value);
   } catch {
     return false;
   }

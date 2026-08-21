@@ -183,6 +183,9 @@ test("Core offers only safely detected static routes as Journey candidates", asy
     "app/dashboard/page.tsx",
     "app/feed/(.)photo/page.tsx",
     "app/users/[id]/page.tsx",
+    "app/terminal\u001b[31m/page.tsx",
+    "app/bell\u0007/page.tsx",
+    "app/bidi\u202etxt/page.tsx",
     "src/routes/pricing/+page.svelte",
     "app/routes/docs._index.tsx",
   ]) {
@@ -193,6 +196,10 @@ test("Core offers only safely detected static routes as Journey candidates", asy
 
   const result = await runAudit(fixture);
   const field = result.request.fields.find(({ field_id }) => field_id === "core_journeys");
+  assert.equal(
+    field.prompt,
+    "Which unclassified detected routes should be public, protected, or excluded for this release?",
+  );
   assert.deepEqual(field.candidates, [
     "GET / — homepage loads",
     "GET /dashboard — dashboard page loads",
@@ -201,6 +208,27 @@ test("Core offers only safely detected static routes as Journey candidates", asy
   ]);
   assert.doesNotMatch(JSON.stringify(field.candidates), /\[id\]/u);
   assert.doesNotMatch(JSON.stringify(field.candidates), /\(\.\)photo/u);
+  assert.doesNotMatch(JSON.stringify(field.candidates), /terminal|bell|bidi/u);
+});
+
+test("Core discloses every safely detected Journey candidate beyond twelve routes", async () => {
+  const fixture = await createInteractionFixture();
+  const routes = Array.from({ length: 15 }, (_, index) =>
+    `route-${String(index + 1).padStart(2, "0")}`,
+  );
+  for (const route of routes) {
+    const absolutePath = path.join(fixture, "app", route, "page.tsx");
+    await mkdir(path.dirname(absolutePath), { recursive: true });
+    await writeFile(absolutePath, "export default function Page() {}\n");
+  }
+
+  const result = await runAudit(fixture);
+  const field = result.request.fields.find(({ field_id }) => field_id === "core_journeys");
+
+  assert.equal(field.candidates.length, 15);
+  assert.deepEqual(field.candidates, routes.map((route) =>
+    `GET /${route} — ${route.replace("-", " ")} page loads`,
+  ));
 });
 
 test("Agent Mode previews the complete unconfirmed plan before permission", async () => {
@@ -544,6 +572,15 @@ test("protected Core Journey declarations preserve only versioned safe access as
       cookie: "secret-session",
     },
   }), { error: "invalid_protected_journey" });
+  assert.deepEqual(parsePublicJourneyInput({
+    ...declaration,
+    path: "/guardian/authorize",
+    access: {
+      authentication_class: "signed_token",
+      anonymous_status_codes: [401, 403, 404],
+      authenticated_status_codes: [200],
+    },
+  }).error, undefined);
 });
 
 test("protected Core Journeys split anonymous boundary and authenticated read plans", () => {
@@ -628,6 +665,40 @@ test("protected anonymous status expectations become normalized passing evidence
     assert.equal(boundary.outcome, "access_boundary_confirmed");
     assert.equal(boundary.details.status_code, 404);
     assert.equal(boundary.verification_mode, "protected_anonymous_boundary");
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("an anonymous sign-in shell cannot pass a protected Journey", async () => {
+  const server = createServer((request, response) => {
+    response.writeHead(request.url === "/control" ? 200 : 204);
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address();
+    const plan = createPublicVerificationPlan({
+      intended_environment: "staging",
+      production_targets: [`http://127.0.0.1:${port}`],
+      core_journeys: [{
+        schema_version: "launchrally.dev/protected-journey/v1",
+        method: "GET",
+        path: "/control",
+        purpose: "authenticated Core Journey",
+        access: {
+          authentication_class: "staff",
+          anonymous_status_codes: [404],
+          authenticated_status_codes: [200],
+        },
+      }],
+    });
+    const evidence = await collectPublicEvidence(plan);
+    const boundary = evidence.find(({ probe_kind }) => probe_kind === "journey");
+
+    assert.equal(boundary.status, "failed");
+    assert.equal(boundary.outcome, "access_boundary_failure");
+    assert.equal(boundary.details.status_code, 200);
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }

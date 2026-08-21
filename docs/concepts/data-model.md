@@ -4,7 +4,7 @@ LaunchRally keeps declared intent, conclusions, and supporting observations sepa
 
 ## Launch Manifest
 
-`.launchrally/manifest.yaml` is the canonical deterministic project-owned Manifest v2 created only through the separately previewed and confirmed `rally init` flow. Its Project, Release, Execution, Support, and Providers sections use uniform declared, unknown, or evidenced not-applicable states. Not-applicable intent always includes a reason and the source Report field that establishes it. A later Provider selection changes only the exact previewed intent. The Manifest is not Machine Evidence and cannot make a Check pass.
+`.launchrally/manifest.yaml` is the canonical deterministic project-owned Manifest v2 created only through the separately previewed and confirmed `rally init` flow. Its Project, Release, Execution, Support, and Providers sections use uniform declared, unknown, or evidenced not-applicable states. Not-applicable intent always includes a reason and the source Report field that establishes it. Ordinary Init preserves an existing Manifest. A current corrected Audit can replace all Report-derived intent only through the explicit `rally init --rebind` preview and confirmation, which preserves the exact Project Toolchain and prior immutable history. A later Provider selection changes only the exact previewed intent. The Manifest is not Machine Evidence and cannot make a Check pass.
 
 A valid legacy `.launchrally/launch-manifest.json` Manifest v1 is readable only for migration. Init previews the canonical YAML creation and legacy JSON deletion together, then applies neither without confirmation. Invalid, ambiguous, symlinked, or unsupported inputs fail closed.
 

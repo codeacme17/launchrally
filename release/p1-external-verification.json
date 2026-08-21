@@ -1,117 +1,20 @@
 {
   "schema_version": "launchrally.dev/p1-external-verification/v1",
-  "status": "completed",
-  "version": "0.4.0",
-  "tag": "v0.4.0",
+  "status": "pending",
+  "version": "0.4.1",
+  "tag": "v0.4.1",
   "channel": "experimental",
-  "verified_at": "2026-08-15T14:23:34.717Z",
-  "workflow_url": "https://github.com/codeacme17/launchrally/actions/runs/31885222828",
-  "release_url": "https://github.com/codeacme17/launchrally/releases/tag/v0.4.0",
-  "review_url": "https://github.com/codeacme17/launchrally/issues/141#issuecomment-5302650515",
-  "review_body": "LaunchRally P1 External Verification v1\nversion: 0.4.0\ncli: sha256:1c100e47254095072d777180e2e9f5fdd136573c72dafdda5018f716a6e3e2a6\ncodex: sha256:005098a53f5a8905dcf12830d4e34b20bd9dc7ba91dca9887b265da26d526ee6\nclaude: sha256:c47e0c2dba25b74789e0f5c1ab17aa6d393560137c82ec9429ae1aae966d7351\nobservation: independently_observed_native_invocations",
-  "reviewer": "Traviinam",
-  "release_actor": "codeacme17",
-  "release_commit": "be357f50fac20e8e9ef3dab2791472ed46b3f6c4",
-  "reviewed_at": "2026-08-15T14:23:06Z",
-  "packages": [
-    {
-      "name": "@launchrally/claude-plugin",
-      "version": "0.4.0",
-      "url": "https://www.npmjs.com/package/@launchrally/claude-plugin/v/0.4.0",
-      "integrity": "sha512-OxY6q+h9hHAYQs3SAyaEmKInBLlPLTie6CZThIeBloBTXE2CAicHzWbY/xZJ8gLFiPZWNpEo16T5IPpdz4DgbA==",
-      "shasum": "7de71194a550ff388ab8567ad4aec6563361d26f",
-      "provenance": "slsa_v1_verified"
-    },
-    {
-      "name": "@launchrally/cli",
-      "version": "0.4.0",
-      "url": "https://www.npmjs.com/package/@launchrally/cli/v/0.4.0",
-      "integrity": "sha512-TuzPHjlNGMTNBfl/oPrxzTHHNaskTIjSqLGGc8srtYzg5t4P8N9MdcybCVTEjlKT1n9meggR3notXJphEN0SPA==",
-      "shasum": "a0097a93f2860939d430ce9a9d23d226fa29ffe2",
-      "provenance": "slsa_v1_verified"
-    },
-    {
-      "name": "@launchrally/codex-plugin",
-      "version": "0.4.0",
-      "url": "https://www.npmjs.com/package/@launchrally/codex-plugin/v/0.4.0",
-      "integrity": "sha512-J7h/LkvDGMrKLIxKCWVejsj4MkW+K7h84j3VfViQhbF2KmImftnujr6e6A65D0MYmh+vk7xRoYtLCyLDT+eHAQ==",
-      "shasum": "bd32f6433c0aabd5dcb44ebb01357bb7f10add7d",
-      "provenance": "slsa_v1_verified"
-    },
-    {
-      "name": "@launchrally/contracts",
-      "version": "0.4.0",
-      "url": "https://www.npmjs.com/package/@launchrally/contracts/v/0.4.0",
-      "integrity": "sha512-D2g+j1wdOxbNN+gaGaOnHKYITJ70N4wwKWFwfnsCtWiTsqvqXvA78ECLih9+c0nemsnaNt16zxoLHVYkTHuYHw==",
-      "shasum": "ff6ff98e91e06fcf58d576cfd38fdaa671b7b552",
-      "provenance": "slsa_v1_verified"
-    },
-    {
-      "name": "@launchrally/core",
-      "version": "0.4.0",
-      "url": "https://www.npmjs.com/package/@launchrally/core/v/0.4.0",
-      "integrity": "sha512-yT6GxEbCDiO25l+i+1yRi6klMVHKJpI7xYLNEujxgQ6Cxqwpf2UEXG5HAY1YcqhklKbtlWVYFswmi8R1Yr0mzA==",
-      "shasum": "ebc54f2f3d706d139af3e75dc33139c0dddce099",
-      "provenance": "slsa_v1_verified"
-    }
-  ],
-  "publication_jobs": [
-    {
-      "conclusion": "success",
-      "name": "prerelease",
-      "status": "completed"
-    },
-    {
-      "conclusion": "success",
-      "name": "public-smoke",
-      "status": "completed"
-    },
-    {
-      "conclusion": "success",
-      "name": "publish",
-      "status": "completed"
-    }
-  ],
-  "hosts": [
-    {
-      "host": "cli",
-      "version": "0.4.0",
-      "adapter_package": "@launchrally/cli@0.4.0",
-      "agent_execution": "challenge_response_captured",
-      "recorded_at": "2026-08-15T13:14:31.391Z",
-      "challenge_digest": "sha256:e2ef1d76aa94739630849393cc483c5c3c8d1d974f4047e4a3501b4a0910660f",
-      "public_result_digest": "sha256:5167499aded56e1e36047d572690cfc25810f11ae86c6331a70fb10288461fab",
-      "public_key": "MCowBQYDK2VwAyEAZRQOf0YdPkFxMerLPAIBMeb1tKCcfNKCLn9ahHxXMh4=",
-      "signature": "JtJFVaWKJ1vAx0wZgHNyxnof30KJzppXtYu8Q7j1xjhS7fF/PZ+6/BNrA5MPRZO7w/IsVTLG4IG/QYMj6EADAA==",
-      "envelope_digest": "sha256:1c100e47254095072d777180e2e9f5fdd136573c72dafdda5018f716a6e3e2a6",
-      "independent_observation": "verified"
-    },
-    {
-      "host": "codex",
-      "version": "0.4.0",
-      "adapter_package": "@launchrally/codex-plugin@0.4.0",
-      "agent_execution": "challenge_response_captured",
-      "recorded_at": "2026-08-15T13:50:16.538Z",
-      "challenge_digest": "sha256:b21b7ed2fa082f77431cafcc2b9b776ac6eb1bf9dd0eb532b89d2ae32bdb9dd3",
-      "public_result_digest": "sha256:1eb23146e68238c78b50ee2ca300b79eaa50397b7e1b38724ad4a4ecc695b6b1",
-      "public_key": "MCowBQYDK2VwAyEAaCKXhjS3Nok9HZbexp5ZYsKFiGM0jNnBYyuoe6u75HE=",
-      "signature": "ZlAwU4CftVEaBz8uq+7I/02rholQxE3h9LwHn4ZqlUrAz+ZwSAWdkGkxofMNIXfqOOpD++kRfHx3wp6eXIBqAA==",
-      "envelope_digest": "sha256:005098a53f5a8905dcf12830d4e34b20bd9dc7ba91dca9887b265da26d526ee6",
-      "independent_observation": "verified"
-    },
-    {
-      "host": "claude",
-      "version": "0.4.0",
-      "adapter_package": "@launchrally/claude-plugin@0.4.0",
-      "agent_execution": "challenge_response_captured",
-      "recorded_at": "2026-08-15T14:21:01.728Z",
-      "challenge_digest": "sha256:f2c0f76d71c550fc2c454aa9df322eb2c3ea92f2d017d52e75eeae6fde99d1a1",
-      "public_result_digest": "sha256:1eb23146e68238c78b50ee2ca300b79eaa50397b7e1b38724ad4a4ecc695b6b1",
-      "public_key": "MCowBQYDK2VwAyEAE1CUsuYrJHSSoKzpO7kk4TMQcOlxDmgy2IUqVdN+wt8=",
-      "signature": "1k18NyTPG/HQTHMLEYVpmGQXuwTTDbT9qpAVV2Awo1RjVW4rFSXo17O0vExs4Vx7AvZjm3Dys24v/jjXqZgSCg==",
-      "envelope_digest": "sha256:c47e0c2dba25b74789e0f5c1ab17aa6d393560137c82ec9429ae1aae966d7351",
-      "independent_observation": "verified"
-    }
-  ],
-  "verification_digest": "sha256:153dbd5840b2f28ee3b888e296fee0477b88ff9af8f7451b48a276dc84df05bd"
+  "verified_at": null,
+  "workflow_url": null,
+  "release_url": null,
+  "review_url": null,
+  "review_body": null,
+  "reviewer": null,
+  "release_actor": null,
+  "release_commit": null,
+  "reviewed_at": null,
+  "packages": [],
+  "publication_jobs": [],
+  "hosts": [],
+  "verification_digest": null
 }

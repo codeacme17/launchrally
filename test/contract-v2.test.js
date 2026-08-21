@@ -7,9 +7,12 @@ import test from "node:test";
 import { promisify } from "node:util";
 
 import {
+  AUTHENTICATED_JOURNEY_TARGET_PATTERN,
   CLI_INTERACTION_CONTRACT,
   INIT_INTERACTION_SCHEMA,
   MANIFEST_SCHEMA,
+  PROTECTED_JOURNEY_PATH_SEGMENTS,
+  PROTECTED_JOURNEY_PATH_PATTERN,
   REPORT_SCHEMA,
   assertValidCliInteraction,
   assertValidManifest,
@@ -30,6 +33,10 @@ const ANSWERS = Object.freeze({
 });
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
+
+async function readJson(relativePath) {
+  return JSON.parse(await readFile(path.resolve(relativePath), "utf8"));
+}
 
 async function fixture() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-contract-v2-"));
@@ -357,13 +364,13 @@ test("new Reports bind Check Catalog v2 while historical Report v1 remains reada
   assert.equal(assertValidReportPackage(historical), true);
 });
 
-test("public v2 records reject PII-bearing protected Journey declarations", async () => {
+test("public v2 records persist structurally safe protected paths", async () => {
   const directory = await fixture();
   const current = await completeAudit(directory);
   const validProtected = {
     schema_version: "launchrally.dev/protected-journey/v1",
     purpose: "authenticated Core Journey",
-    path: "/control",
+    path: "/control/moderation",
     method: "GET",
     access: {
       authentication_class: "staff",
@@ -391,25 +398,116 @@ test("public v2 records reject PII-bearing protected Journey declarations", asyn
     providers: { roles: { state: "declared", value: [] } },
   };
   assert.equal(assertValidManifest(manifest), true);
+  const validReport = structuredClone(current);
+  validReport.report.scope.release_intent.core_journeys = [validProtected];
+  assert.equal(assertValidReportPackage(validReport), true);
 
-  const piiJourney = {
+  const compoundStaticJourney = {
     ...validProtected,
-    purpose: "John Smith patient profile loads",
     path: "/patients/john-smith",
   };
+  const compoundManifest = structuredClone(manifest);
+  compoundManifest.release.core_journeys.value = [compoundStaticJourney];
+  assert.equal(assertValidManifest(compoundManifest), true);
+
+  const compoundReport = structuredClone(current);
+  compoundReport.report.scope.release_intent.core_journeys = [compoundStaticJourney];
+  assert.equal(assertValidReportPackage(compoundReport), true);
+
+  const opaqueJourney = {
+    ...validProtected,
+    path: "/orders/12345678",
+  };
   const invalidManifest = structuredClone(manifest);
-  invalidManifest.release.core_journeys.value = [piiJourney];
+  invalidManifest.release.core_journeys.value = [opaqueJourney];
   assert.throws(
     () => assertValidManifest(invalidManifest),
     (error) => error.code === "invalid_manifest",
   );
 
   const invalidReport = structuredClone(current);
-  invalidReport.report.scope.release_intent.core_journeys = [piiJourney];
+  invalidReport.report.scope.release_intent.core_journeys = [opaqueJourney];
   assert.throws(
     () => assertValidReportPackage(invalidReport),
     (error) => error.code === "invalid_report_package",
   );
+});
+
+test("persisted protected Journey schemas share the static-path safety boundary", async () => {
+  const [auditBrief, launchPlan, manifest, report, phase1, verificationResult] = await Promise.all([
+    readJson("packages/contracts/schemas/audit-brief/v1.schema.json"),
+    readJson("packages/contracts/schemas/launch-plan/v2.schema.json"),
+    readJson("packages/contracts/schemas/manifest/v2.schema.json"),
+    readJson("packages/contracts/schemas/report/v2.schema.json"),
+    readJson("packages/contracts/schemas/phase-1/v1.schema.json"),
+    readJson("packages/contracts/schemas/verification-result/v2.schema.json"),
+  ]);
+
+  assert.equal(
+    auditBrief.$defs.protectedJourney.properties.path.pattern,
+    PROTECTED_JOURNEY_PATH_PATTERN,
+  );
+  assert.equal(
+    auditBrief.$defs.authenticatedJourneyPlan.properties.journeys.items
+      .properties.target.pattern,
+    AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+  );
+  assert.equal(
+    launchPlan.$defs.authenticatedJourney.properties.target.pattern,
+    AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+  );
+  assert.equal(
+    manifest.$defs.protectedJourney.properties.path.pattern,
+    PROTECTED_JOURNEY_PATH_PATTERN,
+  );
+  assert.equal(
+    report.$defs.protectedJourney.properties.path.pattern,
+    PROTECTED_JOURNEY_PATH_PATTERN,
+  );
+  assert.equal(
+    phase1.$defs.authenticatedJourneyEvidence.properties.target.pattern,
+    AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+  );
+  assert.equal(
+    phase1.$defs.authenticatedJourneyEvidence.properties.provenance
+      .properties.exact_target.pattern,
+    AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+  );
+  assert.equal(
+    verificationResult.$defs.authenticatedJourneyEvidence.properties.target.pattern,
+    AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+  );
+  assert.equal(
+    verificationResult.$defs.authenticatedJourneyEvidence.properties.provenance
+      .properties.exact_target.pattern,
+    AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+  );
+
+  const authorityBackslashTarget = "https://example.com\\evil/control";
+  for (const targetPattern of [
+    AUTHENTICATED_JOURNEY_TARGET_PATTERN,
+    auditBrief.$defs.authenticatedJourneyPlan.properties.journeys.items
+      .properties.target.pattern,
+    launchPlan.$defs.authenticatedJourney.properties.target.pattern,
+    phase1.$defs.authenticatedJourneyEvidence.properties.target.pattern,
+    phase1.$defs.authenticatedJourneyEvidence.properties.provenance
+      .properties.exact_target.pattern,
+    verificationResult.$defs.authenticatedJourneyEvidence.properties.target.pattern,
+    verificationResult.$defs.authenticatedJourneyEvidence.properties.provenance
+      .properties.exact_target.pattern,
+  ]) {
+    assert.equal(new RegExp(targetPattern, "u").test(authorityBackslashTarget), false);
+  }
+});
+
+test("the legacy protected Journey segment export remains available for compatibility", () => {
+  assert.deepEqual(PROTECTED_JOURNEY_PATH_SEGMENTS, [
+    "account", "accounts", "admin", "api", "app", "authorize", "billing", "checkout",
+    "control", "dashboard", "files", "guardian", "health", "home", "inbox", "me",
+    "orders", "organization", "organizations", "portal", "private", "profile",
+    "protected", "session", "settings", "staff", "status", "team", "teams",
+    "uploads", "user", "users", "v1", "v2", "v3", "workspace", "workspaces",
+  ]);
 });
 
 test("CLI help classifies providers as a supporting advisory operation", async () => {

@@ -265,6 +265,10 @@ export {
 } from "./environment-terminology.js";
 export { runInit } from "./initialization.js";
 export { runPlan } from "./planning.js";
+export {
+  isLocalHistoryReference,
+  loadLocalHistoryReportPackage,
+} from "./local-history.js";
 export { parsePublicJourneyInput } from "./public-journey.js";
 export { parsePublicTargetInput } from "./public-target.js";
 export { runProviderGuidance } from "./provider-guidance.js";

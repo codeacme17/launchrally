@@ -9,7 +9,7 @@ The user-managed `rally` Launcher is a prerequisite separate from the Codex or C
 If `rally` is absent, present these exact user-managed commands, stop before Audit, and wait:
 
 ```bash
-npm install --global @launchrally/cli@0.4.0
+npm install --global @launchrally/cli@0.4.1
 rally --version --json --cwd <repository-root>
 ```
 
@@ -35,6 +35,8 @@ Explain the CLI's Checks, Evidence, policy, Verification Gaps, and final Assessm
 ## 2. Optional Init
 
 Offer Init only after a complete Audit and only if the user wants project adoption. Run `rally init --json --cwd <repository-root> --report <manifest-source-report-json>`. Require `interaction.source_report.role: "manifest_source"` and preserve the saved Report whose `report.report_id` matches `interaction.source_report.report_id`. Init uses the committed `.launchrally/toolchain` npm package and lockfile for every ecosystem and never changes application dependencies. It attempts offline resolution first. If the result is `needs_permission`, present the exact `npm_registry_read` package, version, `https://registry.npmjs.org` source, and lifecycle-script-disabled command, then resume with the user's explicit decision. Registry approval does not approve file changes. Present every exact local change in `preview.changes`, and apply it only after the user explicitly confirms the returned interaction. Declining Init or denying registry access leaves the repository unchanged and does not block Plan.
+
+When ordinary Init reports `manifest_action.action: "preserve"`, explain that immutable Report-history adoption does not replace the existing project-owned release intent. Do not infer replacement from a newer Report. If the builder explicitly chooses the typed `manifest_action.next_action`, rerun with the same complete current corrected Audit Report and `--rebind`. Require `mode: "rebind"`, present both source Report identities, `preview.history_adoption`, and the exact `preview.release_intent_replacement` Manifest diff, then request a separate confirmation. After confirmation, retain the corrected Report as the new `<manifest-source-report-json>` for full Verify. Rebind never changes the Project Toolchain or prior immutable Reports and Evidence.
 
 Init is the only LaunchRally-controlled mutation in this journey. It is local, bounded to its preview, and grants no deployment, production, or Provider write authority. Its confirmed dependency and Manifest changes make the Manifest-bound source Report historical; follow the typed `needs_refresh` response with full Verify. Retain the source Report for future whole-release Verify runs, and use the new `interaction.current_report` Report only for Plan and Handoff.
 
