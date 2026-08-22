@@ -470,6 +470,7 @@ function validateInitialSource(cwd, source) {
 
 export function runArchitectureDecisionEngine(cwd, source = {}, options = {}, dependencies = {}) {
   const root = path.resolve(cwd);
+  const storeState = dependencies.store_state ?? storeArchitectureState;
   if (!options.resume_token) {
     if (
       options.desktop_shared_backend_capability_ids !== undefined
@@ -524,7 +525,7 @@ export function runArchitectureDecisionEngine(cwd, source = {}, options = {}, de
     return result(
       "needs_confirmation",
       "blueprint_review",
-      storeArchitectureState(state),
+      storeState(state),
       sourceRefs,
       request,
       { blueprint: createdBlueprint, desktop_topology: created.desktop_topology },
@@ -554,7 +555,7 @@ export function runArchitectureDecisionEngine(cwd, source = {}, options = {}, de
     }
     const next = { ...state, stage: "decision_confirmation" };
     const pending = state.blueprint.decisions.map(({ decision_id: decisionId }) => decisionId);
-    return result("partial_completion", "decision_confirmation", storeArchitectureState(next), state.source_refs, {
+    return result("partial_completion", "decision_confirmation", storeState(next), state.source_refs, {
       kind: "independent_decision_confirmation",
       choices: ["confirm", "reject"],
     }, {
@@ -582,7 +583,7 @@ export function runArchitectureDecisionEngine(cwd, source = {}, options = {}, de
       .map((id) => ({ decision_id: id, response: nextResponses[id] }));
     if (pending.length > 0) {
       const next = { ...state, responses: nextResponses };
-      return result("partial_completion", "decision_confirmation", storeArchitectureState(next), state.source_refs, {
+      return result("partial_completion", "decision_confirmation", storeState(next), state.source_refs, {
         kind: "independent_decision_confirmation",
         choices: ["confirm", "reject"],
       }, {
