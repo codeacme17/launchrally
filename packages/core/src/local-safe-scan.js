@@ -57,6 +57,7 @@ function emptyExclusions() {
 
 export function isToolingMetadataDirectory(relativePath) {
   return TOOLING_METADATA_DIRECTORIES.has(relativePath)
+    || relativePath === ".launchrally/architecture"
     || relativePath === ".launchrally/phase-1"
     || relativePath.startsWith(".launchrally/.phase-1-staging-");
 }

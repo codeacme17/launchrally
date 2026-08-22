@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -12,12 +12,22 @@ import {
   computeTaskGraphReadyFrontier,
 } from "../packages/contracts/src/index.js";
 import {
+  EXECUTION_AUTHORITY_DESCRIPTOR_PATH,
+  evaluateArchitecturePackageCurrentness,
   generateTaskGraph,
+  loadLocalHistoryReportPackage,
   mapTaskGraphExecutors,
+  persistArchitecturePackage,
+  runArchitectureDecisionEngine,
   runAudit,
   runPlan,
+  runVerify,
 } from "../packages/core/src/index.js";
 import { sha256 } from "../packages/core/src/local-history.js";
+import {
+  materializeExactToolchain,
+  writeExactToolchain,
+} from "./helpers/exact-toolchain.js";
 
 const architectureFixture = JSON.parse(await readFile(
   new URL("./fixtures/phase-1-contracts/architecture.valid.json", import.meta.url),
@@ -29,6 +39,10 @@ const capabilityFixture = JSON.parse(await readFile(
 ));
 const handoffFixture = JSON.parse(await readFile(
   new URL("./fixtures/phase-1-contracts/handoff.valid.json", import.meta.url),
+  "utf8",
+));
+const intentFixture = JSON.parse(await readFile(
+  new URL("./fixtures/phase-1-contracts/product-intent-profile.valid.json", import.meta.url),
   "utf8",
 ));
 const execFileAsync = promisify(execFile);
@@ -133,6 +147,125 @@ function architectureBundle(reportPackage, overrides = {}) {
   };
 }
 
+function architectureInputs(reportPackage) {
+  const productIntent = structuredClone(intentFixture);
+  const capabilityGraph = structuredClone(capabilityFixture.graph);
+  capabilityGraph.product_intent = {
+    id: productIntent.profile_id,
+    schema_version: productIntent.schema_version,
+    digest: sha256(productIntent),
+  };
+  capabilityGraph.nodes.push({
+    capability_id: "application_data",
+    environment: "production",
+    release_scope: "current_release",
+    requirement_state: "required",
+    decision_state: "investigate",
+    implementation_state: "unknown",
+    evidence_state: "unverified",
+    implementation_path: "unknown",
+  });
+  return {
+    report_package: reportPackage,
+    product_intent: productIntent,
+    catalog: structuredClone(capabilityFixture.catalog),
+    capability_graph: capabilityGraph,
+    integration_contracts: [structuredClone(capabilityFixture.integration)],
+    provider_knowledge_refs: [],
+  };
+}
+
+async function loadPersistedArchitecture(directory, architecture) {
+  const packageRoot = path.join(
+    directory,
+    ".launchrally",
+    "architecture",
+    "packages",
+    architecture.package.package_id,
+  );
+  const intentPath = path.join(
+    directory,
+    ".launchrally",
+    "architecture",
+    "shareable-intent",
+    "sha256",
+    `${sha256(architecture.product_intent).slice(7)}.json`,
+  );
+  const readJson = async (selectedPath) => JSON.parse(await readFile(selectedPath, "utf8"));
+  const [
+    architecturePackage,
+    architectureRecord,
+    capabilityGraph,
+    dependencyIndex,
+    productIntent,
+  ] = await Promise.all([
+    readJson(path.join(packageRoot, "package.json")),
+    readJson(path.join(packageRoot, "architecture-record.json")),
+    readJson(path.join(packageRoot, "capability-graph.json")),
+    readJson(path.join(packageRoot, "dependency-index.json")),
+    readJson(intentPath),
+  ]);
+  return {
+    package: architecturePackage,
+    architecture_record: architectureRecord,
+    capability_graph: capabilityGraph,
+    dependency_index: dependencyIndex,
+    product_intent: productIntent,
+    task_graph: null,
+    previous_package: architecture.previous_package,
+  };
+}
+
+async function initializeProjectToolchain(directory) {
+  const launchrally = path.join(directory, ".launchrally");
+  await mkdir(launchrally, { recursive: true });
+  await writeFile(
+    path.join(launchrally, ".gitignore"),
+    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n",
+  );
+  await writeExactToolchain(directory);
+  await materializeExactToolchain(directory);
+  await writeFile(
+    path.join(directory, EXECUTION_AUTHORITY_DESCRIPTOR_PATH),
+    `${JSON.stringify({
+      contract: "launchrally.dev/execution-authority/v1",
+      engine: {
+        package: "@launchrally/cli",
+        version: "0.3.2",
+        entrypoint: "bin/engine.js",
+      },
+    })}\n`,
+  );
+}
+
+async function writeManifest(directory, source) {
+  const intent = source.report.scope.release_intent;
+  const declared = (value) => ({ state: "declared", value: structuredClone(value) });
+  await writeFile(
+    path.join(directory, ".launchrally", "manifest.yaml"),
+    `${JSON.stringify({
+      schema_version: "launchrally.dev/manifest/v2",
+      project: {
+        name: declared(source.report.scope.project.name),
+        type: declared(source.report.scope.project.type),
+        package_manager: declared(source.report.scope.project.package_manager),
+      },
+      release: {
+        intended_environment: declared(intent.intended_environment),
+        production_targets: declared(intent.production_targets),
+        core_journeys: declared(intent.core_journeys),
+      },
+      execution: {
+        source_report_id: declared(source.report.report_id),
+        assessment: declared(source.report.assessment),
+        public_verification: declared(source.report.scope.public_verification),
+      },
+      support: { layers: declared(intent.support_layers) },
+      providers: { roles: declared(intent.provider_roles) },
+    }, null, 2)}\n`,
+  );
+}
+
 function implementationOnlyArchitecture(reportPackage) {
   const bundle = architectureBundle(reportPackage);
   bundle.architecture_record.confirmed_decisions = bundle.architecture_record.confirmed_decisions
@@ -201,6 +334,82 @@ test("rally plan adds a Task Graph only when a current Architecture Package is s
     }),
     (error) => error.code === "task_graph_architecture_required",
   );
+});
+
+test("persisted Architecture history leaves the full Verify Report current for Task Graph planning", async () => {
+  const { directory } = await completeAudit();
+  await initializeProjectToolchain(directory);
+  const source = await auditDirectory(directory);
+  await writeManifest(directory, source);
+  const permission = await runVerify(directory, "0.3.2", {
+    report_package: source,
+    scope: "full",
+  });
+  const verification = await runVerify(directory, "0.3.2", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const blueprintReview = runArchitectureDecisionEngine(
+    directory,
+    architectureInputs(verification),
+    { review_date: "2026-08-22" },
+  );
+  assert.equal(blueprintReview.status, "needs_confirmation", JSON.stringify(blueprintReview));
+  const decisionReview = runArchitectureDecisionEngine(directory, {}, {
+    resume_token: blueprintReview.interaction.resume_token,
+    blueprint_confirmation: "confirm",
+  });
+  const architect = runArchitectureDecisionEngine(directory, {}, {
+    resume_token: decisionReview.interaction.resume_token,
+    decision_responses: Object.fromEntries(
+      decisionReview.pending_decision_ids.map((decisionId) => [decisionId, "confirm"]),
+    ),
+  });
+  const architecture = architect.architecture_package;
+  const preview = await persistArchitecturePackage(directory, architecture, {
+    launcher_version: "0.3.2",
+  });
+  const persisted = await persistArchitecturePackage(directory, architecture, {
+    launcher_version: "0.3.2",
+    confirmation: "confirm",
+    resume_token: preview.resume_token,
+  });
+  const persistedArchitecture = await loadPersistedArchitecture(directory, architecture);
+  const reportPath = `.launchrally/reports/${verification.report.report_id}/record.json`;
+  const localHistoryReport = await loadLocalHistoryReportPackage(directory, reportPath);
+
+  const plan = runPlan(localHistoryReport, {
+    cwd: directory,
+    architecture_bundle: persistedArchitecture,
+  });
+  const dependencyCurrentness = evaluateArchitecturePackageCurrentness(
+    persistedArchitecture,
+    { changed_dependency_ids: [persistedArchitecture.dependency_index.edges[0].source_id] },
+  );
+  const staleArchitecture = structuredClone(persistedArchitecture);
+  staleArchitecture.package.currentness = {
+    state: dependencyCurrentness.state,
+    invalidated_record_ids: dependencyCurrentness.invalidated_record_ids,
+    reasons: dependencyCurrentness.reasons,
+  };
+  const staleArchitecturePlan = runPlan(localHistoryReport, {
+    cwd: directory,
+    architecture_bundle: staleArchitecture,
+  });
+
+  assert.equal(persisted.status, "completed");
+  assert.equal(architect.status, "completed");
+  assert.deepEqual(persistedArchitecture.package, architecture.package);
+  assert.deepEqual(persistedArchitecture.architecture_record, architecture.architecture_record);
+  assert.deepEqual(persistedArchitecture.capability_graph, architecture.capability_graph);
+  assert.equal(plan.status, "completed", JSON.stringify(plan, null, 2));
+  assert.equal(plan.source_report_id, verification.report.report_id);
+  assert.equal(plan.task_graph.currentness.state, "current");
+  assert.equal(assertValidTaskGraph(plan.task_graph), true);
+  assert.equal(dependencyCurrentness.state, "partially_invalidated");
+  assert.equal(staleArchitecturePlan.status, "completed");
+  assert.equal(staleArchitecturePlan.task_graph.currentness.state, "stale");
+  assert.deepEqual(staleArchitecturePlan.task_graph.ready_frontier, []);
 });
 
 test("the Agent CLI reads an immutable Architecture Package and returns the typed Task Graph", async () => {
