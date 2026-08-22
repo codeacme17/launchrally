@@ -592,7 +592,7 @@ test("Integration compatibility derives incompatible and unknown conclusions", a
   const incompatible = structuredClone(source.integration_contracts[0]);
   incompatible.contract_id = "integration_identity_data_unsafe";
   incompatible.provider_binding = { kind: "known", provider_id: "reviewed_provider" };
-  incompatible.semantics.idempotency = "best_effort";
+  incompatible.semantics.idempotency = "not_required";
   const result = runArchitectureDecisionEngine(directory, {
     ...source,
     integration_contracts: [source.integration_contracts[0], incompatible],
@@ -603,6 +603,36 @@ test("Integration compatibility derives incompatible and unknown conclusions", a
     /duplicate_delivery_without_required_idempotency/u,
   );
   assert.match(result.blueprint.whole_product.integration_compatibility, /unknown=1/u);
+});
+
+test("Integration compatibility recognizes canonical and legacy required idempotency", async () => {
+  const directory = await fixture();
+  const source = await inputs(directory);
+  const contracts = [
+    "required",
+    "required_by_provider_event_id",
+    "required_by_logical_job_id",
+    "deduplicate_by_delivery_attempt_id",
+  ].map((idempotency, index) => {
+    const contract = structuredClone(source.integration_contracts[0]);
+    contract.contract_id = `integration_identity_data_${index}`;
+    contract.provider_binding = { kind: "known", provider_id: "reviewed_provider" };
+    contract.semantics.idempotency = idempotency;
+    return contract;
+  });
+  const result = runArchitectureDecisionEngine(directory, {
+    ...source,
+    integration_contracts: contracts,
+  }, { review_date: "2026-08-13" });
+
+  assert.match(
+    result.blueprint.whole_product.integration_compatibility,
+    /^compatible=4 incompatible=0 unknown=0;/u,
+  );
+  assert.doesNotMatch(
+    result.blueprint.whole_product.integration_compatibility,
+    /duplicate_delivery_without_required_idempotency/u,
+  );
 });
 
 test("desktop shared-backend assessment keeps distribution readiness explicitly Unknown", async () => {

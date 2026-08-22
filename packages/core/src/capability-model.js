@@ -4,12 +4,14 @@ import {
   CAPABILITY_CATALOG_SCHEMA,
   CAPABILITY_GRAPH_SCHEMA,
   INTEGRATION_CONTRACT_SCHEMA,
+  INTEGRATION_IDEMPOTENCY_ERROR_MESSAGE,
   PRODUCT_INTENT_PROFILE_SCHEMA,
   assertValidCapabilityCatalog,
   assertValidCapabilityGraph,
   assertValidIntegrationContract,
   assertValidProductIntentProfile,
   computeCapabilityCatalogDigest,
+  normalizeIntegrationIdempotency,
 } from "@launchrally/contracts";
 
 const CATALOG_VERSION = "1.0.0";
@@ -256,7 +258,22 @@ function normalizedIntegrationInput(input) {
 }
 
 export function createIntegrationContract(input) {
-  if (!normalizedIntegrationInput(input)) {
+  const idempotency = normalizeIntegrationIdempotency(
+    input?.semantics?.idempotency,
+    input?.semantics?.idempotency_key,
+  );
+  if (!idempotency) {
+    const error = new Error(INTEGRATION_IDEMPOTENCY_ERROR_MESSAGE);
+    error.code = "invalid_integration_contract_input";
+    throw error;
+  }
+  const semantics = {
+    ...structuredClone(input.semantics),
+    idempotency: idempotency.requirement,
+    ...(idempotency.key === undefined ? {} : { idempotency_key: idempotency.key }),
+  };
+  const normalizedInput = { ...input, semantics };
+  if (!normalizedIntegrationInput(normalizedInput)) {
     const error = new Error("Integration Contract values must be normalized, secret-safe identifiers.");
     error.code = "invalid_integration_contract_input";
     throw error;
@@ -270,7 +287,7 @@ export function createIntegrationContract(input) {
     target_capability_id: input.target_capability_id,
     mode: input.mode,
     provider_binding: structuredClone(input.provider_binding),
-    semantics: structuredClone(input.semantics),
+    semantics,
   };
   assertValidIntegrationContract(contract);
   return contract;

@@ -189,6 +189,45 @@ test("Provider-neutral Integration Contracts cover sync and async semantics", ()
   );
 });
 
+test("Integration Contract factory canonicalizes supported legacy idempotency semantics", () => {
+  const create = (idempotency) => createIntegrationContract({
+    contract_id: "integration_identity_data_legacy",
+    environment: "production",
+    source_capability_id: "identity_authentication",
+    target_capability_id: "application_data",
+    mode: "asynchronous",
+    provider_binding: { kind: "unknown", provider_id: null },
+    semantics: {
+      authentication: "signed_or_equivalent",
+      ordering: "per_subject",
+      duplication: "possible",
+      retry: "bounded_backoff",
+      replay: "supported",
+      idempotency,
+      eventual_consistency: "expected",
+      failure_visibility: "operator_visible",
+      privacy: "normalized_identifiers_only",
+      success_evidence: ["state_transition_observed"],
+      invalidation_dependencies: ["identity_event_shape"],
+    },
+  });
+
+  assert.deepEqual(create("required_by_provider_event_id").semantics, {
+    ...create("required").semantics,
+    idempotency_key: "provider_event_id",
+  });
+  assert.deepEqual(create("deduplicate_by_delivery_attempt_id").semantics, {
+    ...create("required").semantics,
+    idempotency_key: "delivery_attempt_id",
+  });
+  assert.throws(
+    () => create("best_effort_when_possible"),
+    (error) => error.code === "invalid_integration_contract_input"
+      && /required, not_required, not_applicable, or unknown/u.test(error.message)
+      && /idempotency_key/u.test(error.message),
+  );
+});
+
 test("catalog changes invalidate only outputs declaring changed dependencies", () => {
   const outputs = [
     { output_id: "identity_plan", invalidation_dependencies: ["identity_authentication"] },

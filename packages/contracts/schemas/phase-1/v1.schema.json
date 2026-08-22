@@ -475,13 +475,18 @@
             "duplication": { "type": "string", "minLength": 1 },
             "retry": { "type": "string", "minLength": 1 },
             "replay": { "type": "string", "minLength": 1 },
-            "idempotency": { "type": "string", "minLength": 1 },
+            "idempotency": { "enum": ["required", "not_required", "not_applicable", "unknown"] },
+            "idempotency_key": { "$ref": "#/$defs/identifier" },
             "eventual_consistency": { "type": "string", "minLength": 1 },
             "failure_visibility": { "type": "string", "minLength": 1 },
             "privacy": { "type": "string", "minLength": 1 },
             "success_evidence": { "$ref": "#/$defs/nonEmptyStrings" },
             "invalidation_dependencies": { "$ref": "#/$defs/nonEmptyStrings" }
           },
+          "allOf": [{
+            "if": { "required": ["idempotency_key"] },
+            "then": { "properties": { "idempotency": { "const": "required" } } }
+          }],
           "additionalProperties": false
         }
       },

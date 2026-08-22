@@ -76,6 +76,17 @@ export const PROVIDER_KNOWLEDGE_SCHEMA = "launchrally.dev/provider-knowledge/v1"
 export const CAPABILITY_CATALOG_SCHEMA = "launchrally.dev/capability-catalog/v1";
 export const CAPABILITY_GRAPH_SCHEMA = "launchrally.dev/capability-graph/v1";
 export const INTEGRATION_CONTRACT_SCHEMA = "launchrally.dev/integration-contract/v1";
+export const INTEGRATION_IDEMPOTENCY_REQUIREMENTS = Object.freeze([
+  "required",
+  "not_required",
+  "not_applicable",
+  "unknown",
+]);
+export const INTEGRATION_IDEMPOTENCY_ERROR_MESSAGE =
+  "Integration Contract semantics.idempotency must be required, not_required, "
+  + "not_applicable, or unknown. Store deduplication identifiers separately as "
+  + "semantics.idempotency_key. Legacy required_by_<key> and deduplicate_by_<key> "
+  + "values are accepted for migration and newly authored contracts are canonicalized automatically.";
 export const ARCHITECTURE_BLUEPRINT_SCHEMA =
   "launchrally.dev/architecture-blueprint/v1";
 export const ARCHITECTURE_RECORD_SCHEMA = "launchrally.dev/architecture-record/v1";
@@ -108,6 +119,29 @@ export const PHASE_1_ADOPTION_SCHEMA = "launchrally.dev/phase-1-adoption/v1";
 export const PHASE_1_MIGRATION_PREVIEW_SCHEMA =
   "launchrally.dev/phase-1-migration-preview/v1";
 export const HANDOFF_INTERACTION_SCHEMA = "launchrally.dev/handoff-interaction/v1";
+
+const LEGACY_IDEMPOTENCY_PATTERN = /^(?:required|deduplicate)_by_([a-z][a-z0-9_]{2,127})$/u;
+
+export function normalizeIntegrationIdempotency(value, idempotencyKey) {
+  if (INTEGRATION_IDEMPOTENCY_REQUIREMENTS.includes(value)) {
+    if (idempotencyKey !== undefined && value !== "required") return null;
+    return {
+      requirement: value,
+      ...(idempotencyKey === undefined ? {} : { key: idempotencyKey }),
+      migrated: false,
+    };
+  }
+  const legacy = typeof value === "string" ? value.match(LEGACY_IDEMPOTENCY_PATTERN) : null;
+  if (!legacy || (idempotencyKey !== undefined && idempotencyKey !== legacy[1])) return null;
+  return { requirement: "required", key: legacy[1], migrated: true };
+}
+
+export function integrationIdempotencyIsRequired(semantics) {
+  return normalizeIntegrationIdempotency(
+    semantics?.idempotency,
+    semantics?.idempotency_key,
+  )?.requirement === "required";
+}
 export const COMPOSITE_ASSURANCE_STATES = Object.freeze([
   "unverified",
   "locally_evidenced",
@@ -803,8 +837,22 @@ export function assertValidCapabilityGraph(graph) {
 
 export function assertValidIntegrationContract(contract) {
   const binding = contract?.provider_binding;
+  const idempotency = normalizeIntegrationIdempotency(
+    contract?.semantics?.idempotency,
+    contract?.semantics?.idempotency_key,
+  );
+  if (!idempotency) {
+    const error = new Error(INTEGRATION_IDEMPOTENCY_ERROR_MESSAGE);
+    error.code = "invalid_integration_contract";
+    throw error;
+  }
+  const validatedContract = idempotency.migrated ? structuredClone(contract) : contract;
+  if (idempotency.migrated) {
+    validatedContract.semantics.idempotency = idempotency.requirement;
+    validatedContract.semantics.idempotency_key = idempotency.key;
+  }
   return assertPhase1Schema(
-    contract,
+    validatedContract,
     "integrationContract",
     "The Integration Contract is incomplete or invalid.",
     "invalid_integration_contract",
