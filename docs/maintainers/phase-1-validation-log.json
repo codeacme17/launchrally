@@ -1,0 +1,90 @@
+{
+  "schema_version": "launchrally.dev/phase-1-validation-log/v1",
+  "collection_mode": "telemetry_free",
+  "updated_at": "2026-08-22",
+  "entries": [
+    {
+      "period": "2026-08-22-01",
+      "release_version": "0.4.1",
+      "sources": [
+        "clean_environment_checks",
+        "opt_in_maintainer_summary",
+        "voluntary_github_feedback"
+      ],
+      "represented_contexts": {
+        "interfaces": [
+          "cli_human_mode"
+        ],
+        "repository_shapes": [
+          "typescript_pnpm_web_monorepo"
+        ],
+        "environments": [
+          "staging_verification"
+        ]
+      },
+      "journey": {
+        "scope": "p0_p1_end_to_end",
+        "outcome": "completed_with_documented_workarounds"
+      },
+      "comprehension_signals": [
+        "permission_boundaries",
+        "product_intent_confirmation",
+        "capability_obligations",
+        "integration_contracts",
+        "manual_handoff_boundaries",
+        "unknowns",
+        "assurance"
+      ],
+      "defect_patterns": [
+        {
+          "pattern": "human_mode_presentation_gap",
+          "issue_ids": ["#187"],
+          "resolution_state": "fixed"
+        },
+        {
+          "pattern": "launchrally_history_self_invalidation",
+          "issue_ids": ["#188"],
+          "resolution_state": "fixed"
+        },
+        {
+          "pattern": "intent_candidate_precision",
+          "issue_ids": ["#191"],
+          "resolution_state": "open"
+        },
+        {
+          "pattern": "integration_contract_vocabulary_mismatch",
+          "issue_ids": ["#192"],
+          "resolution_state": "open"
+        },
+        {
+          "pattern": "permission_collector_disclosure",
+          "issue_ids": ["#193"],
+          "resolution_state": "open"
+        },
+        {
+          "pattern": "local_history_input_inconsistency",
+          "issue_ids": ["#194"],
+          "resolution_state": "open"
+        }
+      ],
+      "product_decisions": [
+        "continue_collecting",
+        "keep_p1_not_validated",
+        "keep_stable_promotion_unapproved"
+      ],
+      "quality_floor": {
+        "status": "satisfied",
+        "events": [],
+        "suspended_authority_scopes": []
+      },
+      "lifecycle": {
+        "product_status": "incomplete",
+        "publication_status": "not_published",
+        "telemetry_free_validation": "collecting",
+        "validation_status": "not_validated",
+        "release_status": "experimental",
+        "stable_promotion_status": "not_approved"
+      }
+    }
+  ]
+}

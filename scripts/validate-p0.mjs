@@ -18,15 +18,9 @@ import {
   stablePromotionBlockers,
 } from "./stable-promotion-policy.mjs";
 import { isLaterReleaseVersion } from "./release-version.mjs";
+import { isRepositoryRelativePath } from "./validation-log-shared.mjs";
 
 const execFileAsync = promisify(execFile);
-
-function isRepositoryRelativePath(value) {
-  return typeof value === "string"
-    && /^[A-Za-z0-9][A-Za-z0-9._/-]*$/u.test(value)
-    && path.posix.normalize(value) === value
-    && !value.split("/").includes("..");
-}
 
 const scriptRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const rootOption = process.argv.indexOf("--root");

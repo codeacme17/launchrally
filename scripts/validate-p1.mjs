@@ -5,6 +5,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { isLaterReleaseVersion } from "./release-version.mjs";
+import { validateP1ValidationLog } from "./p1-validation-log-contract.mjs";
 import {
   verifyExternalEvidenceRecord,
   verifyExternalEvidenceWithGitHub,
@@ -484,11 +485,16 @@ export async function validateP1() {
       );
     }
   }
+  const validationLogState = await validateP1ValidationLog({ root, baselineRef });
   return {
     status: "completed",
     schema_version: contract.schema_version,
     product_status: contract.product_status,
     release_status: contract.release_status,
+    validation_mode: validationLogState.collection_mode,
+    validation_collection_status: validationLogState.telemetry_free_validation,
+    validation_status: validationLogState.validation_status,
+    validation_log: contract.validation_log,
     quality_floor_status: qualityFloorStatus,
     requirements: statuses,
     release_gates: gates.size,
