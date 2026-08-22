@@ -183,6 +183,97 @@ test("the Phase 1 Validation Log rejects unsupported aggregate taxonomy", async 
   });
 });
 
+test("the Phase 1 Validation Log rejects lifecycle values outside the reviewed taxonomy", async () => {
+  for (const field of [
+    "product_status",
+    "publication_status",
+    "telemetry_free_validation",
+    "validation_status",
+    "release_status",
+    "stable_promotion_status",
+  ]) {
+    const directory = await fixture();
+    const logPath = path.join(directory, "docs/maintainers/phase-1-validation-log.json");
+    const log = JSON.parse(await readFile(logPath, "utf8"));
+    log.entries[0].lifecycle[field] = "unreviewed_state";
+    await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
+
+    await assert.rejects(validateP1Log(directory), (error) => {
+      assert.match(error.stderr, /p1_validation_taxonomy_forbidden/u);
+      assert.match(error.stderr, new RegExp(field, "u"));
+      return true;
+    });
+  }
+});
+
+test("historical Phase 1 lifecycle snapshots retain strict taxonomy validation", async () => {
+  const directory = await fixture();
+  const logPath = path.join(directory, "docs/maintainers/phase-1-validation-log.json");
+  const log = JSON.parse(await readFile(logPath, "utf8"));
+  log.entries[0].lifecycle.publication_status = "unreviewed_state";
+  log.updated_at = "2026-08-23";
+  log.entries.push(nextEntry(log, "2026-08-23-01", {
+    status: "satisfied",
+    events: [],
+    suspended_authority_scopes: [],
+  }));
+  log.entries[1].lifecycle.publication_status = "not_published";
+  await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
+
+  await assert.rejects(validateP1Log(directory), (error) => {
+    assert.match(error.stderr, /p1_validation_taxonomy_forbidden/u);
+    assert.match(error.stderr, /entries\.0\.lifecycle\.publication_status/u);
+    return true;
+  });
+});
+
+test("the Phase 1 release contract rejects unknown lifecycle values mirrored in the log", async () => {
+  for (const field of ["product_status", "publication_status"]) {
+    const directory = await fixture();
+    const logPath = path.join(directory, "docs/maintainers/phase-1-validation-log.json");
+    const contractPath = path.join(directory, "release/p1.json");
+    const [log, contract] = await Promise.all([
+      readFile(logPath, "utf8").then(JSON.parse),
+      readFile(contractPath, "utf8").then(JSON.parse),
+    ]);
+    log.entries[0].lifecycle[field] = "unreviewed_state";
+    contract[field] = "unreviewed_state";
+    await Promise.all([
+      writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`),
+      writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
+    ]);
+
+    await assert.rejects(validateP1Log(directory), (error) => {
+      assert.match(error.stderr, /p1_validation_release_contract_invalid/u);
+      return true;
+    });
+  }
+});
+
+test("the Phase 1 Validation Log rejects arbitrary absolute and home-relative paths", async () => {
+  for (const repositoryPath of [
+    "/mnt/private/repository",
+    "/workspace/private-project",
+    "/opt/internal/app",
+    "~/private/repository",
+    "repository `/mnt/private/repository`",
+    "repository `~/private/repository`",
+    "repository </workspace/private-project>",
+    "repository-/opt/internal/app",
+  ]) {
+    const directory = await fixture();
+    const logPath = path.join(directory, "docs/maintainers/phase-1-validation-log.json");
+    const log = JSON.parse(await readFile(logPath, "utf8"));
+    log.entries[0].defect_patterns[0].issue_ids = [repositoryPath];
+    await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
+
+    await assert.rejects(validateP1Log(directory), (error) => {
+      assert.match(error.stderr, /p1_validation_identifying_data_forbidden/u);
+      return true;
+    });
+  }
+});
+
 test("the Phase 1 Validation Log rejects numeric adoption, download, and time quotas", async () => {
   const directory = await fixture();
   const logPath = path.join(directory, "docs/maintainers/phase-1-validation-log.json");

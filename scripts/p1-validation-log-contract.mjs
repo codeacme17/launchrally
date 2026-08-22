@@ -48,6 +48,14 @@ const TAXONOMY = Object.freeze({
     "keep_stable_promotion_unapproved",
   ]),
   qualityFloorEvents: new Set(["authority_restored", "fix_verified", "regression_opened"]),
+  lifecycle: Object.freeze({
+    product_status: new Set(["complete", "incomplete", "suspended"]),
+    publication_status: new Set(["not_published", "published"]),
+    telemetry_free_validation: new Set(["collecting", "complete"]),
+    validation_status: new Set(["not_validated", "validated"]),
+    release_status: new Set(["experimental", "stable"]),
+    stable_promotion_status: new Set(["not_approved", "approved"]),
+  }),
 });
 
 function fail(code, detail) {
@@ -208,6 +216,13 @@ function assertReviewedShape(log) {
       "telemetry_free_validation",
       "validation_status",
     ], `${owner}.lifecycle`);
+    for (const [field, permitted] of Object.entries(TAXONOMY.lifecycle)) {
+      assertTaxonomyValue(
+        entry.lifecycle[field],
+        permitted,
+        `${owner}.lifecycle.${field}`,
+      );
+    }
   }
   if (log.updated_at !== log.entries.at(-1)?.period.slice(0, 10)) {
     fail("p1_validation_entry_order_invalid", "log.updated_at");
@@ -220,7 +235,9 @@ function assertNonIdentifying(value) {
       if (
         /(?:https?:\/\/|ssh:\/\/|git@|\bgithub\.com\/)/iu.test(nested)
         || /\b[^\s@]+@[^\s@]+\.[^\s@]+\b/u.test(nested)
-        || /(?:^|\s)(?:\/(?:Users|home|private|tmp|var|etc)\/|[A-Za-z]:\\)/u.test(nested)
+        || /(?<![A-Za-z0-9._~/])(?:~\/|\/(?!\/))[^\s,;)\]}"'`>]+/u.test(nested)
+        || /(?<![A-Za-z0-9._~/])[A-Za-z]:[\\/][^\s,;)\]}"'`>]+/u.test(nested)
+        || /(?<![A-Za-z0-9._~/])\\\\[^\\\s]+\\[^\s,;)\]}"'`>]+/u.test(nested)
         || /(?:\bBearer\s+[A-Za-z0-9._~-]+|\b(?:ghp|github_pat|sk)-[A-Za-z0-9_-]+|\bAKIA[A-Z0-9]{16}\b)/u.test(nested)
       ) fail("p1_validation_identifying_data_forbidden", "prohibited value");
     },
@@ -389,11 +406,13 @@ export async function validateP1ValidationLog({
   const log = await readJson(root, logPath);
   if (
     contract.validation_mode !== "telemetry_free"
-    || !["collecting", "complete"].includes(contract.validation_collection_status)
+    || !TAXONOMY.lifecycle.product_status.has(contract.product_status)
+    || !TAXONOMY.lifecycle.publication_status.has(contract.publication_status)
+    || !TAXONOMY.lifecycle.telemetry_free_validation.has(contract.validation_collection_status)
     || contract.validation_log !== logPath
-    || !["not_validated", "validated"].includes(contract.validation_status)
-    || !["experimental", "stable"].includes(contract.release_status)
-    || !["not_approved", "approved"].includes(contract.stable_promotion?.status)
+    || !TAXONOMY.lifecycle.validation_status.has(contract.validation_status)
+    || !TAXONOMY.lifecycle.release_status.has(contract.release_status)
+    || !TAXONOMY.lifecycle.stable_promotion_status.has(contract.stable_promotion?.status)
   ) fail("p1_validation_release_contract_invalid", "release/p1.json");
   if (
     log.schema_version !== "launchrally.dev/phase-1-validation-log/v1"
