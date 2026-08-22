@@ -165,7 +165,7 @@ jobs:
       - name: Create Experimental GitHub prerelease
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease --notes-file docs/maintainers/experimental-0.4.1-announcement.md --title "LaunchRally $GITHUB_REF_NAME (Phase 1 Experimental)"
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --prerelease --notes-file docs/maintainers/experimental-0.4.2-announcement.md --title "LaunchRally $GITHUB_REF_NAME (Phase 1 Experimental)"
 
   stable-promotion:
     if: github.event_name == 'workflow_dispatch'

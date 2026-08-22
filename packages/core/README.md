@@ -4,7 +4,7 @@
 
 ## Status
 
-LaunchRally 0.4.1 is an **Experimental Phase 1** release. It adds the local-first Phase 1 decision, coordination, and assurance layer while Phase 0 Stable 0.3.2 remains available on npm `latest`. Publication does not make Phase 1 Validated or Stable. Pin the exact version and review release changes before upgrading.
+LaunchRally 0.4.2 is an **Experimental Phase 1** release. It adds the local-first Phase 1 decision, coordination, and assurance layer while Phase 0 Stable 0.3.2 remains available on npm `latest`. Publication does not make Phase 1 Validated or Stable. Pin the exact version and review release changes before upgrading.
 
 Phase 0 0.3.2 remains a **Stable** release. The package is Product Complete, P0 Validated, and published on the stable channel.
 
@@ -31,13 +31,13 @@ Confirmed decisions can be materialized with `createArchitecturePackageBundle`. 
 ## Install and use
 
 ```sh
-npm install @launchrally/core@0.4.1
+npm install @launchrally/core@0.4.2
 ```
 
 ```js
 import { runAudit } from "@launchrally/core";
 
-const interaction = await runAudit(process.cwd(), "0.4.1");
+const interaction = await runAudit(process.cwd(), "0.4.2");
 console.log(interaction.status, interaction.next);
 ```
 

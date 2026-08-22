@@ -7,7 +7,7 @@ Invoke Agent Mode with `--json`. Require `contract: "launchrally.dev/cli/v2"`, t
 CLI installation is a prerequisite separate from Plugin installation. Invoke `rally --version --json --cwd <repository-root>` as the first discovery operation. If spawning `rally` reports that the executable is missing, present the exact user-managed PATH installation and verification commands below, then stop before Audit and wait:
 
 ```bash
-npm install --global @launchrally/cli@0.4.1
+npm install --global @launchrally/cli@0.4.2
 rally --version --json --cwd <repository-root>
 ```
 
@@ -17,10 +17,10 @@ This Skill release uses this explicit compatibility matrix:
 
 | Layer | Supported value | Meaning |
 | --- | --- | --- |
-| Plugin version | `0.4.1` | Interaction guidance only; never an execution candidate. |
-| Launcher version | `0.3.0`, `0.3.1`, `0.3.2`, `0.4.0`, or `0.4.1`, only when the running implementation declares v1 | A supported user-managed `rally` dispatcher implementing the contracts below. Historical published `0.2.2` direct binaries predate v1 interception and do not qualify. |
+| Plugin version | `0.4.2` | Interaction guidance only; never an execution candidate. |
+| Launcher version | `0.3.0`, `0.3.1`, `0.3.2`, `0.4.0`, `0.4.1`, or `0.4.2`, only when the running implementation declares v1 | A supported user-managed `rally` dispatcher implementing the contracts below. Historical published `0.2.2` direct binaries predate v1 interception and do not qualify. |
 | Execution Authority contract | `launchrally.dev/execution-authority/v1` | The only supported Engine-selection contract. |
-| Selected Engine version and contract | `0.2.2`, `0.3.0`, `0.3.1`, `0.3.2`, `0.4.0`, or `0.4.1` with the declared compatibility path and CLI interaction `launchrally.dev/cli/v2` | The Engine selected by validated authority. A descriptor-free `0.2.2` project is accepted only through the legacy row below. |
+| Selected Engine version and contract | `0.2.2`, `0.3.0`, `0.3.1`, `0.3.2`, `0.4.0`, `0.4.1`, or `0.4.2` with the declared compatibility path and CLI interaction `launchrally.dev/cli/v2` | The Engine selected by validated authority. A descriptor-free `0.2.2` project is accepted only through the legacy row below. |
 | Legacy project pin | `0.2.2`, authority descriptor absent, `compatibility: "legacy_adapter"` | Supported only through the Launcher's allowlisted legacy adapter after explicit restore when materialization is missing. |
 
 Keep the Plugin version, Launcher version, selected Engine version, and project pin as separate facts. Read `launcher_version` from the version result, the selected Engine from `cli_version` and `authority.engine`, and the project pin from the validated `project_toolchain` authority. Do not require these versions to be equal; continue only when each value and contract is explicitly supported by the matrix. Any unknown or malformed version must stop before a journey operation.

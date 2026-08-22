@@ -1,6 +1,6 @@
 {
   "name": "@launchrally/contracts",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Versioned LaunchRally CLI and report contracts",
   "keywords": [
     "launchrally",
