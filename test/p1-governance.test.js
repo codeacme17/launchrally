@@ -48,6 +48,37 @@ async function registerRegression(directory, conditionId, regression) {
   await writeFile(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
 }
 
+async function appendValidationEvent(directory, {
+  affectedAuthorityScopes,
+  conditionId,
+  event,
+  period,
+  productStatus,
+  qualityFloorStatus,
+  regressionId,
+}) {
+  const logPath = path.join(directory, "docs/maintainers/phase-1-validation-log.json");
+  const log = JSON.parse(await readFile(logPath, "utf8"));
+  const entry = structuredClone(log.entries.at(-1));
+  entry.period = period;
+  entry.lifecycle.product_status = productStatus;
+  entry.quality_floor = {
+    status: qualityFloorStatus,
+    events: [{
+      regression_id: regressionId,
+      condition_id: conditionId,
+      event,
+      affected_authority_scopes: affectedAuthorityScopes,
+    }],
+    suspended_authority_scopes: qualityFloorStatus === "suspended"
+      ? affectedAuthorityScopes
+      : [],
+  };
+  log.updated_at = period.slice(0, 10);
+  log.entries.push(entry);
+  await writeFile(logPath, `${JSON.stringify(log, null, 2)}\n`);
+}
+
 function pendingExternalRecord() {
   return {
     schema_version: "launchrally.dev/p1-external-verification/v1",
@@ -90,7 +121,7 @@ test("the independent P1 governance contract maps every canonical requirement", 
   assert.equal(result.schema_version, "launchrally.dev/p1-release/v1");
   assert.equal(result.product_status, "incomplete");
   assert.equal(result.release_status, "experimental");
-  assert.deepEqual(result.requirements, { complete: 37, open: 1, total: 38 });
+  assert.deepEqual(result.requirements, { complete: 38, open: 1, total: 39 });
   assert.deepEqual(result.suspended_authorities, []);
   assert.equal(result.p0_release_status, "stable");
 });
@@ -190,6 +221,15 @@ test("a P1 regression suspends only its declared authority and never changes P0 
   contract.quality_floor_status = "suspended";
   contract.product_status = "suspended";
   matrix.product_status = "suspended";
+  await appendValidationEvent(directory, {
+    affectedAuthorityScopes: regression.affected_authority_scopes,
+    conditionId: condition.id,
+    event: "regression_opened",
+    period: "2026-08-23-01",
+    productStatus: "suspended",
+    qualityFloorStatus: "suspended",
+    regressionId: regression.regression_id,
+  });
   await Promise.all([
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
@@ -222,6 +262,24 @@ test("a reviewed P1 fix remains suspended until a distinct restoration entry", a
   contract.quality_floor_status = "suspended";
   contract.product_status = "suspended";
   matrix.product_status = "suspended";
+  await appendValidationEvent(directory, {
+    affectedAuthorityScopes: regression.affected_authority_scopes,
+    conditionId: condition.id,
+    event: "regression_opened",
+    period: "2026-08-23-01",
+    productStatus: "suspended",
+    qualityFloorStatus: "suspended",
+    regressionId: regression.regression_id,
+  });
+  await appendValidationEvent(directory, {
+    affectedAuthorityScopes: regression.affected_authority_scopes,
+    conditionId: condition.id,
+    event: "fix_verified",
+    period: "2026-08-23-02",
+    productStatus: "suspended",
+    qualityFloorStatus: "suspended",
+    regressionId: regression.regression_id,
+  });
   await Promise.all([
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),
@@ -236,6 +294,15 @@ test("a reviewed P1 fix remains suspended until a distinct restoration entry", a
   contract.quality_floor_status = "satisfied";
   contract.product_status = "incomplete";
   matrix.product_status = "incomplete";
+  await appendValidationEvent(directory, {
+    affectedAuthorityScopes: regression.affected_authority_scopes,
+    conditionId: condition.id,
+    event: "authority_restored",
+    period: "2026-08-23-03",
+    productStatus: "incomplete",
+    qualityFloorStatus: "satisfied",
+    regressionId: regression.regression_id,
+  });
   await Promise.all([
     writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`),
     writeFile(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`),

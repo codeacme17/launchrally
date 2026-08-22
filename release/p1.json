@@ -4,7 +4,10 @@
   "product_status": "incomplete",
   "release_status": "experimental",
   "publication_status": "not_published",
+  "validation_mode": "telemetry_free",
+  "validation_collection_status": "collecting",
   "validation_status": "not_validated",
+  "validation_log": "docs/maintainers/phase-1-validation-log.json",
   "quality_floor_status": "satisfied",
   "supply_chain_assessment_at": "2026-08-22T00:00:00.000Z",
   "p0_stable_ref": {
@@ -36,7 +39,8 @@
     "P1-PLAN-01",
     "P1-HANDOFF-01", "P1-HANDOFF-02", "P1-HANDOFF-03", "P1-HANDOFF-04", "P1-HANDOFF-05",
     "P1-VERIFY-01", "P1-VERIFY-02", "P1-VERIFY-03", "P1-VERIFY-04", "P1-VERIFY-05",
-    "P1-AUTH-01", "P1-PRIVACY-01", "P1-COMPAT-01", "P1-HOST-01", "P1-COVERAGE-01", "P1-DOCS-01", "P1-RELEASE-01"
+    "P1-AUTH-01", "P1-PRIVACY-01", "P1-COMPAT-01", "P1-HOST-01", "P1-COVERAGE-01", "P1-DOCS-01", "P1-RELEASE-01",
+    "P1-VALIDATION-01"
   ],
   "mandatory_release_gate_ids": [
     "p1_traceability",

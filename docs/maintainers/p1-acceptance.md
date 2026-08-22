@@ -50,6 +50,7 @@ open requirement or pending mandatory gate.
 | P1-COVERAGE-01 | Representative Provider-neutral Packs preserve honest depth for managed and generic implementations | reference packs cover every product shape and integration family without Provider semantics | #137 | Complete |
 | P1-DOCS-01 | Agent and Human users can follow the complete authority-aware Phase 1 journey | documented Phase 1 commands are equivalent across POSIX and PowerShell | #138 | Complete |
 | P1-RELEASE-01 | Exact P1 artifacts publish only as Experimental before separate external verification and Stable promotion | P1 Experimental publication readiness permits only external verification to remain open; P1 external verification cannot complete without its signed aggregate record; published P1 artifacts match candidate digests, provenance, and the preserved latest line; the P1 announcement and external Agent procedure preserve every lifecycle boundary; external Phase 1 results require machine-checked CLI, Codex, and Claude scenario coverage; packed artifacts complete installation, delegation, lifecycle, and full verification journeys | #183 | Open |
+| P1-VALIDATION-01 | Phase 1 qualitative learning remains append-only, telemetry-free, aggregate, and lifecycle-separated | the Phase 1 Validation Log remains collecting, not validated, Experimental, and not approved | #195 | Complete |
 
 ## Independent lifecycle
 

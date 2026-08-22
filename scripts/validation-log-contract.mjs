@@ -1,3 +1,8 @@
+import {
+  assertAppendOnlyLog,
+  walkValidationValue,
+} from "./validation-log-shared.mjs";
+
 function fail(code, detail) {
   throw new Error(`${code}: ${detail}`);
 }
@@ -122,22 +127,6 @@ const FORBIDDEN_ANALYTICS_KEYS = new Set([
   "username",
 ]);
 
-function walkValidationValue(value, visitor) {
-  if (typeof value === "string") {
-    visitor.string?.(value);
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const nested of value) walkValidationValue(nested, visitor);
-    return;
-  }
-  if (!value || typeof value !== "object") return;
-  for (const [key, nested] of Object.entries(value)) {
-    visitor.key?.(key);
-    walkValidationValue(nested, visitor);
-  }
-}
-
 function assertExactKeys(value, keys, owner) {
   if (
     !value
@@ -161,18 +150,9 @@ function assertTaxonomyArray(values, permitted, owner) {
 }
 
 export function assertAppendOnlyValidationLog(current, baseline) {
-  if (
-    current.schema_version !== baseline.schema_version
-    || current.collection_mode !== baseline.collection_mode
-    || current.entries.length < baseline.entries.length
-  ) {
-    fail("p0_validation_history_changed", "reviewed Validation Log metadata or entries changed");
-  }
-  for (const [index, entry] of baseline.entries.entries()) {
-    if (JSON.stringify(current.entries[index]) !== JSON.stringify(entry)) {
-      fail("p0_validation_history_changed", `entry ${index} differs from reviewed history`);
-    }
-  }
+  assertAppendOnlyLog(current, baseline, (detail) => {
+    fail("p0_validation_history_changed", detail);
+  });
 }
 
 export function assertNonIdentifyingValidationLog(value) {
