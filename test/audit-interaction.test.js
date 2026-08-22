@@ -492,6 +492,7 @@ test("Agent Mode discloses every read-only public probe before approval", async 
   );
   assert.equal(publicPermissions.length, 1);
   assert.deepEqual(publicPermissions[0].scope, {
+    collector_version: "public-verification/v1",
     targets: result.audit_brief.public_verification.targets,
     probes: result.audit_brief.public_verification.probes,
   });
