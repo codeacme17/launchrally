@@ -163,6 +163,7 @@
         "bin/clack-node20-util.js",
         "bin/engine.js",
         "bin/human-architect.js",
+        "bin/human-architecture-package.js",
         "bin/human-authenticated-journey.js",
         "bin/human-audit.js",
         "bin/human-init.js",

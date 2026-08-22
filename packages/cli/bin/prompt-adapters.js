@@ -12,6 +12,16 @@ import {
 } from "@launchrally/core";
 
 import { PromptCancelledError } from "./human-audit.js";
+import {
+  renderHumanArchitectDecision,
+  renderHumanArchitectMigration,
+  renderHumanArchitectureBlueprint,
+  renderHumanArchitectOutcome,
+} from "./human-architect.js";
+import {
+  renderHumanArchitecturePackageOutcome,
+  renderHumanArchitecturePackagePreview,
+} from "./human-architecture-package.js";
 import { renderHumanInit, renderHumanInitFullPreview } from "./human-init.js";
 
 function styleTextSupportsArrays() {
@@ -225,6 +235,8 @@ function list(values, render = String) {
 function operationTitle(operation) {
   if (operation === "init") return "LaunchRally Init";
   if (operation === "verify") return "LaunchRally Verify";
+  if (operation === "architect") return "LaunchRally Architect";
+  if (operation === "architecture-package") return "LaunchRally Architecture Package";
   return "LaunchRally Audit";
 }
 
@@ -1037,6 +1049,44 @@ export function createPlainPromptAdapter({
       }
       return {};
     },
+    async confirmMigration(preview) {
+      write(output, renderHumanArchitectMigration(preview));
+      return choose("Adopt additive Phase 1 local records while preserving Phase 0 history?", [
+        { label: "Confirm", value: "confirm" },
+        { label: "Decline", value: "reject" },
+        { label: "Cancel", value: "cancel" },
+      ]);
+    },
+    async confirmBlueprint(blueprint) {
+      write(output, renderHumanArchitectureBlueprint(blueprint, { width: output.columns }));
+      return choose("Confirm this whole-product Blueprint?", [
+        { label: "Confirm", value: "confirm" },
+        { label: "Reject", value: "reject" },
+        { label: "Cancel", value: "cancel" },
+      ]);
+    },
+    async reviewDecision(decision, progress) {
+      write(output, renderHumanArchitectDecision(decision, progress, { width: output.columns }));
+      return choose(`Review decision ${progress.current} of ${progress.total}:`, [
+        { label: "Confirm", value: "confirm" },
+        { label: "Reject", value: "reject" },
+        { label: "Cancel", value: "cancel" },
+      ]);
+    },
+    async finishArchitect(result) {
+      write(output, renderHumanArchitectOutcome(result));
+    },
+    async confirmArchitecturePackage(result, bundle) {
+      write(output, renderHumanArchitecturePackagePreview(result, bundle));
+      return choose("Persist this exact Architecture Package to immutable local history?", [
+        { label: "Confirm", value: "confirm" },
+        { label: "Decline", value: "decline" },
+        { label: "Cancel", value: "cancel" },
+      ]);
+    },
+    async finishArchitecturePackage(result, bundle) {
+      write(output, renderHumanArchitecturePackageOutcome(result, bundle));
+    },
     async close() {
       signals.off("SIGINT", handleInterrupt);
       readline.close();
@@ -1398,6 +1448,80 @@ export async function createClackPromptAdapter({
         });
       }
       return {};
+    },
+    async confirmMigration(preview) {
+      clack.note(renderHumanArchitectMigration(preview), "Phase 1 migration", common);
+      return cancelled(await clack.select({
+        ...common,
+        message: "Adopt additive Phase 1 local records while preserving Phase 0 history?",
+        options: [
+          { label: "Confirm", value: "confirm" },
+          { label: "Decline", value: "reject" },
+          { label: "Cancel", value: "cancel" },
+        ],
+        initialValue: "reject",
+      }), clack, output, "Architect");
+    },
+    async confirmBlueprint(blueprint) {
+      clack.note(
+        renderHumanArchitectureBlueprint(blueprint, { width: output.columns }),
+        "Whole-product Blueprint",
+        common,
+      );
+      return cancelled(await clack.select({
+        ...common,
+        message: "Confirm this whole-product Blueprint?",
+        options: [
+          { label: "Confirm", value: "confirm" },
+          { label: "Reject", value: "reject" },
+          { label: "Cancel", value: "cancel" },
+        ],
+        initialValue: "reject",
+      }), clack, output, "Architect");
+    },
+    async reviewDecision(decision, progress) {
+      clack.note(
+        renderHumanArchitectDecision(decision, progress, { width: output.columns }),
+        `Decision ${progress.current} of ${progress.total}`,
+        common,
+      );
+      return cancelled(await clack.select({
+        ...common,
+        message: `Review decision ${progress.current} of ${progress.total}`,
+        options: [
+          { label: "Confirm", value: "confirm" },
+          { label: "Reject", value: "reject" },
+          { label: "Cancel", value: "cancel" },
+        ],
+        initialValue: "reject",
+      }), clack, output, "Architect");
+    },
+    async finishArchitect(result) {
+      clack.note(renderHumanArchitectOutcome(result), "Architect outcome", common);
+    },
+    async confirmArchitecturePackage(result, bundle) {
+      clack.note(
+        renderHumanArchitecturePackagePreview(result, bundle),
+        "Exact persistence preview",
+        common,
+      );
+      return cancelled(await clack.select({
+        ...common,
+        message: "Persist this exact Architecture Package to immutable local history?",
+        options: [
+          { label: "Confirm", value: "confirm" },
+          { label: "Decline", value: "decline" },
+          { label: "Cancel", value: "cancel" },
+        ],
+        initialValue: "decline",
+      }), clack, output, "Architecture Package persistence");
+    },
+    async finishArchitecturePackage(result, bundle) {
+      clack.note(
+        renderHumanArchitecturePackageOutcome(result, bundle),
+        "Architecture Package outcome",
+        common,
+      );
     },
     async close() {
       signals.off("SIGINT", handleInterrupt);

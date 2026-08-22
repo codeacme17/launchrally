@@ -215,7 +215,7 @@ export async function runArchitectureJourney(cwd, source = {}, options = {}, dep
     const decision = runArchitectureDecisionEngine(root, state.source, {
       review_date: state.review_date,
       desktop_shared_backend_capability_ids: state.desktop_shared_backend_capability_ids,
-    });
+    }, dependencies);
     if (decision.status !== "needs_confirmation") return decision;
     try {
       await applyAdoption(state, options.file_operations);
@@ -246,7 +246,7 @@ export async function runArchitectureJourney(cwd, source = {}, options = {}, dep
     return adoptionInteraction(
       "needs_confirmation",
       "blueprint_review",
-      storeArchitectureState(state),
+      (dependencies.store_state ?? storeArchitectureState)(state),
       { kind: "p1_migration_confirmation", choices: ["confirm", "deny", "cancel"] },
     );
   }

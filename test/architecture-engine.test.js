@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 
 import {
   assertValidArchitectInteraction,
@@ -31,6 +31,109 @@ import {
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
+const engine = path.resolve("packages/cli/bin/engine.js");
+const pythonAvailable = process.platform !== "win32"
+  && spawnSync("python3", ["--version"]).status === 0;
+const architectPtyRunner = [
+  "import errno, os, pty, subprocess, sys",
+  "master, slave = pty.openpty()",
+  "child = subprocess.Popen(sys.argv[1:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)",
+  "os.close(slave)",
+  "chunks = []",
+  "observed = b''",
+  "answered_choices = 0",
+  "answered_legacy = 0",
+  "while True:",
+  "    try:",
+  "        chunk = os.read(master, 4096)",
+  "    except OSError as error:",
+  "        if error.errno == errno.EIO:",
+  "            break",
+  "        raise",
+  "    if not chunk:",
+  "        break",
+  "    chunks.append(chunk)",
+  "    observed += chunk",
+  "    choice_prompts = observed.count(b'Choose 1-3')",
+  "    while choice_prompts > answered_choices:",
+  "        os.write(master, b'1\\n')",
+  "        answered_choices += 1",
+  "    legacy_prompts = observed.count(b'[y/n/cancel]')",
+  "    while legacy_prompts > answered_legacy:",
+  "        os.write(master, b'y\\n')",
+  "        answered_legacy += 1",
+  "os.close(master)",
+  "sys.stdout.buffer.write(b''.join(chunks))",
+  "raise SystemExit(child.wait())",
+].join("\n");
+const architectSingleDecisionPtyRunner = [
+  "import errno, os, pty, subprocess, sys",
+  "answer = sys.argv[1].encode() + b'\\n'",
+  "master, slave = pty.openpty()",
+  "child = subprocess.Popen(sys.argv[2:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)",
+  "os.close(slave)",
+  "chunks = []",
+  "observed = b''",
+  "answered = False",
+  "while True:",
+  "    try:",
+  "        chunk = os.read(master, 4096)",
+  "    except OSError as error:",
+  "        if error.errno == errno.EIO:",
+  "            break",
+  "        raise",
+  "    if not chunk:",
+  "        break",
+  "    chunks.append(chunk)",
+  "    observed += chunk",
+  "    if not answered and b'Choose 1-3' in observed:",
+  "        os.write(master, answer)",
+  "        answered = True",
+  "os.close(master)",
+  "sys.stdout.buffer.write(b''.join(chunks))",
+  "raise SystemExit(child.wait())",
+].join("\n");
+const architectClackDecisionPtyRunner = [
+  "import errno, fcntl, os, pty, struct, subprocess, sys, termios",
+  "mode = sys.argv[1]",
+  "master, slave = pty.openpty()",
+  "fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))",
+  "env = os.environ.copy()",
+  "env['TERM'] = 'xterm-256color'",
+  "child = subprocess.Popen(sys.argv[2:], stdin=slave, stdout=slave, stderr=slave, close_fds=True, env=env)",
+  "os.close(slave)",
+  "chunks = []",
+  "observed = b''",
+  "blueprint_answered = False",
+  "decision_answered = 0",
+  "while True:",
+  "    try:",
+  "        chunk = os.read(master, 4096)",
+  "    except OSError as error:",
+  "        if error.errno == errno.EIO:",
+  "            break",
+  "        raise",
+  "    if not chunk:",
+  "        break",
+  "    chunks.append(chunk)",
+  "    observed += chunk",
+  "    if not blueprint_answered and b'Confirm this whole-product Blueprint?' in observed:",
+  "        os.write(master, b'\\r' if mode == 'blueprint_reject' else b'\\x1b[A\\r')",
+  "        blueprint_answered = True",
+  "    if blueprint_answered and mode != 'blueprint_reject' and decision_answered == 0 and b'Review decision 1 of 13' in observed:",
+  "        os.write(master, b'\\x1b[B\\r' if mode == 'cancel_first' else b'\\r')",
+  "        decision_answered = 1",
+  "    if mode == 'reject_all':",
+  "        while decision_answered < 13:",
+  "            next_decision = decision_answered + 1",
+  "            if f'Review decision {next_decision} of 13'.encode() not in observed:",
+  "                break",
+  "            os.write(master, b'\\r')",
+  "            decision_answered = next_decision",
+  "os.close(master)",
+  "sys.stdout.buffer.write(b''.join(chunks))",
+  "raise SystemExit(child.wait())",
+].join("\n");
 
 async function fixture() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architect-"));
@@ -694,6 +797,264 @@ test("Agent CLI exposes the same typed Architecture decision semantics", async (
   assert.equal(assertValidArchitectInteraction(result.interaction), true);
 });
 
+test("TTY Human Architect presents the complete Blueprint and independent progress", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const directory = await fixture();
+  const source = await inputs(directory);
+  const inputDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architect-tty-"));
+  const files = {
+    report_package: "report.json",
+    product_intent: "intent.json",
+    catalog: "catalog.json",
+    capability_graph: "graph.json",
+    integration_contracts: "integrations.json",
+  };
+  for (const [field, name] of Object.entries(files)) {
+    await writeFile(path.join(inputDirectory, name), `${JSON.stringify(source[field])}\n`);
+  }
+
+  const { stdout } = await execFileAsync("python3", [
+    "-c",
+    architectPtyRunner,
+    process.execPath,
+    engine,
+    "architect",
+    "--plain",
+    "--cwd",
+    directory,
+    "--report",
+    path.join(inputDirectory, files.report_package),
+    "--intent",
+    path.join(inputDirectory, files.product_intent),
+    "--catalog",
+    path.join(inputDirectory, files.catalog),
+    "--graph",
+    path.join(inputDirectory, files.capability_graph),
+    "--integrations",
+    path.join(inputDirectory, files.integration_contracts),
+    "--review-date",
+    "2026-08-13",
+  ], { timeout: 30000 });
+
+  assert.match(stdout, /LaunchRally Architect/u);
+  assert.match(stdout, /Architecture Blueprint/u);
+  assert.match(stdout, /Blueprint Schema: launchrally\.dev\/architecture-blueprint\/v1/u);
+  assert.match(stdout, /Hard constraints/u);
+  assert.match(stdout, /Integration compatibility/u);
+  assert.match(stdout, /Operational burden/u);
+  assert.match(stdout, /Cost scenario 1/u);
+  assert.match(stdout, /Data flow and residency/u);
+  assert.match(stdout, /Failure domains/u);
+  assert.match(stdout, /Provider concentration/u);
+  assert.match(stdout, /Lock-in and exit/u);
+  assert.match(stdout, /Migration cost/u);
+  assert.match(stdout, /Decision 1 of 13/u);
+  assert.match(stdout, /Rationale/u);
+  assert.match(stdout, /Trade-offs/u);
+  assert.match(stdout, /Reevaluation triggers/u);
+  assert.match(stdout, /1\. Confirm/u);
+  assert.match(stdout, /2\. Reject/u);
+  assert.match(stdout, /3\. Cancel/u);
+  assert.match(stdout, /Architecture Review Complete/u);
+  assert.doesNotMatch(stdout, /"schema_version"/u);
+  assert.doesNotMatch(stdout, /Resume token:/u);
+});
+
+test("default styled Human Architect renders Blueprint rejection and decision reject/cancel outcomes", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const directory = await fixture();
+  const source = await inputs(directory);
+  const inputDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architect-clack-"));
+  const files = {
+    report_package: "report.json",
+    product_intent: "intent.json",
+    catalog: "catalog.json",
+    capability_graph: "graph.json",
+    integration_contracts: "integrations.json",
+  };
+  for (const [field, name] of Object.entries(files)) {
+    await writeFile(path.join(inputDirectory, name), `${JSON.stringify(source[field])}\n`);
+  }
+  const command = [
+    process.execPath,
+    engine,
+    "architect",
+    "--cwd",
+    directory,
+    "--report",
+    path.join(inputDirectory, files.report_package),
+    "--intent",
+    path.join(inputDirectory, files.product_intent),
+    "--catalog",
+    path.join(inputDirectory, files.catalog),
+    "--graph",
+    path.join(inputDirectory, files.capability_graph),
+    "--integrations",
+    path.join(inputDirectory, files.integration_contracts),
+    "--review-date",
+    "2026-08-13",
+  ];
+  const scenarios = [
+    { mode: "blueprint_reject", pattern: /Architecture Review Declined/u },
+    { mode: "cancel_first", pattern: /Architecture Review Cancelled/u },
+    { mode: "reject_all", pattern: /Architecture Review Complete[\s\S]*Rejected: 13/u },
+  ];
+  for (const scenario of scenarios) {
+    const { stdout } = await execFileAsync("python3", [
+      "-c",
+      architectClackDecisionPtyRunner,
+      scenario.mode,
+      ...command,
+    ], { timeout: 30000 });
+    const semanticOutput = stripVTControlCharacters(stdout);
+    assert.match(stdout, /\u001B\[/u);
+    assert.match(semanticOutput, /LaunchRally Architect/u);
+    assert.match(semanticOutput, /Whole-product Blueprint/u);
+    assert.match(semanticOutput, /Confirm[\s\S]*Reject[\s\S]*Cancel/u);
+    assert.match(semanticOutput, scenario.pattern);
+    assert.doesNotMatch(semanticOutput, /Resume token:/u);
+  }
+});
+
+test("TTY Human Architect styles migration decline and cancellation without changing P0 history", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  for (const scenario of [
+    { answer: "2", summary: /Architecture Review Declined/u },
+    { answer: "3", summary: /Architecture Review Cancelled/u },
+  ]) {
+    const directory = await initializedP0Fixture();
+    const source = await inputs(directory);
+    const inputDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-migration-tty-"));
+    const files = {
+      report_package: "report.json",
+      product_intent: "intent.json",
+      catalog: "catalog.json",
+      capability_graph: "graph.json",
+      integration_contracts: "integrations.json",
+    };
+    for (const [field, name] of Object.entries(files)) {
+      await writeFile(path.join(inputDirectory, name), `${JSON.stringify(source[field])}\n`);
+    }
+
+    const { stdout } = await execFileAsync("python3", [
+      "-c",
+      architectSingleDecisionPtyRunner,
+      scenario.answer,
+      process.execPath,
+      engine,
+      "architect",
+      "--plain",
+      "--cwd",
+      directory,
+      "--report",
+      path.join(inputDirectory, files.report_package),
+      "--intent",
+      path.join(inputDirectory, files.product_intent),
+      "--catalog",
+      path.join(inputDirectory, files.catalog),
+      "--graph",
+      path.join(inputDirectory, files.capability_graph),
+      "--integrations",
+      path.join(inputDirectory, files.integration_contracts),
+      "--review-date",
+      "2026-08-13",
+    ], { timeout: 30000 });
+
+    assert.match(stdout, /Additive Phase 1 Migration Preview/u);
+    assert.match(stdout, /Preview Schema: launchrally\.dev\/phase-1-migration-preview\/v1/u);
+    assert.match(stdout, /Created paths:/u);
+    assert.match(stdout, /\.launchrally\/phase-1\/adoption\.json/u);
+    assert.match(stdout, /Preserved Phase 0 paths:/u);
+    assert.match(stdout, /\.launchrally\/manifest\.yaml/u);
+    assert.match(stdout, /1\. Confirm/u);
+    assert.match(stdout, /2\. Decline/u);
+    assert.match(stdout, /3\. Cancel/u);
+    assert.match(stdout, scenario.summary);
+    assert.doesNotMatch(stdout, /"schema_version"/u);
+    await assert.rejects(
+      readFile(path.join(directory, ".launchrally/phase-1/adoption.json"), "utf8"),
+      (error) => error.code === "ENOENT",
+    );
+  }
+});
+
+test("Human Architect reports stale input and file errors without raw JSON", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const directory = await fixture();
+  const source = await inputs(directory);
+  const inputDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architect-stale-"));
+  const files = {
+    report_package: "report.json",
+    product_intent: "intent.json",
+    catalog: "catalog.json",
+    capability_graph: "graph.json",
+    integration_contracts: "integrations.json",
+  };
+  for (const [field, name] of Object.entries(files)) {
+    await writeFile(path.join(inputDirectory, name), `${JSON.stringify(source[field])}\n`);
+  }
+  await writeFile(path.join(directory, "package.json"), `${JSON.stringify({
+    name: "architect-web-changed",
+    scripts: { build: "vite build" },
+  })}\n`);
+
+  await assert.rejects(
+    execFileAsync("python3", [
+      "-c",
+      architectSingleDecisionPtyRunner,
+      "1",
+      process.execPath,
+      engine,
+      "architect",
+      "--plain",
+      "--cwd",
+      directory,
+      "--report",
+      path.join(inputDirectory, files.report_package),
+      "--intent",
+      path.join(inputDirectory, files.product_intent),
+      "--catalog",
+      path.join(inputDirectory, files.catalog),
+      "--graph",
+      path.join(inputDirectory, files.capability_graph),
+      "--integrations",
+      path.join(inputDirectory, files.integration_contracts),
+      "--review-date",
+      "2026-08-13",
+    ], { timeout: 30000 }),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stdout, /Architecture Input Is Stale/u);
+      assert.doesNotMatch(error.stdout, /"currentness"/u);
+      return true;
+    },
+  );
+
+  const invalid = path.join(inputDirectory, "invalid.json");
+  await writeFile(invalid, "not json\n");
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      engine,
+      "architect",
+      "--cwd",
+      directory,
+      "--report",
+      invalid,
+    ]),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stdout, /Architecture Review Could Not Complete/u);
+      assert.match(error.stdout, /invalid_architecture_input_file/u);
+      assert.doesNotMatch(error.stdout, /"status"/u);
+      return true;
+    },
+  );
+});
+
 test("Human flow reviews the same Blueprint and every decision independently", async () => {
   const directory = await fixture();
   const source = await inputs(directory);
@@ -712,7 +1073,11 @@ test("Human flow reviews the same Blueprint and every decision independently", a
         assert.equal(assertValidArchitectureBlueprint(blueprint), true);
         return "confirm";
       },
-      async reviewDecision(decision) {
+      async reviewDecision(decision, progress) {
+        assert.deepEqual(progress, {
+          current: reviewed.length + 1,
+          total: 13,
+        });
         reviewed.push(decision.decision_id);
         return reviewed.length === 2 ? "reject" : "confirm";
       },
@@ -739,6 +1104,41 @@ test("Human flow reviews the same Blueprint and every decision independently", a
   assert.equal(normalizeArchitectAnswer("n"), "reject");
   assert.equal(normalizeArchitectAnswer("cancel"), "cancel");
   assert.equal(normalizeArchitectAnswer("maybe"), null);
+});
+
+test("Human flow can cancel during independent review with a typed partial outcome", async () => {
+  const directory = await fixture();
+  const source = await inputs(directory);
+  const terminal = [];
+  const result = await runHumanArchitect({
+    cwd: directory,
+    source,
+    reviewDate: "2026-08-13",
+    runArchitect: runArchitectureDecisionEngine,
+    prompt: {
+      async confirmMigration() {
+        assert.fail("pre-Init flow must not request migration");
+      },
+      async confirmBlueprint() {
+        return "confirm";
+      },
+      async reviewDecision(_decision, { current, total }) {
+        return current === 2 && total === 13 ? "cancel" : "confirm";
+      },
+      async finishArchitect(value) {
+        terminal.push(value.status);
+      },
+    },
+  });
+
+  assert.equal(result.status, "cancelled");
+  assert.equal(result.outcome, "architecture_decision_review_cancelled");
+  assert.deepEqual(result.decision_results, [{
+    decision_id: result.blueprint.decisions[0].decision_id,
+    response: "confirm",
+  }]);
+  assert.equal(assertValidArchitectInteraction(result.interaction), true);
+  assert.deepEqual(terminal, ["cancelled"]);
 });
 
 test("public non-TTY Architect refuses unsafe prompting", async () => {
