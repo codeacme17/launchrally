@@ -851,3 +851,37 @@ test("Capability contracts preserve orthogonal states and Provider-neutral integ
     (error) => error.code === "invalid_integration_contract",
   );
 });
+
+test("Integration Contract validation accepts only canonical or migratable idempotency semantics", async () => {
+  const { integration } = await readFixture("capability-model.valid.json");
+  const notRequired = structuredClone(integration);
+  notRequired.semantics.idempotency = "not_required";
+  assert.equal(assertValidIntegrationContract(notRequired), true);
+
+  for (const legacyValue of [
+    "required_by_logical_job_id",
+    "required_by_object_and_job_id",
+    "deduplicate_by_delivery_attempt_id",
+  ]) {
+    const legacy = structuredClone(integration);
+    legacy.semantics.idempotency = legacyValue;
+    assert.equal(assertValidIntegrationContract(legacy), true);
+  }
+
+  const freeForm = structuredClone(integration);
+  freeForm.semantics.idempotency = "best_effort_when_possible";
+  assert.throws(
+    () => assertValidIntegrationContract(freeForm),
+    (error) => error.code === "invalid_integration_contract"
+      && /required, not_required, not_applicable, or unknown/u.test(error.message)
+      && /required_by_<key>/u.test(error.message),
+  );
+
+  const missing = structuredClone(integration);
+  delete missing.semantics.idempotency;
+  assert.throws(
+    () => assertValidIntegrationContract(missing),
+    (error) => error.code === "invalid_integration_contract"
+      && /semantics\.idempotency/u.test(error.message),
+  );
+});

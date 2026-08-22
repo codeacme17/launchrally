@@ -14,6 +14,7 @@ import {
   assertValidProductIntentProfile,
   assertValidReportPackage,
   assertValidDesktopSharedBackend,
+  integrationIdempotencyIsRequired,
 } from "@launchrally/contracts";
 
 import { sha256 } from "./local-history.js";
@@ -238,7 +239,7 @@ function integrationCompatibility(contracts) {
     if (
       contract.mode === "asynchronous"
       && semantics.duplication !== "not_applicable"
-      && semantics.idempotency !== "required"
+      && !integrationIdempotencyIsRequired(semantics)
     ) incompatibleReasons.push("duplicate_delivery_without_required_idempotency");
     if (semantics.authentication === "none" || semantics.authentication === "unknown") {
       incompatibleReasons.push("authentication_boundary_unresolved");
