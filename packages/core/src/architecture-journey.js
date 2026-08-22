@@ -12,7 +12,10 @@ import {
 
 import { resolveExecutionAuthority } from "./execution-authority.js";
 import { loadArchitectureState, storeArchitectureState } from "./architecture-state.js";
-import { runArchitectureDecisionEngine } from "./architecture-engine.js";
+import {
+  evaluateInitialArchitectureInput,
+  runArchitectureDecisionEngine,
+} from "./architecture-engine.js";
 
 const STATE_VERSION = "architecture-journey/v1";
 const ADOPTION_PATH = ".launchrally/phase-1/adoption.json";
@@ -242,6 +245,8 @@ export async function runArchitectureJourney(cwd, source = {}, options = {}, dep
     };
   }
   if (!adoption && await initializedP0Project(root, launcherVersion)) {
+    const prepared = evaluateInitialArchitectureInput(root, source, options);
+    if (prepared.outcome) return prepared.outcome;
     const state = migrationState(root, source, { ...options, launcher_version: launcherVersion });
     return adoptionInteraction(
       "needs_confirmation",

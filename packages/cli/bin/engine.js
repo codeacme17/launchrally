@@ -84,6 +84,25 @@ function jsonOption(name) {
   }
 }
 
+const LOCAL_HISTORY_REPORT_ERRORS = new Set([
+  "invalid_local_history_report",
+  "invalid_local_history_report_path",
+  "repository_scope_mismatch",
+  "unsafe_history_path",
+]);
+
+async function loadReportInput(cwd, selectedPath) {
+  return isLocalHistoryReference(cwd, selectedPath)
+    ? loadLocalHistoryReportPackage(cwd, selectedPath)
+    : JSON.parse(await readFile(selectedPath, "utf8"));
+}
+
+function reportInputFailure(error, fallbackError, fallbackMessage) {
+  return LOCAL_HISTORY_REPORT_ERRORS.has(error?.code)
+    ? { error: error.code, message: error.message }
+    : { error: fallbackError, message: fallbackMessage };
+}
+
 function providerLabel(role) {
   return `${role.provider} (${role.role})`;
 }
@@ -847,15 +866,23 @@ async function main() {
     try {
       for (const [field, option] of fileOptions) {
         const file = optionValue(option);
-        if (file) source[field] = JSON.parse(await readFile(file, "utf8"));
+        if (file) {
+          source[field] = field === "report_package"
+            ? await loadReportInput(cwd, file)
+            : JSON.parse(await readFile(file, "utf8"));
+        }
       }
-    } catch {
+    } catch (error) {
+      const failure = reportInputFailure(
+        error,
+        "invalid_architecture_input_file",
+        "An Architecture source file could not be read and parsed.",
+      );
       const result = {
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
         operation: "architect",
-        error: "invalid_architecture_input_file",
-        message: "An Architecture source file could not be read and parsed.",
+        ...failure,
       };
       if (json) print(result);
       else process.stdout.write(`${renderHumanArchitectOutcome(result)}\n`);
@@ -1094,24 +1121,18 @@ async function main() {
     const reportPath = optionValue("--report");
     if (reportPath) {
       try {
-        reportPackage = isLocalHistoryReference(cwd, reportPath)
-          ? await loadLocalHistoryReportPackage(cwd, reportPath)
-          : JSON.parse(await readFile(reportPath, "utf8"));
+        reportPackage = await loadReportInput(cwd, reportPath);
       } catch (error) {
-        const localHistoryError = [
-          "invalid_local_history_report",
-          "invalid_local_history_report_path",
-          "repository_scope_mismatch",
-          "unsafe_history_path",
-        ].includes(error?.code);
+        const failure = reportInputFailure(
+          error,
+          "invalid_report_file",
+          "The saved Report JSON could not be read and parsed.",
+        );
         const result = {
           contract: CLI_INTERACTION_CONTRACT,
           status: "execution_error",
           operation: "plan",
-          error: localHistoryError ? error.code : "invalid_report_file",
-          message: localHistoryError
-            ? error.message
-            : "The saved Report JSON could not be read and parsed.",
+          ...failure,
         };
         print(result);
         return 2;
