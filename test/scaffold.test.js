@@ -545,8 +545,8 @@ test("audit excludes Architecture history without hiding protected LaunchRally i
     "schema_version: launchrally.dev/manifest/v2\n",
   );
 
-  const initial = await runAudit(fixture, "0.4.1");
-  const confirmation = await runAudit(fixture, "0.4.1", {
+  const initial = await runAudit(fixture, "0.4.2");
+  const confirmation = await runAudit(fixture, "0.4.2", {
     resume_token: initial.interaction.resume_token,
     answers: {
       intended_environment: "production",
@@ -556,11 +556,11 @@ test("audit excludes Architecture history without hiding protected LaunchRally i
       support_layers: [],
     },
   });
-  const permission = await runAudit(fixture, "0.4.1", {
+  const permission = await runAudit(fixture, "0.4.2", {
     resume_token: confirmation.interaction.resume_token,
     confirmation: "confirm",
   });
-  const result = await runAudit(fixture, "0.4.1", {
+  const result = await runAudit(fixture, "0.4.2", {
     resume_token: permission.interaction.resume_token,
     permission_decisions: { public_verification: "denied" },
   });

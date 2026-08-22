@@ -175,7 +175,7 @@ async function applyAdoption(state, fileOperations = {}) {
 export async function runArchitectureJourney(cwd, source = {}, options = {}, dependencies = {}) {
   const selectedRoot = path.resolve(cwd);
   const root = await realpath(selectedRoot);
-  const launcherVersion = options.launcher_version ?? "0.4.1";
+  const launcherVersion = options.launcher_version ?? "0.4.2";
   if (options.resume_token) {
     const candidate = (dependencies.load_state ?? loadArchitectureState)(options.resume_token);
     const state = candidate?.state_version === STATE_VERSION ? candidate : null;
