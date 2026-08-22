@@ -6,7 +6,7 @@
   "publication_status": "not_published",
   "validation_status": "not_validated",
   "quality_floor_status": "satisfied",
-  "supply_chain_assessment_at": "2026-08-21T00:00:00.000Z",
+  "supply_chain_assessment_at": "2026-08-22T00:00:00.000Z",
   "p0_stable_ref": {
     "schema_version": "launchrally.dev/p0-release/v1",
     "release_status": "stable"
