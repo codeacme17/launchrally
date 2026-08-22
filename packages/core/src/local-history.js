@@ -381,7 +381,7 @@ export async function loadLocalHistoryReportPackage(root, selectedPath) {
   const match = relativePath?.match(REPORT_RECORD_PATH);
   if (!match) {
     const error = new Error(
-      "Plan local history input must be a repository-bounded .launchrally/reports/<report-id>/record.json path.",
+      "Local history Report input must be a repository-bounded .launchrally/reports/<report-id>/record.json path.",
     );
     error.code = "invalid_local_history_report_path";
     throw error;

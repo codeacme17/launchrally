@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, readdir, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -20,6 +20,7 @@ import {
   runArchitectureJourney,
   runAudit,
 } from "../packages/core/src/index.js";
+import { persistLocalHistory, sha256 } from "../packages/core/src/local-history.js";
 import {
   normalizeArchitectAnswer,
   runHumanArchitect,
@@ -370,6 +371,27 @@ test("first Architect use previews additive P1 adoption and denial preserves P0 
   assert.equal(auditAfterDenial.status, "completed");
   assert.equal(auditAfterDenial.operation, "audit");
   assert.equal(auditAfterDenial.report.schema_version, "launchrally.dev/report/v2");
+});
+
+test("Architect validates required source inputs before previewing P1 adoption", async () => {
+  const directory = await initializedP0Fixture();
+  const source = await inputs(directory);
+  source.integration_contracts = [];
+
+  const result = await runArchitectureJourney(directory, source, {
+    review_date: "2026-08-13",
+    launcher_version: "0.3.2",
+  }, {
+    store_state: () => "unexpected-migration-preview",
+  });
+
+  assert.equal(result.status, "execution_error", JSON.stringify(result));
+  assert.equal(result.error, "missing_integration_contracts");
+  assert.equal(result.migration_preview, undefined);
+  await assert.rejects(
+    readFile(path.join(directory, ".launchrally/phase-1/adoption.json"), "utf8"),
+    (error) => error.code === "ENOENT",
+  );
 });
 
 test("the initialized P0 migration preview resumes cross-host before adoption", async () => {
@@ -797,14 +819,183 @@ test("Agent CLI exposes the same typed Architecture decision semantics", async (
   assert.equal(assertValidArchitectInteraction(result.interaction), true);
 });
 
-test("TTY Human Architect presents the complete Blueprint and independent progress", {
+test("Agent CLI reconstructs a complete Architect Report from local history record.json", async () => {
+  const directory = await fixture();
+  await mkdir(path.join(directory, ".launchrally"), { recursive: true });
+  await writeFile(
+    path.join(directory, ".launchrally", ".gitignore"),
+    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n",
+  );
+  const source = await inputs(directory);
+  await persistLocalHistory(directory, source.report_package);
+  const inputDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architect-history-"));
+  const files = {
+    product_intent: "intent.json",
+    catalog: "catalog.json",
+    capability_graph: "graph.json",
+    integration_contracts: "integrations.json",
+  };
+  for (const [field, name] of Object.entries(files)) {
+    await writeFile(path.join(inputDirectory, name), `${JSON.stringify(source[field])}\n`);
+  }
+
+  const reportPath = `.launchrally/reports/${source.report_package.report.report_id}/record.json`;
+  const { stdout } = await execFileAsync(process.execPath, [
+    engine,
+    "architect",
+    "--json",
+    "--cwd",
+    directory,
+    "--report",
+    reportPath,
+    "--intent",
+    path.join(inputDirectory, files.product_intent),
+    "--catalog",
+    path.join(inputDirectory, files.catalog),
+    "--graph",
+    path.join(inputDirectory, files.capability_graph),
+    "--integrations",
+    path.join(inputDirectory, files.integration_contracts),
+    "--review-date",
+    "2026-08-13",
+  ]);
+
+  const result = JSON.parse(stdout);
+  assert.equal(result.status, "needs_confirmation", JSON.stringify(result));
+  assert.equal(result.blueprint.source_report.digest, sha256(source.report_package.report));
+});
+
+test("Architect local history fails closed with recovery guidance when tampered or incomplete", async (t) => {
+  const setup = async () => {
+    const directory = await fixture();
+    const source = await inputs(directory);
+    await persistLocalHistory(directory, source.report_package);
+    const reportDirectory = path.join(
+      directory,
+      ".launchrally",
+      "reports",
+      source.report_package.report.report_id,
+    );
+    return {
+      directory,
+      reportDirectory,
+      reportPath: `.launchrally/reports/${source.report_package.report.report_id}/record.json`,
+    };
+  };
+  const run = async ({ directory, reportPath }) => {
+    try {
+      await execFileAsync(process.execPath, [
+        engine,
+        "architect",
+        "--json",
+        "--cwd",
+        directory,
+        "--report",
+        reportPath,
+      ]);
+      assert.fail("corrupt local history must fail");
+    } catch (error) {
+      return JSON.parse(error.stdout);
+    }
+  };
+
+  await t.test("tampered Record digest", async () => {
+    const fixture = await setup();
+    await writeFile(path.join(fixture.reportDirectory, "record.sha256"), `sha256:${"0".repeat(64)}\n`);
+    const result = await run(fixture);
+    assert.equal(result.error, "invalid_local_history_report");
+    assert.match(result.message, /digest does not match.*restore history or run full Verify again/iu);
+  });
+
+  await t.test("incomplete Report bundle", async () => {
+    const fixture = await setup();
+    await rm(path.join(fixture.reportDirectory, "view.md"));
+    const result = await run(fixture);
+    assert.equal(result.error, "invalid_local_history_report");
+    assert.match(result.message, /missing, incomplete, or unreadable.*run full Verify again/iu);
+  });
+});
+
+test("Agent and Human Architect reject invalid sources before migration confirmation", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const directory = await initializedP0Fixture();
+  const source = await inputs(directory);
+  source.integration_contracts = [];
+  const inputDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architect-ordering-"));
+  const files = {
+    report_package: "report.json",
+    product_intent: "intent.json",
+    catalog: "catalog.json",
+    capability_graph: "graph.json",
+    integration_contracts: "integrations.json",
+  };
+  for (const [field, name] of Object.entries(files)) {
+    await writeFile(path.join(inputDirectory, name), `${JSON.stringify(source[field])}\n`);
+  }
+  const command = [
+    engine,
+    "architect",
+    "--cwd",
+    directory,
+    "--report",
+    path.join(inputDirectory, files.report_package),
+    "--intent",
+    path.join(inputDirectory, files.product_intent),
+    "--catalog",
+    path.join(inputDirectory, files.catalog),
+    "--graph",
+    path.join(inputDirectory, files.capability_graph),
+    "--integrations",
+    path.join(inputDirectory, files.integration_contracts),
+    "--review-date",
+    "2026-08-13",
+  ];
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [...command, "--json"]),
+    (error) => {
+      const result = JSON.parse(error.stdout);
+      assert.equal(result.error, "missing_integration_contracts");
+      assert.equal(result.migration_preview, undefined);
+      return true;
+    },
+  );
+  await assert.rejects(
+    execFileAsync("python3", [
+      "-c",
+      architectSingleDecisionPtyRunner,
+      "1",
+      process.execPath,
+      ...command,
+      "--plain",
+    ], { timeout: 30000 }),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stdout, /missing_integration_contracts/u);
+      assert.doesNotMatch(error.stdout, /Additive Phase 1 Migration Preview/u);
+      return true;
+    },
+  );
+  await assert.rejects(
+    readFile(path.join(directory, ".launchrally/phase-1/adoption.json"), "utf8"),
+    (error) => error.code === "ENOENT",
+  );
+});
+
+test("TTY Human Architect loads local history record.json and completes Blueprint review", {
   skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
 }, async () => {
   const directory = await fixture();
+  await mkdir(path.join(directory, ".launchrally"), { recursive: true });
+  await writeFile(
+    path.join(directory, ".launchrally", ".gitignore"),
+    "/reports/\n/evidence/\n/cache/\n/transactions/\n/locks/\n",
+  );
   const source = await inputs(directory);
+  await persistLocalHistory(directory, source.report_package);
   const inputDirectory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architect-tty-"));
   const files = {
-    report_package: "report.json",
     product_intent: "intent.json",
     catalog: "catalog.json",
     capability_graph: "graph.json",
@@ -824,7 +1015,7 @@ test("TTY Human Architect presents the complete Blueprint and independent progre
     "--cwd",
     directory,
     "--report",
-    path.join(inputDirectory, files.report_package),
+    `.launchrally/reports/${source.report_package.report.report_id}/record.json`,
     "--intent",
     path.join(inputDirectory, files.product_intent),
     "--catalog",
