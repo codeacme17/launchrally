@@ -196,6 +196,41 @@ test("full Verify discloses fresh Evidence permissions without mutating history 
   assert.deepEqual(manifest, manifestBefore);
 });
 
+test("Audit and Verify disclose the same canonical public collector version", async () => {
+  const directory = await fixture();
+  const initial = await runAudit(directory, "0.1.0");
+  const confirmation = await runAudit(directory, "0.1.0", {
+    resume_token: initial.interaction.resume_token,
+    answers: ANSWERS,
+  });
+  const auditPermissionResult = await runAudit(directory, "0.1.0", {
+    resume_token: confirmation.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const auditPermission = auditPermissionResult.request.permissions.find(
+    ({ permission_id: permissionId }) => permissionId === "public_verification",
+  );
+  const source = await runAudit(directory, "0.1.0", {
+    resume_token: auditPermissionResult.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  await writeManifest(directory, source);
+
+  const verifyResult = await runVerify(directory, "0.1.0", {
+    report_package: source,
+    scope: "full",
+  });
+  const verifyPermission = verifyResult.request.permissions.find(
+    ({ permission_id: permissionId }) => permissionId === "public_verification",
+  );
+
+  assert.equal(auditPermission.scope.collector_version, "public-verification/v1");
+  assert.equal(
+    auditPermission.scope.collector_version,
+    verifyPermission.scope.collector_version,
+  );
+});
+
 test("full Verify requests protected journey reads independently from public verification", async () => {
   const directory = await fixture();
   const protectedJourney = {

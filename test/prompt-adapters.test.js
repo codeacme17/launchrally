@@ -1071,7 +1071,10 @@ test("the Plain adapter uses numbered choices and default-deny confirmations wit
       permissions: [{
         permission_id: "public_verification",
         boundary: "public_network",
-        scope: { targets: ["https://example.com/"] },
+        scope: {
+          collector_version: "public-verification/v1",
+          targets: ["https://example.com/"],
+        },
       }],
     },
   });
@@ -1084,6 +1087,7 @@ test("the Plain adapter uses numbered choices and default-deny confirmations wit
   assert.match(rendered, /Production targets:\s+  - https:\/\/example\.com\//u);
   assert.match(rendered, /1\. Confirm[\s\S]*2\. Revise[\s\S]*3\. Cancel/u);
   assert.match(rendered, /Public verification[\s\S]*\[y\/N\]/u);
+  assert.match(rendered, /Collector: public-verification\/v1/u);
   assert.doesNotMatch(rendered, /\u001b\[[0-?]*[ -\/]*[@-~]/u);
 });
 
@@ -1233,6 +1237,10 @@ test("the Clack adapter accepts injected TTY streams and keeps permission meanin
   assert.match(semanticOutput, /LaunchRally Audit/u);
   assert.match(semanticOutput, /Permission request/u);
   assert.match(semanticOutput, /Public verification/u);
+  assert.match(
+    semanticOutput,
+    /Collector: unavailable \(metadata was not supplied; execution cannot continue safely\)/u,
+  );
   assert.match(semanticOutput, /Targets: https:\/\/example\.com\//u);
   assert.match(semanticOutput, /Approve this permission\?/u);
 });

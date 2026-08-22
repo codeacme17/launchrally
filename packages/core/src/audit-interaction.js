@@ -421,7 +421,7 @@ function authorizationPlan(answers) {
       permission_id: "public_verification",
       boundary: "public_network",
       decision: "pending",
-      scope: { targets: publicPlan.targets, probes: publicPlan.probes },
+      scope: publicPlan,
     },
     ...(authenticatedPlan.journeys.length > 0 ? [{
       permission_id: "authenticated_journey_verification",

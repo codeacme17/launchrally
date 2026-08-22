@@ -379,7 +379,8 @@ function permissionText(permission, auditBrief, permissions) {
     const probes = Array.isArray(scope.probes) ? scope.probes : [];
     return [
       "Public verification",
-      `Collector: ${scope.collector_version ?? "unavailable"}`,
+      `Collector: ${scope.collector_version
+        ?? "unavailable (metadata was not supplied; execution cannot continue safely)"}`,
       `Targets: ${Array.isArray(scope.targets) && scope.targets.length > 0
         ? scope.targets.join(", ")
         : "unavailable"}`,
