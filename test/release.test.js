@@ -2028,7 +2028,7 @@ test("published P1 artifacts match candidate digests, provenance, and the preser
   assert.throws(
     () => verifyExperimentalCandidateBindings({
       ...candidateBindings,
-      rootPackage: { version: "0.4.1" },
+      rootPackage: { version: "0.4.2" },
     }),
     /p1_candidate_identity_mismatch/u,
   );
@@ -2049,7 +2049,7 @@ test("published P1 artifacts match candidate digests, provenance, and the preser
         ...candidateBindings.p1,
         experimental_publication: {
           ...candidateBindings.p1.experimental_publication,
-          candidate_tag: "v0.4.1",
+          candidate_tag: "v0.4.2",
         },
       },
     }),

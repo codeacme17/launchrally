@@ -1,6 +1,6 @@
 # Phase 1 external verification procedure
 
-Run this procedure only after the protected `v0.4.1` workflow has published
+Run this procedure only after the protected `v0.4.2` workflow has published
 all five packages and its public smoke plus provenance checks are green. Use a
 fresh local account or disposable VM for each host. Do not copy tokens,
 cookies, configuration, Reports, Evidence, repository data, or host state from
@@ -16,7 +16,7 @@ authored `$PHASE1_FIXTURE` is accepted.
 
 ```bash
 PHASE1_RELEASE="$(mktemp -d)/launchrally"
-git clone --depth 1 --branch v0.4.1 https://github.com/codeacme17/launchrally.git "$PHASE1_RELEASE"
+git clone --depth 1 --branch v0.4.2 https://github.com/codeacme17/launchrally.git "$PHASE1_RELEASE"
 cd "$PHASE1_RELEASE"
 npm ci --ignore-scripts
 node scripts/verify-experimental-release.mjs --phase published --json
@@ -27,7 +27,7 @@ node scripts/record-p1-external-host.mjs \
   --output /tmp/launchrally-p1-cli.json
 ```
 
-The result must identify 0.4.1 on `experimental`, retain 0.3.2 on `latest`, and
+The result must identify 0.4.2 on `experimental`, retain 0.3.2 on `latest`, and
 match all five committed integrity values and the GitHub release-workflow SLSA
 provenance. Stop if any identity, digest, tag, commit, or channel differs.
 
@@ -37,7 +37,7 @@ Use the clean host's own authenticated Codex session; never export its
 credential into the fixture or transcript.
 
 ```bash
-codex plugin marketplace add codeacme17/launchrally --ref v0.4.1
+codex plugin marketplace add codeacme17/launchrally --ref v0.4.2
 codex plugin add launchrally@launchrally
 CODEX_CHALLENGE="$(openssl rand -hex 32)"
 codex -C "$PHASE1_RELEASE" "Use the installed LaunchRally Skill. Run exactly: node scripts/record-p1-external-host.mjs --host codex --challenge $CODEX_CHALLENGE --output /tmp/launchrally-p1-codex.json. Do not replace the command with prose. Report success only if the command exits zero."
@@ -51,7 +51,7 @@ Use the clean host's own authenticated Claude Code session with the Plugin
 installed at explicit user scope.
 
 ```bash
-claude plugin marketplace add codeacme17/launchrally@v0.4.1 --scope user
+claude plugin marketplace add codeacme17/launchrally@v0.4.2 --scope user
 claude plugin install launchrally@launchrally --scope user
 cd "$PHASE1_RELEASE"
 CLAUDE_CHALLENGE="$(openssl rand -hex 32)"
@@ -77,7 +77,7 @@ Generate the exact review statement from all three envelopes:
 
 ```bash
 node scripts/verify-p1-external-results.mjs \
-  --version 0.4.1 \
+  --version 0.4.2 \
   --cli /tmp/launchrally-p1-cli.json \
   --codex /tmp/launchrally-p1-codex.json \
   --claude /tmp/launchrally-p1-claude.json \
@@ -94,12 +94,12 @@ prose. Replace both placeholders with exact public URLs:
 
 ```bash
 node scripts/verify-p1-external-results.mjs \
-  --version 0.4.1 \
+  --version 0.4.2 \
   --cli /tmp/launchrally-p1-cli.json \
   --codex /tmp/launchrally-p1-codex.json \
   --claude /tmp/launchrally-p1-claude.json \
   --workflow-url https://github.com/codeacme17/launchrally/actions/runs/REPLACE_WITH_RUN_ID \
-  --release-url https://github.com/codeacme17/launchrally/releases/tag/v0.4.1 \
+  --release-url https://github.com/codeacme17/launchrally/releases/tag/v0.4.2 \
   --review-url https://github.com/codeacme17/launchrally/issues/141#issuecomment-REPLACE_WITH_COMMENT_ID \
   --output /tmp/launchrally-p1-external-verification.json \
   --json
@@ -120,7 +120,7 @@ Receipt cannot replace independently observed zero-exit Agent invocations and
 their machine-checked envelopes.
 
 Record only these non-sensitive conclusions in
-`experimental-0.4.1-p1-evidence.md`: host and exact version, public workflow
+`experimental-0.4.2-p1-evidence.md`: host and exact version, public workflow
 URL, public release/package links, scenario status, typed boundary reached,
 and whether the fresh Verify result was qualifying. Independently review that
 record before changing `P1-RELEASE-01`, `p1_external_verification`, or Product

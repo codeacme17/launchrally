@@ -12,7 +12,10 @@ import {
 
 import { resolveExecutionAuthority } from "./execution-authority.js";
 import { loadArchitectureState, storeArchitectureState } from "./architecture-state.js";
-import { runArchitectureDecisionEngine } from "./architecture-engine.js";
+import {
+  evaluateInitialArchitectureInput,
+  runArchitectureDecisionEngine,
+} from "./architecture-engine.js";
 
 const STATE_VERSION = "architecture-journey/v1";
 const ADOPTION_PATH = ".launchrally/phase-1/adoption.json";
@@ -172,7 +175,7 @@ async function applyAdoption(state, fileOperations = {}) {
 export async function runArchitectureJourney(cwd, source = {}, options = {}, dependencies = {}) {
   const selectedRoot = path.resolve(cwd);
   const root = await realpath(selectedRoot);
-  const launcherVersion = options.launcher_version ?? "0.4.1";
+  const launcherVersion = options.launcher_version ?? "0.4.2";
   if (options.resume_token) {
     const candidate = (dependencies.load_state ?? loadArchitectureState)(options.resume_token);
     const state = candidate?.state_version === STATE_VERSION ? candidate : null;
@@ -215,7 +218,7 @@ export async function runArchitectureJourney(cwd, source = {}, options = {}, dep
     const decision = runArchitectureDecisionEngine(root, state.source, {
       review_date: state.review_date,
       desktop_shared_backend_capability_ids: state.desktop_shared_backend_capability_ids,
-    });
+    }, dependencies);
     if (decision.status !== "needs_confirmation") return decision;
     try {
       await applyAdoption(state, options.file_operations);
@@ -242,11 +245,13 @@ export async function runArchitectureJourney(cwd, source = {}, options = {}, dep
     };
   }
   if (!adoption && await initializedP0Project(root, launcherVersion)) {
+    const prepared = evaluateInitialArchitectureInput(root, source, options);
+    if (prepared.outcome) return prepared.outcome;
     const state = migrationState(root, source, { ...options, launcher_version: launcherVersion });
     return adoptionInteraction(
       "needs_confirmation",
       "blueprint_review",
-      storeArchitectureState(state),
+      (dependencies.store_state ?? storeArchitectureState)(state),
       { kind: "p1_migration_confirmation", choices: ["confirm", "deny", "cancel"] },
     );
   }

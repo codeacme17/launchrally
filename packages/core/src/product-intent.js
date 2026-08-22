@@ -70,6 +70,37 @@ const BEHAVIOR_RULES = Object.freeze([
   },
 ]);
 
+const COMMERCIAL_SUBSCRIPTION_CONTEXT = new Set([
+  "bill",
+  "billing",
+  "checkout",
+  "customer",
+  "customers",
+  "invoice",
+  "invoices",
+  "paid",
+  "payment",
+  "payments",
+  "plan",
+  "plans",
+  "price",
+  "pricing",
+  "purchase",
+  "purchases",
+  "stripe",
+]);
+const NON_COMMERCIAL_SUBSCRIPTION_CONTEXT = new Set([
+  "browser",
+  "email",
+  "emails",
+  "newsletter",
+  "notification",
+  "notifications",
+  "push",
+  "web",
+  "webhook",
+]);
+
 function encodeState(state) {
   return encodeResumeState(state);
 }
@@ -147,14 +178,81 @@ async function readSelectedMaterial(root, relativePath, signal) {
   }
 }
 
+function commercialSubscriptionEvidence(text) {
+  const positiveSignals = new Set();
+  const negativeSignals = new Set();
+  for (const segment of text.split(/[.!?;\n]+/u)) {
+    const tokens = segment.match(/[a-z0-9]+/gu) ?? [];
+    const addSignal = (signal, index) => {
+      const context = tokens.slice(Math.max(0, index - 5), index + 4);
+      const target = context.some((token) =>
+        token === "never" || token === "no" || token === "not" || token === "without")
+        ? negativeSignals
+        : positiveSignals;
+      target.add(signal);
+    };
+    for (const [index, token] of tokens.entries()) {
+      if (token === "billing") addSignal("billing", index);
+      if (token === "checkout") addSignal("checkout", index);
+      if (token === "stripe"
+        || (token === "payment" && tokens[index + 1] === "provider")) {
+        addSignal("payment_provider", index);
+      }
+      if ((token === "purchase" || token === "purchases")
+        && tokens.includes("plan")) {
+        addSignal("plan_purchase", index);
+      }
+    }
+    for (const [index, token] of tokens.entries()) {
+      if (token !== "subscribe" && token !== "subscription" && token !== "subscriptions") {
+        continue;
+      }
+      const context = tokens.slice(Math.max(0, index - 5), index + 6);
+      if (context.includes("paid")) {
+        addSignal("paid_subscription", index);
+      } else if (context.some((entry) => entry === "purchase" || entry === "purchases")) {
+        addSignal("subscription_purchase", index);
+      } else if (context.some((entry) => NON_COMMERCIAL_SUBSCRIPTION_CONTEXT.has(entry))) {
+        continue;
+      } else if (context.some((entry) => COMMERCIAL_SUBSCRIPTION_CONTEXT.has(entry))) {
+        addSignal("commercial_subscription", index);
+      }
+    }
+  }
+  return {
+    positive_signals: [...positiveSignals].sort(),
+    negative_signals: [...negativeSignals].sort(),
+  };
+}
+
+function matchedSignals(rule, text) {
+  if (rule.behavior_id === "customers_purchase_subscription") {
+    return commercialSubscriptionEvidence(text).positive_signals;
+  }
+  return rule.patterns.filter((pattern) => text.includes(pattern)).sort();
+}
+
+function negatedSignals(rule, text) {
+  if (rule.behavior_id === "customers_purchase_subscription") {
+    return commercialSubscriptionEvidence(text).negative_signals;
+  }
+  return sourceNegates({ normalized_text: text }, rule.patterns)
+    ? matchedSignals(rule, text)
+    : [];
+}
+
 function behaviorCandidates(sources) {
   return BEHAVIOR_RULES.flatMap((rule) => {
-    const matchingSources = sources.filter(({ normalized_text: text }) =>
-      rule.patterns.some((pattern) => text.includes(pattern)));
+    const matches = sources.map((source) => ({
+      source,
+      signals: matchedSignals(rule, source.normalized_text),
+    })).filter(({ signals }) => signals.length > 0);
+    const matchingSources = matches.map(({ source }) => source);
     return matchingSources.length === 0 ? [] : [{
       behavior_id: rule.behavior_id,
       status: "candidate",
       source_ids: matchingSources.map(({ source_id: sourceId }) => sourceId).sort(),
+      matched_signals: [...new Set(matches.flatMap(({ signals }) => signals))].sort(),
     }];
   }).sort((left, right) => left.behavior_id.localeCompare(right.behavior_id));
 }
@@ -171,9 +269,10 @@ function sourceNegates(source, patterns) {
 function intentConflicts(sources) {
   return BEHAVIOR_RULES.flatMap((rule) => {
     const positive = sources.filter(({ normalized_text: text }) =>
-      rule.patterns.some((pattern) => text.includes(pattern))
+      matchedSignals(rule, text).length > 0
       && !sourceNegates({ normalized_text: text }, rule.patterns));
-    const negative = sources.filter((source) => sourceNegates(source, rule.patterns));
+    const negative = sources.filter(({ normalized_text: text }) =>
+      negatedSignals(rule, text).length > 0);
     if (positive.length === 0 || negative.length === 0) return [];
     return [{
       conflict_id: `conflict_${rule.behavior_id}`,
@@ -205,7 +304,7 @@ async function prepareCandidates(root, selectedMaterials, permissionDecision, si
     .sort();
   const sources = environmentNames.length === 0 ? [] : [{
     source_id: "source_local_safe_scan",
-    normalized_text: environmentNames.join(" ").toLowerCase(),
+    normalized_text: environmentNames.join("\n").toLowerCase(),
   }];
   const provenance = [];
   const supportedSources = [];

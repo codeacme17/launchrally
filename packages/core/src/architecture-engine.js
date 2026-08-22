@@ -14,6 +14,7 @@ import {
   assertValidProductIntentProfile,
   assertValidReportPackage,
   assertValidDesktopSharedBackend,
+  integrationIdempotencyIsRequired,
 } from "@launchrally/contracts";
 
 import { sha256 } from "./local-history.js";
@@ -238,7 +239,7 @@ function integrationCompatibility(contracts) {
     if (
       contract.mode === "asynchronous"
       && semantics.duplication !== "not_applicable"
-      && semantics.idempotency !== "required"
+      && !integrationIdempotencyIsRequired(semantics)
     ) incompatibleReasons.push("duplicate_delivery_without_required_idempotency");
     if (semantics.authentication === "none" || semantics.authentication === "unknown") {
       incompatibleReasons.push("authentication_boundary_unresolved");
@@ -468,33 +469,44 @@ function validateInitialSource(cwd, source) {
   return { valid: true };
 }
 
-export function runArchitectureDecisionEngine(cwd, source = {}, options = {}, dependencies = {}) {
+export function evaluateInitialArchitectureInput(cwd, source = {}, options = {}) {
   const root = path.resolve(cwd);
-  if (!options.resume_token) {
-    if (
-      options.desktop_shared_backend_capability_ids !== undefined
-      && (!Array.isArray(options.desktop_shared_backend_capability_ids)
-        || new Set(options.desktop_shared_backend_capability_ids).size
-          !== options.desktop_shared_backend_capability_ids.length
-        || options.desktop_shared_backend_capability_ids.some((id) =>
-          typeof id !== "string"
-          || !source.capability_graph?.nodes?.some(({ capability_id: capabilityId }) =>
-            capabilityId === id)))
-    ) return executionError("invalid_desktop_shared_backend_scope");
-    const valid = validateInitialSource(root, source);
-    if (valid.error) return executionError(valid.error);
-    if (valid.stale) return {
+  if (
+    options.desktop_shared_backend_capability_ids !== undefined
+    && (!Array.isArray(options.desktop_shared_backend_capability_ids)
+      || new Set(options.desktop_shared_backend_capability_ids).size
+        !== options.desktop_shared_backend_capability_ids.length
+      || options.desktop_shared_backend_capability_ids.some((id) =>
+        typeof id !== "string"
+        || !source.capability_graph?.nodes?.some(({ capability_id: capabilityId }) =>
+          capabilityId === id)))
+  ) return { outcome: executionError("invalid_desktop_shared_backend_scope") };
+  const valid = validateInitialSource(root, source);
+  if (valid.error) return { outcome: executionError(valid.error) };
+  if (valid.stale) return {
+    outcome: {
       contract: ARCHITECT_INTERACTION_SCHEMA,
       status: "stale_input",
       operation: "architect",
       state: "blueprint_review",
       currentness: valid.stale,
-    };
-    if (!/^\d{4}-\d{2}-\d{2}$/u.test(options.review_date ?? "")) {
-      return executionError("invalid_review_date");
-    }
-    const created = blueprint(source, options);
-    if (!created) return executionError("invalid_architecture_alternatives");
+    },
+  };
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(options.review_date ?? "")) {
+    return { outcome: executionError("invalid_review_date") };
+  }
+  const created = blueprint(source, options);
+  if (!created) return { outcome: executionError("invalid_architecture_alternatives") };
+  return { created };
+}
+
+export function runArchitectureDecisionEngine(cwd, source = {}, options = {}, dependencies = {}) {
+  const root = path.resolve(cwd);
+  const storeState = dependencies.store_state ?? storeArchitectureState;
+  if (!options.resume_token) {
+    const prepared = evaluateInitialArchitectureInput(root, source, options);
+    if (prepared.outcome) return prepared.outcome;
+    const { created } = prepared;
     const createdBlueprint = created.blueprint;
     const sourceRefs = [
       createdBlueprint.source_report,
@@ -524,7 +536,7 @@ export function runArchitectureDecisionEngine(cwd, source = {}, options = {}, de
     return result(
       "needs_confirmation",
       "blueprint_review",
-      storeArchitectureState(state),
+      storeState(state),
       sourceRefs,
       request,
       { blueprint: createdBlueprint, desktop_topology: created.desktop_topology },
@@ -554,7 +566,7 @@ export function runArchitectureDecisionEngine(cwd, source = {}, options = {}, de
     }
     const next = { ...state, stage: "decision_confirmation" };
     const pending = state.blueprint.decisions.map(({ decision_id: decisionId }) => decisionId);
-    return result("partial_completion", "decision_confirmation", storeArchitectureState(next), state.source_refs, {
+    return result("partial_completion", "decision_confirmation", storeState(next), state.source_refs, {
       kind: "independent_decision_confirmation",
       choices: ["confirm", "reject"],
     }, {
@@ -582,7 +594,7 @@ export function runArchitectureDecisionEngine(cwd, source = {}, options = {}, de
       .map((id) => ({ decision_id: id, response: nextResponses[id] }));
     if (pending.length > 0) {
       const next = { ...state, responses: nextResponses };
-      return result("partial_completion", "decision_confirmation", storeArchitectureState(next), state.source_refs, {
+      return result("partial_completion", "decision_confirmation", storeState(next), state.source_refs, {
         kind: "independent_decision_confirmation",
         choices: ["confirm", "reject"],
       }, {

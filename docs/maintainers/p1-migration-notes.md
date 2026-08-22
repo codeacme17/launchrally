@@ -1,11 +1,11 @@
 # Phase 1 Experimental migration notes
 
-LaunchRally 0.4.1 continues the additive Phase 1 layer. Existing Phase 0
+LaunchRally 0.4.2 continues the additive Phase 1 layer. Existing Phase 0
 projects and the public 0.3.2 Stable line remain independently valid.
 
 ## Adoption
 
-Install 0.4.1 only by selecting the non-stable `experimental` channel or the
+Install 0.4.2 only by selecting the non-stable `experimental` channel or the
 exact version. Architect previews a versioned Phase 1 adoption before any
 project write. Confirmation creates only the disclosed `.launchrally/phase-1`
 records and retains existing Phase 0 bytes. Denial and interruption leave the

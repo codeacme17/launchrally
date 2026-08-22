@@ -3,7 +3,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { createInterface } from "node:readline/promises";
 
 import {
   CLI_INTERACTION_CONTRACT,
@@ -19,6 +18,7 @@ import {
   resolveExecutionAuthority,
   resumeAuthenticatedJourneyFromHost,
   runAudit,
+  runArchitectureDecisionEngine,
   runArchitectureJourney,
   runHandoff,
   runInit,
@@ -30,6 +30,7 @@ import {
 } from "@launchrally/core";
 import {
   humanAuditPresentationOptions,
+  PromptCancelledError,
   renderHumanAuditCompletion,
   runHumanAudit,
 } from "./human-audit.js";
@@ -44,7 +45,11 @@ import {
   optionValue as argumentValue,
 } from "./cli-arguments.js";
 import { inspectReportDestination } from "./report-destination.js";
-import { normalizeArchitectAnswer, runHumanArchitect } from "./human-architect.js";
+import { renderHumanArchitectOutcome, runHumanArchitect } from "./human-architect.js";
+import {
+  renderHumanArchitecturePackageOutcome,
+  runHumanArchitecturePackage,
+} from "./human-architecture-package.js";
 import { createSystemFilePicker } from "./system-file-picker.js";
 import {
   consumeInvocationContext,
@@ -77,6 +82,25 @@ function jsonOption(name) {
   } catch {
     return { error: true, value: undefined };
   }
+}
+
+const LOCAL_HISTORY_REPORT_ERRORS = new Set([
+  "invalid_local_history_report",
+  "invalid_local_history_report_path",
+  "repository_scope_mismatch",
+  "unsafe_history_path",
+]);
+
+async function loadReportInput(cwd, selectedPath) {
+  return isLocalHistoryReference(cwd, selectedPath)
+    ? loadLocalHistoryReportPackage(cwd, selectedPath)
+    : JSON.parse(await readFile(selectedPath, "utf8"));
+}
+
+function reportInputFailure(error, fallbackError, fallbackMessage) {
+  return LOCAL_HISTORY_REPORT_ERRORS.has(error?.code)
+    ? { error: error.code, message: error.message }
+    : { error: fallbackError, message: fallbackMessage };
 }
 
 function providerLabel(role) {
@@ -842,33 +866,52 @@ async function main() {
     try {
       for (const [field, option] of fileOptions) {
         const file = optionValue(option);
-        if (file) source[field] = JSON.parse(await readFile(file, "utf8"));
+        if (file) {
+          source[field] = field === "report_package"
+            ? await loadReportInput(cwd, file)
+            : JSON.parse(await readFile(file, "utf8"));
+        }
       }
-    } catch {
-      print({
+    } catch (error) {
+      const failure = reportInputFailure(
+        error,
+        "invalid_architecture_input_file",
+        "An Architecture source file could not be read and parsed.",
+      );
+      const result = {
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
         operation: "architect",
-        error: "invalid_architecture_input_file",
-        message: "An Architecture source file could not be read and parsed.",
-      });
+        ...failure,
+      };
+      if (json) print(result);
+      else process.stdout.write(`${renderHumanArchitectOutcome(result)}\n`);
       return 2;
     }
     const alternatives = jsonOption("--alternatives");
     const desktopSharedBackend = jsonOption("--desktop-shared-backend-capabilities");
     const decisionResponses = jsonOption("--decisions");
     if (alternatives.error || desktopSharedBackend.error || decisionResponses.error) {
-      print({
+      const result = {
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
         operation: "architect",
         error: "invalid_option_json",
         message: "Architecture alternatives and decision responses must use valid JSON.",
-      });
+      };
+      if (json) print(result);
+      else process.stdout.write(`${renderHumanArchitectOutcome(result)}\n`);
       return 2;
     }
     if (alternatives.value !== undefined) source.alternatives = alternatives.value;
     if (!json) {
+      if (["--resume", "--confirm", "--decisions"].some((option) => args.includes(option))) {
+        process.stderr.write([
+          "Human Mode does not accept structured Architect decisions.",
+          "Use rally architect --json with --resume <token> and the requested decision option.",
+        ].join("\n") + "\n");
+        return 2;
+      }
       if (process.stdin.isTTY !== true) {
         process.stderr.write([
           "Non-TTY Human Mode cannot confirm Architecture decisions safely.",
@@ -876,14 +919,46 @@ async function main() {
         ].join("\n") + "\n");
         return 2;
       }
-      const readline = createInterface({ input: process.stdin, output: process.stderr });
-      const choose = async (message) => {
-        while (true) {
-          const answer = normalizeArchitectAnswer(
-            await readline.question(`${message} [y/n/cancel] `),
+      const { createClackPromptAdapter, createPlainPromptAdapter } = await import(
+        "./prompt-adapters.js"
+      );
+      const presentation = humanAuditPresentationOptions({
+        args,
+        env: process.env,
+        output: process.stdout,
+      });
+      const prompt = presentation.plain
+        ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
+        : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+      let migrationPending = false;
+      let stateSequence = 0;
+      let humanArchitectureStateValue = null;
+      const humanArchitectureState = {
+        load_state: () => humanArchitectureStateValue,
+        store_state: (state) => {
+          const token = `human-architect-state-${stateSequence += 1}`;
+          humanArchitectureStateValue = state;
+          return token;
+        },
+      };
+      const runHumanArchitectureJourney = async (runCwd, runSource, options) => {
+        if (!options.resume_token || migrationPending) {
+          const value = await runArchitectureJourney(
+            runCwd,
+            runSource,
+            options,
+            humanArchitectureState,
           );
-          if (answer) return answer;
+          migrationPending = value.status === "needs_confirmation"
+            && Boolean(value.migration_preview);
+          return value;
         }
+        return runArchitectureDecisionEngine(
+          humanArchitectureStateValue?.root ?? runCwd,
+          runSource,
+          options,
+          humanArchitectureState,
+        );
       };
       try {
         const result = await runHumanArchitect({
@@ -891,26 +966,19 @@ async function main() {
           source,
           reviewDate: optionValue("--review-date"),
           desktopSharedBackendCapabilityIds: desktopSharedBackend.value,
-          runArchitect: runArchitectureJourney,
-          prompt: {
-            async confirmMigration(preview) {
-              process.stdout.write(`${JSON.stringify(preview, null, 2)}\n`);
-              return choose("Adopt additive Phase 1 local records while preserving Phase 0 history?");
-            },
-            async confirmBlueprint(blueprint) {
-              process.stdout.write(`${JSON.stringify(blueprint, null, 2)}\n`);
-              return choose("Confirm this whole-product Blueprint?");
-            },
-            async reviewDecision(decision) {
-              process.stdout.write(`${JSON.stringify(decision, null, 2)}\n`);
-              return choose(`Confirm decision ${decision.decision_id}?`);
-            },
-          },
+          runArchitect: runHumanArchitectureJourney,
+          prompt,
         });
-        print(result);
         return ["unavailable", "execution_error", "stale_input"].includes(result.status) ? 2 : 0;
+      } catch (error) {
+        if (error instanceof PromptCancelledError) {
+          process.stderr.write("Architect cancelled. No Architecture Package was created.\n");
+          return 130;
+        }
+        process.stderr.write("Human Architect interaction could not complete safely.\n");
+        return 2;
       } finally {
-        readline.close();
+        await prompt.close();
       }
     }
     const result = await runArchitectureJourney(cwd, source, {
@@ -933,14 +1001,76 @@ async function main() {
     try {
       architecturePackage = JSON.parse(await readFile(packagePath, "utf8"));
     } catch {
-      print({
+      const result = {
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
         operation: "architecture-package",
         error: "invalid_architecture_package_file",
         message: "The Architecture Package bundle could not be read and parsed.",
-      });
+      };
+      if (json) print(result);
+      else process.stdout.write([
+        "LaunchRally Architecture Package",
+        "Architecture Package Persistence Could Not Complete",
+        `Error: ${result.error}`,
+        `Message: ${result.message}`,
+      ].join("\n") + "\n");
       return 2;
+    }
+    if (!json) {
+      if (["--resume", "--confirm"].some((option) => args.includes(option))) {
+        process.stderr.write([
+          "Human Mode does not accept structured Architecture Package decisions.",
+          "Use rally architecture-package --json with --resume <token> and --confirm confirm.",
+        ].join("\n") + "\n");
+        return 2;
+      }
+      if (process.stdin.isTTY !== true) {
+        process.stderr.write([
+          "Non-TTY Human Mode cannot confirm Architecture Package persistence safely.",
+          "Use rally architecture-package --json for the resumable Agent/CI protocol.",
+        ].join("\n") + "\n");
+        return 2;
+      }
+      const { createClackPromptAdapter, createPlainPromptAdapter } = await import(
+        "./prompt-adapters.js"
+      );
+      const presentation = humanAuditPresentationOptions({
+        args,
+        env: process.env,
+        output: process.stdout,
+      });
+      const prompt = presentation.plain
+        ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
+        : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+      try {
+        await runHumanArchitecturePackage({
+          cwd,
+          architecturePackage,
+          launcherVersion: VERSION,
+          outputPath: optionValue("--output"),
+          persist: persistArchitecturePackage,
+          prompt,
+        });
+        return 0;
+      } catch (error) {
+        if (error instanceof PromptCancelledError) {
+          process.stderr.write("Architecture Package persistence cancelled. No history was written.\n");
+          return 130;
+        }
+        const stale = [
+          "invalid_architecture_persistence_preview",
+          "architecture_package_ancestry_mismatch",
+        ].includes(error.code);
+        process.stdout.write(`${renderHumanArchitecturePackageOutcome({
+          status: stale ? "stale_input" : "execution_error",
+          error: error.code ?? "architecture_package_persistence_failed",
+          message: error.message,
+        }, architecturePackage)}\n`);
+        return 2;
+      } finally {
+        await prompt.close();
+      }
     }
     try {
       const persistence = await persistArchitecturePackage(cwd, architecturePackage, {
@@ -991,24 +1121,18 @@ async function main() {
     const reportPath = optionValue("--report");
     if (reportPath) {
       try {
-        reportPackage = isLocalHistoryReference(cwd, reportPath)
-          ? await loadLocalHistoryReportPackage(cwd, reportPath)
-          : JSON.parse(await readFile(reportPath, "utf8"));
+        reportPackage = await loadReportInput(cwd, reportPath);
       } catch (error) {
-        const localHistoryError = [
-          "invalid_local_history_report",
-          "invalid_local_history_report_path",
-          "repository_scope_mismatch",
-          "unsafe_history_path",
-        ].includes(error?.code);
+        const failure = reportInputFailure(
+          error,
+          "invalid_report_file",
+          "The saved Report JSON could not be read and parsed.",
+        );
         const result = {
           contract: CLI_INTERACTION_CONTRACT,
           status: "execution_error",
           operation: "plan",
-          error: localHistoryError ? error.code : "invalid_report_file",
-          message: localHistoryError
-            ? error.message
-            : "The saved Report JSON could not be read and parsed.",
+          ...failure,
         };
         print(result);
         return 2;

@@ -2,19 +2,19 @@
   "schema_version": "launchrally.dev/reference-journey/v3",
   "compatibility": {
     "plugin": {
-      "version": "0.4.1",
+      "version": "0.4.2",
       "role": "interaction_only"
     },
     "launcher": {
       "package": "@launchrally/cli",
-      "supported_versions": ["0.3.0", "0.3.1", "0.3.2", "0.4.0", "0.4.1"]
+      "supported_versions": ["0.3.0", "0.3.1", "0.3.2", "0.4.0", "0.4.1", "0.4.2"]
     },
     "execution_authority": {
       "supported_contracts": ["launchrally.dev/execution-authority/v1"]
     },
     "engine": {
       "package": "@launchrally/cli",
-      "supported_versions": ["0.2.2", "0.3.0", "0.3.1", "0.3.2", "0.4.0", "0.4.1"],
+      "supported_versions": ["0.2.2", "0.3.0", "0.3.1", "0.3.2", "0.4.0", "0.4.1", "0.4.2"],
       "authority_contracts": ["launchrally.dev/execution-authority/v1"],
       "interaction_contracts": ["launchrally.dev/cli/v2"]
     },
@@ -31,7 +31,7 @@
     "installation": {
       "owner": "user",
       "executable": "npm",
-      "arguments": ["install", "--global", "@launchrally/cli@0.4.1"]
+      "arguments": ["install", "--global", "@launchrally/cli@0.4.2"]
     },
     "verification": {
       "arguments": ["--version", "--json", "--cwd", "{repository_root}"]
@@ -57,7 +57,7 @@
   },
   "cli": {
     "package": "@launchrally/cli",
-    "version": "0.4.1",
+    "version": "0.4.2",
     "contract": "launchrally.dev/cli/v2"
   },
   "protected_journeys": {

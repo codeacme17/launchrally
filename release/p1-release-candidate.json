@@ -1,35 +1,35 @@
 {
   "schema_version": "launchrally.dev/p1-release-candidate/v1",
-  "version": "0.4.1",
-  "tag": "v0.4.1",
+  "version": "0.4.2",
+  "tag": "v0.4.2",
   "channel": "experimental",
   "stable_channel": "latest",
   "p0_stable_version": "0.3.2",
   "packages": [
     {
       "name": "@launchrally/contracts",
-      "integrity": "sha512-XGruAqG6k5k1fRQ4qwY2BujMM1poyEQvl0JPwag8SgZd/e3D0xBCjRzhcm0Ulq45n7NbrwuE+AxR6UnACzIFzQ==",
-      "shasum": "bbe6e7daa24fdd15b54cd800ef54466dae108f31"
+      "integrity": "sha512-CoLhtUkm9WOvPVxBPpR+K5RSJ7IzD9jWrnBv+fi4iUjmV1ZUMcelYcuwbHcaf8q0AOa9ZOOuUcViZq0AkL2w3A==",
+      "shasum": "39730edc2edd1f8c4e380f8971accfa92eb1f00e"
     },
     {
       "name": "@launchrally/core",
-      "integrity": "sha512-q4tVkZAPd6qdFDristO6G1UnpMd/2pbJegm01Js+Pfi5BNDrIp/SzsDQQNSHMMhfu0WWbWDhlIswE0wWjlKDhQ==",
-      "shasum": "282ac955dc97fe258dc5b0fa80031c3d6e7d5012"
+      "integrity": "sha512-sm+0w859ZwCA64WqF2ITZJZwCvCy+g/Q/IyZnHgePCJKrHqFj4XMpmh70kXmgLj8W3YGI+CKmSXXeK+LK6Wq7A==",
+      "shasum": "b15be4d57b37d14f1ae71d70ce7d465bdd9834ea"
     },
     {
       "name": "@launchrally/cli",
-      "integrity": "sha512-bQzsG2TBaRCkLI/cGpkVb2Q6Ek/yE1vXF223ySNXyxVxSYp2dx7DUYWhR0RyzINUs8/j0NC84GHqv5YBVKqDrw==",
-      "shasum": "568b5a29f0180fd0990091745c0829f592a2179a"
+      "integrity": "sha512-sz4t58uCztF8GKXTp6OunFGhcilftKODgO5/+D24vIlTsBaA6Jg9ct4W0ODonXFBuoR5mzNvyMPp60SyJIVRBA==",
+      "shasum": "ec514c0f4b12a02cad87b9d050c2d81f3e567f3c"
     },
     {
       "name": "@launchrally/codex-plugin",
-      "integrity": "sha512-tlzh+55clbQjADVZUOAUUEXeLlbCyf/KuY4POSYX5rtE7jkhq2HmZek3AEpNRbOI0rS8ZxjjkEZWFqj4IdV1Kg==",
-      "shasum": "3dddae356b74276010951f315ac256758e97a9b2"
+      "integrity": "sha512-vKp+tv+cPXixoF+82qeHrFRw/LkA+MCQEFWxmO4nUxlrac8fDoF10IXDk/tl2dxLGQfMGcMwKLqhfTu8kHI1cQ==",
+      "shasum": "3535b401a968d9d644e078b38f6f252a78c153a4"
     },
     {
       "name": "@launchrally/claude-plugin",
-      "integrity": "sha512-larZZA6E4W1RFRfI0VE5E+2wpNWPf5gUo+r5WcvlLoIpu0JXlm0YmFOCqrjFzDjfx4tj5Vu3ZB70smshJfvZLA==",
-      "shasum": "7805c26cbb136ef087556044ea4c2826a17fc218"
+      "integrity": "sha512-x68P7ATFRAhN7Br6LhozCKpBJW/U1//8/gL2Pu5+X9tk0/kd0J3RPxPPVQ9EbFdGg4dNHxhn4sT7TAkOETSu0g==",
+      "shasum": "747fd623cbd821c7c1cf365abb8b494da610c9c5"
     }
   ]
 }

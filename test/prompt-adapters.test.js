@@ -1071,7 +1071,10 @@ test("the Plain adapter uses numbered choices and default-deny confirmations wit
       permissions: [{
         permission_id: "public_verification",
         boundary: "public_network",
-        scope: { targets: ["https://example.com/"] },
+        scope: {
+          collector_version: "public-verification/v1",
+          targets: ["https://example.com/"],
+        },
       }],
     },
   });
@@ -1084,6 +1087,7 @@ test("the Plain adapter uses numbered choices and default-deny confirmations wit
   assert.match(rendered, /Production targets:\s+  - https:\/\/example\.com\//u);
   assert.match(rendered, /1\. Confirm[\s\S]*2\. Revise[\s\S]*3\. Cancel/u);
   assert.match(rendered, /Public verification[\s\S]*\[y\/N\]/u);
+  assert.match(rendered, /Collector: public-verification\/v1/u);
   assert.doesNotMatch(rendered, /\u001b\[[0-?]*[ -\/]*[@-~]/u);
 });
 
@@ -1233,6 +1237,10 @@ test("the Clack adapter accepts injected TTY streams and keeps permission meanin
   assert.match(semanticOutput, /LaunchRally Audit/u);
   assert.match(semanticOutput, /Permission request/u);
   assert.match(semanticOutput, /Public verification/u);
+  assert.match(
+    semanticOutput,
+    /Collector: unavailable \(metadata was not supplied; execution cannot continue safely\)/u,
+  );
   assert.match(semanticOutput, /Targets: https:\/\/example\.com\//u);
   assert.match(semanticOutput, /Approve this permission\?/u);
 });
@@ -1328,6 +1336,129 @@ test("NO_COLOR Human Mode retains textual Clack activity states", async () => {
     stripVTControlCharacters(rendered),
     /Completed: Generating Audit Report\./u,
   );
+});
+
+test("the Clack adapter styles Architect and Architecture Package decisions and outcomes", async () => {
+  const input = ttyStream();
+  const output = ttyStream();
+  let rendered = "";
+  output.on("data", (chunk) => {
+    rendered += chunk.toString();
+  });
+  const prompt = await createClackPromptAdapter({ input, output });
+  const reference = {
+    id: "record_01",
+    schema_version: "launchrally.dev/report/v2",
+    digest: `sha256:${"a".repeat(64)}`,
+  };
+  const decision = {
+    decision_id: "decision_identity",
+    capability_id: "identity_authentication",
+    action: "investigate",
+    implementation_path: "unknown",
+    disposition: "recommended",
+    rationale: ["Implementation is not known."],
+    tradeoffs: ["Selection remains pending."],
+    assumptions: ["Confirmed constraints remain current."],
+    reevaluation_triggers: ["Implementation Evidence changes."],
+    knowledge_refs: [],
+  };
+  const blueprint = {
+    schema_version: "launchrally.dev/architecture-blueprint/v1",
+    blueprint_id: "blueprint_01",
+    revision: 1,
+    environment: "production",
+    source_report: reference,
+    product_intent: {
+      ...reference,
+      id: "intent_01",
+      schema_version: "launchrally.dev/product-intent-profile/v1",
+    },
+    capability_graph: {
+      ...reference,
+      id: "graph_01",
+      schema_version: "launchrally.dev/capability-graph/v1",
+    },
+    constraints: { hard: ["data_residency_eu"], preferences: ["managed_operations"] },
+    decisions: [decision],
+    whole_product: {
+      integration_compatibility: "unknown",
+      operational_burden: ["identity_operations_unknown"],
+      cost_scenarios: [{
+        scenario: "unknown_provider",
+        drivers: ["active_users"],
+        assumptions: ["No pricing source was reviewed."],
+        review_date: "2026-08-22",
+        unknowns: ["currency_estimate"],
+        currency_estimate: null,
+      }],
+      data_flow_residency: ["eu_only"],
+      failure_domains: ["identity_unavailable"],
+      provider_concentration: "unknown",
+      lock_in_exit: ["provider_not_selected"],
+      duplication: ["none_known"],
+      migration_cost: ["not_applicable_until_selection"],
+    },
+    unknowns: ["identity_provider_selection"],
+  };
+
+  setTimeout(() => input.write("\r"), 20);
+  assert.equal(await prompt.confirmMigration({
+    schema_version: "launchrally.dev/phase-1-migration-preview/v1",
+    migration: "additive",
+    files: ["adoption.json"],
+    preserved_paths: ["manifest.yaml"],
+  }), "reject");
+  setTimeout(() => input.write("\r"), 20);
+  assert.equal(await prompt.confirmBlueprint(blueprint), "reject");
+  setTimeout(() => input.write("\r"), 20);
+  assert.equal(await prompt.reviewDecision(decision, { current: 1, total: 1 }), "reject");
+
+  const bundle = {
+    package: {
+      package_id: "architecture_package_01",
+      revision: 1,
+      environment: "production",
+    },
+  };
+  const persistence = {
+    status: "needs_confirmation",
+    preview: {
+      mode: "local_history",
+      files: [
+        ".launchrally/architecture/packages/architecture_package_01/package.json",
+        ".launchrally/architecture/current.json",
+      ],
+      bundle_digest: `sha256:${"b".repeat(64)}`,
+      current_pointer_digest: `sha256:${"c".repeat(64)}`,
+    },
+  };
+  setTimeout(() => input.write("\r"), 20);
+  assert.equal(await prompt.confirmArchitecturePackage(persistence, bundle), "decline");
+  await prompt.finishArchitect({
+    status: "completed",
+    outcome: "architecture_decisions_reviewed",
+    decision_results: [{ decision_id: "decision_identity", response: "confirm" }],
+    architecture_package: bundle,
+  });
+  await prompt.finishArchitecturePackage({
+    status: "completed",
+    mode: "local_history",
+    persisted: true,
+    files: persistence.preview.files,
+  }, bundle);
+  await prompt.close();
+
+  const semanticOutput = stripVTControlCharacters(rendered);
+  assert.match(semanticOutput, /Phase 1 migration/u);
+  assert.match(semanticOutput, /Whole-product Blueprint/u);
+  assert.match(semanticOutput, /Blueprint Schema: launchrally\.dev\/architecture-blueprint\/v1/u);
+  assert.match(semanticOutput, /Decision 1 of 1/u);
+  assert.match(semanticOutput, /Confirm[\s\S]*Reject[\s\S]*Cancel/u);
+  assert.match(semanticOutput, /Exact persistence preview/u);
+  assert.match(semanticOutput, /Current pointer path: \.launchrally\/architecture\/current\.json/u);
+  assert.match(semanticOutput, /Architecture Review Complete/u);
+  assert.match(semanticOutput, /Architecture Package Persistence Complete/u);
 });
 
 test("the Clack adapter uses a select prompt for the environment", async () => {

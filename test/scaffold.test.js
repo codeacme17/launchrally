@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import test from "node:test";
 
 import { renderHumanAuditCompletion } from "../packages/cli/bin/human-audit.js";
-import { evaluateReportCurrentness } from "../packages/core/src/index.js";
+import { evaluateReportCurrentness, runAudit } from "../packages/core/src/index.js";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -510,6 +510,110 @@ test("audit excludes Agent tooling metadata without hiding release-relevant repo
     JSON.stringify({ name: "changed-agent-metadata", scripts: { build: "changed" } }),
   );
   assert.equal(evaluateReportCurrentness(result, { cwd: fixture }).current, true);
+});
+
+test("audit excludes Architecture history without hiding protected LaunchRally inputs", async () => {
+  const fixture = await createWebFixture("architecture-history", { withLockfile: true });
+  const architectureRoot = path.join(fixture, ".launchrally", "architecture");
+  const authorityPath = path.join(fixture, ".launchrally", "toolchain", "authority.json");
+  const evidenceRelativePath = `.launchrally/evidence/sha256/${"a".repeat(64)}.json`;
+  const evidencePath = path.join(fixture, evidenceRelativePath);
+  const manifestPath = path.join(fixture, ".launchrally", "manifest.yaml");
+  await mkdir(path.join(architectureRoot, "packages", "architecture_package_01"), {
+    recursive: true,
+  });
+  await writeFile(
+    path.join(architectureRoot, "packages", "architecture_package_01", "package.json"),
+    JSON.stringify({ name: "launchrally-owned-architecture-history" }),
+  );
+  await writeFile(
+    path.join(architectureRoot, "current.json"),
+    JSON.stringify({ package_id: "architecture_package_01" }),
+  );
+  await mkdir(path.join(fixture, ".launchrally", "toolchain"), { recursive: true });
+  await writeFile(
+    authorityPath,
+    JSON.stringify({ contract: "launchrally.dev/execution-authority/v1" }),
+  );
+  await mkdir(path.join(fixture, ".launchrally", "evidence", "sha256"), { recursive: true });
+  await writeFile(
+    evidencePath,
+    JSON.stringify({ kind: "file", path: "package.json" }),
+  );
+  await writeFile(
+    manifestPath,
+    "schema_version: launchrally.dev/manifest/v2\n",
+  );
+
+  const initial = await runAudit(fixture, "0.4.2");
+  const confirmation = await runAudit(fixture, "0.4.2", {
+    resume_token: initial.interaction.resume_token,
+    answers: {
+      intended_environment: "production",
+      production_targets: ["https://example.com"],
+      core_journeys: ["homepage loads"],
+      provider_roles: [],
+      support_layers: [],
+    },
+  });
+  const permission = await runAudit(fixture, "0.4.2", {
+    resume_token: confirmation.interaction.resume_token,
+    confirmation: "confirm",
+  });
+  const result = await runAudit(fixture, "0.4.2", {
+    resume_token: permission.interaction.resume_token,
+    permission_decisions: { public_verification: "denied" },
+  });
+  const digestPaths = result.report.verification_context.repository_digests.map(
+    ({ path: digestPath }) => digestPath,
+  );
+
+  assert.equal(result.snapshot.project.safe_scan.exclusions.tooling_metadata, 1);
+  assert.ok(!digestPaths.some((digestPath) =>
+    digestPath.startsWith(".launchrally/architecture/")));
+  assert.ok(digestPaths.includes(".launchrally/manifest.yaml"));
+  assert.ok(digestPaths.includes(".launchrally/toolchain/authority.json"));
+  assert.ok(digestPaths.includes(evidenceRelativePath));
+
+  await writeFile(
+    path.join(architectureRoot, "current.json"),
+    JSON.stringify({ package_id: "architecture_package_02" }),
+  );
+  assert.equal(evaluateReportCurrentness(result, { cwd: fixture }).current, true);
+
+  async function assertProtectedChange(selectedPath, changedContent, expectedReason) {
+    const original = await readFile(selectedPath, "utf8");
+    await writeFile(selectedPath, changedContent);
+    const changed = evaluateReportCurrentness(result, { cwd: fixture });
+    assert.equal(changed.current, false);
+    assert.ok(changed.currentness.reasons.some(expectedReason));
+    await writeFile(selectedPath, original);
+    assert.equal(evaluateReportCurrentness(result, { cwd: fixture }).current, true);
+  }
+
+  await assertProtectedChange(
+    manifestPath,
+    "schema_version: launchrally.dev/manifest/v1\n",
+    (reason) => reason.reason_code === "manifest_digest_changed",
+  );
+  await assertProtectedChange(
+    authorityPath,
+    JSON.stringify({ contract: "launchrally.dev/execution-authority/v2" }),
+    (reason) => reason.reason_code === "repository_digest_changed"
+      && reason.path === ".launchrally/toolchain/authority.json",
+  );
+  await assertProtectedChange(
+    evidencePath,
+    JSON.stringify({ kind: "file", path: "src.js" }),
+    (reason) => reason.reason_code === "repository_digest_changed"
+      && reason.path === evidenceRelativePath,
+  );
+
+  await writeFile(path.join(fixture, "src.js"), "export const changed = true;\n");
+  const currentness = evaluateReportCurrentness(result, { cwd: fixture });
+  assert.equal(currentness.current, false);
+  assert.ok(currentness.currentness.reasons.some((reason) =>
+    reason.reason_code === "repository_digest_changed" && reason.path === "src.js"));
 });
 
 test("audit fails closed when repository ignore rules cannot be read safely", async () => {

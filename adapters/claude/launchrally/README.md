@@ -10,7 +10,7 @@ The optional `@launchrally/claude-plugin/resume` host adapter atomically saves v
 
 ## Status
 
-LaunchRally 0.4.1 is an **Experimental Phase 1** release. It adds the Phase 1 Skill and host bridges while Phase 0 Stable 0.3.2 remains on npm `latest`. Publication does not make Phase 1 Validated or Stable.
+LaunchRally 0.4.2 is an **Experimental Phase 1** release. It adds the Phase 1 Skill and host bridges while Phase 0 Stable 0.3.2 remains on npm `latest`. Publication does not make Phase 1 Validated or Stable.
 
 Phase 0 0.3.2 remains a **Stable** release. It is Product Complete, P0 Validated, and published on the stable channel.
 
@@ -20,7 +20,7 @@ CLI installation and Plugin installation are separate. Before installing this Pl
 
 ## Plugin installation and use
 
-The `0.4.1` marketplace catalog pins `@launchrally/claude-plugin@0.4.1`. Add it and install at explicit user scope:
+The `0.4.2` marketplace catalog pins `@launchrally/claude-plugin@0.4.2`. Add it and install at explicit user scope:
 
 ```sh
 claude plugin marketplace add codeacme17/launchrally --scope user

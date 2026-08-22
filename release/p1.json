@@ -4,9 +4,12 @@
   "product_status": "incomplete",
   "release_status": "experimental",
   "publication_status": "not_published",
+  "validation_mode": "telemetry_free",
+  "validation_collection_status": "collecting",
   "validation_status": "not_validated",
+  "validation_log": "docs/maintainers/phase-1-validation-log.json",
   "quality_floor_status": "satisfied",
-  "supply_chain_assessment_at": "2026-08-21T00:00:00.000Z",
+  "supply_chain_assessment_at": "2026-08-22T00:00:00.000Z",
   "p0_stable_ref": {
     "schema_version": "launchrally.dev/p0-release/v1",
     "release_status": "stable"
@@ -16,15 +19,15 @@
     "approved_tag": null
   },
   "experimental_publication": {
-    "announcement": "docs/maintainers/experimental-0.4.1-announcement.md",
-    "candidate_tag": "v0.4.1",
+    "announcement": "docs/maintainers/experimental-0.4.2-announcement.md",
+    "candidate_tag": "v0.4.2",
     "channel": "experimental",
     "stable_channel": "latest",
     "p0_stable_tag": "v0.3.2",
     "candidate_manifest": "release/p1-release-candidate.json",
     "changelog": "CHANGELOG.md",
     "migration_notes": "docs/maintainers/p1-migration-notes.md",
-    "evidence_record": "docs/maintainers/experimental-0.4.1-p1-evidence.md"
+    "evidence_record": "docs/maintainers/experimental-0.4.2-p1-evidence.md"
   },
   "acceptance_requirement_ids": [
     "P1-INTENT-01", "P1-INTENT-02", "P1-INTENT-03",
@@ -36,7 +39,8 @@
     "P1-PLAN-01",
     "P1-HANDOFF-01", "P1-HANDOFF-02", "P1-HANDOFF-03", "P1-HANDOFF-04", "P1-HANDOFF-05",
     "P1-VERIFY-01", "P1-VERIFY-02", "P1-VERIFY-03", "P1-VERIFY-04", "P1-VERIFY-05",
-    "P1-AUTH-01", "P1-PRIVACY-01", "P1-COMPAT-01", "P1-HOST-01", "P1-COVERAGE-01", "P1-DOCS-01", "P1-RELEASE-01"
+    "P1-AUTH-01", "P1-PRIVACY-01", "P1-COMPAT-01", "P1-HOST-01", "P1-COVERAGE-01", "P1-DOCS-01", "P1-RELEASE-01",
+    "P1-VALIDATION-01"
   ],
   "mandatory_release_gate_ids": [
     "p1_traceability",

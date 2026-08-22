@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -42,6 +42,35 @@ const taskGraphFixture = JSON.parse(await readFile(
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
 const engine = path.resolve("packages/cli/bin/engine.js");
+const pythonAvailable = process.platform !== "win32"
+  && spawnSync("python3", ["--version"]).status === 0;
+const persistencePtyRunner = [
+  "import errno, os, pty, subprocess, sys",
+  "answer = sys.argv[1].encode() + b'\\n'",
+  "master, slave = pty.openpty()",
+  "child = subprocess.Popen(sys.argv[2:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)",
+  "os.close(slave)",
+  "chunks = []",
+  "observed = b''",
+  "answered = False",
+  "while True:",
+  "    try:",
+  "        chunk = os.read(master, 4096)",
+  "    except OSError as error:",
+  "        if error.errno == errno.EIO:",
+  "            break",
+  "        raise",
+  "    if not chunk:",
+  "        break",
+  "    chunks.append(chunk)",
+  "    observed += chunk",
+  "    if not answered and b'Choose 1-3' in observed:",
+  "        os.write(master, answer)",
+  "        answered = True",
+  "os.close(master)",
+  "sys.stdout.buffer.write(b''.join(chunks))",
+  "raise SystemExit(child.wait())",
+].join("\n");
 
 function validManifest() {
   const unknown = { state: "unknown", reason: "fixture" };
@@ -317,6 +346,185 @@ test("public Engine previews and confirms initialized immutable history", async 
     path.join(directory, ".launchrally/architecture/current.json"),
     "utf8",
   )).package_id, value.package.package_id);
+});
+
+test("TTY Human Architecture Package previews and confirms immutable history in one process", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architecture-human-"));
+  await initialize(directory);
+  const packagePath = path.join(directory, "package-bundle.json");
+  const value = bundle();
+  await writeFile(packagePath, `${JSON.stringify(value)}\n`);
+
+  const { stdout } = await execFileAsync("python3", [
+    "-c",
+    persistencePtyRunner,
+    "1",
+    process.execPath,
+    engine,
+    "architecture-package",
+    "--plain",
+    "--cwd",
+    directory,
+    "--package",
+    packagePath,
+  ], { timeout: 30000 });
+
+  assert.match(stdout, /LaunchRally Architecture Package/u);
+  assert.match(stdout, /Immutable History Persistence Preview/u);
+  assert.match(stdout, new RegExp(`Package ID: ${value.package.package_id}`, "u"));
+  assert.match(stdout, /Created immutable paths:/u);
+  assert.match(stdout, /\.launchrally\/architecture\/current\.json/u);
+  assert.match(stdout, /Bundle digest: sha256:/u);
+  assert.match(stdout, /Current pointer digest: sha256:/u);
+  assert.match(stdout, /1\. Confirm/u);
+  assert.match(stdout, /2\. Decline/u);
+  assert.match(stdout, /3\. Cancel/u);
+  assert.match(stdout, /Architecture Package Persistence Complete/u);
+  assert.doesNotMatch(stdout, /"resume_token"/u);
+  assert.equal(JSON.parse(await readFile(
+    path.join(directory, ".launchrally/architecture/current.json"),
+    "utf8",
+  )).package_id, value.package.package_id);
+});
+
+test("TTY Human Architecture Package decline and cancellation write no history", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  for (const scenario of [
+    { answer: "2", summary: /Persistence Declined/u },
+    { answer: "3", summary: /Persistence Cancelled/u },
+  ]) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architecture-stop-"));
+    await initialize(directory);
+    const packagePath = path.join(directory, "package-bundle.json");
+    await writeFile(packagePath, `${JSON.stringify(bundle())}\n`);
+
+    const { stdout } = await execFileAsync("python3", [
+      "-c",
+      persistencePtyRunner,
+      scenario.answer,
+      process.execPath,
+      engine,
+      "architecture-package",
+      "--plain",
+      "--cwd",
+      directory,
+      "--package",
+      packagePath,
+    ], { timeout: 30000 });
+
+    assert.match(stdout, scenario.summary);
+    assert.match(stdout, /No Architecture Package history was written/u);
+    assert.doesNotMatch(stdout, /"resume_token"/u);
+    await assert.rejects(
+      readFile(path.join(directory, ".launchrally/architecture/current.json"), "utf8"),
+      (error) => error.code === "ENOENT",
+    );
+  }
+});
+
+test("Human Architecture Package reports stale ancestry and execution errors concisely", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architecture-stale-"));
+  await initialize(directory);
+  const first = bundle();
+  const stale = bundle("2026-08-13T00:00:01.000Z", { previous_package: first.package });
+  const packagePath = path.join(directory, "stale-package.json");
+  await writeFile(packagePath, `${JSON.stringify(stale)}\n`);
+
+  await assert.rejects(
+    execFileAsync("python3", [
+      "-c",
+      persistencePtyRunner,
+      "1",
+      process.execPath,
+      engine,
+      "architecture-package",
+      "--plain",
+      "--cwd",
+      directory,
+      "--package",
+      packagePath,
+    ], { timeout: 30000 }),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stdout, /Architecture Package Preview Is Stale/u);
+      assert.doesNotMatch(error.stdout, /"error"/u);
+      return true;
+    },
+  );
+
+  const invalidPath = path.join(directory, "invalid-package.json");
+  await writeFile(invalidPath, "not json\n");
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      engine,
+      "architecture-package",
+      "--cwd",
+      directory,
+      "--package",
+      invalidPath,
+    ]),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stdout, /Architecture Package Persistence Could Not Complete/u);
+      assert.match(error.stdout, /invalid_architecture_package_file/u);
+      assert.doesNotMatch(error.stdout, /"status"/u);
+      return true;
+    },
+  );
+
+  const structurallyInvalidPath = path.join(directory, "structurally-invalid-package.json");
+  await writeFile(structurallyInvalidPath, "{}\n");
+  await assert.rejects(
+    execFileAsync("python3", [
+      "-c",
+      persistencePtyRunner,
+      "1",
+      process.execPath,
+      engine,
+      "architecture-package",
+      "--plain",
+      "--cwd",
+      directory,
+      "--package",
+      structurallyInvalidPath,
+    ], { timeout: 30000 }),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stdout, /Architecture Package Persistence Could Not Complete/u);
+      assert.match(error.stdout, /Package ID: unavailable/u);
+      assert.match(error.stdout, /invalid_architecture_package/u);
+      assert.doesNotMatch(error.stdout, /TypeError/u);
+      return true;
+    },
+  );
+});
+
+test("non-TTY Human Architecture Package points to the Agent protocol", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-architecture-non-tty-"));
+  await initialize(directory);
+  const packagePath = path.join(directory, "package-bundle.json");
+  await writeFile(packagePath, `${JSON.stringify(bundle())}\n`);
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      engine,
+      "architecture-package",
+      "--cwd",
+      directory,
+      "--package",
+      packagePath,
+    ]),
+    (error) => {
+      assert.equal(error.code, 2);
+      assert.match(error.stderr, /Non-TTY Human Mode cannot confirm Architecture Package persistence safely/u);
+      assert.match(error.stderr, /--json/u);
+      assert.equal(error.stdout, "");
+      return true;
+    },
+  );
 });
 
 test("initialized history previews and atomically appends without replacing the prior package", async () => {

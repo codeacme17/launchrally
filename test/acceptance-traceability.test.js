@@ -49,8 +49,12 @@ test("the committed P0 matrix maps every normative requirement to executable evi
       schema_version: "launchrally.dev/p1-release/v1",
       product_status: "incomplete",
       release_status: "experimental",
+      validation_mode: "telemetry_free",
+      validation_collection_status: "collecting",
+      validation_status: "not_validated",
+      validation_log: "docs/maintainers/phase-1-validation-log.json",
       quality_floor_status: "satisfied",
-      requirements: { complete: 37, open: 1, total: 38 },
+      requirements: { complete: 38, open: 1, total: 39 },
       release_gates: 5,
       suspended_authorities: [],
       p0_release_status: "stable",
@@ -68,7 +72,7 @@ test("Phase 1 requirements map public contracts to executable Core and host jour
     matrix.requirements.map(({ id }) => id),
     contract.acceptance_requirement_ids,
   );
-  assert.equal(matrix.requirements.length, 38);
+  assert.equal(matrix.requirements.length, 39);
   assert.ok(matrix.requirements.find(({ id }) => id === "P1-AUTH-01").contracts.includes(
     "packages/contracts/schemas/authenticated-journey-evidence/v1.schema.json",
   ));
