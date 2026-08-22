@@ -12,6 +12,8 @@ Keep these states separate:
 - denied, unsupported, or unreadable material makes coverage denied or partial;
 - incomplete coverage cannot prove that a behavior or capability is absent.
 
+Review each inferred behavior against its source references and normalized matched-signal identifiers. A generic notification, push, webhook, or email subscription is not evidence that customers purchase a subscription; commercial context such as billing, checkout, a paid plan, or a payment Provider must support that candidate. Matched signals explain the classification without retaining source text.
+
 Ask only the typed fields in the interaction request. A builder may explicitly declare a behavior that was not inferred. Present the complete unconfirmed profile preview, then accept only `confirm`, `revise`, or `cancel`. Never infer confirmation from selected material, repository signals, or Agent confidence.
 
 Persist and exchange only the validated Product Intent Profile. Never retain raw source, unrestricted summaries, secret or complete configuration values, business payloads, or real-user data. Product Intent confirmation grants no external Executor authority and creates no Machine Evidence.

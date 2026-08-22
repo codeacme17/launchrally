@@ -146,6 +146,137 @@ test("approved semantic analysis produces normalized candidates and a confirmed 
   assert.equal(Object.hasOwn(completed.profile, "raw_source"), false);
 });
 
+test("notification subscriptions are not classified as customer purchase intent", async () => {
+  const directory = await fixture();
+  await writeFile(
+    path.join(directory, ".env.example"),
+    "PUSH_SUBSCRIPTION_PUBLIC_KEY=\nEMAIL_NOTIFICATION_SUBSCRIPTION_ID=\n",
+  );
+  await writeFile(
+    path.join(directory, "docs", "product.md"),
+    [
+      "Customers subscribe to email notifications.",
+      "The browser registers push subscriptions through push_subscription and push-subscription routes.",
+      "PushSubscription support is subscriptional notification infrastructure.",
+    ].join("\n"),
+  );
+  const initial = await runProductIntentDiscovery(directory, {
+    selected_materials: ["docs/product.md"],
+  });
+
+  const result = await runProductIntentDiscovery(directory, {
+    resume_token: initial.resume_token,
+    permission_decision: "approved",
+  });
+
+  assert.equal(result.status, "needs_input");
+  assert.equal(
+    result.candidates.behaviors.some(({ behavior_id: behaviorId }) =>
+      behaviorId === "customers_purchase_subscription"),
+    false,
+  );
+
+});
+
+test("commercial subscription candidates disclose only normalized matched signals", async () => {
+  const directory = await fixture();
+  await writeFile(
+    path.join(directory, "docs", "product.md"),
+    "Customers purchase a paid subscription and plan through checkout billing with a payment provider.\n",
+  );
+  const initial = await runProductIntentDiscovery(directory, {
+    selected_materials: ["docs/product.md"],
+  });
+
+  const result = await runProductIntentDiscovery(directory, {
+    resume_token: initial.resume_token,
+    permission_decision: "approved",
+  });
+
+  const candidate = result.candidates.behaviors.find(({ behavior_id: behaviorId }) =>
+    behaviorId === "customers_purchase_subscription");
+  assert.deepEqual(candidate, {
+    behavior_id: "customers_purchase_subscription",
+    status: "candidate",
+    source_ids: ["source_local_safe_scan", "source_selected_1"],
+    matched_signals: [
+      "billing",
+      "checkout",
+      "paid_subscription",
+      "payment_provider",
+      "plan_purchase",
+    ],
+  });
+  assert.equal(JSON.stringify(result).includes("Customers purchase"), false);
+});
+
+test("explicit paid subscription intent survives nearby notification vocabulary", async () => {
+  const directory = await fixture();
+  await writeFile(path.join(directory, ".env.example"), "");
+  await writeFile(
+    path.join(directory, "docs", "product.md"),
+    "Customers purchase a paid subscription that includes email notifications.\n",
+  );
+  const initial = await runProductIntentDiscovery(directory, {
+    selected_materials: ["docs/product.md"],
+  });
+
+  const result = await runProductIntentDiscovery(directory, {
+    resume_token: initial.resume_token,
+    permission_decision: "approved",
+  });
+
+  const candidate = result.candidates.behaviors.find(({ behavior_id: behaviorId }) =>
+    behaviorId === "customers_purchase_subscription");
+  assert.deepEqual(candidate?.matched_signals, ["paid_subscription"]);
+});
+
+test("negated paid subscription intent is not a positive behavior candidate", async () => {
+  const directory = await fixture();
+  await writeFile(path.join(directory, ".env.example"), "");
+  await writeFile(
+    path.join(directory, "docs", "product.md"),
+    "No paid subscription is offered.\n",
+  );
+  const initial = await runProductIntentDiscovery(directory, {
+    selected_materials: ["docs/product.md"],
+  });
+
+  const result = await runProductIntentDiscovery(directory, {
+    resume_token: initial.resume_token,
+    permission_decision: "approved",
+  });
+
+  assert.equal(
+    result.candidates.behaviors.some(({ behavior_id: behaviorId }) =>
+      behaviorId === "customers_purchase_subscription"),
+    false,
+  );
+
+  await writeFile(
+    path.join(directory, "docs", "commercial.md"),
+    "Customers purchase a paid subscription.\n",
+  );
+  const conflictingInitial = await runProductIntentDiscovery(directory, {
+    selected_materials: ["docs/commercial.md", "docs/product.md"],
+  });
+  const conflicting = await runProductIntentDiscovery(directory, {
+    resume_token: conflictingInitial.resume_token,
+    permission_decision: "approved",
+  });
+  assert.deepEqual(
+    conflicting.candidates.behaviors.find(({ behavior_id: behaviorId }) =>
+      behaviorId === "customers_purchase_subscription")?.source_ids,
+    ["source_selected_1"],
+  );
+  assert.deepEqual(conflicting.conflicts, [{
+    conflict_id: "conflict_customers_purchase_subscription",
+    source_ids: ["source_selected_1", "source_selected_2"],
+    summary: "Sources conflict about customers_purchase_subscription.",
+    status: "unresolved",
+  }]);
+});
+
 test("discovery completes without a PRD and after semantic permission denial", async () => {
   const directory = await fixture();
 
