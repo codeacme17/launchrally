@@ -212,8 +212,8 @@ async function npmFixture(prepared) {
   const executable = path.join(directory, process.platform === "win32" ? "npm.cmd" : "npm");
   await writeFile(executable, [
     `#!${process.execPath}`,
-    "import { cpSync } from \"node:fs\";",
-    "import path from \"node:path\";",
+    "const { cpSync } = require(\"node:fs\");",
+    "const path = require(\"node:path\");",
     "if (process.env.LAUNCHRALLY_TEST_OFFLINE_MISS === \"1\" && process.argv.includes(\"--offline\")) {",
     "  process.stderr.write(\"npm error code ENOTCACHED\\n\");",
     "  process.exit(1);",
