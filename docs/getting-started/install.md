@@ -3,7 +3,7 @@
 LaunchRally `0.3.2` is the exact Stable release used by this guide. Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor.
 
 Updating an initialized Experimental `0.4.1` project is a separate path. Follow
-the [exact 0.4.1-to-0.4.2 Project Toolchain migration](../maintainers/p1-migration-notes.md#project-toolchain-migration-041-to-042)
+the [exact 0.4.2-to-0.4.3 Project Toolchain migration](../maintainers/p1-migration-notes.md#project-toolchain-migration-042-to-043)
 without relabeling this Stable `0.3.2` installation path.
 
 ## Supported environments

@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.3 — Phase 1 Experimental
+
+LaunchRally 0.4.3 is a corrective Experimental Phase 1 release that completes
+the remaining Human Mode command surfaces while preserving the separately
+supported Phase 0 Stable 0.3.2 line on npm `latest`.
+
+### Improved
+
+- Added concise styled Version output through the public Launcher and selected
+  Project Engine without changing the structured Agent response.
+- Completed the Handoff Human journey through executor selection, authority
+  review, receipt handling, partial execution, and an executable fresh Verify
+  continuation while keeping opaque resume tokens internal.
+- Added a default-safe in-process Project Toolchain migration preview,
+  complete exact-diff review, confirmation, and completion flow.
+- Added an exact 0.4.2-to-0.4.3 Project Toolchain migration guide and stronger
+  version-drift checks across documentation and generated Skills.
+- Preserved supply-chain checks in ordinary CI and documented the independent
+  GitHub release-note control.
+
+### Release boundary
+
+- 0.4.3 publishes only on npm `experimental` and as a GitHub prerelease.
+- Exact 0.4.3 external CLI, Codex, and Claude verification remains a separate
+  post-publication gate; publication does not make Phase 1 Validated or Stable.
+- Phase 0 Stable 0.3.2 remains on npm `latest`.
+
+See [the Phase 1 migration notes](docs/maintainers/p1-migration-notes.md) for
+the exact update, retained-data, and recovery boundaries.
+
 ## 0.4.2 — Phase 1 Experimental
 
 LaunchRally 0.4.2 is a corrective Experimental Phase 1 release that strengthens

@@ -4,7 +4,7 @@ The LaunchRally CLI provides the `rally` Launcher and deterministic Engine for a
 
 ## Status
 
-LaunchRally 0.4.2 is an **Experimental Phase 1** release. Phase 1 adds Product Intent, Provider-neutral Architecture, bounded Executor coordination, and fresh assurance without relabeling Phase 0 Stable 0.3.2 on npm `latest`. Phase 1 publication does not imply Validated or Stable. Review every disclosed permission and preview before continuing.
+LaunchRally 0.4.3 is an **Experimental Phase 1** release. Phase 1 adds Product Intent, Provider-neutral Architecture, bounded Executor coordination, and fresh assurance without relabeling Phase 0 Stable 0.3.2 on npm `latest`. Phase 1 publication does not imply Validated or Stable. Review every disclosed permission and preview before continuing.
 
 Phase 0 0.3.2 remains a **Stable** release. P0 is Product Complete and P0 Validated with the Quality Floor satisfied.
 
@@ -13,7 +13,7 @@ Phase 0 0.3.2 remains a **Stable** release. P0 is Product Complete and P0 Valida
 Install the exact Launcher through your current user-writable npm prefix and verify it before entering a repository:
 
 ```sh
-npm install --global @launchrally/cli@0.4.2
+npm install --global @launchrally/cli@0.4.3
 rally --version --json
 ```
 
@@ -38,7 +38,7 @@ Ordinary Init preserves an existing Manifest while it may preview adoption of a 
 
 Exact-version npm-exec remains a no-install trial and CI fallback. Keep its full prefix on every follow-up; see the [Quickstart](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/quickstart.md) for the directly executable sequence.
 
-For an initialized Experimental 0.4.1 project, follow the [exact 0.4.1-to-0.4.2 Project Toolchain migration](https://github.com/codeacme17/launchrally/blob/main/docs/maintainers/p1-migration-notes.md#project-toolchain-migration-041-to-042). Updating the Launcher, project pin, and optional Plugin are separate actions.
+For an initialized Experimental 0.4.2 project, follow the [exact 0.4.2-to-0.4.3 Project Toolchain migration](https://github.com/codeacme17/launchrally/blob/main/docs/maintainers/p1-migration-notes.md#project-toolchain-migration-042-to-043). Updating the Launcher, project pin, and optional Plugin are separate actions.
 
 ## Compatibility and boundaries
 
@@ -52,7 +52,7 @@ When an approved read cannot find its official Provider executable, the Report p
 
 - [Install, lifecycle, and troubleshooting](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/install.md)
 - [Quickstart](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/quickstart.md)
-- [0.4.1-to-0.4.2 Project Toolchain migration](https://github.com/codeacme17/launchrally/blob/main/docs/maintainers/p1-migration-notes.md#project-toolchain-migration-041-to-042)
+- [0.4.2-to-0.4.3 Project Toolchain migration](https://github.com/codeacme17/launchrally/blob/main/docs/maintainers/p1-migration-notes.md#project-toolchain-migration-042-to-043)
 - [Privacy boundary](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/privacy.md)
 - [Project data model](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/data-model.md)
 

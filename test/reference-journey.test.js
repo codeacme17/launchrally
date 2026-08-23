@@ -854,14 +854,14 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
     },
     launcher: {
       package: "@launchrally/cli",
-      supported_versions: ["0.3.0", "0.3.1", "0.3.2", "0.4.0", "0.4.1", cliPackage.version],
+      supported_versions: ["0.3.0", "0.3.1", "0.3.2", "0.4.0", "0.4.1", "0.4.2", cliPackage.version],
     },
     execution_authority: {
       supported_contracts: ["launchrally.dev/execution-authority/v1"],
     },
     engine: {
       package: "@launchrally/cli",
-      supported_versions: ["0.2.2", "0.3.0", "0.3.1", "0.3.2", "0.4.0", "0.4.1", cliPackage.version],
+      supported_versions: ["0.2.2", "0.3.0", "0.3.1", "0.3.2", "0.4.0", "0.4.1", "0.4.2", cliPackage.version],
       authority_contracts: ["launchrally.dev/execution-authority/v1"],
       interaction_contracts: ["launchrally.dev/cli/v2"],
     },
