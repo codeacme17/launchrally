@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 
 import { computeExecutorDescriptorDigest } from "../packages/contracts/src/index.js";
 import { runHandoff } from "../packages/core/src/index.js";
@@ -303,16 +303,17 @@ test("public rally version renders a concise Human summary through the materiali
     repository,
   ]);
 
-  assert.match(stdout, /LaunchRally Version/u);
-  assert.match(stdout, new RegExp(`Launcher: ${currentVersion.replaceAll(".", "\\.")}`, "u"));
-  assert.match(stdout, new RegExp(`Project Engine: ${currentVersion.replaceAll(".", "\\.")}`, "u"));
-  assert.match(stdout, /Authority: ready \(project_toolchain\)/u);
-  assert.match(stdout, /Compatibility: native/u);
-  assert.match(stdout, /Materialization: ready/u);
-  assert.match(stdout, /Next action: none/u);
-  assert.doesNotMatch(stdout, /"contract"\s*:/u);
-  assert.doesNotMatch(stdout, /"schema_version"\s*:/u);
-  assert.doesNotMatch(stdout, /"authority"\s*:/u);
+  const semanticOutput = stripVTControlCharacters(stdout);
+  assert.match(semanticOutput, /LaunchRally Version/u);
+  assert.match(semanticOutput, new RegExp(`Launcher: ${currentVersion.replaceAll(".", "\\.")}`, "u"));
+  assert.match(semanticOutput, new RegExp(`Project Engine: ${currentVersion.replaceAll(".", "\\.")}`, "u"));
+  assert.match(semanticOutput, /Authority: ready \(project_toolchain\)/u);
+  assert.match(semanticOutput, /Compatibility: native/u);
+  assert.match(semanticOutput, /Materialization: ready/u);
+  assert.match(semanticOutput, /Next action: none/u);
+  assert.doesNotMatch(semanticOutput, /"contract"\s*:/u);
+  assert.doesNotMatch(semanticOutput, /"schema_version"\s*:/u);
+  assert.doesNotMatch(semanticOutput, /"authority"\s*:/u);
 });
 
 test("public rally version preserves the exact JSON contract through the Project Engine", async () => {
