@@ -20,6 +20,13 @@ function section(markdown, heading) {
   return markdown.slice(start, next === -1 ? undefined : next);
 }
 
+function subsection(markdown, heading) {
+  const start = markdown.indexOf(`### ${heading}`);
+  assert.notEqual(start, -1, `missing ${heading} subsection`);
+  const next = markdown.indexOf("\n### ", start + heading.length + 4);
+  return markdown.slice(start, next === -1 ? undefined : next);
+}
+
 function documentedArguments(command) {
   return command
     .replaceAll("\\\n", " ")
@@ -192,6 +199,7 @@ test("the published Experimental migration path tracks the exact release version
     announcement,
     install,
     quickstart,
+    cliReadme,
     skill,
     codexSkill,
     claudeSkill,
@@ -200,16 +208,25 @@ test("the published Experimental migration path tracks the exact release version
     text(release.experimental_publication.announcement),
     text("docs/getting-started/install.md"),
     text("docs/getting-started/quickstart.md"),
+    text("packages/cli/README.md"),
     text("skills/launchrally/SKILL.md"),
     text("adapters/codex/launchrally/skills/launchrally/SKILL.md"),
     text("adapters/claude/launchrally/skills/launchrally/SKILL.md"),
   ]);
-  const version = rootPackage.version;
-  const heading = `Project Toolchain migration: 0.4.1 to ${version}`;
+  const version = release.experimental_publication.candidate_tag.slice(1);
+  const [major, minor, patch] = version.split(".").map(Number);
+  const sourceVersion = `${major}.${minor}.${patch - 1}`;
+  const heading = `Project Toolchain migration: ${sourceVersion} to ${version}`;
   const migration = section(migrationNotes, heading);
-  const anchor = `p1-migration-notes.md#project-toolchain-migration-041-to-${version.replaceAll(".", "")}`;
+  const migrationBasename = path.basename(release.experimental_publication.migration_notes);
+  const anchorId = `project-toolchain-migration-${sourceVersion.replaceAll(".", "")}-to-${version.replaceAll(".", "")}`;
+  const anchor = `${migrationBasename}#${anchorId}`;
+  const migrationUrl = `https://github.com/codeacme17/launchrally/blob/main/${release.experimental_publication.migration_notes}#${anchorId}`;
+  const posix = subsection(migration, "POSIX");
+  const powershell = subsection(migration, "PowerShell");
 
   assert.equal(release.release_status, "experimental");
+  assert.equal(version, rootPackage.version);
   assert.equal(release.experimental_publication.candidate_tag, `v${version}`);
   assert.equal(
     release.experimental_publication.migration_notes,
@@ -217,15 +234,30 @@ test("the published Experimental migration path tracks the exact release version
   );
   assert.match(migration, new RegExp(`@launchrally/cli@${version.replaceAll(".", "\\.")}`, "u"));
   assert.match(migration, new RegExp(`toolchain migrate --to ${version.replaceAll(".", "\\.")}`, "u"));
-  assert.match(
-    migration,
-    new RegExp(
-      `launcher_version[^\\n]*${version.replaceAll(".", "\\.")}[\\s\\S]*cli_version[^\\n]*0\\.4\\.1`,
-      "u",
-    ),
-  );
-  assert.match(migration, /### POSIX/u);
-  assert.match(migration, /### PowerShell/u);
+  const escapedVersion = version.replaceAll(".", "\\.");
+  const escapedSourceVersion = sourceVersion.replaceAll(".", "\\.");
+  assert.match(migration, new RegExp(
+    `launcher_version[^\\n]*${escapedVersion}[\\s\\S]*cli_version[^\\n]*${escapedSourceVersion}`,
+    "u",
+  ));
+  for (const [shell, projectRoot] of [
+    [posix, '"$PROJECT_ROOT"'],
+    [powershell, "$ProjectRoot"],
+  ]) {
+    assert.deepEqual(
+      [...shell.matchAll(/npm install --global @launchrally\/cli@(\d+\.\d+\.\d+)/gu)]
+        .map((match) => match[1]),
+      [version],
+    );
+    assert.ok(shell.includes(`rally --version --json --cwd ${projectRoot}`));
+    assert.ok(shell.includes(`rally toolchain status --json --cwd ${projectRoot}`));
+    assert.deepEqual(
+      [...shell.matchAll(/rally toolchain migrate --to (\d+\.\d+\.\d+)/gu)]
+        .map((match) => match[1]),
+      [version, version, version],
+    );
+    assert.ok(shell.includes(`rally verify --cwd ${projectRoot}`));
+  }
   assert.match(migration, /npm_registry_read/u);
   assert.match(migration, /--resume/u);
   assert.match(migration, /--confirm confirm/u);
@@ -234,11 +266,23 @@ test("the published Experimental migration path tracks the exact release version
   assert.match(migration, /new current Report/iu);
   assert.match(migration, /Codex Plugin/u);
   assert.match(migration, /Claude Plugin/u);
+  assert.match(
+    migration,
+    new RegExp(`codex plugin marketplace add codeacme17/launchrally --ref v${escapedVersion}`, "u"),
+  );
+  assert.match(migration, /rally toolchain migrate --to 0\.2\.2 --cwd <project>/u);
+  assert.match(migration, new RegExp(`${escapedSourceVersion} direct downgrade is unsupported`, "u"));
+  assert.doesNotMatch(migration, new RegExp(`^rally toolchain migrate --to ${escapedSourceVersion}`, "mu"));
+  assert.match(
+    migration,
+    new RegExp(`claude plugin marketplace add codeacme17/launchrally@v${escapedVersion} --scope user`, "u"),
+  );
+  assert.doesNotMatch(migration, /claude plugin marketplace update/u);
 
-  for (const navigation of [announcement, install, quickstart]) {
+  for (const navigation of [announcement, install, quickstart, cliReadme]) {
     assert.ok(navigation.includes(anchor), `missing exact migration link: ${anchor}`);
   }
-  for (const routedSkill of [skill, codexSkill, claudeSkill]) {
-    assert.match(routedSkill, /p1-migration-notes\.md#project-toolchain-migration-041-to-042/u);
-  }
+  assert.equal(codexSkill, skill);
+  assert.equal(claudeSkill.replace("disable-model-invocation: true\n", ""), skill);
+  for (const routedSkill of [skill, codexSkill, claudeSkill]) assert.ok(routedSkill.includes(migrationUrl));
 });

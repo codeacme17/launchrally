@@ -168,10 +168,12 @@ Plan or Architect, and keep `$SourceReport` for future whole-release Verify.
 - `rally toolchain restore --cwd <project>` only rebuilds the established exact
   pin; it does not undo a completed migration. It may independently request the
   same bounded registry read.
-- A deliberate supported downgrade uses the same preview/resume protocol, for
-  example `rally toolchain migrate --to 0.4.1 --cwd <project>`. It again makes
-  the prior current Report non-current and requires fresh full Verify. There is
-  no automatic rollback or unsupported-version bypass.
+- With Launcher 0.4.2, the only supported downgrade target is the allowlisted
+  legacy Engine: `rally toolchain migrate --to 0.2.2 --cwd <project>`. It uses
+  the same preview/resume protocol, makes the prior current Report non-current,
+  and requires fresh full Verify. A 0.4.1 direct downgrade is unsupported by
+  the shipped lifecycle; `restore` cannot be used to bypass that restriction.
+  There is no automatic rollback or arbitrary unsupported-version bypass.
 
 ### Update a Plugin separately
 
@@ -193,13 +195,20 @@ codex plugin list --json
 
 #### Claude Plugin
 
-For Claude Code, refresh the catalog and update the user-scoped Claude Plugin:
+Replace the installed Claude Plugin and marketplace checkout, pinning the
+repository to the exact `v0.4.2` tag at explicit user scope:
 
 ```sh
-claude plugin marketplace update launchrally
-claude plugin update launchrally@launchrally --scope user
+claude plugin uninstall launchrally@launchrally --scope user
+claude plugin marketplace remove launchrally
+claude plugin marketplace add codeacme17/launchrally@v0.4.2 --scope user
+claude plugin install launchrally@launchrally --scope user
 claude plugin list --json
 ```
+
+Require the list to show the installed and enabled `launchrally@launchrally`
+Plugin. Do not use a floating marketplace update as a substitute for the exact
+tagged checkout.
 
 Plugin update or removal leaves the Launcher, Project Toolchain, Manifest,
 Reports, Evidence, Architecture history, Provider intent, application source,
