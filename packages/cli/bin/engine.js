@@ -40,6 +40,7 @@ import {
   runHumanInit,
 } from "./human-init.js";
 import { renderHumanVerify, runHumanVerify } from "./human-verify.js";
+import { runHumanToolchainMigration } from "./human-toolchain.js";
 import {
   commandName,
   optionValue as argumentValue,
@@ -1100,8 +1101,78 @@ async function main() {
   if (command === "toolchain") {
     const toolchainIndex = args.indexOf("toolchain");
     const operation = args[toolchainIndex + 1];
+    const cwd = path.resolve(optionValue("--cwd") ?? process.cwd());
+    if (!json && operation === "migrate") {
+      if (process.stdin.isTTY !== true) {
+        const targetVersion = optionValue("--to");
+        if (!targetVersion) {
+          process.stderr.write([
+            "Non-TTY Project Toolchain migration requires --to with an exact SemVer.",
+            "No executable Agent/JSON command can be produced without the exact target version.",
+          ].join("\n") + "\n");
+          return 2;
+        }
+        const nextAction = createNextAction(invocationContext, [
+          "toolchain",
+          "migrate",
+          "--to",
+          targetVersion,
+          "--json",
+          "--cwd",
+          cwd,
+          ...(optionValue("--resume") ? ["--resume", optionValue("--resume")] : []),
+          ...(optionValue("--confirm") ? ["--confirm", optionValue("--confirm")] : []),
+          ...(optionValue("--permissions")
+            ? ["--permissions", optionValue("--permissions")]
+            : []),
+        ]);
+        process.stderr.write([
+          "Non-TTY Human Mode cannot confirm a Project Toolchain migration safely.",
+          "Use this complete Agent/JSON command:",
+          nextAction.display,
+          ...(nextAction.disclosure ? [nextAction.disclosure] : []),
+        ].join("\n") + "\n");
+        return 2;
+      }
+      if (["--resume", "--confirm", "--permissions"].some((option) => args.includes(option))) {
+        process.stderr.write([
+          "Human Mode does not accept structured Project Toolchain migration decisions.",
+          "Use Agent/JSON Mode for the explicit resumable protocol.",
+        ].join("\n") + "\n");
+        return 2;
+      }
+      const { createClackPromptAdapter, createPlainPromptAdapter } = await import(
+        "./prompt-adapters.js"
+      );
+      const presentation = humanAuditPresentationOptions({
+        args,
+        env: process.env,
+        output: process.stdout,
+      });
+      const prompt = presentation.plain
+        ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
+        : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+      try {
+        const outcome = await runHumanToolchainMigration({
+          cwd,
+          invocationContext,
+          prompt,
+          runLifecycle: runToolchainLifecycle,
+          styled: presentation.styled,
+          to: optionValue("--to"),
+          version: VERSION,
+        });
+        if (outcome.result === null) {
+          process.stderr.write("Project Toolchain migration cancelled. No migration was applied.\n");
+        }
+        return outcome.exitCode;
+      } catch {
+        process.stderr.write("Human Project Toolchain migration could not complete safely.\n");
+        return 2;
+      }
+    }
     const result = await runToolchainLifecycle(
-      optionValue("--cwd") ?? process.cwd(),
+      cwd,
       VERSION,
       {
         operation,

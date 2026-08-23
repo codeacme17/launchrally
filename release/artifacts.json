@@ -167,6 +167,7 @@
         "bin/human-authenticated-journey.js",
         "bin/human-audit.js",
         "bin/human-init.js",
+        "bin/human-toolchain.js",
         "bin/human-verify.js",
         "bin/invocation-context.js",
         "bin/prompt-adapters.js",
