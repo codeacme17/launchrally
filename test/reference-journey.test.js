@@ -873,7 +873,7 @@ test("the canonical Skill declares Launcher compatibility and typed authority li
   });
   assert.deepEqual(
     journey.compatibility.launcher.supported_versions,
-    ["0.3.0", "0.3.1", "0.3.2", "0.4.0", "0.4.1", journey.compatibility.plugin.version],
+    ["0.3.0", "0.3.1", "0.3.2", "0.4.0", "0.4.1", "0.4.2", journey.compatibility.plugin.version],
     "a pre-authority direct binary cannot be treated as a supported Launcher",
   );
   assert.notEqual(
