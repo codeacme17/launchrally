@@ -107,16 +107,21 @@ export function renderHumanHandoffReceipt(result) {
   ].join("\n");
 }
 
-export function renderHumanHandoffOutcome(result) {
+export function renderHumanHandoffOutcome(result, { verifyAction } = {}) {
   if (result.status === "completed" && result.next?.operation === "verify") {
     return [
-      "Handoff Ready for Fresh Verify",
+      "Fresh Verify Requires a Separate Command",
       "The Execution Receipt remains a claim and has not been promoted to Machine Evidence.",
       `Verify scope: ${terminalSafeText(result.next.scope)}`,
       "Task requests:",
       ...list(result.next.task_requests, (request) =>
         `${terminalSafeText(request.task_id)} — ${terminalSafeText(request.scope)}; Evidence: ${request.evidence_targets.map(terminalSafeText).join(", ")}`),
-      "Next action: run fresh independent Verify for these exact targets.",
+      "Handoff does not carry the source Report contents or Check IDs required to start targeted Verify safely.",
+      "Run this complete Human Verify command:",
+      terminalSafeText(verifyAction?.display ?? "A complete Verify command is unavailable."),
+      ...(verifyAction?.disclosure
+        ? [`Launcher entry: ${terminalSafeText(verifyAction.disclosure)}`]
+        : []),
     ].join("\n");
   }
   if (result.outcome === "manual_or_custom_selected") {
@@ -181,6 +186,7 @@ export async function runHumanHandoff({
   prompt,
   runHandoff,
   loadReceipt,
+  verifyAction,
 }) {
   let result;
   let suppliedReceipt = receipt;
@@ -212,7 +218,7 @@ export async function runHumanHandoff({
       result = await runHandoff({}, options);
       if (response.choice === "defer") break;
     }
-    await prompt.finishHandoff(result);
+    await prompt.finishHandoff(result, { verifyAction });
     return result;
   } finally {
     await prompt.close();

@@ -275,7 +275,7 @@ function handoffChoiceOptions(result, { receiptAvailable = false } = {}) {
   }
   if (result.request?.kind === "fresh_verification") {
     return [
-      { label: "Continue to fresh Verify", value: "verify" },
+      { label: "Prepare the fresh Verify command", value: "verify" },
       { label: "Defer fresh Verify", value: "defer" },
       { label: "Cancel", value: "cancel" },
     ];
@@ -1190,8 +1190,8 @@ export function createPlainPromptAdapter({
       }
       return { choice: value };
     },
-    async finishHandoff(result) {
-      write(output, renderHumanHandoffOutcome(result));
+    async finishHandoff(result, context = {}) {
+      write(output, renderHumanHandoffOutcome(result, context));
     },
     async close() {
       signals.off("SIGINT", handleInterrupt);
@@ -1656,8 +1656,8 @@ export async function createClackPromptAdapter({
       }
       return { choice: value };
     },
-    async finishHandoff(result) {
-      clack.note(renderHumanHandoffOutcome(result), "Handoff outcome", common);
+    async finishHandoff(result, context = {}) {
+      clack.note(renderHumanHandoffOutcome(result, context), "Handoff outcome", common);
     },
     async close() {
       signals.off("SIGINT", handleInterrupt);

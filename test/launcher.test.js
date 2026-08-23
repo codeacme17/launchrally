@@ -233,6 +233,10 @@ function handoffArguments(repository, paths) {
   ];
 }
 
+function assertNoHandoffToken(output) {
+  assert.doesNotMatch(output, /lrhandoff_[A-Za-z0-9_-]{43}/u);
+}
+
 async function deterministicApprovedHandoff(source) {
   let state;
   const dependencies = {
@@ -399,34 +403,113 @@ test("public rally handoff keeps resume tokens internal through receipt review a
   assert.match(stdout, /Approved Handoff Package/u);
   assert.match(stdout, /Execution Receipt Review/u);
   assert.match(stdout, /remaining work retry_unfinished_effects/u);
-  assert.match(stdout, /Handoff Ready for Fresh Verify/u);
-  assert.match(stdout, /Next action: run fresh independent Verify/u);
+  assert.match(stdout, /Fresh Verify Requires a Separate Command/u);
+  assert.match(stdout, /Run this complete Human Verify command:/u);
+  assert.match(stdout, new RegExp([
+    `npm exec --package=@launchrally/cli@${currentVersion.replaceAll(".", "\\.")} -- rally verify`,
+    `--cwd '${repository.replaceAll("'", "'\\\\''")}'`,
+    `--report '${path.join(repository, ".launchrally/reports/report_task_graph_01/record.json").replaceAll("'", "'\\\\''")}'`,
+    "--scope full",
+  ].join(" "), "u"));
+  assert.match(stdout, /Handoff does not carry the source Report contents or Check IDs required to start targeted Verify safely/u);
   assert.doesNotMatch(stdout, /Resume token:/u);
-  assert.doesNotMatch(stdout, /handoff_resume_/u);
+  assertNoHandoffToken(stdout);
   assert.doesNotMatch(stdout, /"contract"\s*:/u);
 });
 
-test("public rally handoff preserves Agent Mode discovery and resume contracts", async () => {
+test("public rally handoff preserves the complete Agent Mode resume chain", async () => {
   const repository = await projectWithEngine(
     `await import(${JSON.stringify(pathToFileURL(engine).href)});\n`,
     currentVersion,
   );
   const { paths } = await writeHandoffInputs(repository);
 
-  const result = JSON.parse((await execFileAsync(process.execPath, [
+  const invokeHandoff = async (arguments_) => JSON.parse((await execFileAsync(process.execPath, [
     launcher,
-    ...handoffArguments(repository, paths),
+    ...arguments_,
     "--json",
   ], {
     env: { ...process.env, NODE_OPTIONS: `--import=${fixedClock}` },
   })).stdout);
+  const discovered = await invokeHandoff(handoffArguments(repository, paths));
 
-  assert.equal(result.contract, "launchrally.dev/handoff-interaction/v1");
-  assert.equal(result.status, "needs_input");
-  assert.equal(result.state, "executor_discovery");
-  assert.equal(result.request.kind, "executor_selection");
-  assert.equal(typeof result.resume_token, "string");
-  assert.equal(result.safety.authority_granted, false);
+  assert.equal(discovered.contract, "launchrally.dev/handoff-interaction/v1");
+  assert.equal(discovered.status, "needs_input");
+  assert.equal(discovered.state, "executor_discovery");
+  assert.equal(discovered.request.kind, "executor_selection");
+  assert.match(discovered.resume_token, /^lrhandoff_[A-Za-z0-9_-]{43}$/u);
+  assert.equal(discovered.safety.authority_granted, false);
+
+  const preview = await invokeHandoff([
+    "handoff", "--cwd", repository,
+    "--resume", discovered.resume_token,
+    "--select", discovered.request.choices[0],
+  ]);
+  assert.equal(preview.status, "needs_confirmation");
+  assert.equal(preview.state, "authority_preview");
+  assert.equal(preview.resume_token, discovered.resume_token);
+  assert.equal(preview.handoff_package.approval.state, "required");
+
+  const approved = await invokeHandoff([
+    "handoff", "--cwd", repository,
+    "--resume", preview.resume_token,
+    "--confirm", "confirm",
+  ]);
+  assert.equal(approved.status, "resumable");
+  assert.equal(approved.state, "receipt_review");
+  assert.equal(approved.resume_token, discovered.resume_token);
+  assert.equal(approved.handoff_package.approval.state, "approved");
+
+  const receiptPath = path.join(repository, "agent-execution-receipt.json");
+  await writeFile(receiptPath, `${JSON.stringify({
+    schema_version: "launchrally.dev/execution-receipt/v1",
+    receipt_id: "receipt_public_agent_01",
+    handoff: {
+      id: approved.handoff_package.handoff_id,
+      schema_version: approved.handoff_package.schema_version,
+      digest: sha256(approved.handoff_package),
+    },
+    executor: structuredClone(approved.handoff_package.executor),
+    reported_at: "2026-08-13T00:01:00.000Z",
+    task_results: [{
+      task_id: "task_configure_identity",
+      state: "reported_succeeded",
+      claim_codes: ["configuration_submitted"],
+    }],
+    classification: {
+      claim_only: true,
+      machine_evidence: false,
+      verification_status: "unverified",
+    },
+    retention: {
+      raw_stdout_retained: false,
+      raw_stderr_retained: false,
+      response_body_retained: false,
+      sensitive_data_retained: false,
+    },
+  }, null, 2)}\n`);
+  const reviewed = await invokeHandoff([
+    "handoff", "--cwd", repository,
+    "--resume", approved.resume_token,
+    "--receipt", receiptPath,
+  ]);
+  assert.equal(reviewed.status, "partial_completion");
+  assert.equal(reviewed.state, "receipt_review");
+  assert.equal(reviewed.resume_token, discovered.resume_token);
+  assert.equal(reviewed.request.kind, "fresh_verification");
+  assert.equal(reviewed.execution_receipt.classification.machine_evidence, false);
+
+  const routed = await invokeHandoff([
+    "handoff", "--cwd", repository,
+    "--resume", reviewed.resume_token,
+    "--choice", "verify",
+  ]);
+  assert.equal(routed.status, "completed");
+  assert.equal(routed.state, "completed");
+  assert.equal(routed.resume_token, null);
+  assert.equal(routed.next.operation, "verify");
+  assert.equal(routed.next.scope, "targeted");
+  assert.equal(routed.next.fresh_evidence_required, true);
 });
 
 test("default TTY Handoff uses styled safe-default selection and authority denial", {
@@ -461,6 +544,7 @@ test("default TTY Handoff uses styled safe-default selection and authority denia
   assert.match(stdout, /External Authority Declined/u);
   assert.match(stdout, /\u001B\[/u);
   assert.doesNotMatch(stdout, /Resume token:/u);
+  assertNoHandoffToken(stdout);
   assert.doesNotMatch(stdout, /"contract"\s*:/u);
 });
 
@@ -492,6 +576,7 @@ test("TTY Handoff presents unavailable recovery instructions and can defer safel
   assert.match(stdout, /Handoff Deferred/u);
   assert.match(stdout, /No external authority was granted/u);
   assert.doesNotMatch(stdout, /Resume token:/u);
+  assertNoHandoffToken(stdout);
 });
 
 test("TTY Handoff supports the manual path and cancellation without granting authority", {
@@ -518,6 +603,7 @@ test("TTY Handoff supports the manual path and cancellation without granting aut
   })).stdout;
   assert.match(manualOutput, /Manual or Custom Executor Selected/u);
   assert.match(manualOutput, /No external authority was granted/u);
+  assertNoHandoffToken(manualOutput);
 
   const cancelRepository = await projectWithEngine(
     `await import(${JSON.stringify(pathToFileURL(engine).href)});\n`,
@@ -537,6 +623,7 @@ test("TTY Handoff supports the manual path and cancellation without granting aut
   })).stdout;
   assert.match(cancelOutput, /Handoff Cancelled/u);
   assert.match(cancelOutput, /Authority granted before cancellation: no/u);
+  assertNoHandoffToken(cancelOutput);
 });
 
 test("rally delegates through an existing v1 bin/rally.js compatibility Engine", async () => {

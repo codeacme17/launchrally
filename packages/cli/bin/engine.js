@@ -1225,6 +1225,7 @@ async function main() {
   }
 
   if (command === "handoff") {
+    const cwd = optionValue("--cwd") ?? process.cwd();
     const resumeToken = optionValue("--resume");
     const source = {};
     const files = [
@@ -1298,12 +1299,25 @@ async function main() {
       const prompt = presentation.plain
         ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
         : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+      const sourceReportId = source.task_graph?.source_report?.id;
+      const verifyAction = typeof sourceReportId === "string"
+        ? createNextAction(invocationContext, [
+          "verify",
+          "--cwd",
+          path.resolve(cwd),
+          "--report",
+          path.resolve(cwd, ".launchrally", "reports", sourceReportId, "record.json"),
+          "--scope",
+          "full",
+        ])
+        : null;
       try {
         const result = await runHumanHandoff({
           source,
           receipt,
           prompt,
           runHandoff,
+          verifyAction,
           loadReceipt: async (receiptFile) => {
             try {
               return JSON.parse(await readFile(path.resolve(receiptFile), "utf8"));
