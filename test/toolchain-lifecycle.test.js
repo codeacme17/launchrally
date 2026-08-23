@@ -89,7 +89,7 @@ const staleMigrationPtyRunner = [
   "raise SystemExit(child.wait())",
 ].join("\n");
 const styledMigrationPtyRunner = [
-  "import errno, fcntl, os, pty, struct, subprocess, sys, termios",
+  "import errno, fcntl, os, pty, struct, subprocess, sys, termios, time",
   "mode = sys.argv[1]",
   "target = sys.argv[2]",
   "master, slave = pty.openpty()",
@@ -113,25 +113,35 @@ const styledMigrationPtyRunner = [
   "    sys.stdout.buffer.flush()",
   "    observed += chunk",
   "    if phase == 'permission' and b'Approve npm_registry_read?' in observed:",
-  "        os.write(master, b'\\x1b[D\\r')",
+  "        os.write(master, b'\\x1b[D')",
+  "        time.sleep(0.05)",
+  "        os.write(master, b'\\r')",
   "        phase = 'decision'",
   "        observed = b''",
   "    elif phase == 'decision' and b'Replace the complete Project Toolchain pin' in observed:",
   "        if mode == 'confirm_full':",
-  "            os.write(master, b'\\x1b[B\\r')",
+  "            os.write(master, b'\\x1b[B')",
+  "            time.sleep(0.05)",
+  "            os.write(master, b'\\r')",
   "            phase = 'full'",
   "        elif mode == 'cancel':",
-  "            os.write(master, b'\\x1b[B\\x1b[B\\r')",
+  "            os.write(master, b'\\x1b[B\\x1b[B')",
+  "            time.sleep(0.05)",
+  "            os.write(master, b'\\r')",
   "            phase = 'done'",
   "        else:",
   "            if mode == 'stale':",
   "                with open(target, 'a', encoding='utf8') as changed:",
   "                    changed.write(' ')",
-  "            os.write(master, b'\\x1b[A\\r')",
+  "            os.write(master, b'\\x1b[A')",
+  "            time.sleep(0.05)",
+  "            os.write(master, b'\\r')",
   "            phase = 'done'",
   "        observed = b''",
   "    elif phase == 'full' and b'Replace the complete Project Toolchain pin' in observed:",
-  "        os.write(master, b'\\x1b[A\\r')",
+  "        os.write(master, b'\\x1b[A')",
+  "        time.sleep(0.05)",
+  "        os.write(master, b'\\r')",
   "        phase = 'done'",
   "        observed = b''",
   "os.close(master)",
@@ -210,8 +220,8 @@ async function preparedToolchain(version) {
 async function npmFixture(prepared) {
   const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-fixture-"));
   const executable = path.join(directory, process.platform === "win32" ? "npm.cmd" : "npm");
-  await writeFile(executable, [
-    `#!${process.execPath}`,
+  const script = path.join(directory, "npm-fixture.cjs");
+  const source = [
     "const { cpSync } = require(\"node:fs\");",
     "const path = require(\"node:path\");",
     "if (process.env.LAUNCHRALLY_TEST_OFFLINE_MISS === \"1\" && process.argv.includes(\"--offline\")) {",
@@ -221,7 +231,11 @@ async function npmFixture(prepared) {
     "const source = process.env.LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN;",
     "cpSync(path.join(source, \"package-lock.json\"), path.join(process.cwd(), \"package-lock.json\"));",
     "cpSync(path.join(source, \"node_modules\"), path.join(process.cwd(), \"node_modules\"), { recursive: true });",
-  ].join("\n") + "\n");
+  ].join("\n") + "\n";
+  await writeFile(script, source);
+  await writeFile(executable, process.platform === "win32"
+    ? `@\"${process.execPath}\" \"${script}\" %*\r\n`
+    : `#!${process.execPath}\n${source}`);
   await chmod(executable, 0o755);
   return directory;
 }
@@ -590,7 +604,10 @@ test("non-TTY Human migration fails safely with a complete Agent command", async
   ]), (error) => {
     assert.equal(error.code, 2);
     assert.match(error.stderr, /Non-TTY Human Mode cannot confirm/u);
-    assert.match(error.stderr, /toolchain migrate --to 0\.4\.2 --json --cwd/u);
+    assert.match(
+      error.stderr,
+      /['"]?toolchain['"]?\s+['"]?migrate['"]?\s+['"]?--to['"]?\s+['"]?0\.4\.2['"]?\s+['"]?--json['"]?\s+['"]?--cwd['"]?/u,
+    );
     assert.doesNotMatch(error.stdout, /needs_confirmation|resume_token/u);
     return true;
   });
@@ -619,9 +636,18 @@ test("non-TTY structured migration prints the complete corrected Agent command",
   ]), (error) => {
     assert.equal(error.code, 2);
     assert.match(error.stderr, /Use this complete Agent\/JSON command/u);
-    assert.match(error.stderr, /toolchain migrate --to 0\.4\.2 --json --cwd/u);
-    assert.match(error.stderr, /--resume opaque-token --confirm confirm/u);
-    assert.match(error.stderr, /--permissions '\{"npm_registry_read":"approved"\}'/u);
+    assert.match(
+      error.stderr,
+      /['"]?toolchain['"]?\s+['"]?migrate['"]?\s+['"]?--to['"]?\s+['"]?0\.4\.2['"]?\s+['"]?--json['"]?\s+['"]?--cwd['"]?/u,
+    );
+    assert.match(
+      error.stderr,
+      /['"]?--resume['"]?\s+['"]?opaque-token['"]?\s+['"]?--confirm['"]?\s+['"]?confirm['"]?/u,
+    );
+    assert.match(
+      error.stderr,
+      /['"]?--permissions['"]?\s+['"]?\{"npm_registry_read":"approved"\}['"]?/u,
+    );
     assert.doesNotMatch(error.stderr, /Human Mode does not accept structured/u);
     return true;
   });
