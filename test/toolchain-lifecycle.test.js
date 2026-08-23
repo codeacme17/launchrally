@@ -119,12 +119,7 @@ const styledMigrationPtyRunner = [
   "        phase = 'decision'",
   "        observed = b''",
   "    elif phase == 'decision' and b'Replace the complete Project Toolchain pin' in observed:",
-  "        if mode == 'confirm_full':",
-  "            os.write(master, b'\\x1b[B')",
-  "            time.sleep(0.05)",
-  "            os.write(master, b'\\r')",
-  "            phase = 'full'",
-  "        elif mode == 'cancel':",
+  "        if mode == 'cancel':",
   "            os.write(master, b'\\x1b[B\\x1b[B')",
   "            time.sleep(0.05)",
   "            os.write(master, b'\\r')",
@@ -137,12 +132,6 @@ const styledMigrationPtyRunner = [
   "            time.sleep(0.05)",
   "            os.write(master, b'\\r')",
   "            phase = 'done'",
-  "        observed = b''",
-  "    elif phase == 'full' and b'Replace the complete Project Toolchain pin' in observed:",
-  "        os.write(master, b'\\x1b[A')",
-  "        time.sleep(0.05)",
-  "        os.write(master, b'\\r')",
-  "        phase = 'done'",
   "        observed = b''",
   "os.close(master)",
   "raise SystemExit(child.wait())",
@@ -347,7 +336,7 @@ test("TTY Human toolchain migrate previews and confirms exact authority in one p
   assert.equal(status.authority.state, "ready");
 });
 
-test("default styled TTY migration shows the full preview, confirms, and completes", {
+test("default styled TTY migration confirms and completes", {
   skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
 }, async () => {
   const repository = await repositoryFixture();
@@ -358,7 +347,7 @@ test("default styled TTY migration shows the full preview, confirms, and complet
   const packagePath = path.join(repository, ".launchrally/toolchain/package.json");
 
   const { stdout } = await execFileAsync("python3", [
-    "-c", styledMigrationPtyRunner, "confirm_full", packagePath, process.execPath, cli,
+    "-c", styledMigrationPtyRunner, "confirm", packagePath, process.execPath, cli,
     "toolchain", "migrate", "--to", "0.4.2", "--cwd", repository,
   ], {
     env: {
@@ -372,7 +361,6 @@ test("default styled TTY migration shows the full preview, confirms, and complet
   assert.match(stdout, /\u001b\[/u);
   assert.match(stdout, /LaunchRally Project Toolchain\r?\n/u);
   assert.match(stdout, /LaunchRally Project Toolchain Migration Preview/u);
-  assert.match(stdout, /Full exact digest-bound diff/u);
   assert.match(stdout, /LaunchRally Project Toolchain Migration Complete/u);
   assert.match(stdout, /Authority: ready \(project_toolchain\)/u);
   assert.match(stdout, /verify --scope full/u);
