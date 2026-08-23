@@ -34,7 +34,9 @@ before adoption.
 - [#207 — Complete Project Toolchain migrate Human Mode](https://github.com/codeacme17/launchrally/pull/207)
 - [#208 — Add exact 0.4.1-to-0.4.2 migration guide](https://github.com/codeacme17/launchrally/pull/208)
 - [#209 — Complete remaining Phase 1 Human Mode flows](https://github.com/codeacme17/launchrally/pull/209)
+- [#211 — Prepare Phase 1 Experimental 0.4.3](https://github.com/codeacme17/launchrally/pull/211)
+- [#212 — Promote Phase 1 Experimental 0.4.3](https://github.com/codeacme17/launchrally/pull/212)
 
 ## Contributors
 
-- [@codeacme17](https://github.com/codeacme17) — [#206](https://github.com/codeacme17/launchrally/pull/206), [#207](https://github.com/codeacme17/launchrally/pull/207), [#208](https://github.com/codeacme17/launchrally/pull/208), [#209](https://github.com/codeacme17/launchrally/pull/209)
+- [@codeacme17](https://github.com/codeacme17) — [#206](https://github.com/codeacme17/launchrally/pull/206), [#207](https://github.com/codeacme17/launchrally/pull/207), [#208](https://github.com/codeacme17/launchrally/pull/208), [#209](https://github.com/codeacme17/launchrally/pull/209), [#211](https://github.com/codeacme17/launchrally/pull/211), [#212](https://github.com/codeacme17/launchrally/pull/212)
