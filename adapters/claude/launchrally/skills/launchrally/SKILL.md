@@ -20,6 +20,7 @@ Use the local CLI as the only authority for Checks, Evidence, Severity, release 
 - When Audit or Verify returns an authenticated Core Journey request, read [references/protected-journeys.md](references/protected-journeys.md).
 - When a completed Audit or Verify contains `provider_tool_recoveries`, read [references/provider-tool-recovery.md](references/provider-tool-recovery.md).
 - When invoking the CLI or handling its states, read [references/cli-contract.md](references/cli-contract.md).
+- For an exact Experimental 0.4.1-to-0.4.2 Project Toolchain update, follow the [version-specific migration authority](https://github.com/codeacme17/launchrally/blob/main/docs/maintainers/p1-migration-notes.md#project-toolchain-migration-041-to-042) and the typed lifecycle router in [references/cli-contract.md](references/cli-contract.md).
 - When inspecting or exchanging a Phase 1 architecture record, read [references/phase-1-contracts.md](references/phase-1-contracts.md). Contract availability alone does not make a Phase 1 operation executable.
 - When a typed `architect` interaction enters Product Intent discovery, read [references/product-intent.md](references/product-intent.md) before presenting semantic-analysis permission or confirmation.
 - When presenting a Capability Catalog, derived obligations, a Capability Graph, or an Integration Contract, read [references/capability-model.md](references/capability-model.md).

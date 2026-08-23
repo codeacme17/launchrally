@@ -181,3 +181,64 @@ test("the canonical Skill routes the complete Phase 1 typed journey", async () =
   assert.match(journey, /Human Mode/iu);
   assert.match(journey, /cross-host/iu);
 });
+
+test("the published Experimental migration path tracks the exact release version", async () => {
+  const [rootPackage, release] = await Promise.all([
+    text("package.json").then(JSON.parse),
+    text("release/p1.json").then(JSON.parse),
+  ]);
+  const [
+    migrationNotes,
+    announcement,
+    install,
+    quickstart,
+    skill,
+    codexSkill,
+    claudeSkill,
+  ] = await Promise.all([
+    text(release.experimental_publication.migration_notes),
+    text(release.experimental_publication.announcement),
+    text("docs/getting-started/install.md"),
+    text("docs/getting-started/quickstart.md"),
+    text("skills/launchrally/SKILL.md"),
+    text("adapters/codex/launchrally/skills/launchrally/SKILL.md"),
+    text("adapters/claude/launchrally/skills/launchrally/SKILL.md"),
+  ]);
+  const version = rootPackage.version;
+  const heading = `Project Toolchain migration: 0.4.1 to ${version}`;
+  const migration = section(migrationNotes, heading);
+  const anchor = `p1-migration-notes.md#project-toolchain-migration-041-to-${version.replaceAll(".", "")}`;
+
+  assert.equal(release.release_status, "experimental");
+  assert.equal(release.experimental_publication.candidate_tag, `v${version}`);
+  assert.equal(
+    release.experimental_publication.migration_notes,
+    "docs/maintainers/p1-migration-notes.md",
+  );
+  assert.match(migration, new RegExp(`@launchrally/cli@${version.replaceAll(".", "\\.")}`, "u"));
+  assert.match(migration, new RegExp(`toolchain migrate --to ${version.replaceAll(".", "\\.")}`, "u"));
+  assert.match(
+    migration,
+    new RegExp(
+      `launcher_version[^\\n]*${version.replaceAll(".", "\\.")}[\\s\\S]*cli_version[^\\n]*0\\.4\\.1`,
+      "u",
+    ),
+  );
+  assert.match(migration, /### POSIX/u);
+  assert.match(migration, /### PowerShell/u);
+  assert.match(migration, /npm_registry_read/u);
+  assert.match(migration, /--resume/u);
+  assert.match(migration, /--confirm confirm/u);
+  assert.match(migration, /execution_authority_changed/u);
+  assert.match(migration, /Manifest-bound source Audit Report/iu);
+  assert.match(migration, /new current Report/iu);
+  assert.match(migration, /Codex Plugin/u);
+  assert.match(migration, /Claude Plugin/u);
+
+  for (const navigation of [announcement, install, quickstart]) {
+    assert.ok(navigation.includes(anchor), `missing exact migration link: ${anchor}`);
+  }
+  for (const routedSkill of [skill, codexSkill, claudeSkill]) {
+    assert.match(routedSkill, /p1-migration-notes\.md#project-toolchain-migration-041-to-042/u);
+  }
+});

@@ -32,11 +32,13 @@ TTY Human Verify keeps fresh Evidence review in the same process. It shows every
 
 Ordinary Init preserves an existing Manifest while it may preview adoption of a newer Report into immutable history. To replace incorrect or outdated release intent with a current corrected Audit, run `rally init --cwd . --report ./corrected-audit-report.json --rebind`, review the old/new source identities and exact Manifest diff, and confirm that separate preview. Rebind preserves the exact Project Toolchain and all prior Reports and Evidence.
 
-`rally architect` is the read-only Phase 1 whole-product decision flow. It consumes a current full Report plus confirmed Product Intent, Capability Catalog, and Capability Graph files, returns a typed Blueprint before confirmation, and then accepts independent decision responses. A completed confirmed set includes an immutable Architecture Package bundle. Use `rally architecture-package --package <bundle.json> --output <path>` to write only an explicitly selected pre-Init output. After Init, omit `--output` to inspect the exact local-history preview, then repeat with its exact `--resume <token> --confirm confirm` to append the digest-bound package transactionally. Neither command performs Provider writes, stages files, commits files, or turns the Manifest into reasoning history.
+`rally architect` is the read-only Phase 1 whole-product decision flow. It consumes a current full Report plus confirmed Product Intent, Capability Catalog, and Capability Graph files, returns a typed Blueprint before confirmation, and then accepts independent decision responses. A completed confirmed set includes an immutable Architecture Package bundle. Use `rally architecture-package --package <bundle.json> --output <path>` to write only an explicitly selected pre-Init output. After Init, omit `--output`; TTY Human Mode shows the exact local-history preview and confirms the digest-bound append in the same process. Agent/CI Mode retains the explicit `--resume <token> --confirm confirm` protocol. Neither command performs Provider writes, stages files, commits files, or turns the Manifest into reasoning history.
 
 `rally handoff` is the typed external Executor coordination flow for the current Task Graph frontier. It accepts exact reviewed Executor Descriptors and observed tool versions, groups compatible Tasks by their real authority boundary, and creates an unapproved Handoff Package for one selected batch. Only `--confirm confirm` approves that exact package; the CLI still performs no installation, login, credential collection, Provider write, deployment, or external execution. A supplied normalized Execution Receipt remains an unverified claim and routes to fresh Verify.
 
 Exact-version npm-exec remains a no-install trial and CI fallback. Keep its full prefix on every follow-up; see the [Quickstart](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/quickstart.md) for the directly executable sequence.
+
+For an initialized Experimental 0.4.1 project, follow the [exact 0.4.1-to-0.4.2 Project Toolchain migration](https://github.com/codeacme17/launchrally/blob/main/docs/maintainers/p1-migration-notes.md#project-toolchain-migration-041-to-042). Updating the Launcher, project pin, and optional Plugin are separate actions.
 
 ## Compatibility and boundaries
 
@@ -50,6 +52,7 @@ When an approved read cannot find its official Provider executable, the Report p
 
 - [Install, lifecycle, and troubleshooting](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/install.md)
 - [Quickstart](https://github.com/codeacme17/launchrally/blob/main/docs/getting-started/quickstart.md)
+- [0.4.1-to-0.4.2 Project Toolchain migration](https://github.com/codeacme17/launchrally/blob/main/docs/maintainers/p1-migration-notes.md#project-toolchain-migration-041-to-042)
 - [Privacy boundary](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/privacy.md)
 - [Project data model](https://github.com/codeacme17/launchrally/blob/main/docs/concepts/data-model.md)
 
