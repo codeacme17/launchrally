@@ -22,6 +22,12 @@ import {
   renderHumanArchitecturePackageOutcome,
   renderHumanArchitecturePackagePreview,
 } from "./human-architecture-package.js";
+import {
+  renderHumanHandoffAuthority,
+  renderHumanHandoffDiscovery,
+  renderHumanHandoffOutcome,
+  renderHumanHandoffReceipt,
+} from "./human-handoff.js";
 import { renderHumanInit, renderHumanInitFullPreview } from "./human-init.js";
 
 function styleTextSupportsArrays() {
@@ -237,7 +243,77 @@ function operationTitle(operation) {
   if (operation === "verify") return "LaunchRally Verify";
   if (operation === "architect") return "LaunchRally Architect";
   if (operation === "architecture-package") return "LaunchRally Architecture Package";
+  if (operation === "handoff") return "LaunchRally External Executor Handoff";
   return "LaunchRally Audit";
+}
+
+function handoffChoiceOptions(result, { receiptAvailable = false } = {}) {
+  if (result.request?.kind === "executor_selection") {
+    return result.candidates.filter(({ available }) => available).map((candidate) => ({
+      label: `${candidate.recommended ? "Recommended — " : ""}${candidate.executor_id}: ${candidate.effect_class} on ${candidate.target}`,
+      value: candidate.batch_id,
+    }));
+  }
+  if (result.request?.kind === "authority_confirmation") {
+    return [
+      { label: "Confirm this exact external authority", value: "confirm" },
+      { label: "Decline", value: "deny" },
+      { label: "Cancel", value: "cancel" },
+    ];
+  }
+  if (result.request?.kind === "execution_receipt") {
+    return [
+      {
+        label: receiptAvailable
+          ? "Submit the supplied normalized Execution Receipt"
+          : "Submit a normalized Execution Receipt file",
+        value: "submit",
+      },
+      { label: "Defer receipt review", value: "defer" },
+      { label: "Cancel external coordination", value: "cancel" },
+    ];
+  }
+  if (result.request?.kind === "fresh_verification") {
+    return [
+      { label: "Prepare the fresh Verify command", value: "verify" },
+      { label: "Defer fresh Verify", value: "defer" },
+      { label: "Cancel", value: "cancel" },
+    ];
+  }
+  const labels = {
+    show_install_instructions: "Show reviewed user-managed installation instructions",
+    open_official_manual: "Show the official manual",
+    manual_or_custom: "Use a manual or custom Executor",
+    defer: "Defer Handoff",
+    cancel: "Cancel",
+    refresh: "Refresh Handoff inputs",
+  };
+  return (result.request?.choices ?? []).map((choice) => ({
+    label: labels[choice] ?? choice,
+    value: choice,
+  }));
+}
+
+function handoffInitialValue(result) {
+  if (result.request?.kind === "executor_selection") {
+    return result.candidates.find(({ available, recommended }) => available && recommended)
+      ?.batch_id;
+  }
+  if (result.request?.kind === "authority_confirmation") return "deny";
+  if (["execution_receipt", "fresh_verification"].includes(result.request?.kind)) {
+    return "defer";
+  }
+  return result.request?.choices?.includes("defer") ? "defer" : undefined;
+}
+
+function handoffPresentation(result) {
+  if (result.request?.kind === "authority_confirmation") {
+    return { title: "Exact authority preview", content: renderHumanHandoffAuthority(result) };
+  }
+  if (["execution_receipt", "fresh_verification"].includes(result.request?.kind)) {
+    return { title: "Receipt and verification", content: renderHumanHandoffReceipt(result) };
+  }
+  return { title: "Executor discovery", content: renderHumanHandoffDiscovery(result) };
 }
 
 function terminalSafeText(value) {
@@ -1088,6 +1164,35 @@ export function createPlainPromptAdapter({
     async finishArchitecturePackage(result, bundle) {
       write(output, renderHumanArchitecturePackageOutcome(result, bundle));
     },
+    async respondHandoff(result, context = {}) {
+      const presentation = handoffPresentation(result);
+      write(output, presentation.content);
+      const value = await choose(
+        result.request?.kind === "authority_confirmation"
+          ? "Grant only this exact external authority?"
+          : result.request?.kind === "execution_receipt"
+            ? "Review the external execution receipt:"
+            : result.request?.kind === "fresh_verification"
+              ? "Choose the fresh verification action:"
+              : "Choose how to continue:",
+        handoffChoiceOptions(result, context),
+        handoffInitialValue(result),
+      );
+      if (result.request?.kind === "executor_selection") return { selection: value };
+      if (result.request?.kind === "authority_confirmation") return { confirmation: value };
+      if (result.request?.kind === "execution_receipt" && value === "submit") {
+        return {
+          choice: value,
+          ...(context.receiptAvailable
+            ? {}
+            : { receipt_path: (await ask("Execution Receipt JSON path:")).trim() }),
+        };
+      }
+      return { choice: value };
+    },
+    async finishHandoff(result, context = {}) {
+      write(output, renderHumanHandoffOutcome(result, context));
+    },
     async close() {
       signals.off("SIGINT", handleInterrupt);
       readline.close();
@@ -1523,6 +1628,36 @@ export async function createClackPromptAdapter({
         "Architecture Package outcome",
         common,
       );
+    },
+    async respondHandoff(result, context = {}) {
+      const presentation = handoffPresentation(result);
+      clack.note(presentation.content, presentation.title, common);
+      const value = cancelled(await clack.select({
+        ...common,
+        message: result.request?.kind === "authority_confirmation"
+          ? "Grant only this exact external authority?"
+          : result.request?.kind === "execution_receipt"
+            ? "Review the external execution receipt"
+            : result.request?.kind === "fresh_verification"
+              ? "Choose the fresh verification action"
+              : "Choose how to continue",
+        options: handoffChoiceOptions(result, context),
+        initialValue: handoffInitialValue(result),
+      }), clack, output, "Handoff");
+      if (result.request?.kind === "executor_selection") return { selection: value };
+      if (result.request?.kind === "authority_confirmation") return { confirmation: value };
+      if (result.request?.kind === "execution_receipt" && value === "submit") {
+        return {
+          choice: value,
+          ...(context.receiptAvailable
+            ? {}
+            : { receipt_path: (await ask("Execution Receipt JSON path:", { required: true })).trim() }),
+        };
+      }
+      return { choice: value };
+    },
+    async finishHandoff(result, context = {}) {
+      clack.note(renderHumanHandoffOutcome(result, context), "Handoff outcome", common);
     },
     async close() {
       signals.off("SIGINT", handleInterrupt);

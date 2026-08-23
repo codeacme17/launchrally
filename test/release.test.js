@@ -1472,6 +1472,9 @@ test("packed artifacts complete installation, delegation, lifecycle, and full ve
       npm_exec: "artifact_equivalent_audit_and_follow_up",
       user_prefix: "installed_and_verified",
       project_engine: "initialized_and_delegated",
+      human_project_version: process.platform === "win32"
+        ? "typed_runner_unavailable"
+        : "concise_project_engine_summary",
       fresh_clone: "restored_offline",
       registry_permission: "cache_miss_approved_and_denied",
       invalid_authority: "corruption_failed_closed",

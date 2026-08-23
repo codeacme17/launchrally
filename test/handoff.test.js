@@ -916,7 +916,7 @@ test("the public JSON CLI exposes typed discovery and resumable authority previe
   assert.equal(preview.status, "needs_confirmation");
   assert.equal(preview.handoff_package.approval.state, "required");
 
-  const human = await execFileAsync(process.execPath, [
+  await assert.rejects(execFileAsync(process.execPath, [
     ...cliClockArguments,
     engine,
     "handoff",
@@ -928,12 +928,10 @@ test("the public JSON CLI exposes typed discovery and resumable authority previe
     toolsPath,
     "--reviewed-executors",
     reviewsPath,
-  ]);
-  assert.match(human.stdout, /LaunchRally External Executor Handoff/u);
-  assert.match(human.stdout, /does not install, log in, request credentials, or execute/u);
-  assert.match(human.stdout, /provider_configuration on identity_authentication/u);
-  assert.match(human.stdout, /cancellation supported_between_effects/u);
-  assert.match(human.stdout, /partial failure reported_per_task/u);
-  assert.match(human.stdout, /authentication user_managed_unverified/u);
-  assert.match(human.stdout, /secret handling external_reference_only/u);
+  ]), (error) => {
+    assert.equal(error.code, 2);
+    assert.match(error.stderr, /Non-TTY Human Mode cannot coordinate Handoff decisions safely/u);
+    assert.match(error.stderr, /Use rally handoff --json/u);
+    return true;
+  });
 });
