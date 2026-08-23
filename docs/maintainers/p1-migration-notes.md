@@ -215,6 +215,127 @@ and owner-restricted host resume registry unchanged. Removing that separate
 host registry invalidates retained resumable host artifacts; it is not part of
 Project Toolchain migration.
 
+## Project Toolchain migration: 0.4.1 to 0.4.2
+
+This historical procedure remains available for an initialized project whose
+established Engine pin is `0.4.1`. LaunchRally 0.4.2 is Experimental; Phase 0
+Stable remains `0.3.2` on npm `latest`. Updating the global Launcher does not
+change a valid project pin, so `launcher_version: "0.4.2"` together with
+`cli_version: "0.4.1"` and `authority.source: "project_toolchain"` is expected
+before migration. Only an explicitly confirmed `toolchain migrate` changes the
+pin; `init` is not a migration mechanism.
+
+Migration changes only the owned Project Toolchain package, lock, authority
+descriptor, and rebuildable materialization. It preserves the Manifest,
+immutable Reports, Evidence, Architecture history, Provider intent,
+application dependencies and source, and external saved Reports. It marks the
+prior current Report non-current with `execution_authority_changed`, requiring
+a fresh full Verify against the original Manifest-bound source Audit Report.
+
+The shipped 0.4.2 default TTY flow emits typed permission and confirmation
+states and requires explicit resume commands. Review every field, keep opaque
+resume tokens outside the repository, and treat registry permission and
+migration confirmation as separate decisions.
+
+### POSIX
+
+```sh
+PROJECT_ROOT=/path/to/project
+SOURCE_REPORT=/path/to/original-manifest-bound-audit-report.json
+MIGRATION_RESPONSE=./launchrally-0.4.2-migration-response.json
+
+npm install --global @launchrally/cli@0.4.2
+rally --version --json
+rally --version --json --cwd "$PROJECT_ROOT"
+rally toolchain status --json --cwd "$PROJECT_ROOT"
+
+rally toolchain migrate --to 0.4.2 --cwd "$PROJECT_ROOT" > "$MIGRATION_RESPONSE"
+node -e 'const fs = require("node:fs"); const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); console.log(value.status); console.log(JSON.stringify(value.request ?? {}, null, 2));' "$MIGRATION_RESPONSE"
+```
+
+If the response is `needs_permission`, review the exact `npm_registry_read`
+request. Denial preserves the 0.4.1 pin. Approval authorizes only that bounded
+read and returns the exact migration preview:
+
+```sh
+MIGRATION_TOKEN="$(node -e 'const fs = require("node:fs"); const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(value.interaction.resume_token);' "$MIGRATION_RESPONSE")"
+rally toolchain migrate --to 0.4.2 --cwd "$PROJECT_ROOT" --resume "$MIGRATION_TOKEN" --permissions '{"npm_registry_read":"approved"}' > "$MIGRATION_RESPONSE"
+node -e 'const fs = require("node:fs"); const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); console.log(value.status); console.log(JSON.stringify(value.preview ?? {}, null, 2));' "$MIGRATION_RESPONSE"
+```
+
+When the response is `needs_confirmation`, inspect every
+`preview.changes` entry. Resume with `decline` to change nothing, or confirm the
+exact preview and perform the mandatory full Verify:
+
+```sh
+MIGRATION_TOKEN="$(node -e 'const fs = require("node:fs"); const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(value.interaction.resume_token);' "$MIGRATION_RESPONSE")"
+rally toolchain migrate --to 0.4.2 --cwd "$PROJECT_ROOT" --resume "$MIGRATION_TOKEN" --confirm confirm
+rally --version --json --cwd "$PROJECT_ROOT"
+rally verify --cwd "$PROJECT_ROOT" --report "$SOURCE_REPORT" --scope full
+```
+
+### PowerShell
+
+```powershell
+$ProjectRoot = 'C:\path\to\project'
+$SourceReport = 'C:\path\to\original-manifest-bound-audit-report.json'
+$MigrationResponse = '.\launchrally-0.4.2-migration-response.json'
+
+npm install --global @launchrally/cli@0.4.2
+rally --version --json
+rally --version --json --cwd $ProjectRoot
+rally toolchain status --json --cwd $ProjectRoot
+
+rally toolchain migrate --to 0.4.2 --cwd $ProjectRoot | Set-Content -Encoding utf8 $MigrationResponse
+$Migration = Get-Content -Raw $MigrationResponse | ConvertFrom-Json
+$Migration.status
+$Migration.request | ConvertTo-Json -Depth 20
+```
+
+Approve only the exact registry request when required, then inspect and confirm
+the exact preview:
+
+```powershell
+rally toolchain migrate --to 0.4.2 --cwd $ProjectRoot --resume $Migration.interaction.resume_token --permissions '{"npm_registry_read":"approved"}' | Set-Content -Encoding utf8 $MigrationResponse
+$Migration = Get-Content -Raw $MigrationResponse | ConvertFrom-Json
+$Migration.preview | ConvertTo-Json -Depth 20
+
+rally toolchain migrate --to 0.4.2 --cwd $ProjectRoot --resume $Migration.interaction.resume_token --confirm confirm
+rally --version --json --cwd $ProjectRoot
+rally verify --cwd $ProjectRoot --report $SourceReport --scope full
+```
+
+After migration require ready `project_toolchain` authority and both Launcher
+and selected Engine at 0.4.2. Use the new current Report printed by Verify for
+Plan or Architect, while retaining the Manifest-bound source Report for future
+whole-release Verify runs.
+
+Denial, cancellation, abandoned or stale previews, and missing registry access
+preserve the 0.4.1 pin. Interrupted transactions recover only when their state
+is safely recognizable; malformed state fails closed. `restore` rebuilds the
+established pin and is not a downgrade. Launcher 0.4.2 supports only the
+allowlisted legacy downgrade target `0.2.2`; direct downgrade to 0.4.1 is
+unsupported.
+
+Update an installed Plugin separately and pin its checkout to the exact tag:
+
+```sh
+codex plugin remove launchrally@launchrally
+codex plugin marketplace remove launchrally
+codex plugin marketplace add codeacme17/launchrally --ref v0.4.2
+codex plugin add launchrally@launchrally
+codex plugin list --json
+
+claude plugin uninstall launchrally@launchrally --scope user
+claude plugin marketplace remove launchrally
+claude plugin marketplace add codeacme17/launchrally@v0.4.2 --scope user
+claude plugin install launchrally@launchrally --scope user
+claude plugin list --json
+```
+
+Plugin update or removal does not change the Launcher, Project Toolchain,
+project-owned data, application source, or owner-restricted host resume state.
+
 ## Adoption
 
 Install 0.4.3 only by selecting the non-stable `experimental` channel or the
