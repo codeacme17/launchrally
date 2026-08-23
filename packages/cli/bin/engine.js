@@ -51,6 +51,11 @@ import {
   renderHumanArchitecturePackageOutcome,
   runHumanArchitecturePackage,
 } from "./human-architecture-package.js";
+import { renderHumanVersion } from "./human-version.js";
+import {
+  renderHumanHandoffOutcome,
+  runHumanHandoff,
+} from "./human-handoff.js";
 import { createSystemFilePicker } from "./system-file-picker.js";
 import {
   consumeInvocationContext,
@@ -450,6 +455,19 @@ function print(value) {
   }
 
   if (
+    value.operation === "version"
+    && ["completed", "unavailable", "execution_error"].includes(value.status)
+  ) {
+    const presentation = humanAuditPresentationOptions({
+      args,
+      env: process.env,
+      output: process.stdout,
+    });
+    process.stdout.write(`${renderHumanVersion(value, { styled: presentation.styled })}\n`);
+    return;
+  }
+
+  if (
     value.operation === "audit"
     && ["needs_input", "needs_confirmation", "needs_permission"].includes(value.status)
   ) {
@@ -602,7 +620,7 @@ async function main() {
   if (command === "version") {
     const authority = await resolveExecutionAuthority({
       cwd: optionValue("--cwd"),
-      launcher_version: VERSION,
+      launcher_version: invocationContext.launcher_version,
     });
     const ready = authority.state === "ready";
     const invalid = authority.state === "invalid_toolchain";
@@ -611,7 +629,7 @@ async function main() {
       status: ready ? "completed" : invalid ? "execution_error" : "unavailable",
       operation: "version",
       ...(ready ? { cli_version: authority.engine.version } : {}),
-      launcher_version: VERSION,
+      launcher_version: invocationContext.launcher_version,
       authority,
       ...(!ready ? {
         error: authority.state,
@@ -1278,6 +1296,7 @@ async function main() {
   }
 
   if (command === "handoff") {
+    const cwd = optionValue("--cwd") ?? process.cwd();
     const resumeToken = optionValue("--resume");
     const source = {};
     const files = [
@@ -1295,13 +1314,15 @@ async function main() {
         }
       }
     } catch {
-      print({
+      const failure = {
         contract: CLI_INTERACTION_CONTRACT,
         status: "execution_error",
         operation: "handoff",
         error: "invalid_handoff_input_file",
         message: "Handoff requires readable Task Graph, Executor, tool, and review JSON files.",
-      });
+      };
+      if (json) print(failure);
+      else process.stdout.write(`${renderHumanHandoffOutcome(failure)}\n`);
       return 2;
     }
     let receipt;
@@ -1310,13 +1331,87 @@ async function main() {
       try {
         receipt = JSON.parse(await readFile(receiptPath, "utf8"));
       } catch {
-        print({
+        const failure = {
           contract: CLI_INTERACTION_CONTRACT,
           status: "execution_error",
           operation: "handoff",
           error: "invalid_execution_receipt_file",
           message: "The execution receipt JSON could not be read and parsed.",
+        };
+        if (json) print(failure);
+        else process.stdout.write(`${renderHumanHandoffOutcome(failure)}\n`);
+        return 2;
+      }
+    }
+    if (!json) {
+      if (["--resume", "--select", "--confirm", "--choice"].some((option) =>
+        args.includes(option))) {
+        process.stderr.write([
+          "Human Mode does not accept structured Handoff decisions.",
+          "Use rally handoff --json with explicit resume and decision options for the Agent/CI protocol.",
+        ].join("\n") + "\n");
+        return 2;
+      }
+      if (process.stdin.isTTY !== true) {
+        process.stderr.write([
+          "Non-TTY Human Mode cannot coordinate Handoff decisions safely.",
+          "Use rally handoff --json for the resumable Agent/CI protocol.",
+        ].join("\n") + "\n");
+        return 2;
+      }
+      const { createClackPromptAdapter, createPlainPromptAdapter } = await import(
+        "./prompt-adapters.js"
+      );
+      const presentation = humanAuditPresentationOptions({
+        args,
+        env: process.env,
+        output: process.stdout,
+      });
+      const prompt = presentation.plain
+        ? createPlainPromptAdapter({ input: process.stdin, output: process.stderr })
+        : await createClackPromptAdapter({ input: process.stdin, output: process.stderr });
+      const sourceReportId = source.task_graph?.source_report?.id;
+      const verifyAction = typeof sourceReportId === "string"
+        ? createNextAction(invocationContext, [
+          "verify",
+          "--cwd",
+          path.resolve(cwd),
+          "--report",
+          path.resolve(cwd, ".launchrally", "reports", sourceReportId, "record.json"),
+          "--scope",
+          "full",
+        ])
+        : null;
+      try {
+        const result = await runHumanHandoff({
+          source,
+          receipt,
+          prompt,
+          runHandoff,
+          verifyAction,
+          loadReceipt: async (receiptFile) => {
+            try {
+              return JSON.parse(await readFile(path.resolve(receiptFile), "utf8"));
+            } catch {
+              const error = new Error("The execution receipt JSON could not be read and parsed.");
+              error.code = "invalid_execution_receipt_file";
+              throw error;
+            }
+          },
         });
+        return ["unavailable", "execution_error", "stale_input"].includes(result.status)
+          ? 2
+          : 0;
+      } catch (error) {
+        if (error instanceof PromptCancelledError) {
+          process.stderr.write("Handoff cancelled. LaunchRally executed no external Task.\n");
+          return 130;
+        }
+        process.stdout.write(`${renderHumanHandoffOutcome({
+          status: "execution_error",
+          error: error.code ?? "handoff_human_mode_failed",
+          message: error.message,
+        })}\n`);
         return 2;
       }
     }
