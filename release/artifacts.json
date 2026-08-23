@@ -168,6 +168,7 @@
         "bin/human-audit.js",
         "bin/human-handoff.js",
         "bin/human-init.js",
+        "bin/human-toolchain.js",
         "bin/human-verify.js",
         "bin/human-version.js",
         "bin/invocation-context.js",

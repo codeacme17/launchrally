@@ -1338,7 +1338,7 @@ test("NO_COLOR Human Mode retains textual Clack activity states", async () => {
   );
 });
 
-test("the Clack adapter styles Architect and Architecture Package decisions and outcomes", async () => {
+test("the Clack adapter styles Architect, Architecture Package, and Toolchain decisions", async () => {
   const input = ttyStream();
   const output = ttyStream();
   let rendered = "";
@@ -1447,6 +1447,37 @@ test("the Clack adapter styles Architect and Architecture Package decisions and 
     persisted: true,
     files: persistence.preview.files,
   }, bundle);
+  const toolchainPreview = {
+    status: "needs_confirmation",
+    request: {
+      prompt: "Replace the complete Project Toolchain pin?",
+    },
+    preview: {
+      from_version: "0.4.1",
+      to_version: "0.4.2",
+      changes: [{
+        operation: "update",
+        path: ".launchrally/toolchain/package.json",
+        before: "before\n",
+        after: "after\n",
+        before_digest: `sha256:${"d".repeat(64)}`,
+        after_digest: `sha256:${"e".repeat(64)}`,
+      }],
+      materialization: {
+        package_count: 9,
+        target: ".launchrally/toolchain/node_modules",
+        integrity_digest: `sha256:${"f".repeat(64)}`,
+      },
+    },
+  };
+  setTimeout(() => input.write("\r"), 20);
+  assert.deepEqual(await prompt.respondToolchain(toolchainPreview), {
+    confirmation: "decline",
+  });
+  await prompt.finishToolchain({
+    status: "completed",
+    outcome: "migration_declined",
+  }, { preview: toolchainPreview.preview });
   await prompt.close();
 
   const semanticOutput = stripVTControlCharacters(rendered);
@@ -1458,6 +1489,9 @@ test("the Clack adapter styles Architect and Architecture Package decisions and 
   assert.match(semanticOutput, /Exact persistence preview/u);
   assert.match(semanticOutput, /Current pointer path: \.launchrally\/architecture\/current\.json/u);
   assert.match(semanticOutput, /Architecture Review Complete/u);
+  assert.match(semanticOutput, /Exact Project Toolchain migration preview/u);
+  assert.match(semanticOutput, /0\.4\.1 -> 0\.4\.2/u);
+  assert.match(semanticOutput, /Project Toolchain Migration Declined/u);
   assert.match(semanticOutput, /Architecture Package Persistence Complete/u);
 });
 

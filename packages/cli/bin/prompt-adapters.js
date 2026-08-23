@@ -29,6 +29,12 @@ import {
   renderHumanHandoffReceipt,
 } from "./human-handoff.js";
 import { renderHumanInit, renderHumanInitFullPreview } from "./human-init.js";
+import {
+  renderHumanToolchainMigrationFullPreview,
+  renderHumanToolchainMigrationPreview,
+  renderHumanToolchainOutcome,
+  renderHumanToolchainPermission,
+} from "./human-toolchain.js";
 
 function styleTextSupportsArrays() {
   try {
@@ -243,6 +249,7 @@ function operationTitle(operation) {
   if (operation === "verify") return "LaunchRally Verify";
   if (operation === "architect") return "LaunchRally Architect";
   if (operation === "architecture-package") return "LaunchRally Architecture Package";
+  if (operation === "toolchain") return "LaunchRally Project Toolchain";
   if (operation === "handoff") return "LaunchRally External Executor Handoff";
   return "LaunchRally Audit";
 }
@@ -1126,6 +1133,34 @@ export function createPlainPromptAdapter({
       }
       return {};
     },
+    async respondToolchain(result, context = {}) {
+      if (result.status === "needs_permission") {
+        write(output, renderHumanToolchainPermission(result));
+        const permission = result.request.permissions[0];
+        return {
+          permission_decisions: {
+            [permission.id]: await confirm(`Approve ${permission.id}?`)
+              ? "approved"
+              : "denied",
+          },
+        };
+      }
+      write(output, renderHumanToolchainMigrationPreview(result, context));
+      while (true) {
+        const confirmation = await choose(result.request.prompt, [
+          { label: "Confirm", value: "confirm" },
+          { label: "Decline", value: "decline" },
+          { label: "View full exact diff", value: "view_full_preview" },
+          { label: "Cancel", value: "cancel" },
+        ], "decline");
+        if (confirmation === "cancel") throw new PromptCancelledError();
+        if (confirmation !== "view_full_preview") return { confirmation };
+        write(output, renderHumanToolchainMigrationFullPreview(result, context));
+      }
+    },
+    async finishToolchain(result, context) {
+      write(output, renderHumanToolchainOutcome(result, context));
+    },
     async confirmMigration(preview) {
       write(output, renderHumanArchitectMigration(preview));
       return choose("Adopt additive Phase 1 local records while preserving Phase 0 history?", [
@@ -1554,6 +1589,61 @@ export async function createClackPromptAdapter({
         });
       }
       return {};
+    },
+    async respondToolchain(result, context = {}) {
+      if (result.status === "needs_permission") {
+        const permission = result.request.permissions[0];
+        clack.note(
+          renderHumanToolchainPermission(result),
+          "Project Toolchain registry permission",
+          common,
+        );
+        const approved = cancelled(await clack.confirm({
+          ...common,
+          message: `Approve ${permission.id}?`,
+          initialValue: false,
+        }), clack, output, "Project Toolchain migration");
+        return {
+          permission_decisions: {
+            [permission.id]: approved ? "approved" : "denied",
+          },
+        };
+      }
+      clack.note(
+        renderHumanToolchainMigrationPreview(result, context),
+        "Exact Project Toolchain migration preview",
+        common,
+      );
+      while (true) {
+        const confirmation = cancelled(await clack.select({
+          ...common,
+          message: result.request.prompt,
+          options: [
+            { label: "Confirm", value: "confirm" },
+            { label: "Decline", value: "decline" },
+            { label: "View full exact diff", value: "view_full_preview" },
+            { label: "Cancel", value: "cancel" },
+          ],
+          initialValue: "decline",
+        }), clack, output, "Project Toolchain migration");
+        if (confirmation === "cancel") {
+          clack.cancel("Project Toolchain migration cancelled.", common);
+          throw new PromptCancelledError();
+        }
+        if (confirmation !== "view_full_preview") return { confirmation };
+        clack.note(
+          renderHumanToolchainMigrationFullPreview(result, context),
+          "Full exact Project Toolchain diff",
+          common,
+        );
+      }
+    },
+    async finishToolchain(result, context) {
+      clack.note(
+        renderHumanToolchainOutcome(result, context),
+        "Project Toolchain migration outcome",
+        common,
+      );
     },
     async confirmMigration(preview) {
       clack.note(renderHumanArchitectMigration(preview), "Phase 1 migration", common);
