@@ -113,6 +113,32 @@ async function runNpm(arguments_, options = {}) {
     : run("npm", arguments_, options);
 }
 
+async function runInPty(command, arguments_, options = {}) {
+  if (process.platform === "win32") return null;
+  const runner = [
+    "import errno, fcntl, os, pty, struct, subprocess, sys, termios",
+    "master, slave = pty.openpty()",
+    "fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 30, 100, 0, 0))",
+    "child = subprocess.Popen(sys.argv[1:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)",
+    "os.close(slave)",
+    "chunks = []",
+    "while True:",
+    "    try:",
+    "        chunk = os.read(master, 4096)",
+    "    except OSError as error:",
+    "        if error.errno == errno.EIO:",
+    "            break",
+    "        raise",
+    "    if not chunk:",
+    "        break",
+    "    chunks.append(chunk)",
+    "os.close(master)",
+    "sys.stdout.buffer.write(b''.join(chunks))",
+    "raise SystemExit(child.wait())",
+  ].join("\n");
+  return run("python3", ["-c", runner, command, ...arguments_], options);
+}
+
 async function createArtifactNpmStub(
   temporaryRoot,
   cleanProject,
@@ -2253,6 +2279,34 @@ async function runInstallationJourneys({
     || projectVersion.cli_version !== version
     || projectVersion.authority?.source !== "project_toolchain"
   ) throw new Error("project_engine_delegation_failed");
+  let humanProjectVersion = "typed_runner_unavailable";
+  if (process.platform !== "win32") {
+    const humanVersion = (await runInPty(launcher, [
+      "version",
+      "--cwd",
+      activeRepository,
+    ], {
+      cwd: temporaryRoot,
+      env: launcherEnvironment,
+    })).stdout;
+    for (const expected of [
+      "LaunchRally Version",
+      `Launcher: ${version}`,
+      `Project Engine: ${version}`,
+      "Authority: ready (project_toolchain)",
+      "Compatibility: native",
+      "Materialization: ready",
+      "Next action: none",
+    ]) {
+      if (!humanVersion.includes(expected)) {
+        throw new Error(`packed_project_version_human_summary_missing:${expected}`);
+      }
+    }
+    if (/"(?:contract|schema_version|authority)"\s*:/u.test(humanVersion)) {
+      throw new Error("packed_project_version_human_raw_json_leak");
+    }
+    humanProjectVersion = "concise_project_engine_summary";
+  }
 
   const manifestContent = await readFile(
     path.join(activeRepository, ".launchrally", "manifest.yaml"),
@@ -2860,6 +2914,7 @@ async function runInstallationJourneys({
         : "artifact_equivalent_audit_and_follow_up",
       user_prefix: "installed_and_verified",
       project_engine: "initialized_and_delegated",
+      human_project_version: humanProjectVersion,
       fresh_clone: "restored_offline",
       registry_permission: "cache_miss_approved_and_denied",
       invalid_authority: "corruption_failed_closed",
