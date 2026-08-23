@@ -20,6 +20,7 @@ import { promisify } from "node:util";
 
 import { assertValidToolchainLifecycle } from "../packages/contracts/src/index.js";
 import { runToolchainLifecycle } from "../packages/core/src/index.js";
+import { VERSION } from "../packages/cli/bin/version.js";
 import {
   materializeExactToolchain,
   writeExactToolchain,
@@ -27,6 +28,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
+const escapedVersion = VERSION.replaceAll(".", "\\.");
 const pythonAvailable = process.platform !== "win32"
   && spawnSync("python3", ["--version"]).status === 0;
 const migrationPtyRunner = [
@@ -289,7 +291,7 @@ test("TTY Human toolchain migrate previews and confirms exact authority in one p
   const repository = await repositoryFixture();
   await writeProject(repository, "0.2.2");
   await materializeExactToolchain(repository, "0.2.2");
-  const prepared = await preparedToolchain("0.4.2");
+  const prepared = await preparedToolchain(VERSION);
   const npmDirectory = await npmFixture(prepared);
 
   const { stdout } = await execFileAsync("python3", [
@@ -301,7 +303,7 @@ test("TTY Human toolchain migrate previews and confirms exact authority in one p
     "toolchain",
     "migrate",
     "--to",
-    "0.4.2",
+    VERSION,
     "--plain",
     "--cwd",
     repository,
@@ -315,7 +317,7 @@ test("TTY Human toolchain migrate previews and confirms exact authority in one p
   });
 
   assert.match(stdout, /LaunchRally Project Toolchain Migration Preview/u);
-  assert.match(stdout, /Engine: 0\.2\.2 -> 0\.4\.2/u);
+  assert.match(stdout, new RegExp(`Engine: 0\\.2\\.2 -> ${escapedVersion}`, "u"));
   assert.match(stdout, /Authoritative files:/u);
   assert.match(stdout, /Materialization: 9 packages/u);
   assert.match(stdout, /1\. Confirm/u);
@@ -329,10 +331,10 @@ test("TTY Human toolchain migrate previews and confirms exact authority in one p
   assert.match(stdout, /verify --scope full/u);
   assert.doesNotMatch(stdout, /resume_token|"contract"|"preview"/u);
 
-  const status = await runToolchainLifecycle(repository, "0.4.2", {
+  const status = await runToolchainLifecycle(repository, VERSION, {
     operation: "status",
   });
-  assert.equal(status.authority.engine.version, "0.4.2");
+  assert.equal(status.authority.engine.version, VERSION);
   assert.equal(status.authority.state, "ready");
 });
 
@@ -342,13 +344,13 @@ test("default styled TTY migration confirms and completes", {
   const repository = await repositoryFixture();
   await writeProject(repository, "0.2.2");
   await materializeExactToolchain(repository, "0.2.2");
-  const prepared = await preparedToolchain("0.4.2");
+  const prepared = await preparedToolchain(VERSION);
   const npmDirectory = await npmFixture(prepared);
   const packagePath = path.join(repository, ".launchrally/toolchain/package.json");
 
   const { stdout } = await execFileAsync("python3", [
     "-c", styledMigrationPtyRunner, "confirm", packagePath, process.execPath, cli,
-    "toolchain", "migrate", "--to", "0.4.2", "--cwd", repository,
+    "toolchain", "migrate", "--to", VERSION, "--cwd", repository,
   ], {
     env: {
       ...process.env,
@@ -377,12 +379,12 @@ test("default styled TTY migration handles registry permission and cancellation 
     const repository = await repositoryFixture();
     await writeProject(repository, "0.2.2");
     await materializeExactToolchain(repository, "0.2.2");
-    const prepared = await preparedToolchain("0.4.2");
+    const prepared = await preparedToolchain(VERSION);
     const npmDirectory = await npmFixture(prepared);
     const packagePath = path.join(repository, ".launchrally/toolchain/package.json");
     const run = execFileAsync("python3", [
       "-c", styledMigrationPtyRunner, scenario.mode, packagePath, process.execPath, cli,
-      "toolchain", "migrate", "--to", "0.4.2", "--cwd", repository,
+      "toolchain", "migrate", "--to", VERSION, "--cwd", repository,
     ], {
       env: {
         ...process.env,
@@ -402,7 +404,7 @@ test("default styled TTY migration handles registry permission and cancellation 
         assert.match(error.stdout, scenario.summary);
         return true;
       });
-      assert.equal((await runToolchainLifecycle(repository, "0.4.2", {
+      assert.equal((await runToolchainLifecycle(repository, VERSION, {
         operation: "status",
       })).authority.engine.version, "0.2.2");
       assert.deepEqual(await storedLifecycleStates(repository), []);
@@ -416,12 +418,12 @@ test("TTY Human toolchain migrate shows the full exact diff and returns to confi
   const repository = await repositoryFixture();
   await writeProject(repository, "0.2.2");
   await materializeExactToolchain(repository, "0.2.2");
-  const prepared = await preparedToolchain("0.4.2");
+  const prepared = await preparedToolchain(VERSION);
   const npmDirectory = await npmFixture(prepared);
 
   const { stdout } = await execFileAsync("python3", [
     "-c", migrationPtyRunner, "3,1", process.execPath, cli,
-    "toolchain", "migrate", "--to", "0.4.2", "--plain", "--cwd", repository,
+    "toolchain", "migrate", "--to", VERSION, "--plain", "--cwd", repository,
   ], {
     env: {
       ...process.env,
@@ -448,13 +450,13 @@ test("TTY Human toolchain migrate safely declines by default and can cancel", {
     const repository = await repositoryFixture();
     await writeProject(repository, "0.2.2");
     await materializeExactToolchain(repository, "0.2.2");
-    const prepared = await preparedToolchain("0.4.2");
+    const prepared = await preparedToolchain(VERSION);
     const npmDirectory = await npmFixture(prepared);
     let output;
     try {
       output = (await execFileAsync("python3", [
         "-c", migrationPtyRunner, scenario.answer, process.execPath, cli,
-        "toolchain", "migrate", "--to", "0.4.2", "--plain", "--cwd", repository,
+        "toolchain", "migrate", "--to", VERSION, "--plain", "--cwd", repository,
       ], {
         env: {
           ...process.env,
@@ -470,7 +472,7 @@ test("TTY Human toolchain migrate safely declines by default and can cancel", {
     }
     assert.match(output, scenario.summary);
     assert.doesNotMatch(output, /resume_token/u);
-    const status = await runToolchainLifecycle(repository, "0.4.2", { operation: "status" });
+    const status = await runToolchainLifecycle(repository, VERSION, { operation: "status" });
     assert.equal(status.authority.engine.version, "0.2.2");
     assert.deepEqual(await storedLifecycleStates(repository), []);
   }
@@ -482,13 +484,13 @@ test("TTY Human toolchain migrate fails a stale preview closed with a concise re
   const repository = await repositoryFixture();
   await writeProject(repository, "0.2.2");
   await materializeExactToolchain(repository, "0.2.2");
-  const prepared = await preparedToolchain("0.4.2");
+  const prepared = await preparedToolchain(VERSION);
   const npmDirectory = await npmFixture(prepared);
   const packagePath = path.join(repository, ".launchrally/toolchain/package.json");
 
   await assert.rejects(execFileAsync("python3", [
     "-c", staleMigrationPtyRunner, packagePath, process.execPath, cli,
-    "toolchain", "migrate", "--to", "0.4.2", "--plain", "--cwd", repository,
+    "toolchain", "migrate", "--to", VERSION, "--plain", "--cwd", repository,
   ], {
     env: {
       ...process.env,
@@ -503,7 +505,7 @@ test("TTY Human toolchain migrate fails a stale preview closed with a concise re
     assert.doesNotMatch(error.stdout, /"error"|resume_token/u);
     return true;
   });
-  assert.equal((await runToolchainLifecycle(repository, "0.4.2", {
+  assert.equal((await runToolchainLifecycle(repository, VERSION, {
     operation: "status",
   })).authority.engine.version, "0.2.2");
 });
@@ -519,12 +521,12 @@ test("TTY Human toolchain migrate requests registry permission and rolls back co
       await mkdir(path.join(repository, ".launchrally/cache"), { recursive: true });
       await writeFile(path.join(repository, ".launchrally/cache/current-report.json"), "not-json\n");
     }
-    const prepared = await preparedToolchain("0.4.2");
+    const prepared = await preparedToolchain(VERSION);
     const npmDirectory = await npmFixture(prepared);
     try {
       const { stdout } = await execFileAsync("python3", [
         "-c", migrationPtyRunner, "y,1", process.execPath, cli,
-        "toolchain", "migrate", "--to", "0.4.2", "--plain", "--cwd", repository,
+        "toolchain", "migrate", "--to", VERSION, "--plain", "--cwd", repository,
       ], {
         env: {
           ...process.env,
@@ -542,7 +544,7 @@ test("TTY Human toolchain migrate requests registry permission and rolls back co
       assert.equal(error.code, 2);
       assert.match(error.stdout, /Migration Could Not Complete/u);
       assert.match(error.stdout, /prior project authority was preserved/iu);
-      assert.equal((await runToolchainLifecycle(repository, "0.4.2", {
+      assert.equal((await runToolchainLifecycle(repository, VERSION, {
         operation: "status",
       })).authority.engine.version, "0.2.2");
     }
@@ -555,12 +557,12 @@ test("TTY Human toolchain migrate denies registry permission without changing au
   const repository = await repositoryFixture();
   await writeProject(repository, "0.2.2");
   await materializeExactToolchain(repository, "0.2.2");
-  const prepared = await preparedToolchain("0.4.2");
+  const prepared = await preparedToolchain(VERSION);
   const npmDirectory = await npmFixture(prepared);
 
   await assert.rejects(execFileAsync("python3", [
     "-c", migrationPtyRunner, "n", process.execPath, cli,
-    "toolchain", "migrate", "--to", "0.4.2", "--plain", "--cwd", repository,
+    "toolchain", "migrate", "--to", VERSION, "--plain", "--cwd", repository,
   ], {
     env: {
       ...process.env,
@@ -577,7 +579,7 @@ test("TTY Human toolchain migrate denies registry permission without changing au
     assert.doesNotMatch(error.stdout, /resume_token/u);
     return true;
   });
-  assert.equal((await runToolchainLifecycle(repository, "0.4.2", {
+  assert.equal((await runToolchainLifecycle(repository, VERSION, {
     operation: "status",
   })).authority.engine.version, "0.2.2");
 });
@@ -588,18 +590,18 @@ test("non-TTY Human migration fails safely with a complete Agent command", async
   await materializeExactToolchain(repository, "0.2.2");
 
   await assert.rejects(execFileAsync(process.execPath, [
-    cli, "toolchain", "migrate", "--to", "0.4.2", "--cwd", repository,
+    cli, "toolchain", "migrate", "--to", VERSION, "--cwd", repository,
   ]), (error) => {
     assert.equal(error.code, 2);
     assert.match(error.stderr, /Non-TTY Human Mode cannot confirm/u);
     assert.match(
       error.stderr,
-      /['"]?toolchain['"]?\s+['"]?migrate['"]?\s+['"]?--to['"]?\s+['"]?0\.4\.2['"]?\s+['"]?--json['"]?\s+['"]?--cwd['"]?/u,
+      new RegExp(String.raw`['"]?toolchain['"]?\s+['"]?migrate['"]?\s+['"]?--to['"]?\s+['"]?${escapedVersion}['"]?\s+['"]?--json['"]?\s+['"]?--cwd['"]?`, "u"),
     );
     assert.doesNotMatch(error.stdout, /needs_confirmation|resume_token/u);
     return true;
   });
-  assert.equal((await runToolchainLifecycle(repository, "0.4.2", {
+  assert.equal((await runToolchainLifecycle(repository, VERSION, {
     operation: "status",
   })).authority.engine.version, "0.2.2");
 });
@@ -612,7 +614,7 @@ test("non-TTY structured migration prints the complete corrected Agent command",
     "toolchain",
     "migrate",
     "--to",
-    "0.4.2",
+    VERSION,
     "--cwd",
     repository,
     "--resume",
@@ -626,7 +628,7 @@ test("non-TTY structured migration prints the complete corrected Agent command",
     assert.match(error.stderr, /Use this complete Agent\/JSON command/u);
     assert.match(
       error.stderr,
-      /['"]?toolchain['"]?\s+['"]?migrate['"]?\s+['"]?--to['"]?\s+['"]?0\.4\.2['"]?\s+['"]?--json['"]?\s+['"]?--cwd['"]?/u,
+      new RegExp(String.raw`['"]?toolchain['"]?\s+['"]?migrate['"]?\s+['"]?--to['"]?\s+['"]?${escapedVersion}['"]?\s+['"]?--json['"]?\s+['"]?--cwd['"]?`, "u"),
     );
     assert.match(
       error.stderr,
@@ -675,7 +677,7 @@ test("Agent JSON toolchain migrate preserves the exact resumable protocol", asyn
   const repository = await repositoryFixture();
   await writeProject(repository, "0.2.2");
   await materializeExactToolchain(repository, "0.2.2");
-  const prepared = await preparedToolchain("0.4.2");
+  const prepared = await preparedToolchain(VERSION);
   const npmDirectory = await npmFixture(prepared);
   const environment = {
     ...process.env,
@@ -684,7 +686,7 @@ test("Agent JSON toolchain migrate preserves the exact resumable protocol", asyn
   };
 
   const preview = JSON.parse((await execFileAsync(process.execPath, [
-    cli, "toolchain", "migrate", "--to", "0.4.2", "--json", "--cwd", repository,
+    cli, "toolchain", "migrate", "--to", VERSION, "--json", "--cwd", repository,
   ], { env: environment })).stdout);
   assert.equal(preview.contract, "launchrally.dev/toolchain-lifecycle/v1");
   assert.equal(preview.status, "needs_confirmation");
@@ -698,7 +700,7 @@ test("Agent JSON toolchain migrate preserves the exact resumable protocol", asyn
     "toolchain",
     "migrate",
     "--to",
-    "0.4.2",
+    VERSION,
     "--json",
     "--cwd",
     repository,
