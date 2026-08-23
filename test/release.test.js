@@ -220,6 +220,47 @@ test("release validation proves one SemVer across CLI, Plugins, and bundled Skil
   });
 });
 
+test("tagged release validation requires a same-day supply-chain assessment", async () => {
+  const fixture = await createReleaseFixture();
+  const contractPath = path.join(fixture, "release/p1.json");
+  const contract = JSON.parse(await readFile(contractPath, "utf8"));
+  const yesterday = new Date();
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  contract.supply_chain_assessment_at =
+    `${yesterday.toISOString().slice(0, 10)}T00:00:00.000Z`;
+  await writeFile(contractPath, `${JSON.stringify(contract, null, 2)}\n`);
+
+  const manifestPath = path.join(
+    fixture,
+    "adapters/codex/launchrally/.codex-plugin/plugin.json",
+  );
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.version = "0.3.1";
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  await assertReleaseValidationFailure(fixture, /release_version_drift/u);
+
+  manifest.version = currentVersion;
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  await assert.rejects(
+    execFileAsync(
+      process.execPath,
+      [
+        "scripts/validate-release.mjs",
+        "--root",
+        fixture,
+        "--tag",
+        `v${currentVersion}`,
+        "--json",
+      ],
+      { cwd: root },
+    ),
+    (error) => {
+      assert.match(error.stderr, /p1_supply_chain_assessment_stale/u);
+      return true;
+    },
+  );
+});
+
 test("release validation fails when a Plugin version drifts", async () => {
   const fixture = await createReleaseFixture();
   const manifestPath = path.join(
@@ -478,7 +519,7 @@ test("release validation rejects untrusted Pack Executor bindings and authority 
   );
   await assertReleaseValidationFailure(
     historicalAssessmentFixture,
-    /p1_supply_chain_assessment_stale/u,
+    /p1_supply_chain_stale/u,
   );
 
   const executorFixture = await createReleaseFixture();

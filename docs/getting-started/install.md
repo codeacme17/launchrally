@@ -2,6 +2,10 @@
 
 LaunchRally `0.3.2` is the exact Stable release used by this guide. Stable availability follows the reviewed P0 Validated decision and satisfied Quality Floor.
 
+Updating an initialized Experimental `0.4.1` project is a separate path. Follow
+the [exact 0.4.1-to-0.4.2 Project Toolchain migration](../maintainers/p1-migration-notes.md#project-toolchain-migration-041-to-042)
+without relabeling this Stable `0.3.2` installation path.
+
 ## Supported environments
 
 The CLI requires Node.js 20.12.0 or newer and is verified with Node.js 20.12, 22, and 24 on macOS, Linux, and Windows. The commands work in POSIX shells, PowerShell, and `cmd.exe`; path syntax and manual removal commands differ by shell.

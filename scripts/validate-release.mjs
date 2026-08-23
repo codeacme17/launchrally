@@ -243,16 +243,26 @@ function documentedArguments(command) {
     .slice(1);
 }
 
-function assertCurrentSupplyChainRecord(owner, reviewedAt, expiresAt, assessmentAt) {
+function assertCurrentSupplyChainRecord(
+  owner,
+  reviewedAt,
+  expiresAt,
+  assessmentAt,
+  validationAt,
+) {
   const reviewed = Date.parse(reviewedAt);
   const expires = Date.parse(expiresAt);
   const assessment = Date.parse(assessmentAt);
+  const validation = Date.parse(validationAt);
   if (
     !Number.isFinite(reviewed)
     || !Number.isFinite(expires)
     || !Number.isFinite(assessment)
+    || !Number.isFinite(validation)
     || reviewed > assessment
     || assessment >= expires
+    || reviewed > validation
+    || validation >= expires
   ) throw new Error(`p1_supply_chain_stale: ${owner}`);
 }
 
@@ -353,7 +363,7 @@ async function validateProviderToolAuthority() {
 async function validateP1SupplyChain(rootPackage, p1Contract) {
   const assessmentAt = p1Contract.supply_chain_assessment_at;
   const currentAssessmentAt = `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`;
-  if (assessmentAt !== currentAssessmentAt) {
+  if (releaseTag !== null && assessmentAt !== currentAssessmentAt) {
     throw new Error(
       `p1_supply_chain_assessment_stale: release/p1.json declares ${assessmentAt}; expected ${currentAssessmentAt}`,
     );
@@ -364,6 +374,7 @@ async function validateP1SupplyChain(rootPackage, p1Contract) {
     CORE_PROVIDER_KNOWLEDGE.review.reviewed_at,
     CORE_PROVIDER_KNOWLEDGE.review.expires_at,
     assessmentAt,
+    currentAssessmentAt,
   );
   const providerCardDirectory = "packages/core/provider-decision-cards/v1";
   const packagedCardPaths = (await readdir(path.join(root, providerCardDirectory)))
@@ -414,6 +425,7 @@ async function validateP1SupplyChain(rootPackage, p1Contract) {
       descriptor.trust.reviewed_at,
       descriptor.trust.expires_at,
       assessmentAt,
+      currentAssessmentAt,
     );
     const tool = descriptor.tools[0];
     const authority = executorAuthority.find(
@@ -425,6 +437,7 @@ async function validateP1SupplyChain(rootPackage, p1Contract) {
       authority?.reviewed_at,
       authority?.expires_at,
       assessmentAt,
+      currentAssessmentAt,
     );
     if (
       descriptor.allowed_effects.length !== 1
@@ -480,6 +493,7 @@ async function validateP1SupplyChain(rootPackage, p1Contract) {
       pack.review.reviewed_at,
       pack.review.expires_at,
       assessmentAt,
+      currentAssessmentAt,
     );
     for (const implementation of pack.implementations) {
       for (const reference of implementation.executor_descriptors) {
@@ -526,13 +540,13 @@ async function validateRelease() {
   const p1Contract = await json("release/p1.json");
   const version = rootPackage.version;
   await validateProviderToolAuthority();
-  await validateP1SupplyChain(rootPackage, p1Contract);
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version)) {
     throw new Error(`invalid_release_version: ${version}`);
   }
   if (releaseTag !== null && releaseTag !== `v${version}`) {
     throw new Error(`release_tag_mismatch: ${releaseTag ?? "no tag"} does not match v${version}`);
   }
+  await validateP1SupplyChain(rootPackage, p1Contract);
 
   const packages = [];
   for (const artifact of release.packages) {
