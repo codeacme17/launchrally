@@ -185,6 +185,10 @@ async function writeHandoffInputs(repository, { available = true } = {}) {
     "utf8",
   ));
   const executor = structuredClone(fixture.executor);
+  const currentPlatform = `${process.platform}-${process.arch}`;
+  if (!executor.platforms.includes(currentPlatform)) {
+    executor.platforms.push(currentPlatform);
+  }
   executor.prohibited_effects = [
     ...fixture.task_graph.tasks[0].prohibited_effects,
   ];

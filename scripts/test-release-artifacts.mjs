@@ -20,7 +20,7 @@ import { createRequire, syncBuiltinESMExports } from "node:module";
 import { createServer } from "node:https";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 import { hasClaudeInstalledPlugin } from "./native-plugin-state.mjs";
 import { createIsolatedNativeEnvironment } from "./native-environment.mjs";
 import { assertNoConsumerInstallScripts } from "./release-artifact-policy.mjs";
@@ -2289,6 +2289,7 @@ async function runInstallationJourneys({
       cwd: temporaryRoot,
       env: launcherEnvironment,
     })).stdout;
+    const semanticHumanVersion = stripVTControlCharacters(humanVersion);
     for (const expected of [
       "LaunchRally Version",
       `Launcher: ${version}`,
@@ -2298,11 +2299,11 @@ async function runInstallationJourneys({
       "Materialization: ready",
       "Next action: none",
     ]) {
-      if (!humanVersion.includes(expected)) {
+      if (!semanticHumanVersion.includes(expected)) {
         throw new Error(`packed_project_version_human_summary_missing:${expected}`);
       }
     }
-    if (/"(?:contract|schema_version|authority)"\s*:/u.test(humanVersion)) {
+    if (/"(?:contract|schema_version|authority)"\s*:/u.test(semanticHumanVersion)) {
       throw new Error("packed_project_version_human_raw_json_leak");
     }
     humanProjectVersion = "concise_project_engine_summary";
