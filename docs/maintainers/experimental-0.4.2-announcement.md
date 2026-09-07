@@ -15,6 +15,7 @@ Phase 0 remains independently Product Complete, P0 Validated, and Stable at
 0.3.2. npm `latest` continues to resolve to 0.3.2; 0.4.2 is available only from
 `experimental` or by exact version.
 
-Review the [0.4.2 changelog](../../CHANGELOG.md), [migration and failed-release
-guidance](p1-migration-notes.md), and [external verification
+Review the [0.4.2 changelog](../../CHANGELOG.md), [exact 0.4.1-to-0.4.2 Project
+Toolchain migration](p1-migration-notes.md#project-toolchain-migration-041-to-042),
+[failed-release guidance](p1-migration-notes.md#failed-experimental-publication), and [external verification
 record](experimental-0.4.2-p1-evidence.md) before adoption.

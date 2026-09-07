@@ -19,10 +19,12 @@ const REPOSITORY_OPERATIONS = new Set([
   "audit",
   "architect",
   "architecture-package",
+  "handoff",
   "init",
   "plan",
   "providers",
   "verify",
+  "version",
 ]);
 const BUNDLED_ENGINE = fileURLToPath(new URL("./engine.js", import.meta.url));
 
@@ -134,6 +136,9 @@ async function main() {
     launcher_version: VERSION,
   });
   if (authority.state !== "ready") {
+    if (command === "version") {
+      return await runEngine(BUNDLED_ENGINE, arguments_, invocationContext);
+    }
     const cwd = path.resolve(optionValue(arguments_, "--cwd") ?? process.cwd());
     printAuthorityFailure(
       command,

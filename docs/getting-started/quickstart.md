@@ -2,6 +2,12 @@
 
 LaunchRally `0.3.2` is a public Stable release. Run it against a repository you control and review every disclosed read or write boundary before confirming it. Stable means the reviewed P0 Validated decision and Quality Floor requirements are satisfied.
 
+Already using an initialized Experimental project? Use the separate exact
+Project Toolchain migration for [0.4.1 to 0.4.2](../maintainers/p1-migration-notes.md#project-toolchain-migration-041-to-042)
+or [0.4.2 to 0.4.3](../maintainers/p1-migration-notes.md#project-toolchain-migration-042-to-043).
+That path keeps Launcher, selected Engine, project pin, Plugin, and release
+channel distinct; it does not change the Stable quickstart below.
+
 ## Direct CLI Quickstart
 
 LaunchRally's default interactive journey uses a user-managed PATH installation. Install the exact Launcher through your current npm prefix, then verify structured output before entering a repository:

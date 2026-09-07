@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import {
+  chmod,
   cp,
   lstat,
   mkdir,
@@ -19,6 +20,7 @@ import { promisify } from "node:util";
 
 import { assertValidToolchainLifecycle } from "../packages/contracts/src/index.js";
 import { runToolchainLifecycle } from "../packages/core/src/index.js";
+import { VERSION } from "../packages/cli/bin/version.js";
 import {
   materializeExactToolchain,
   writeExactToolchain,
@@ -26,6 +28,116 @@ import {
 
 const execFileAsync = promisify(execFile);
 const cli = path.resolve("packages/cli/bin/rally.js");
+const escapedVersion = VERSION.replaceAll(".", "\\.");
+const pythonAvailable = process.platform !== "win32"
+  && spawnSync("python3", ["--version"]).status === 0;
+const migrationPtyRunner = [
+  "import errno, os, pty, subprocess, sys",
+  "answers = iter(sys.argv[1].split(','))",
+  "master, slave = pty.openpty()",
+  "child = subprocess.Popen(sys.argv[2:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)",
+  "os.close(slave)",
+  "observed = b''",
+  "answered = 0",
+  "while True:",
+  "    try:",
+  "        chunk = os.read(master, 4096)",
+  "    except OSError as error:",
+  "        if error.errno == errno.EIO:",
+  "            break",
+  "        raise",
+  "    if not chunk:",
+  "        break",
+  "    sys.stdout.buffer.write(chunk)",
+  "    sys.stdout.buffer.flush()",
+  "    observed += chunk",
+  "    if b'Approve npm_registry_read? [y/N]' in observed and b'__permission_answered__' not in observed:",
+  "        os.write(master, next(answers).encode() + b'\\n')",
+  "        observed += b'__permission_answered__'",
+  "    prompts = observed.count(b'Choose 1-4')",
+  "    while prompts > answered:",
+  "        os.write(master, next(answers).encode() + b'\\n')",
+  "        answered += 1",
+  "os.close(master)",
+  "raise SystemExit(child.wait())",
+].join("\n");
+const staleMigrationPtyRunner = [
+  "import errno, os, pty, subprocess, sys",
+  "target = sys.argv[1]",
+  "master, slave = pty.openpty()",
+  "child = subprocess.Popen(sys.argv[2:], stdin=slave, stdout=slave, stderr=slave, close_fds=True)",
+  "os.close(slave)",
+  "chunks = []",
+  "observed = b''",
+  "answered = False",
+  "while True:",
+  "    try:",
+  "        chunk = os.read(master, 4096)",
+  "    except OSError as error:",
+  "        if error.errno == errno.EIO:",
+  "            break",
+  "        raise",
+  "    if not chunk:",
+  "        break",
+  "    chunks.append(chunk)",
+  "    observed += chunk",
+  "    if not answered and b'Choose 1-4' in observed:",
+  "        with open(target, 'a', encoding='utf8') as changed:",
+  "            changed.write(' ')",
+  "        os.write(master, b'1\\n')",
+  "        answered = True",
+  "os.close(master)",
+  "sys.stdout.buffer.write(b''.join(chunks))",
+  "raise SystemExit(child.wait())",
+].join("\n");
+const styledMigrationPtyRunner = [
+  "import errno, fcntl, os, pty, struct, subprocess, sys, termios, time",
+  "mode = sys.argv[1]",
+  "target = sys.argv[2]",
+  "master, slave = pty.openpty()",
+  "fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 120, 0, 0))",
+  "env = os.environ.copy()",
+  "env['TERM'] = 'xterm-256color'",
+  "child = subprocess.Popen(sys.argv[3:], stdin=slave, stdout=slave, stderr=slave, close_fds=True, env=env)",
+  "os.close(slave)",
+  "observed = b''",
+  "phase = 'permission' if mode == 'permission_confirm' else 'decision'",
+  "while True:",
+  "    try:",
+  "        chunk = os.read(master, 4096)",
+  "    except OSError as error:",
+  "        if error.errno == errno.EIO:",
+  "            break",
+  "        raise",
+  "    if not chunk:",
+  "        break",
+  "    sys.stdout.buffer.write(chunk)",
+  "    sys.stdout.buffer.flush()",
+  "    observed += chunk",
+  "    if phase == 'permission' and b'Approve npm_registry_read?' in observed:",
+  "        os.write(master, b'\\x1b[D')",
+  "        time.sleep(0.05)",
+  "        os.write(master, b'\\r')",
+  "        phase = 'decision'",
+  "        observed = b''",
+  "    elif phase == 'decision' and b'Replace the complete Project Toolchain pin' in observed:",
+  "        if mode == 'cancel':",
+  "            os.write(master, b'\\x1b[B\\x1b[B')",
+  "            time.sleep(0.05)",
+  "            os.write(master, b'\\r')",
+  "            phase = 'done'",
+  "        else:",
+  "            if mode == 'stale':",
+  "                with open(target, 'a', encoding='utf8') as changed:",
+  "                    changed.write(' ')",
+  "            os.write(master, b'\\x1b[A')",
+  "            time.sleep(0.05)",
+  "            os.write(master, b'\\r')",
+  "            phase = 'done'",
+  "        observed = b''",
+  "os.close(master)",
+  "raise SystemExit(child.wait())",
+].join("\n");
 
 function validManifest() {
   const unknown = (reason) => ({ state: "unknown", reason });
@@ -96,6 +208,43 @@ async function preparedToolchain(version) {
   return path.join(staging, ".launchrally", "toolchain");
 }
 
+async function npmFixture(prepared) {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "launchrally-npm-fixture-"));
+  const executable = path.join(directory, process.platform === "win32" ? "npm.cmd" : "npm");
+  const script = path.join(directory, "npm-fixture.cjs");
+  const source = [
+    "const { cpSync } = require(\"node:fs\");",
+    "const path = require(\"node:path\");",
+    "if (process.env.LAUNCHRALLY_TEST_OFFLINE_MISS === \"1\" && process.argv.includes(\"--offline\")) {",
+    "  process.stderr.write(\"npm error code ENOTCACHED\\n\");",
+    "  process.exit(1);",
+    "}",
+    "const source = process.env.LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN;",
+    "cpSync(path.join(source, \"package-lock.json\"), path.join(process.cwd(), \"package-lock.json\"));",
+    "cpSync(path.join(source, \"node_modules\"), path.join(process.cwd(), \"node_modules\"), { recursive: true });",
+  ].join("\n") + "\n";
+  await writeFile(script, source);
+  await writeFile(executable, process.platform === "win32"
+    ? `@\"${process.execPath}\" \"${script}\" %*\r\n`
+    : `#!${process.execPath}\n${source}`);
+  await chmod(executable, 0o755);
+  return directory;
+}
+
+async function storedLifecycleStates(root) {
+  const matches = [];
+  for (const entry of await readdir(os.tmpdir(), { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.startsWith("launchrally-toolchain-state-")) continue;
+    const directory = path.join(os.tmpdir(), entry.name);
+    for (const file of await readdir(directory).catch(() => [])) {
+      if (!file.endsWith(".json")) continue;
+      const state = JSON.parse(await readFile(path.join(directory, file), "utf8"));
+      if (state.root === root) matches.push(state);
+    }
+  }
+  return matches;
+}
+
 test("toolchain status reports the exact missing project materialization without writing", async () => {
   const repository = await repositoryFixture();
   await writeProject(repository);
@@ -134,6 +283,439 @@ test("the CLI exposes toolchain status as a public bootstrap command", async () 
       return true;
     },
   );
+});
+
+test("TTY Human toolchain migrate previews and confirms exact authority in one process", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const repository = await repositoryFixture();
+  await writeProject(repository, "0.2.2");
+  await materializeExactToolchain(repository, "0.2.2");
+  const prepared = await preparedToolchain(VERSION);
+  const npmDirectory = await npmFixture(prepared);
+
+  const { stdout } = await execFileAsync("python3", [
+    "-c",
+    migrationPtyRunner,
+    "1",
+    process.execPath,
+    cli,
+    "toolchain",
+    "migrate",
+    "--to",
+    VERSION,
+    "--plain",
+    "--cwd",
+    repository,
+  ], {
+    env: {
+      ...process.env,
+      LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN: prepared,
+      PATH: `${npmDirectory}${path.delimiter}${process.env.PATH}`,
+    },
+    timeout: 30000,
+  });
+
+  assert.match(stdout, /LaunchRally Project Toolchain Migration Preview/u);
+  assert.match(stdout, new RegExp(`Engine: 0\\.2\\.2 -> ${escapedVersion}`, "u"));
+  assert.match(stdout, /Authoritative files:/u);
+  assert.match(stdout, /Materialization: 9 packages/u);
+  assert.match(stdout, /1\. Confirm/u);
+  assert.match(stdout, /2\. Decline/u);
+  assert.match(stdout, /3\. View full exact diff/u);
+  assert.match(stdout, /LaunchRally Project Toolchain Migration Complete/u);
+  assert.match(stdout, /Authority: ready \(project_toolchain\)/u);
+  assert.match(stdout, /Rebuildable materialization replaced/u);
+  assert.match(stdout, /current pointer may be marked non-current/u);
+  assert.match(stdout, /immutable Reports and Evidence are preserved/u);
+  assert.match(stdout, /verify --scope full/u);
+  assert.doesNotMatch(stdout, /resume_token|"contract"|"preview"/u);
+
+  const status = await runToolchainLifecycle(repository, VERSION, {
+    operation: "status",
+  });
+  assert.equal(status.authority.engine.version, VERSION);
+  assert.equal(status.authority.state, "ready");
+});
+
+test("default styled TTY migration confirms and completes", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const repository = await repositoryFixture();
+  await writeProject(repository, "0.2.2");
+  await materializeExactToolchain(repository, "0.2.2");
+  const prepared = await preparedToolchain(VERSION);
+  const npmDirectory = await npmFixture(prepared);
+  const packagePath = path.join(repository, ".launchrally/toolchain/package.json");
+
+  const { stdout } = await execFileAsync("python3", [
+    "-c", styledMigrationPtyRunner, "confirm", packagePath, process.execPath, cli,
+    "toolchain", "migrate", "--to", VERSION, "--cwd", repository,
+  ], {
+    env: {
+      ...process.env,
+      LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN: prepared,
+      PATH: `${npmDirectory}${path.delimiter}${process.env.PATH}`,
+    },
+    timeout: 30000,
+  });
+
+  assert.match(stdout, /\u001b\[/u);
+  assert.match(stdout, /LaunchRally Project Toolchain\r?\n/u);
+  assert.match(stdout, /LaunchRally Project Toolchain Migration Preview/u);
+  assert.match(stdout, /LaunchRally Project Toolchain Migration Complete/u);
+  assert.match(stdout, /Authority: ready \(project_toolchain\)/u);
+  assert.match(stdout, /verify --scope full/u);
+  assert.doesNotMatch(stdout, /resume_token|"contract"/u);
+});
+
+test("default styled TTY migration handles registry permission and cancellation safely", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  for (const scenario of [
+    { mode: "permission_confirm", offlineMiss: true, code: 0, summary: /Migration Complete/u },
+    { mode: "cancel", offlineMiss: false, code: 130, summary: /migration cancelled/u },
+  ]) {
+    const repository = await repositoryFixture();
+    await writeProject(repository, "0.2.2");
+    await materializeExactToolchain(repository, "0.2.2");
+    const prepared = await preparedToolchain(VERSION);
+    const npmDirectory = await npmFixture(prepared);
+    const packagePath = path.join(repository, ".launchrally/toolchain/package.json");
+    const run = execFileAsync("python3", [
+      "-c", styledMigrationPtyRunner, scenario.mode, packagePath, process.execPath, cli,
+      "toolchain", "migrate", "--to", VERSION, "--cwd", repository,
+    ], {
+      env: {
+        ...process.env,
+        ...(scenario.offlineMiss ? { LAUNCHRALLY_TEST_OFFLINE_MISS: "1" } : {}),
+        LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN: prepared,
+        PATH: `${npmDirectory}${path.delimiter}${process.env.PATH}`,
+      },
+      timeout: 30000,
+    });
+    if (scenario.code === 0) {
+      const { stdout } = await run;
+      assert.match(stdout, /Project Toolchain registry permission/u);
+      assert.match(stdout, scenario.summary);
+    } else {
+      await assert.rejects(run, (error) => {
+        assert.equal(error.code, scenario.code);
+        assert.match(error.stdout, scenario.summary);
+        return true;
+      });
+      assert.equal((await runToolchainLifecycle(repository, VERSION, {
+        operation: "status",
+      })).authority.engine.version, "0.2.2");
+      assert.deepEqual(await storedLifecycleStates(repository), []);
+    }
+  }
+});
+
+test("TTY Human toolchain migrate shows the full exact diff and returns to confirmation", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const repository = await repositoryFixture();
+  await writeProject(repository, "0.2.2");
+  await materializeExactToolchain(repository, "0.2.2");
+  const prepared = await preparedToolchain(VERSION);
+  const npmDirectory = await npmFixture(prepared);
+
+  const { stdout } = await execFileAsync("python3", [
+    "-c", migrationPtyRunner, "3,1", process.execPath, cli,
+    "toolchain", "migrate", "--to", VERSION, "--plain", "--cwd", repository,
+  ], {
+    env: {
+      ...process.env,
+      LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN: prepared,
+      PATH: `${npmDirectory}${path.delimiter}${process.env.PATH}`,
+    },
+    timeout: 30000,
+  });
+
+  assert.match(stdout, /Full exact digest-bound diff:/u);
+  assert.match(stdout, /--- before \(sha256:/u);
+  assert.match(stdout, /\+\+\+ after \(sha256:/u);
+  assert.equal((stdout.match(/Choose 1-4/gu) ?? []).length, 2);
+  assert.match(stdout, /Migration Complete/u);
+});
+
+test("TTY Human toolchain migrate safely declines by default and can cancel", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  for (const scenario of [
+    { answer: "", code: 0, summary: /Migration Declined/u },
+    { answer: "4", code: 130, summary: /migration cancelled/u },
+  ]) {
+    const repository = await repositoryFixture();
+    await writeProject(repository, "0.2.2");
+    await materializeExactToolchain(repository, "0.2.2");
+    const prepared = await preparedToolchain(VERSION);
+    const npmDirectory = await npmFixture(prepared);
+    let output;
+    try {
+      output = (await execFileAsync("python3", [
+        "-c", migrationPtyRunner, scenario.answer, process.execPath, cli,
+        "toolchain", "migrate", "--to", VERSION, "--plain", "--cwd", repository,
+      ], {
+        env: {
+          ...process.env,
+          LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN: prepared,
+          PATH: `${npmDirectory}${path.delimiter}${process.env.PATH}`,
+        },
+        timeout: 30000,
+      })).stdout;
+      assert.equal(scenario.code, 0);
+    } catch (error) {
+      assert.equal(error.code, scenario.code);
+      output = error.stdout;
+    }
+    assert.match(output, scenario.summary);
+    assert.doesNotMatch(output, /resume_token/u);
+    const status = await runToolchainLifecycle(repository, VERSION, { operation: "status" });
+    assert.equal(status.authority.engine.version, "0.2.2");
+    assert.deepEqual(await storedLifecycleStates(repository), []);
+  }
+});
+
+test("TTY Human toolchain migrate fails a stale preview closed with a concise result", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const repository = await repositoryFixture();
+  await writeProject(repository, "0.2.2");
+  await materializeExactToolchain(repository, "0.2.2");
+  const prepared = await preparedToolchain(VERSION);
+  const npmDirectory = await npmFixture(prepared);
+  const packagePath = path.join(repository, ".launchrally/toolchain/package.json");
+
+  await assert.rejects(execFileAsync("python3", [
+    "-c", staleMigrationPtyRunner, packagePath, process.execPath, cli,
+    "toolchain", "migrate", "--to", VERSION, "--plain", "--cwd", repository,
+  ], {
+    env: {
+      ...process.env,
+      LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN: prepared,
+      PATH: `${npmDirectory}${path.delimiter}${process.env.PATH}`,
+    },
+    timeout: 30000,
+  }), (error) => {
+    assert.equal(error.code, 2);
+    assert.match(error.stdout, /Migration Preview Is Stale/u);
+    assert.match(error.stdout, /Prior Project Toolchain authority was preserved/u);
+    assert.doesNotMatch(error.stdout, /"error"|resume_token/u);
+    return true;
+  });
+  assert.equal((await runToolchainLifecycle(repository, VERSION, {
+    operation: "status",
+  })).authority.engine.version, "0.2.2");
+});
+
+test("TTY Human toolchain migrate requests registry permission and rolls back completion failures", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  for (const failure of [false, true]) {
+    const repository = await repositoryFixture();
+    await writeProject(repository, "0.2.2");
+    await materializeExactToolchain(repository, "0.2.2");
+    if (failure) {
+      await mkdir(path.join(repository, ".launchrally/cache"), { recursive: true });
+      await writeFile(path.join(repository, ".launchrally/cache/current-report.json"), "not-json\n");
+    }
+    const prepared = await preparedToolchain(VERSION);
+    const npmDirectory = await npmFixture(prepared);
+    try {
+      const { stdout } = await execFileAsync("python3", [
+        "-c", migrationPtyRunner, "y,1", process.execPath, cli,
+        "toolchain", "migrate", "--to", VERSION, "--plain", "--cwd", repository,
+      ], {
+        env: {
+          ...process.env,
+          LAUNCHRALLY_TEST_OFFLINE_MISS: "1",
+          LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN: prepared,
+          PATH: `${npmDirectory}${path.delimiter}${process.env.PATH}`,
+        },
+        timeout: 30000,
+      });
+      assert.equal(failure, false);
+      assert.match(stdout, /requires an npm registry read/u);
+      assert.match(stdout, /Migration Complete/u);
+    } catch (error) {
+      assert.equal(failure, true);
+      assert.equal(error.code, 2);
+      assert.match(error.stdout, /Migration Could Not Complete/u);
+      assert.match(error.stdout, /prior project authority was preserved/iu);
+      assert.equal((await runToolchainLifecycle(repository, VERSION, {
+        operation: "status",
+      })).authority.engine.version, "0.2.2");
+    }
+  }
+});
+
+test("TTY Human toolchain migrate denies registry permission without changing authority", {
+  skip: pythonAvailable ? false : "A local Python 3 PTY is required.",
+}, async () => {
+  const repository = await repositoryFixture();
+  await writeProject(repository, "0.2.2");
+  await materializeExactToolchain(repository, "0.2.2");
+  const prepared = await preparedToolchain(VERSION);
+  const npmDirectory = await npmFixture(prepared);
+
+  await assert.rejects(execFileAsync("python3", [
+    "-c", migrationPtyRunner, "n", process.execPath, cli,
+    "toolchain", "migrate", "--to", VERSION, "--plain", "--cwd", repository,
+  ], {
+    env: {
+      ...process.env,
+      LAUNCHRALLY_TEST_OFFLINE_MISS: "1",
+      LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN: prepared,
+      PATH: `${npmDirectory}${path.delimiter}${process.env.PATH}`,
+    },
+    timeout: 30000,
+  }), (error) => {
+    assert.equal(error.code, 2);
+    assert.match(error.stdout, /requires an npm registry read/u);
+    assert.match(error.stdout, /registry_permission_denied/u);
+    assert.match(error.stdout, /Prior Project Toolchain authority was preserved/u);
+    assert.doesNotMatch(error.stdout, /resume_token/u);
+    return true;
+  });
+  assert.equal((await runToolchainLifecycle(repository, VERSION, {
+    operation: "status",
+  })).authority.engine.version, "0.2.2");
+});
+
+test("non-TTY Human migration fails safely with a complete Agent command", async () => {
+  const repository = await repositoryFixture();
+  await writeProject(repository, "0.2.2");
+  await materializeExactToolchain(repository, "0.2.2");
+
+  await assert.rejects(execFileAsync(process.execPath, [
+    cli, "toolchain", "migrate", "--to", VERSION, "--cwd", repository,
+  ]), (error) => {
+    assert.equal(error.code, 2);
+    assert.match(error.stderr, /Non-TTY Human Mode cannot confirm/u);
+    assert.match(
+      error.stderr,
+      new RegExp(String.raw`['"]?toolchain['"]?\s+['"]?migrate['"]?\s+['"]?--to['"]?\s+['"]?${escapedVersion}['"]?\s+['"]?--json['"]?\s+['"]?--cwd['"]?`, "u"),
+    );
+    assert.doesNotMatch(error.stdout, /needs_confirmation|resume_token/u);
+    return true;
+  });
+  assert.equal((await runToolchainLifecycle(repository, VERSION, {
+    operation: "status",
+  })).authority.engine.version, "0.2.2");
+});
+
+test("non-TTY structured migration prints the complete corrected Agent command", async () => {
+  const repository = await repositoryFixture();
+  const permissions = JSON.stringify({ npm_registry_read: "approved" });
+  await assert.rejects(execFileAsync(process.execPath, [
+    cli,
+    "toolchain",
+    "migrate",
+    "--to",
+    VERSION,
+    "--cwd",
+    repository,
+    "--resume",
+    "opaque-token",
+    "--confirm",
+    "confirm",
+    "--permissions",
+    permissions,
+  ]), (error) => {
+    assert.equal(error.code, 2);
+    assert.match(error.stderr, /Use this complete Agent\/JSON command/u);
+    assert.match(
+      error.stderr,
+      new RegExp(String.raw`['"]?toolchain['"]?\s+['"]?migrate['"]?\s+['"]?--to['"]?\s+['"]?${escapedVersion}['"]?\s+['"]?--json['"]?\s+['"]?--cwd['"]?`, "u"),
+    );
+    assert.match(
+      error.stderr,
+      /['"]?--resume['"]?\s+['"]?opaque-token['"]?\s+['"]?--confirm['"]?\s+['"]?confirm['"]?/u,
+    );
+    assert.match(
+      error.stderr,
+      /['"]?--permissions['"]?\s+['"]?\{"npm_registry_read":"approved"\}['"]?/u,
+    );
+    assert.doesNotMatch(error.stderr, /Human Mode does not accept structured/u);
+    return true;
+  });
+});
+
+test("non-TTY migration without an exact target never renders a placeholder command", async () => {
+  const repository = await repositoryFixture();
+  await assert.rejects(execFileAsync(process.execPath, [
+    cli, "toolchain", "migrate", "--cwd", repository,
+  ]), (error) => {
+    assert.equal(error.code, 2);
+    assert.match(error.stderr, /requires --to with an exact SemVer/u);
+    assert.match(error.stderr, /No executable Agent\/JSON command/u);
+    assert.doesNotMatch(error.stderr, /<exact-version>|npm exec|rally toolchain/u);
+    return true;
+  });
+});
+
+test("default Human toolchain status is concise and does not expose lifecycle JSON", async () => {
+  const repository = await repositoryFixture();
+  await writeProject(repository, "0.2.2");
+  await assert.rejects(execFileAsync(process.execPath, [
+    cli, "toolchain", "status", "--cwd", repository,
+  ]), (error) => {
+    assert.equal(error.code, 2);
+    assert.match(error.stdout, /requires the explicit action reported by Execution Authority/u);
+    assert.doesNotMatch(error.stdout, /"contract"|"authority"/u);
+    return true;
+  });
+});
+
+test.todo("default Human toolchain restore should not render raw lifecycle JSON on completion");
+test.todo("default Human toolchain clean should not render raw lifecycle JSON on completion");
+test.todo("default TTY toolchain restore should keep registry resume tokens internal");
+
+test("Agent JSON toolchain migrate preserves the exact resumable protocol", async () => {
+  const repository = await repositoryFixture();
+  await writeProject(repository, "0.2.2");
+  await materializeExactToolchain(repository, "0.2.2");
+  const prepared = await preparedToolchain(VERSION);
+  const npmDirectory = await npmFixture(prepared);
+  const environment = {
+    ...process.env,
+    LAUNCHRALLY_TEST_PREPARED_TOOLCHAIN: prepared,
+    PATH: `${npmDirectory}${path.delimiter}${process.env.PATH}`,
+  };
+
+  const preview = JSON.parse((await execFileAsync(process.execPath, [
+    cli, "toolchain", "migrate", "--to", VERSION, "--json", "--cwd", repository,
+  ], { env: environment })).stdout);
+  assert.equal(preview.contract, "launchrally.dev/toolchain-lifecycle/v1");
+  assert.equal(preview.status, "needs_confirmation");
+  assert.equal(preview.operation, "toolchain_migrate");
+  assert.equal(preview.request.type, "confirmation");
+  assert.deepEqual(preview.request.choices, ["confirm", "decline"]);
+  assert.match(preview.interaction.resume_token, /^lrtc_/u);
+
+  const declined = JSON.parse((await execFileAsync(process.execPath, [
+    cli,
+    "toolchain",
+    "migrate",
+    "--to",
+    VERSION,
+    "--json",
+    "--cwd",
+    repository,
+    "--resume",
+    preview.interaction.resume_token,
+    "--confirm",
+    "decline",
+  ], { env: environment })).stdout);
+  assert.deepEqual(declined, {
+    contract: "launchrally.dev/toolchain-lifecycle/v1",
+    status: "completed",
+    operation: "toolchain_migrate",
+    outcome: "migration_declined",
+    changes_applied: [],
+  });
 });
 
 test("toolchain restore rebuilds the established pin offline without changing authority files", async () => {
