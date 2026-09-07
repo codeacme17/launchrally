@@ -21,6 +21,9 @@ Review the [0.4.3 changelog](https://github.com/codeacme17/launchrally/blob/v0.4
 and [external verification record](https://github.com/codeacme17/launchrally/blob/v0.4.3/docs/maintainers/experimental-0.4.3-p1-evidence.md)
 before adoption.
 
+The [prepublication checks](https://github.com/codeacme17/launchrally/blob/v0.4.3/docs/maintainers/experimental-0.4.3-prepublication.md)
+record the assessed candidate and publisher controls separately from public verification.
+
 ## Resolved issues
 
 - [#187 — Style the complete Architect Human Mode decision flow](https://github.com/codeacme17/launchrally/issues/187)
@@ -36,7 +39,9 @@ before adoption.
 - [#209 — Complete remaining Phase 1 Human Mode flows](https://github.com/codeacme17/launchrally/pull/209)
 - [#211 — Prepare Phase 1 Experimental 0.4.3](https://github.com/codeacme17/launchrally/pull/211)
 - [#212 — Promote Phase 1 Experimental 0.4.3](https://github.com/codeacme17/launchrally/pull/212)
+- [#213 — Refresh P1 release assessment for 0.4.3](https://github.com/codeacme17/launchrally/pull/213)
+- [#214 — Complete 0.4.3 release inventory and prepublication evidence](https://github.com/codeacme17/launchrally/pull/214)
 
 ## Contributors
 
-- [@codeacme17](https://github.com/codeacme17) — [#206](https://github.com/codeacme17/launchrally/pull/206), [#207](https://github.com/codeacme17/launchrally/pull/207), [#208](https://github.com/codeacme17/launchrally/pull/208), [#209](https://github.com/codeacme17/launchrally/pull/209), [#211](https://github.com/codeacme17/launchrally/pull/211), [#212](https://github.com/codeacme17/launchrally/pull/212)
+- [@codeacme17](https://github.com/codeacme17) — [#206](https://github.com/codeacme17/launchrally/pull/206), [#207](https://github.com/codeacme17/launchrally/pull/207), [#208](https://github.com/codeacme17/launchrally/pull/208), [#209](https://github.com/codeacme17/launchrally/pull/209), [#211](https://github.com/codeacme17/launchrally/pull/211), [#212](https://github.com/codeacme17/launchrally/pull/212), [#213](https://github.com/codeacme17/launchrally/pull/213), [#214](https://github.com/codeacme17/launchrally/pull/214)
